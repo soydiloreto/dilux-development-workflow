@@ -5,8 +5,9 @@ name: mutations
 # `verify` asks whether the suite passes. This asks whether the suite CAN fail,
 # which is the only way to tell a passing suite from one that cannot go red.
 #
-# Not on every push to every branch: at ninety-odd faults that is the full suite
-# ninety times for a typo fix. On the pull request, on main, and weekly.
+# Not on every push to every branch: at nearly two hundred faults that is the
+# full suite two hundred times for a typo fix. On the pull request, on main,
+# and weekly.
 on:
   pull_request:
   push:
@@ -21,15 +22,26 @@ on:
 permissions:
   contents: read
 
+# Queued, not cancelled. A cancelled run and a failed run look alike in the
+# checks list and in the badge, and this is the job whose whole purpose is to
+# report a number honestly — so a second push waits its turn instead of turning
+# the first one into a result nobody can read.
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   mutations:
-    name: can the suite fail?
+    name: can the suite fail? (${{ matrix.shard }}/10)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # One fault is one full run of the suite. Ten slices of the list finish in
+    # well under this; a single process does not, and a job killed at its
+    # timeout reports "cancelled", which is not an answer to the question.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -42,4 +54,21 @@ jobs:
       # Every mutation here is a defect that actually shipped once; a surviving
       # one is a check that does not exist. This job must not be made "faster"
       # by deleting mutations — that is deleting the measurement, not the cost.
-      - run: python3 scripts/mutate.py
+      - run: python3 scripts/mutate.py --shard ${{ matrix.shard }}/10
+
+  coverage:
+    name: did every fault get injected?
+    needs: mutations
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --quiet pyyaml
+      # Ten green jobs are ten green jobs, not a covered list. Drop a matrix
+      # entry and every job still passes while the faults in that slice are
+      # never injected — the same failure the pinned check count in
+      # `verify_install.sh` exists to catch, one layer up.
+      - run: python3 scripts/mutate.py --cover .github/workflows/mutations.yml

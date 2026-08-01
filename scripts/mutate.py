@@ -15,10 +15,23 @@ exactly that spot — and the fix is a new check, not a smaller mutation list.
 
 Exit 0 when every mutation is killed. Exit 1 when any survives: a surviving
 mutation is a hole, and the number is the project's real coverage figure.
+
+Running the whole suite once per fault takes hours in one process, and a CI job
+that cannot finish inside its timeout is a measurement nobody ever reads. So the
+run splits:
+
+    python3 scripts/mutate.py --shard 3/10           # one slice, in its own job
+    python3 scripts/mutate.py --cover <workflow.yml> # do the slices cover it all?
+
+Splitting a measurement is how a measurement goes quietly missing — a matrix
+that loses an entry leaves faults nobody injects, and every job that did run is
+still green. `--cover` reads the workflow and adds the slices back up, so the
+workflow has to prove it ran the whole list rather than assert it.
 """
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -658,6 +671,18 @@ MUTATIONS = [
     ("a commit with no attribution at all stops being noticed",
      edit("scripts/check_commits.py", "        elif not TRAILER.search(body):",
           "        elif False:")),
+    # The exemption exists so the weekly dependency PR is not red on arrival.
+    # Losing it is not loud: nothing breaks until Monday, in a pull request
+    # nobody is watching, and the rule people learn is "the check is always red".
+    ("the bot exemption goes, and every dependency PR lands red",
+     edit("scripts/check_commits.py", "        if is_bot(name, email):",
+          "        if False:")),
+    # And the other direction: an exemption that stops naming who it exempted is
+    # a check that stopped running, wearing the same green.
+    ("a skipped commit stops being named and is only subtracted",
+     edit("scripts/check_commits.py",
+          '            skipped.append(f"{sha[:9]} {name}")',
+          "            pass")),
     ("a range git cannot read reports success instead of saying it did not run",
      edit("scripts/check_commits.py",
           '        print(f"check_commits: cannot read {args.since}..HEAD — the check did NOT run\\n"\n'
@@ -901,10 +926,77 @@ def run_one(index, label, mutate):
         return r.returncode != 0, None
 
 
+def slice_of(spec, count):
+    """The mutation numbers `--shard I/N` is responsible for.
+
+    Round-robin rather than contiguous blocks: every fault costs one full run of
+    the suite, so the slices only stay the same size if they interleave.
+    """
+    try:
+        i, n = (int(x) for x in spec.split("/"))
+    except ValueError:
+        raise SystemExit(f"--shard {spec}: expected I/N, as in 3/10")
+    if not 1 <= i <= n:
+        raise SystemExit(f"--shard {spec}: I has to be between 1 and N")
+    return [k for k in range(1, count + 1) if (k - 1) % n == i - 1]
+
+
+def cover(path, count):
+    """Do the shards in this workflow add up to every mutation, or only look it?
+
+    A matrix entry deleted, or an N that stopped matching the list it is paired
+    with, leaves faults that no job injects — and every job that did run is
+    green, so the workflow reports success for a measurement it never took. This
+    reads the file GitHub reads and adds the slices back up.
+    """
+    import yaml
+    wf = yaml.safe_load(open(path, encoding="utf-8"))
+    jobs = wf.get("jobs", {})
+    steps = [(name, s) for name, job in jobs.items() for s in job.get("steps", [])]
+    found = [(name, m) for name, s in steps
+             for m in [re.search(r"--shard\s+\$\{\{\s*matrix\.(\w+)\s*\}\}/(\d+)",
+                                 str(s.get("run", "")))] if m]
+    if not found:
+        print(f"cover: no step in {path} runs a sharded mutation job — nothing to check")
+        return 1
+
+    covered, problems = set(), []
+    for job_name, m in found:
+        key, n = m.group(1), int(m.group(2))
+        entries = jobs[job_name].get("strategy", {}).get("matrix", {}).get(key)
+        if not entries:
+            problems.append(f"{job_name}: --shard reads matrix.{key}, and the matrix has no {key}")
+            continue
+        if sorted(entries) != list(range(1, n + 1)):
+            problems.append(f"{job_name}: shards run are {sorted(entries)}, "
+                            f"but each one is told it is 1 of {n}")
+            continue
+        for i in entries:
+            covered |= set(slice_of(f"{i}/{n}", count))
+
+    missing = sorted(set(range(1, count + 1)) - covered)
+    if missing:
+        problems.append(f"{len(missing)} mutations are in no shard: "
+                        + ", ".join(str(i) for i in missing[:12])
+                        + (" …" if len(missing) > 12 else ""))
+    if problems:
+        print(f"cover: the sharded run does NOT cover all {count} mutations")
+        for p in problems:
+            print(f"  {p}")
+        return 1
+    print(f"cover: the shards in {os.path.basename(path)} run all {count} mutations, "
+          f"each exactly once.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--only", nargs="*", type=int)
+    ap.add_argument("--shard", metavar="I/N",
+                    help="run slice I of N; the slices together are the whole list")
+    ap.add_argument("--cover", metavar="WORKFLOW",
+                    help="check that workflow's shards cover every mutation, then exit")
     args = ap.parse_args()
 
     if args.list:
@@ -912,10 +1004,21 @@ def main():
             print(f"  {i:2d}. {label}")
         return 0
 
+    if args.cover:
+        return cover(args.cover, len(MUTATIONS))
+
+    if args.only and args.shard:
+        raise SystemExit("--only and --shard both pick what runs; use one")
+
+    wanted = set(slice_of(args.shard, len(MUTATIONS))) if args.shard else None
     chosen = [(i, m) for i, m in enumerate(MUTATIONS, 1)
-              if not args.only or i in args.only]
+              if (not args.only or i in args.only)
+              and (wanted is None or i in wanted)]
     killed, survived, broken = 0, [], []
-    print(f"Injecting {len(chosen)} faults, one at a time.\n")
+    # Name the slice in the output. A shard's log is a full green run to anyone
+    # skimming it, and "193/193" is the only number worth reporting.
+    of_all = f" — shard {args.shard} of the {len(MUTATIONS)}" if args.shard else ""
+    print(f"Injecting {len(chosen)} faults, one at a time{of_all}.\n")
     for i, (label, mutate) in chosen:
         verdict, problem = run_one(i, label, mutate)
         if problem:
@@ -931,7 +1034,7 @@ def main():
     total = len(chosen) - len(broken)
     rate = (killed / total * 100) if total else 0
     print(f"\n{'─' * 60}")
-    print(f"{killed}/{total} faults caught  ({rate:.0f}%)")
+    print(f"{killed}/{total} faults caught  ({rate:.0f}%){of_all}")
     if survived:
         print("\nThe suite cannot see these. Each one is a check that does not exist yet:")
         for i, label in survived:

@@ -13,11 +13,13 @@ on:
 permissions:
   contents: read
 
-# A push to a branch with an open PR triggers both events, so without this every
-# change runs the whole matrix twice.
+# A push to a branch with an open PR triggers both events, so the group keeps
+# those two runs from overlapping. Queued, not cancelled: a cancelled run is
+# indistinguishable from a failed one in the checks list and in the badge, and a
+# suite whose job is to report a number should not report an ambiguous one.
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   suite:

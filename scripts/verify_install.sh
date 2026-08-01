@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-408}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-411}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -2061,6 +2061,36 @@ python3 "$SELF/scripts/check_commits.py" --repo "$CM" --since "$CM_BASE" >/dev/n
 python3 "$SELF/scripts/check_commits.py" --repo "$CM" --since "no-such-ref" >/dev/null 2>&1 \
   && bad "an unreadable range reports success — the check silently did not run" \
   || ok "and an unreadable range is a failure, not a pass"
+
+# Dependabot opens a pull request every week and signs nothing: the rule asks a
+# person whether a model helped, and there is no person here. Without this the
+# dependency PRs are red on arrival, every one of them, and a rule that is red
+# for a reason nobody can act on is a rule people learn to click past.
+git -C "$CM" reset -q --hard HEAD~1
+echo bumped > "$CM/a.txt"; git -C "$CM" add -A
+git -C "$CM" -c user.name='dependabot[bot]' \
+    -c user.email='49699333+dependabot[bot]@users.noreply.github.com' \
+    commit -q -m "⬆️ chore(ci): bump actions/checkout from 7.0.0 to 7.0.1"
+CM_BOT="$(python3 "$SELF/scripts/check_commits.py" --repo "$CM" --since "$CM_BASE" 2>&1)" \
+  && ok "a bot's dependency bump is not asked to disclose help nobody gave it" \
+  || bad "the attribution check rejects Dependabot, so every dependency PR lands red"
+
+# An exemption that does not say who it exempted is indistinguishable from a
+# check that stopped running. The count going down has to be visible.
+case "$CM_BOT" in
+  *"skipped"*"dependabot[bot]"*)
+    ok "and it names the commit it skipped instead of quietly subtracting it" ;;
+  *) bad "the bot commit vanishes from the count with nothing said about it" ;;
+esac
+
+# The exemption is for the bot, not for the shape of its message. A person who
+# forgets the trailer is still refused, in the same range, right after.
+echo human > "$CM/a.txt"; git -C "$CM" add -A
+git -C "$CM" commit -q -m "✨ a person's change, disclosing nothing"
+python3 "$SELF/scripts/check_commits.py" --repo "$CM" --since "$CM_BASE" >/dev/null 2>&1 \
+  && bad "one bot commit in the range excuses the humans in it too" \
+  || ok "and a person in the same range is still held to the rule"
+git -C "$CM" reset -q --hard HEAD~2
 
 # A checker nothing invokes is a file, not a gate. The pull request is the only
 # place the range exists, which is the one event it has to run on.

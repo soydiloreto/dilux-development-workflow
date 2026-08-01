@@ -35,6 +35,23 @@ import sys
 TRAILER = re.compile(r"^(?:AI-assisted|AI-full):\s*yes\s*$", re.M | re.I)
 COAUTHOR = re.compile(r"^Co-Authored-By:", re.M | re.I)
 
+
+def is_bot(name, email):
+    """A commit no person wrote, and therefore has nothing to disclose about.
+
+    The rule is a disclosure: it asks the human who signed a commit to say
+    whether a model helped write it. Dependabot bumping a pinned action has no
+    such human and no such model, and demanding the trailer from it would make
+    every dependency PR red until someone rewrote the bot's message by hand —
+    which is how a rule stops being read and starts being routed around.
+
+    Narrow on purpose: GitHub's own bot identity, both halves of it. This is a
+    convention and not a boundary — anyone can set an author locally, exactly as
+    anyone can type `AI-assisted: yes` without meaning it. What it must not do
+    is exempt anyone quietly, so every skip is named in the output.
+    """
+    return name.endswith("[bot]") and email.endswith("@users.noreply.github.com")
+
 # ASCII record/unit separators: a commit body can contain any text a person can
 # type, so the delimiters have to be characters they cannot. NUL would be the
 # conventional choice and cannot be passed in an argv string at all.
@@ -50,7 +67,7 @@ def main():
     args = ap.parse_args()
     root = os.path.abspath(args.repo)
 
-    out = subprocess.run(["git", "-C", root, "log", f"--format=%H%x1f%B{SEP}",
+    out = subprocess.run(["git", "-C", root, "log", f"--format=%H%x1f%an%x1f%ae%x1f%B{SEP}",
                           f"{args.since}..HEAD"], capture_output=True, text=True)
     if out.returncode != 0:
         # Saying so is the point: a range that cannot be read is not a range
@@ -60,12 +77,16 @@ def main():
         return 1
 
     problems = []
+    skipped = []
     checked = 0
     for chunk in out.stdout.split(SEP):
         chunk = chunk.strip("\n")
         if not chunk:
             continue
-        sha, _, body = chunk.partition(UNIT)
+        sha, name, email, body = (chunk.split(UNIT, 3) + ["", "", ""])[:4]
+        if is_bot(name, email):
+            skipped.append(f"{sha[:9]} {name}")
+            continue
         checked += 1
         subject = body.strip().splitlines()[0] if body.strip() else "(no subject)"
         where = f"{sha[:9]} {subject[:60]}"
@@ -79,10 +100,19 @@ def main():
                                     "commit made with AI assistance carries one; this repository "
                                     "is not exempt from the rule it ships"))
 
+    # Named, never merely subtracted: a count that quietly went down is how an
+    # exemption turns into a hole nobody looks for.
+    note = ""
+    if skipped:
+        note = (f"\n  {len(skipped)} commit(s) skipped — authored by a bot, so there is no "
+                f"person whose help there was anything to disclose:\n"
+                + "\n".join(f"    {s}" for s in skipped))
+
     if not problems:
-        print(f"check_commits: {checked} commit(s) in {args.since}..HEAD, every one attributed.")
+        print(f"check_commits: {checked} commit(s) in {args.since}..HEAD, "
+              f"every one attributed.{note}")
         return 0
-    print(f"check_commits: {len(problems)} of {checked} commit(s) break the attribution rule\n")
+    print(f"check_commits: {len(problems)} of {checked} commit(s) break the attribution rule{note}\n")
     for where, msg in problems:
         print(f"  {where}\n      {msg}")
     return 1

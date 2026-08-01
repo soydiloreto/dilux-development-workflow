@@ -1,9 +1,13 @@
 version: 2
 
-# DDW has no runtime dependencies — no package.json, no requirements.txt, nothing
-# to install. The one thing here that ages is the set of actions the workflows
-# pin, and nobody notices a pinned action going stale until it stops working or
-# turns out to have a known problem.
+# DDW has no runtime dependencies — the package.json exists to point OpenCode at
+# the plugin file and declares none, and there is no requirements.txt. The one
+# thing here that ages is the set of actions the workflows pin, and nobody
+# notices a pinned action going stale until it stops working or turns out to
+# have a known problem.
+#
+# These arrive authored by a bot, which signs no attribution trailer and has
+# nothing to disclose; `scripts/check_commits.py` skips them by name and says so.
 updates:
   - package-ecosystem: github-actions
     directory: "/"

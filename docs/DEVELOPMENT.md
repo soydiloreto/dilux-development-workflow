@@ -333,12 +333,33 @@ never `Co-Authored-By`, which credits the tool as an author and spreads
 responsibility onto something that cannot hold it. Only a range, never the
 history behind it — that cannot be rewritten without breaking every clone.
 
+One exemption, and it is printed rather than assumed: a commit authored by a bot
+is skipped by name. The rule asks a person whether a model helped write
+something, and Dependabot bumping a pinned action is neither. Demanding the
+trailer from it would make every dependency pull request red on arrival, and a
+check that is red for a reason nobody can act on is a check people learn to click
+past. Two mutations hold both halves of that — the exemption disappearing, and
+the exemption going silent.
+
 CI runs both on pull requests, which is where the range exists.
 
 ### 5. CI — on two operating systems
 
 `.github/workflows/verify.yml`, on every push. The second OS is not ceremony: a
 `find` without `-printf` deleted 41% of the checks on macOS and exited 0.
+
+`.github/workflows/mutations.yml` is separate because it is slow by nature — one
+full run of the suite per injected fault. In one process that does not finish
+inside any timeout worth setting, and a job killed at its timeout reports
+*cancelled*, which is not an answer to the question it was asked. So it runs in
+ten slices, `mutate.py --shard I/10`, one job each.
+
+Splitting a measurement is how a measurement goes quietly missing: drop a matrix
+entry and every remaining job is still green while the faults in that slice are
+never injected. A `coverage` job answers that separately — `mutate.py --cover`
+reads the workflow the way GitHub reads it and adds the slices back up, so the
+run has to prove it covered the whole list instead of asserting it. It is the
+pinned check count of `verify_install.sh`, one layer up.
 
 ### What still cannot be automated
 
