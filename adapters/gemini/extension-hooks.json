@@ -1,0 +1,59 @@
+{
+  "_comment": "Gemini CLI extension hooks. Gemini reads hooks/hooks.json at the extension root and the path is NOT configurable — its docs are explicit that hooks are not declared in gemini-extension.json. Claude Code scans that same path at the plugin root REGARDLESS of what .claude-plugin/plugin.json declares, so shipping this file there broke the one plugin install that works: Claude reported `Failed to load hooks` on every session over BeforeTool, AfterTool and PreCompress, which are Gemini's event names and not spelling mistakes.\n\nFound by installing the plugin and reading the error, which is what scripts/acceptance.md exists for — the suite drives each adapter's hook and cannot know which files a tool decides to open on its own.\n\nSo it lives here, off the contested path. Gemini's DROP-IN install is unaffected: adapters/gemini/adapter.json wires .gemini/settings.json and carries no dependency on this file. What is not available until the collision has a real answer is Gemini-as-an-extension, which the README already lists as next rather than supported.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "name": "ddw-session-start",
+            "type": "command",
+            "command": "DDW_PLUGIN_ROOT=\"${extensionPath}\" bash \"${extensionPath}/adapters/gemini/hooks/session-start.sh\"",
+            "description": "DDW: boot the pipeline for this session",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "write_file|replace",
+        "hooks": [
+          {
+            "name": "ddw-pre-tool-use",
+            "type": "command",
+            "command": "DDW_PLUGIN_ROOT=\"${extensionPath}\" bash \"${extensionPath}/adapters/gemini/hooks/pre-tool-use.sh\"",
+            "description": "DDW: refuse a write the FSM does not allow",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "write_file|replace|run_shell_command",
+        "hooks": [
+          {
+            "name": "ddw-post-write",
+            "type": "command",
+            "command": "DDW_PLUGIN_ROOT=\"${extensionPath}\" bash \"${extensionPath}/adapters/gemini/hooks/post-write.sh\"",
+            "description": "DDW: revalidate the state on disk",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "PreCompress": [
+      {
+        "hooks": [
+          {
+            "name": "ddw-pre-compress",
+            "type": "command",
+            "command": "DDW_PLUGIN_ROOT=\"${extensionPath}\" bash \"${extensionPath}/adapters/gemini/hooks/pre-compact.sh\"",
+            "description": "DDW: re-read the pipeline after compression, never infer it",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}

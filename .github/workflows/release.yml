@@ -1,0 +1,56 @@
+name: release
+
+# A tag is the only thing that makes a version real to someone installing it.
+# This turns `v1.0.0` into a GitHub Release carrying that version's section of
+# the CHANGELOG — so the release notes and the changelog cannot say different
+# things, because there is only one of them.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write        # the only job here that needs to write: creating the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --quiet pyyaml
+
+      # Tagging a commit whose suite is red would publish a version nobody
+      # verified. Cheaper to find out here than after someone installs it.
+      - name: The suite, once more, on the tagged commit
+        run: |
+          python3 scripts/lint_method.py
+          python3 scripts/check_versions.py
+          bash scripts/verify_install.sh
+
+      - name: The tag matches the version the repo declares
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          DECLARED="$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")"
+          [ "$TAG" = "$DECLARED" ] || {
+            echo "tag $GITHUB_REF_NAME but the repo declares $DECLARED" >&2; exit 1; }
+
+      - name: The notes are that version's CHANGELOG section
+        run: |
+          python3 - "$GITHUB_REF_NAME" > NOTES.md <<'PY'
+          import re, sys
+          want = sys.argv[1].lstrip("v")
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(rf"^##\s*\[{re.escape(want)}\][^\n]*\n(.*?)(?=^##\s*\[|\Z)",
+                        text, re.S | re.M)
+          if not m:
+              sys.exit(f"CHANGELOG.md has no section for {want}")
+          print(m.group(1).strip())
+          PY
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          body_path: NOTES.md
+          draft: true          # you read it before the world does

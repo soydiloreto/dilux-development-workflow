@@ -1,0 +1,6 @@
+# DDW state (per-repo — never committed when installed in a project)
+*.pyc
+.ddw-paused/
+.ddw-sessions/
+.ddw-state.json
+__pycache__/

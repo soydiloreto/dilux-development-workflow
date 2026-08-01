@@ -1,0 +1,83 @@
+name: verify
+
+# Runs on both platforms on purpose. A `find` without `-printf` silently deleted
+# 41% of the checks and still exited 0 — the kind of thing only a second OS ever
+# finds, and only if something actually runs there.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only is all any of this needs; the default token can write.
+permissions:
+  contents: read
+
+# A push to a branch with an open PR triggers both events, so without this every
+# change runs the whole matrix twice.
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: suite (${{ matrix.os }}, python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # check_versions --since needs the base commit to diff against, and a
+          # shallow clone does not have it.
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Install what the suite asserts it needs
+        run: python3 -m pip install --quiet pyyaml
+      - name: rsync (absent from the macOS runner image)
+        if: runner.os == 'macOS'
+        run: command -v rsync >/dev/null || brew install rsync
+
+      - name: The prose agrees with the machine
+        run: python3 scripts/lint_method.py
+
+      # Without --since this only checks the numbers agree with each other. With
+      # it, a changed rule that did not bump, and a shipped file that changed
+      # without the product moving, are errors — which is what stops both fields
+      # going back to being decorative.
+      #
+      # A push gets it too, against the commit before it. The rule used to apply
+      # on pull requests alone, and a repository whose own work lands directly on
+      # main therefore never applied it to itself — the same shape of exemption
+      # the commit-attribution check was written to close.
+      - name: Versions describe what they are attached to
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
+            python3 scripts/check_versions.py --since "origin/${{ github.base_ref }}"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null; then
+            python3 scripts/check_versions.py --since HEAD~1
+          else
+            python3 scripts/check_versions.py   # the first commit has no before
+          fi
+
+      # Only on a pull request, and only over its own commits: the rule cannot
+      # be applied backwards without rewriting history every clone already has,
+      # and rewriting it is not what makes the next commit right.
+      - name: Commits carry the attribution this repo requires of everyone else
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
+          python3 scripts/check_commits.py --since "origin/${{ github.base_ref }}"
+
+      - name: The suite
+        run: bash scripts/verify_install.sh

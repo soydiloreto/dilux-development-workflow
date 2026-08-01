@@ -1,0 +1,15 @@
+{
+  "name": "dilux",
+  "description": "The DDW pipeline, packaged for Claude Code. One plugin: a state machine with gates enforced outside the model.",
+  "owner": {
+    "name": "Pablo Ariel Di Loreto",
+    "url": "https://github.com/soydiloreto"
+  },
+  "plugins": [
+    {
+      "name": "ddw",
+      "source": "./",
+      "description": "DDW — an agent-driven development pipeline: phases in order, gates enforced by hooks outside the model, auditors that did not write the code they review, and state that survives closing the session."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+version: 2
+
+# DDW has no runtime dependencies — no package.json, no requirements.txt, nothing
+# to install. The one thing here that ages is the set of actions the workflows
+# pin, and nobody notices a pinned action going stale until it stops working or
+# turns out to have a known problem.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "⬆️ chore(ci):"

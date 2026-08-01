@@ -1,0 +1,271 @@
+---
+applyTo: '**'
+version: 1.5.1
+---
+
+# CLASSIFY Phase (Recognition and Classification)
+
+**Goal:** understand the codebase, classify the user's request, and prepare the state for the
+pipeline.
+
+---
+
+## Step 1: Project stack
+
+The stack lives in **`AGENTS.md`**, section "Stack". **That is the only place.** No derived file is
+generated: duplicating the stack across two files guarantees that at some point they will say
+different things.
+
+**Protocol:**
+
+1. **Read the "Stack" section of `AGENTS.md`.**
+2. **If it is complete** → use it and skip to Step 2. There is nothing else to do.
+3. **If it is empty or still has unfilled placeholders:**
+   - **If the repo has configuration files** (`package.json`, `pyproject.toml`, `go.mod`,
+     `build.gradle`, `Gemfile`, etc.): scan them, detect language, framework, test runner, linter,
+     ORM/DB and package manager, and **hand the user the finished text to paste into `AGENTS.md`**:
+
+     ```
+     Your AGENTS.md does not declare the stack. Here is what I detected in the repo:
+
+     | Field | Value |
+     |-------|-------|
+     | Language | [detected] |
+     | ...      | ...       |
+
+     Shall I add this to the "Stack" section of your AGENTS.md?
+     ```
+
+     With the user's confirmation, write it **into `AGENTS.md`** and continue.
+   - **If the repo has NO configuration files** (a new project, no code yet): **STOP**. There is
+     nothing to detect, and you cannot plan or implement blind.
+
+     ```
+     I need the stack to work, and your AGENTS.md does not have it yet.
+     Fill in the "Stack" section of AGENTS.md and we start over.
+     ```
+
+**Hard rule:** the stack is **written once, in `AGENTS.md`**, and the user always confirms it. DDW
+can detect it and propose it — never assume it, never store it somewhere else.
+
+### Step 1.1: Does the stack cover what this repo actually does?
+
+A declared stack can be complete and still leave DDW running the wrong commands: the repo has a
+linter DDW was never told about, or a CI job that runs something no gate will.
+
+Invoke `Skill(skill="ddw-context-check")`. Once per ticket, here, because this is the last moment
+before the pipeline starts spending time on the wrong commands.
+
+**It does not block.** It reports what the repo declares and the context file does not, with the
+evidence and the line to add. The user accepts, declines, or ignores it, and the answer is recorded
+so it is not asked again for this ticket. If there is nothing to report it says one line and gets out
+of the way. Do not turn its findings into gates, and do not treat a decline as a reason to stop:
+whether a project should run a linter is not DDW's call.
+
+---
+
+## Step 2: Tier Classification
+
+Analyze the user's request:
+
+### QUERY (Stateless)
+The user asks something informational, without requesting code changes.
+- Examples: "how does X work?", "where is the file that does Y?", "explain this function to me"
+- **Action:** answer directly. Do not touch `.ddw-state.json`. Do not change phase. Done.
+
+> **Anything that is not about the repo's code is not classified at all.** Drafting an email,
+> putting a deck together, summarizing a sprint: do it and move on, with no tier, no state and no
+> tool restrictions. DDW governs what happens to the code, not everything you are asked for.
+
+### QUICK-FIX (cross-cutting modifier)
+
+**Evaluate FIRST, before FIX/FEATURE.** A mechanical heuristic over the expected diff
+(estimated from the user's description and the likely paths):
+
+1. ≤ 10 LOC modified.
+2. 1 code file, or several only if they are docs/comments.
+3. Does NOT touch: schemas, migrations, HTTP endpoints, authentication, authorization, input
+   validation, or paths marked as security-sensitive in `AGENTS.md` ("Stack" section).
+4. Does NOT add new files.
+5. Does NOT introduce dependencies.
+
+If **ALL** hold → `tier="QUICK-FIX"`. If **any** fails → continue with the normal classification
+(FIX / FEATURE).
+
+- Valid examples: fixing a typo in a log message, adjusting a comment, changing a non-sensitive
+  constant's value.
+- Short pipeline: `CLASSIFY → DEFINE → CODE → RELEASE` (skips PLAN and VERIFY). Only artifact: a
+  4-line fix-brief. Only security validation: SAST.
+- Safeguard: if during CODE something tries to write a sensitive path or the diff exceeds 10 LOC,
+  the shared gate blocks and asks you to abandon the ticket and reclassify
+  it as a FIX (escalating means a new ticket, a new branch and an RCA — it is not a step backwards
+  inside the same flow).
+
+### FIX
+Meets ALL of these criteria:
+- Fixes a bug or defect in existing behavior
+- Does NOT change behavior visible to the end user
+- Does NOT modify public interfaces (APIs, schemas, exported types)
+- Does NOT change architecture
+- Examples: a typo in logic, a query correction, a config adjustment, fixing broken validation,
+  a live production bug
+
+A FIX always gets a **root cause analysis** in DEFINE (`docs/ddw/specs/rca-{ticket}.md`) and a
+**rollback plan** in its fix-plan. That is what separates it from QUICK-FIX: a QUICK-FIX is too
+small to have a root cause worth writing down or a revert worth planning.
+
+### FEATURE
+Meets ANY of these criteria:
+- Adds new user-visible functionality
+- Modifies a public API or a data schema
+- Changes navigation flows or UX
+- Introduces a new architectural dependency
+- Requires a data migration
+- Examples: a new endpoint, a new page, a module refactor, integrating an external service
+
+### DISCOVERY
+Meets ANY of these criteria:
+- The user wants to explore an idea without implementing code yet
+- The PM or user wants functionality defined at a high level
+- PRDs need to be created for a new project or product
+- The request is vague/broad and needs refining before it becomes executable tickets
+- The goal is to plan how to split a large project into implementable features
+- Examples: "I want to build a marketplace", "I need to define the features of a CRM", "I have this
+  idea and want to turn it into PRDs", "the PM wants the requirements for X documented"
+
+**Difference from FEATURE:** FEATURE will implement code. DISCOVERY only produces documentation
+(concept + PRDs). DISCOVERY's PRDs can later be executed as individual FEATURE tickets.
+
+### When in doubt
+Ask the user: "Does this change what the user sees or how they interact with the system? Is it
+urgent because of production impact? Does it change the architecture? Or are you exploring an idea
+and want to define it before implementing?"
+
+---
+
+## Step 2.1: Stop for stateless classifications
+
+If the classification is **QUERY**:
+- Answer per the rule defined above.
+- **Do NOT continue to Steps 3 through 6.** Those steps only apply to the stateful tiers
+  (QUICK-FIX, FIX, FEATURE, DISCOVERY).
+- Do not touch `.ddw-state.json`. Do not change phase. Done.
+
+---
+
+## Step 3: Ticket
+
+### First: is this continuing a split PRD?
+
+Before asking anything, list `docs/ddw/prd/`. A file named `prd-{TICKET}{letter}.md` whose ticket has
+no closeout in `history` is work that was already defined and never run — and if the user just said
+something like *"continue with the PRD"* or *"the next one"*, that is almost certainly what they
+mean.
+
+When there is one, **propose it instead of running the intake from scratch**:
+
+```
+This looks like FEAT-001b — "[title from its PRD]", the next sub-ticket of FEAT-001.
+Its PRD is already written. Continue with it?
+```
+
+On confirmation: `ticket` = the sub-ticket ID, `title` from its PRD, `tracker` inherited from the
+parent, and **the tier is the parent's** — a split does not reclassify the work, it divides it.
+Then carry on with step 4.
+
+Two things not to do. Do not invent a fresh `FEAT-NNN` for work that already has a PRD: you end up
+with two tickets for one deliverable and the parent index pointing at neither. And do not skip
+DEFINE — the PRD gets re-validated there, always, for the reasons that phase gives.
+
+If the user is clearly asking for something else, say what is pending in one line and get on with
+what they asked. This is a proposal, not a redirection.
+
+### Then, for new work
+
+If the tier is stateful (QUICK-FIX, FIX, FEATURE or DISCOVERY):
+
+1. Ask: "Is there an associated tracker ticket? If so, which one?"
+2. **If the user provides a tracker ticket** (e.g. `PROJ-123`):
+   - `ticket` = the tracker ID (e.g. `"PROJ-123"`)
+   - `title` = the tracker ticket's title
+   - `tracker` = the tracker ID (same value as `ticket`)
+   - Every artifact, path and status line will use this ID.
+3. **If there is no tracker ticket:**
+   - Ask: "Do you want me to propose a tracker ticket for this?"
+     - If yes → propose one per `.ddw/rules/tracker.instructions.md`. If it gets created, apply
+       rule 2.
+     - If no → generate a sequential internal ID (`FIX-NNN`, `FEAT-NNN` or `DISC-NNN`).
+       `tracker` = `null`.
+
+---
+
+## Step 4: Presenting to the User
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  CLASSIFY — Classification                               │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  Classification: [TIER]                                  │
+│  Reason: [one line explaining why]                       │
+│  Mode: [full pipeline / short lane / free ideation]      │
+│  Ticket: [PROJ-XXX with a tracker / FIX-NNN without]     │
+│  Source: [tracker / internal]                            │
+│  Title: [tracker ticket title, or generated]             │
+│  Stack: [reference to AGENTS.md ("Stack" section)]       │
+│                                                          │
+│  Do you confirm this classification?                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+Wait for explicit confirmation **of this specific classification**. Generic phrases like "go ahead",
+"next one", "continue" said in the context of ANOTHER ticket do NOT constitute approval of this
+classification. The user has to answer THIS table.
+
+If the user objects:
+1. Briefly explain your reasoning.
+2. If they insist → accept the reclassification.
+
+---
+
+## Step 5: Create the Working Branch
+
+Only after the user confirms, **BEFORE updating the state:**
+
+1. Create the branch per `.ddw/rules/branches.instructions.md`:
+   - FEATURE → `feat/<ticket>-<short-name>`
+   - FIX and QUICK-FIX → `fix/<ticket>-<short-name>`
+   - DISCOVERY → `discovery/<ticket>-<short-name>`
+2. Confirm to the user: "Branch created: `[name]`"
+
+**Reason:** starting in DEFINE, artifacts are written to disk (PRDs, RCAs). Everything must live on
+the ticket's branch, never on `main`.
+
+---
+
+## Step 6: Transition
+
+1. Update `.ddw-state.json`:
+   - `tier` → the confirmed tier (`"QUICK-FIX"`, `"FIX"`, `"FEATURE"` or
+     `"DISCOVERY"`)
+   - `phase`:
+     - For `QUICK-FIX`, `FIX`, `FEATURE` → `"DEFINE"`
+     - For `DISCOVERY` → `"DISCOVERY"`
+   - `ticket` → the tracker ID if there is one (e.g. `"PROJ-123"`), or a sequential internal ID
+     (e.g. `"FIX-001"`, `"DISC-001"`)
+   - `title` → the tracker ticket's title if there is one, or the generated title
+   - `tracker` → the tracker ID, or `null` when the ID is internal
+   - Append a `history` entry for the transition CLASSIFY → DEFINE (or → DISCOVERY), **stamped
+     with `ticket` and `tier`** (see `.ddw/rules/state.instructions.md`). This is the first entry
+     that can carry a ticket — the one before it left IDLE, where there was none yet.
+
+2. **Build that write with the helper**, do not hand-assemble it:
+
+   ```bash
+   .ddw/scripts/transition.py --to DEFINE --tier <TIER> --action "<why this tier>"
+   ```
+
+   It prints the complete next state and self-validates against the graph first, so an illegal
+   transition fails here rather than being refused by the hook afterwards. Paste its output in a
+   single write, filling in `ticket`, `title` and `tracker` in that same write — the helper does not
+   set them, because free text through shell arguments is how quoting bugs get in.

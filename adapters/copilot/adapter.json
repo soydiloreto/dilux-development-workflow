@@ -1,0 +1,34 @@
+{
+  "$schema": "../adapter.schema.md",
+  "id": "copilot",
+  "label": "GitHub Copilot CLI",
+  "docs": "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills",
+  "skills": {
+    "dir": ".github/skills",
+    "note": "Copilot CLI's own location. It would also read .claude/skills, but DDW does not make one tool depend on another tool's directory."
+  },
+  "agents": {
+    "dir": ".github/agents",
+    "filename": "{name}.agent.md",
+    "frontmatter": {
+      "name": "{name}",
+      "description": "{description}",
+      "tools": "{tools}"
+    },
+    "when_readonly": {
+      "tools": "read, search"
+    }
+  },
+  "wiring": [
+    {
+      "from": "hooks",
+      "to": ".github/hooks"
+    },
+    {
+      "from": "scripts",
+      "to": ".github/hooks/ddw",
+      "chmod": "+x"
+    }
+  ],
+  "context_file": "AGENTS.md"
+}

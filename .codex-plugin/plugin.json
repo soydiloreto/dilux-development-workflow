@@ -1,0 +1,23 @@
+{
+  "name": "ddw",
+  "displayName": "DDW — Dilux Development Workflow",
+  "version": "0.9.0",
+  "description": "An agent-driven development pipeline: phases in order, gates enforced by hooks outside the model, auditors that did not write the code they review, and state that survives closing the session.",
+  "author": {
+    "name": "Pablo Ariel Di Loreto",
+    "url": "https://github.com/soydiloreto"
+  },
+  "homepage": "https://github.com/soydiloreto/dilux-development-workflow",
+  "repository": "https://github.com/soydiloreto/dilux-development-workflow",
+  "license": "Apache-2.0",
+  "keywords": [
+    "agentic",
+    "workflow",
+    "spec-driven",
+    "pipeline",
+    "orchestration"
+  ],
+  "skills": "./skills/",
+  "agents": "./agents/",
+  "hooks": "./adapters/codex/plugin-hooks.json"
+}

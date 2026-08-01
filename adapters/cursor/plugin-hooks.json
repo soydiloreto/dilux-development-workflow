@@ -1,0 +1,34 @@
+{
+  "_comment": "cursor plugin hooks — the same six scripts as the drop-in wiring, resolved from the plugin root instead of the repo. NOT at hooks/hooks.json: that path is Claude's, and a foreign dialect there makes Claude discard the file whole (measured). UNVERIFIED: ${CURSOR_PLUGIN_ROOT} is the variable this tool is expected to expand; nothing here has been driven against the live product, and acceptance is what turns that into a claim.",
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/adapters/cursor/hooks/session-start.sh",
+        "timeout": 15
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/adapters/cursor/hooks/pre-tool-use.sh",
+        "matcher": "Write|Delete|Shell",
+        "failClosed": true,
+        "timeout": 15
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/adapters/cursor/hooks/post-write.sh",
+        "matcher": "Write|Delete|Shell",
+        "failClosed": true,
+        "timeout": 15
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "${CURSOR_PLUGIN_ROOT}/adapters/cursor/hooks/pre-compact.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}

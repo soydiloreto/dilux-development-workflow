@@ -1,0 +1,63 @@
+name: 🔌 Adapter field report
+description: You drove DDW against a real tool. Tell us what it did.
+title: "[field report] <tool> <version>"
+labels: [field-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The automated suite proves the gate answers an event correctly. It cannot
+        prove **the tool sends that event** — the envelope shape, the hook name,
+        the key a verdict has to use are facts about someone else's product, and
+        the only way to know them is to watch it happen.
+
+        So this report closes the one gap the checks structurally cannot. It is
+        the most useful thing you can send that is not a bug.
+
+  - type: input
+    id: tool
+    attributes:
+      label: Tool and version
+      placeholder: Codex CLI 0.14.2
+    validations: {required: true}
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+    validations: {required: true}
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: The four acceptance checks
+      description: From `scripts/acceptance.md`. Tick only what you actually saw.
+      options:
+        - label: "1. It boots on its own — the first message gets an answer that knows the phase."
+        - label: "2. It classifies instead of coding — a feature request comes back as a proposed tier, and waits."
+        - label: "3. It refuses source before the spec — **with the hook's own message**, not the agent politely declining."
+        - label: "4. It refuses a forged state — a `.ddw-state.json` written from a shell is objected to."
+
+  - type: textarea
+    id: refusal
+    attributes:
+      label: The refusal from check 3, verbatim
+      description: >
+        Including the prefix. On Claude it reads `PreToolUse:Write hook error:`.
+        If there is no prefix from the tool's own hook plumbing, the hook did not
+        run and the check did not pass — which is a finding, not a failure to report.
+      render: shell
+
+  - type: textarea
+    id: failed
+    attributes:
+      label: What failed, and what you saw instead
+    validations: {required: true}
+
+  - type: markdown
+    attributes:
+      value: |
+        If one of the four failed, the fix lands in `adapters/<tool>/` **and** as a
+        new mutation in `scripts/mutate.py`. The mutation is what stops it coming
+        back — so a report with enough detail to build one is worth several
+        without.

@@ -1,0 +1,40 @@
+{
+  "$schema": "../adapter.schema.md",
+  "id": "opencode",
+  "label": "OpenCode",
+  "docs": "https://opencode.ai/docs/skills/",
+  "skills": {
+    "dir": ".opencode/skills",
+    "note": "OpenCode's own location. It would also read .claude/skills, but DDW does not make one tool depend on another tool's directory."
+  },
+  "commands": {
+    "dir": ".opencode/commands",
+    "filename": "{name}.md",
+    "frontmatter": {
+      "description": "{description}"
+    },
+    "body": "Use the `{name}` skill to answer this. Follow it exactly.\n\n$ARGUMENTS",
+    "note": "OpenCode discovers skills but does not expose them as /name — that is a separate feature reading .opencode/commands/ (plural, per opencode.ai/docs/commands). Without this the installer's own closing line told the user to type /ddw-status and the TUI answered that no such command exists."
+  },
+  "agents": {
+    "dir": ".opencode/agents",
+    "filename": "{name}.md",
+    "frontmatter": {
+      "description": "{description}",
+      "mode": "subagent"
+    },
+    "when_readonly": {
+      "permission": {
+        "edit": "deny"
+      }
+    },
+    "_when_readonly_note": "OpenCode's permission keys are read/edit/bash/… — there is no `write`. `edit: deny` already covers write, edit and apply_patch."
+  },
+  "wiring": [
+    {
+      "from": "plugin",
+      "to": ".opencode/plugins"
+    }
+  ],
+  "context_file": "AGENTS.md"
+}

@@ -1,0 +1,45 @@
+name: mutations
+
+# Split from `verify` because it is slow by nature — it runs the whole suite
+# once per injected fault — and because the two answer different questions.
+# `verify` asks whether the suite passes. This asks whether the suite CAN fail,
+# which is the only way to tell a passing suite from one that cannot go red.
+#
+# Not on every push to every branch: at ninety-odd faults that is the full suite
+# ninety times for a typo fix. On the pull request, on main, and weekly.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Mondays, 06:00 UTC. Nothing here reaches the network, so this does not
+    # catch a third party moving — it catches the runner image moving under us,
+    # which has broken this suite before.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  mutations:
+    name: can the suite fail?
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - run: python3 -m pip install --quiet pyyaml
+      # Every mutation here is a defect that actually shipped once; a surviving
+      # one is a check that does not exist. This job must not be made "faster"
+      # by deleting mutations — that is deleting the measurement, not the cost.
+      - run: python3 scripts/mutate.py

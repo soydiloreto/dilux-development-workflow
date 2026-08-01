@@ -1,0 +1,19 @@
+# Blank issues are off on purpose. Not to be strict — because the two things
+# that make a report actionable here (the state, and the exact refusal the tool
+# printed) are the two things a blank box never contains, and asking for them
+# afterwards costs a round trip and usually the reporter.
+blank_issues_enabled: false
+
+contact_links:
+  - name: 🔒 Report a vulnerability
+    url: https://github.com/soydiloreto/dilux-development-workflow/security/advisories/new
+    about: >
+      Privately, never as a public issue. "This guard can be bypassed by X" is
+      the most valuable thing you can send — see SECURITY.md.
+
+  - name: 📖 Why does DDW do it that way?
+    url: https://github.com/soydiloreto/dilux-development-workflow/blob/main/docs/RATIONALE.md
+    about: >
+      Every decision that could have gone the other way, what it rests on, and
+      what it costs. Check here before opening an issue about a design choice —
+      the disagreement may already be written down.

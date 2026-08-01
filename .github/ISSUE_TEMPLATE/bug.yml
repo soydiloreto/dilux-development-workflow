@@ -1,0 +1,61 @@
+name: 🐛 Bug
+description: A gate let something through, refused something legal, or the pipeline broke.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The fix for a bug in a guard ships with a test built from your report, and
+        a mutation so it cannot come back. That is why the fields below ask for
+        the state and the exact message rather than a description — a
+        reproduction becomes a permanent check, a description becomes a guess.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what should have happened
+      placeholder: |
+        Writing to src/api.py from PLAN was allowed. It should have been refused.
+    validations: {required: true}
+
+  - type: textarea
+    id: state
+    attributes:
+      label: .ddw-state.json
+      description: >
+        The whole file, as it was. Redact ticket titles if they are confidential —
+        the phase, tier, gates and history are what matter.
+      render: json
+    validations: {required: true}
+
+  - type: textarea
+    id: message
+    attributes:
+      label: What the tool printed, verbatim
+      description: >
+        Copy it exactly, including the hook prefix if there was one. Whether a
+        refusal came from the hook or from the model politely declining is the
+        whole difference, and only the prefix tells them apart.
+      render: shell
+    validations: {required: true}
+
+  - type: input
+    id: tool
+    attributes:
+      label: Tool and version
+      placeholder: Claude Code 2.1.220
+    validations: {required: true}
+
+  - type: input
+    id: ddw
+    attributes:
+      label: DDW version
+      description: From `.claude-plugin/plugin.json`, or the tag you installed.
+    validations: {required: true}
+
+  - type: checkboxes
+    id: suite
+    attributes:
+      label: Before opening
+      options:
+        - label: I ran `bash scripts/verify_install.sh` and pasted anything red above.

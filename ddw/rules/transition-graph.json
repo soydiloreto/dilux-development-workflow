@@ -1,0 +1,91 @@
+{
+  "format_version": "1.0",
+  "common": {
+    "IDLE->CLASSIFY": {
+      "gates": []
+    }
+  },
+  "_note": "no_walkaway: phases you cannot abandon or pause out of. At RELEASE nothing is left to decide, only steps to finish — so the closeout's gates cannot be dodged by relabelling the exit.",
+  "no_walkaway": [
+    "RELEASE"
+  ],
+  "tiers": {
+    "FEATURE": {
+      "CLASSIFY->DEFINE": {
+        "gates": []
+      },
+      "DEFINE->PLAN": {
+        "gates": [
+          "define"
+        ]
+      },
+      "PLAN->CODE": {
+        "gates": [
+          "spec",
+          "threat"
+        ]
+      },
+      "CODE->VERIFY": {
+        "gates": [
+          "tests",
+          "sast"
+        ]
+      },
+      "VERIFY->RELEASE": {
+        "gates": [
+          "verify"
+        ]
+      },
+      "RELEASE->IDLE": {
+        "gates": [
+          "commit",
+          "pr"
+        ]
+      },
+      "PLAN->DEFINE": {
+        "gates": []
+      },
+      "VERIFY->CODE": {
+        "gates": []
+      }
+    },
+    "FIX": {
+      "extends": "FEATURE"
+    },
+    "QUICK-FIX": {
+      "CLASSIFY->DEFINE": {
+        "gates": []
+      },
+      "DEFINE->CODE": {
+        "gates": [
+          "define"
+        ]
+      },
+      "CODE->RELEASE": {
+        "gates": [
+          "define",
+          "tests",
+          "sast"
+        ]
+      },
+      "RELEASE->IDLE": {
+        "gates": [
+          "commit",
+          "pr"
+        ]
+      }
+    },
+    "DISCOVERY": {
+      "CLASSIFY->DISCOVERY": {
+        "gates": []
+      },
+      "DISCOVERY->IDLE": {
+        "gates": [
+          "commit",
+          "pr"
+        ]
+      }
+    }
+  },
+  "_resume_note": "Resuming a paused ticket re-enters the phase it was paused in. There is no list of resumable phases: the proof is the pause itself. The entry before the resume must be a `pause:` ending at IDLE, and the phase it paused FROM is the only one the resume may re-enter. A list would have been a second, weaker way to say the same thing — and one more place to forget to update."
+}

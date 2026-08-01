@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": ".cursor/hooks/ddw/session-start.sh",
+        "timeout": 15
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/ddw/pre-tool-use.sh",
+        "matcher": "Write|Delete|Shell",
+        "failClosed": true,
+        "timeout": 15
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": ".cursor/hooks/ddw/post-write.sh",
+        "matcher": "Write|Delete|Shell",
+        "failClosed": true,
+        "timeout": 15
+      }
+    ],
+    "preCompact": [
+      {
+        "command": ".cursor/hooks/ddw/pre-compact.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}

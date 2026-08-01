@@ -1,0 +1,9 @@
+{
+  "name": "ddw",
+  "version": "0.9.0",
+  "description": "Dilux Development Workflow — a spec-driven agentic pipeline enforced by deterministic gates",
+  "type": "module",
+  "main": "adapters/opencode/plugin/ddw.js",
+  "exports": "./adapters/opencode/plugin/ddw.js",
+  "license": "Apache-2.0"
+}

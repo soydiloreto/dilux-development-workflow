@@ -1,0 +1,29 @@
+name: ❓ Question
+description: You read the docs and something is still unclear.
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Worth a look first, because these answer most of it:
+        [README](../blob/main/README.md) ·
+        [AGENTS-MD.md](../blob/main/docs/AGENTS-MD.md) (the file you fill in, and the
+        headings that fail quietly when absent) ·
+        [RATIONALE.md](../blob/main/docs/RATIONALE.md) (why, and what it costs) ·
+        [DEVELOPMENT.md](../blob/main/docs/DEVELOPMENT.md) (how it works inside).
+
+        A question that turns out to be unclear documentation is a documentation
+        fix, and those are welcome as questions — you do not have to be sure which
+        one it is.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+    validations: {required: true}
+
+  - type: textarea
+    id: looked
+    attributes:
+      label: Where you already looked
+      description: Saves us both from an answer you have already read.

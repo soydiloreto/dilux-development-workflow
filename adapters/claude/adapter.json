@@ -1,0 +1,36 @@
+{
+  "$schema": "../adapter.schema.md",
+  "id": "claude",
+  "label": "Claude Code",
+  "docs": "https://docs.claude.com/en/docs/claude-code",
+  "skills": {
+    "dir": ".claude/skills",
+    "note": "native location"
+  },
+  "skills_are_slash": true,
+  "_skills_are_slash_note": "Claude Code turns every skill into /name on its own (observed: /ddw:ddw-status in plugin mode). Generating commands here would ship each skill twice.",
+  "agents": {
+    "dir": ".claude/agents",
+    "filename": "{name}.md",
+    "frontmatter": {
+      "name": "{name}",
+      "description": "{description}",
+      "model": "inherit",
+      "tools": "{tools}"
+    }
+  },
+  "wiring": [
+    {
+      "from": "hooks",
+      "to": ".claude/hooks",
+      "chmod": "+x"
+    }
+  ],
+  "settings_merge": {
+    "from": "settings.json",
+    "to": ".claude/settings.json",
+    "merge_key": "hooks"
+  },
+  "context_file": "CLAUDE.md",
+  "snippet": "CLAUDE.snippet.md"
+}

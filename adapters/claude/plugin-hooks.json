@@ -1,0 +1,56 @@
+{
+  "_comment": "Claude's plugin hooks. Declared by path in .claude-plugin/plugin.json rather than left at the default hooks/hooks.json — that default is ALSO Gemini's, and one directory cannot hold both dialects: a Gemini event name in Claude's file makes Claude discard the file whole, silently, and install enforcing nothing. Measured. So each tool names its own file and nothing collides.\n\nDerived from adapters/claude/settings.json with only the root variable swapped; the suite fails if the two ever say different things.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/adapters/claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/adapters/claude/hooks/enforce.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/adapters/claude/hooks/validate-state-transition.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/adapters/claude/hooks/validate-state-postwrite.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/adapters/claude/hooks/pre-compact.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

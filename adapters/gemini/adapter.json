@@ -1,0 +1,37 @@
+{
+  "$schema": "../adapter.schema.md",
+  "id": "gemini",
+  "label": "Google Gemini CLI",
+  "docs": "https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md",
+  "skills": {
+    "dir": ".gemini/skills",
+    "note": "Gemini's own location. It also reads .agents/skills, but a tool gets its own directory: DDW never makes one tool depend on another's."
+  },
+  "agents": {
+    "dir": ".gemini/agents",
+    "filename": "{name}.md",
+    "frontmatter": {
+      "name": "{name}",
+      "description": "{description}",
+      "model": "inherit"
+    },
+    "when_readonly": {
+      "tools": "[read_file, read_many_files, glob, search_file_content]"
+    }
+  },
+  "wiring": [
+    {
+      "from": "hooks",
+      "to": ".gemini/hooks/ddw",
+      "chmod": "+x"
+    }
+  ],
+  "settings_merge": {
+    "from": "settings.json",
+    "to": ".gemini/settings.json",
+    "merge_key": "hooks"
+  },
+  "context_file": "GEMINI.md",
+  "trust_note": "Gemini fingerprints project hooks: if a hook's name or command changes (a git pull, for instance), it is treated as new and untrusted until you approve it again.",
+  "snippet": "GEMINI.snippet.md"
+}

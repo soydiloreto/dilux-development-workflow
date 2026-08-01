@@ -1,0 +1,47 @@
+name: 💡 Idea or design disagreement
+description: Something the method should do differently, or a decision you would have made another way.
+labels: [idea]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read `docs/RATIONALE.md` first — every decision that could reasonably have
+        gone the other way is in there with what it rests on and what it costs.
+        If yours is one of them, the useful argument is against the reasoning
+        written there rather than against the outcome.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: The situation where the method costs you something today. Not the solution yet.
+    validations: {required: true}
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would do instead
+    validations: {required: true}
+
+  - type: textarea
+    id: cost
+    attributes:
+      label: What it would cost
+      description: >
+        Required, and not a formality. Every entry in RATIONALE.md names its
+        cost, because a proposal with only its upside reads like reasoning and
+        gives nobody anything to weigh. What gets slower, harder, or less safe?
+    validations: {required: true}
+
+  - type: dropdown
+    id: enforceable
+    attributes:
+      label: Could a hook enforce it?
+      description: >
+        The line DDW draws: if a rule matters it is executable, and if it cannot
+        be executed it does not get to call itself a gate.
+      options:
+        - "Yes — a script could verify it from the repo"
+        - "No — it depends on people or systems outside the repo"
+        - "Not sure"
+    validations: {required: true}

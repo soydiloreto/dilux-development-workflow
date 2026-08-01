@@ -1,0 +1,54 @@
+{
+  "_comment": "codex plugin hooks — the same six scripts as the drop-in wiring, resolved from the plugin root instead of the repo. NOT at hooks/hooks.json: that path is Claude's, and a foreign dialect there makes Claude discard the file whole (measured). UNVERIFIED: ${CODEX_PLUGIN_ROOT} is the variable this tool is expected to expand; nothing here has been driven against the live product, and acceptance is what turns that into a claim.",
+  "description": "DDW — Dilux Development Workflow: FSM enforcement.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DDW_PLUGIN_ROOT=\"${CODEX_PLUGIN_ROOT}\" bash \"${CODEX_PLUGIN_ROOT}/adapters/codex/hooks/session-start.sh\"",
+            "statusMessage": "DDW: booting the pipeline",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DDW_PLUGIN_ROOT=\"${CODEX_PLUGIN_ROOT}\" bash \"${CODEX_PLUGIN_ROOT}/adapters/codex/hooks/pre-tool-use.sh\"",
+            "statusMessage": "DDW: validating the transition",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DDW_PLUGIN_ROOT=\"${CODEX_PLUGIN_ROOT}\" bash \"${CODEX_PLUGIN_ROOT}/adapters/codex/hooks/post-write.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DDW_PLUGIN_ROOT=\"${CODEX_PLUGIN_ROOT}\" bash \"${CODEX_PLUGIN_ROOT}/adapters/codex/hooks/pre-compact.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

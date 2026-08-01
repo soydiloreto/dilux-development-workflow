@@ -1,0 +1,58 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "name": "ddw-session-start",
+            "type": "command",
+            "command": "bash \"$GEMINI_PROJECT_DIR/.gemini/hooks/ddw/session-start.sh\"",
+            "description": "DDW: boot the pipeline for this session",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "write_file|replace",
+        "hooks": [
+          {
+            "name": "ddw-validate-transition",
+            "type": "command",
+            "command": "bash \"$GEMINI_PROJECT_DIR/.gemini/hooks/ddw/pre-tool-use.sh\"",
+            "description": "DDW: refuse a write that would break the state machine",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "write_file|replace|run_shell_command",
+        "hooks": [
+          {
+            "name": "ddw-revalidate-state",
+            "type": "command",
+            "command": "bash \"$GEMINI_PROJECT_DIR/.gemini/hooks/ddw/post-write.sh\"",
+            "description": "DDW: catch a state edited around the pre-write hook",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "PreCompress": [
+      {
+        "hooks": [
+          {
+            "name": "ddw-pre-compress",
+            "type": "command",
+            "command": "bash \"$GEMINI_PROJECT_DIR/.gemini/hooks/ddw/pre-compact.sh\"",
+            "description": "DDW: re-read the pipeline after compression, never infer it",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}

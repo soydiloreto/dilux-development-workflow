@@ -1,0 +1,36 @@
+{
+  "$schema": "../adapter.schema.md",
+  "id": "cursor",
+  "label": "Cursor",
+  "docs": "https://cursor.com/docs/hooks",
+  "skills": {
+    "dir": ".cursor/skills",
+    "note": "Cursor's own location. It also reads .agents/skills and other tools' directories for compatibility, but DDW installs into the tool's native path."
+  },
+  "agents": {
+    "dir": ".cursor/agents",
+    "filename": "{name}.md",
+    "frontmatter": {
+      "name": "{name}",
+      "description": "{description}",
+      "model": "inherit"
+    },
+    "when_readonly": {
+      "readonly": true
+    }
+  },
+  "wiring": [
+    {
+      "from": "hooks",
+      "to": ".cursor/hooks/ddw",
+      "chmod": "+x"
+    }
+  ],
+  "settings_merge": {
+    "from": "hooks.json",
+    "to": ".cursor/hooks.json",
+    "merge_key": "hooks",
+    "base": { "version": 1 }
+  },
+  "context_file": "AGENTS.md"
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "../adapter.schema.md",
+  "id": "codex",
+  "label": "OpenAI Codex CLI",
+  "docs": "https://developers.openai.com/codex/hooks",
+  "skills": {
+    "dir": ".agents/skills",
+    "note": "Codex scans .agents/skills (NOT .codex/skills). The same tree is read by Gemini CLI and Cursor, so one directory serves three tools."
+  },
+  "agents": {
+    "dir": ".codex/agents",
+    "filename": "{name}.toml",
+    "format": "toml",
+    "frontmatter": {
+      "name": "{name}",
+      "description": "{description}"
+    },
+    "when_readonly": {
+      "sandbox_mode": "read-only"
+    }
+  },
+  "wiring": [
+    {
+      "from": "hooks",
+      "to": ".codex/hooks/ddw",
+      "chmod": "+x"
+    }
+  ],
+  "settings_merge": {
+    "from": "hooks.json",
+    "to": ".codex/hooks.json",
+    "merge_key": "hooks"
+  },
+  "context_file": "AGENTS.md",
+  "trust_note": "Codex requires you to trust a command hook before it runs, and re-arms that gate whenever the hook's definition changes. Run /hooks in Codex and approve DDW's, or the pipeline is advisory only."
+}
