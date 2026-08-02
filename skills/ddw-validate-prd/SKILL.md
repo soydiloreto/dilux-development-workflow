@@ -67,7 +67,9 @@ fix-brief's 4 sections (Bug, Change, Regression test, Risk) present and non-empt
    produce a concrete disambiguation question** with 2–4 options and what
    choosing each one means, in the user's language and not the repo's.
 5. Show the whole table, the totals, the verdict and **the link to the full
-   report** the script wrote next to the PRD, and ask for approval.
+   report** the script wrote next to the PRD, and ask for approval. **Every
+   run, including a re-validation of a PRD that has not changed** — the receipt
+   matching says the bytes are the same, not that anyone read what was checked.
 6. If the PRD is edited after validating, run the script again: the receipt is
    bound to the content, and a stale one does not open the gate.
 

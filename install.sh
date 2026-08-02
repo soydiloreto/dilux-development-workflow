@@ -217,10 +217,12 @@ else
       '#   .ddw-paused/     = paused tickets' \
       '#   .ddw-sessions/   = live session markers' \
       '#   .ddw-journal.jsonl = transitions that landed; outlives the state file' \
+      '#   .ddw/**/__pycache__/ = bytecode from running the method'"'"'s own scripts' \
       '.ddw-state.json' \
       '.ddw-paused/' \
       '.ddw-sessions/' \
       '.ddw-journal.jsonl' \
+      '.ddw/**/__pycache__/' \
       '# END DDW'
   } >> "$GITIGNORE"
   echo "  ✓ .gitignore             DDW block added (the state is never committed)"

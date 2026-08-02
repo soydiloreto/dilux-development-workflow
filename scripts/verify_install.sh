@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-411}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-420}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -496,6 +496,16 @@ PY
     git add -A >/dev/null 2>&1
     git status --porcelain | grep -q '\.ddw-state\.json' \
       && exit 1 || exit 0 ) && ok ".ddw-state.json is gitignored" || bad ".ddw-state.json WOULD BE COMMITTED"
+
+  # Running the method's own scripts leaves bytecode inside .ddw/, and a drop-in
+  # is meant to be committed — so with no rule for it the user either commits
+  # .pyc files or reads the same `git status` noise forever. Found on the first
+  # real session, by the model, which mentioned it twice before anyone looked.
+  ( cd "$R" && mkdir -p .ddw/scripts/__pycache__ \
+    && : > .ddw/scripts/__pycache__/hook-gate.cpython-312.pyc
+    git status --porcelain | grep -q '__pycache__' \
+      && exit 1 || exit 0 ) && ok "and so is the bytecode the method leaves behind when it runs" \
+      || bad "running DDW dirties the user's git status with __pycache__, and a drop-in commits it"
 done
 
 # ── 2. The FSM, which every adapter shares ────────────────────────────────────
@@ -986,6 +996,21 @@ python3 "$SELF/ddw/scripts/validate-transition.py" --mode pre --state "$VP/.ddw-
 [ "$?" = "2" ] \
   && ok "and the hook refuses it too — the receipt is not optional for a model that writes the state itself" \
   || bad "a plain Write of the same state opens the define gate with no receipt: the guarantee has a way around it"
+
+# The refusal is the most-read sentence this product has, and nothing read it.
+# The reason carried a `DDW: ` of its own while every caller adds one — the
+# helper stripped it back out by hand, the hook did not, and a live run showed
+# `DDW blocked this write: DDW: the define gate…`. Prefixing belongs to whoever
+# is speaking, once; a workaround in one caller is not a fix in the other.
+VPMSG="$(python3 "$SELF/ddw/scripts/validate-transition.py" --mode pre --state "$VP/.ddw-state.json" \
+  --graph "$SELF/ddw/rules/transition-graph.json" < "$VP/ev.json" 2>&1 >/dev/null)"
+case "$VPMSG" in
+  *"DDW blocked this write: the "*gate*"validation receipt"*)
+    ok "and the refusal reads as one sentence — the reason carries no prefix of its own" ;;
+  *"write: DDW:"*|*"DDW: DDW:"*)
+    bad "the refusal doubles its prefix — the user reads 'DDW blocked this write: DDW: …'" ;;
+  *) bad "the refusal no longer names the missing receipt: $VPMSG" ;;
+esac
 
 # The shell never reaches a write tool. Post mode is where that write is caught,
 # and it asks about the edge the journal has not seen yet — never about the ones
@@ -2546,6 +2571,24 @@ python3 "$DC/.ddw/scripts/session-boot.py" --repo "$DC" --session-id d1 | grep -
 section "Error paths are demanded where they can still be met"
 
 VR="$SELF/ddw/rules/validation-rules.instructions.md"
+
+# The rule said "paste it verbatim, not a summary" and a live run pasted five
+# complete tables and then collapsed the SIXTH — a re-validation of an unchanged
+# artifact — to "PASSED (7 checks)", at the moment approval was being asked for.
+# The protocol never named that case, so the model reasoned its way out of it.
+grep -q 'A re-validation is a validation' "$VR" \
+  && ok "a re-validation shows the whole table too, and the protocol says so" \
+  || bad "nothing tells a re-run to print the table; 'you already saw this' collapses it again"
+
+# In the catalog AND in each skill: the skill is what the model loads and
+# executes. The one that collapsed the table had read the skill, not the catalog.
+VRMISS=""
+for S in ddw-validate-prd ddw-validate-spec ddw-threat-modeling ddw-verify-module; do
+  grep -qi 'including a re-validation' "$SELF/skills/$S/SKILL.md" || VRMISS="$VRMISS $S"
+done
+[ -z "$VRMISS" ] \
+  && ok "and every validation skill repeats it where the protocol is actually executed" \
+  || bad "the catalog says it and these skills do not, which is where it gets read:$VRMISS"
 
 grep -q '^| F-SPEC-16 |' "$VR" \
   && ok "PLAN requires a test for every error a block documents" \

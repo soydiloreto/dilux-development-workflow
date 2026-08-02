@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Validation Rules — Central Catalog
@@ -388,6 +388,16 @@ next to the artifact as `<artifact>.validation.md`.
 
 A run that shows the user no checklist did not validate anything they can act on. The user is the one
 approving; approval on a summary is approval of a summary.
+
+**A re-validation is a validation, and it shows the whole table too.** Running the script again on an
+artifact that has not changed — reopening a ticket, resuming after a split, being asked to advance a
+second time — ends in the same paste, in full. The temptation to compress it is specific and it is
+wrong twice over: *"you already saw this"* is a claim about a previous screen, in a session that may
+not be this one, and *"the receipt already matches"* answers a different question — the receipt says
+the bytes are unchanged, not that anyone read what was checked. Measured live: the first run of five
+PRDs printed five complete tables, and the re-validation of the same artifact minutes later collapsed
+to `Validación: ✅ PASSED (7 checks)`. Same script, same output, half of it withheld at exactly the
+moment the user was asked to approve.
 
 ---
 

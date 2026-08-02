@@ -30,7 +30,7 @@ import time
 
 STALE_SECONDS = 2 * 60 * 60          # a marker not refreshed in 2h is a dead session
 GITIGNORE_ENTRIES = (".ddw-state.json", ".ddw-paused/", ".ddw-sessions/",
-                     ".ddw-journal.jsonl")
+                     ".ddw-journal.jsonl", ".ddw/**/__pycache__/")
 
 IDLE_STATE = {
     "tier": None,

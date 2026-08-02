@@ -19,6 +19,36 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.9.1] — Unreleased
+
+Three defects from the first real session against Claude Code. None of them was
+findable by the suite as it stood: each is about what a person sees or is left
+with after using the thing, which is the whole argument for driving it by hand.
+
+### Fixed
+
+- **A re-validation stopped printing its checklist.** The protocol says paste
+  the script's output verbatim, and a live run pasted five complete tables and
+  then collapsed the sixth — a re-validation of an unchanged PRD — to
+  `PASSED (7 checks)`, at exactly the moment approval was being asked for. The
+  rule never named that case, so the model reasoned its way out of it: *you
+  already saw this* is a claim about a previous screen, and *the receipt still
+  matches* answers a different question. Now stated in the catalog and in each
+  validation skill, because the skill is what gets loaded and executed.
+- **The refusal doubled its own prefix.** The gate's reason carried a `DDW: `
+  while every caller adds one of its own, so the user read `DDW blocked this
+  write: DDW: the define gate…`. `transition.py` had been stripping it back out
+  by hand — a workaround in one caller, and nothing in the other. The prefix
+  belongs to whoever is speaking; the reason no longer carries one.
+- **DDW dirtied the user's `git status` with its own bytecode.** Running the
+  method's scripts leaves `.ddw/scripts/__pycache__/`, and a drop-in is meant to
+  be committed — so the choice was commit `.pyc` files or read the noise
+  forever. Both writers of the managed `.gitignore` block now cover it.
+
+Nine checks and four mutations, so none of the three can come back quietly.
+
+---
+
 ## [0.9.0] — Unreleased
 
 **Pre-release.** The version says what the evidence says. Five of the eight gates

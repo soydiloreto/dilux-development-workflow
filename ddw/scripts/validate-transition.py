@@ -801,7 +801,11 @@ def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact
     if os.path.exists(os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))):
         return None
     rel = os.path.relpath(path, root)
-    return ("DDW: the %s gate needs a validation receipt for %s and there is none for its "
+    # No "DDW: " here. Every caller prefixes this reason with its own wording —
+    # `DDW blocked this write:`, `ddw-transition:`, `DDW:` — and a prefix baked
+    # into the reason arrives doubled at whichever caller did not know to strip
+    # it. One did, one did not, and the user read `DDW blocked this write: DDW:`.
+    return ("the %s gate needs a validation receipt for %s and there is none for its "
             "current content. Run `python3 .ddw/scripts/%s %s --tier <tier>` — a "
             "PASSED run writes the receipt. If the %s changed after validating, validate again."
             % (gate, rel, script, rel, artifact))
@@ -855,7 +859,7 @@ def _commit_evidence_missing(root, state):
     # does not exist. Slice past the status columns, then strip what is left.
     names = [ln[2:].strip() for ln in dirty.splitlines() if ln[2:].strip()][:3]
     more = "" if len(dirty.splitlines()) <= 3 else " (and others)"
-    return ("DDW: the commit gate says this work is committed, and git reports tracked changes "
+    return ("the commit gate says this work is committed, and git reports tracked changes "
             "still in the working tree: %s%s. Commit them, or this ticket closes over work that "
             "only exists on your disk." % (", ".join(names), more))
 

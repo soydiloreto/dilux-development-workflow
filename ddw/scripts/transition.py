@@ -180,7 +180,7 @@ def main():
         {**new_state, "ticket": new_state.get("ticket") or old_state.get("ticket")},
         args.gate or [])
     if reason:
-        print("ddw-transition: " + reason.replace("DDW: ", ""), file=sys.stderr)
+        print("ddw-transition: " + reason, file=sys.stderr)
         sys.exit(2)
 
     try:

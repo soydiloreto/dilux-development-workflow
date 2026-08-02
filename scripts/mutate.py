@@ -662,6 +662,23 @@ MUTATIONS = [
           '        "disk, never inferred from a post-compaction summary."\n',
           '        ""\n')),
 
+    # ── What the user actually reads ─────────────────────────────────────────
+    # Three defects found by installing it and using it, not by any of the above.
+    ("the refusal doubles its prefix and reads DDW blocked this write: DDW:",
+     edit("ddw/scripts/validate-transition.py",
+          'return ("the %s gate needs a validation receipt for %s and there is none for its "',
+          'return ("DDW: the %s gate needs a validation receipt for %s and there is none for its "')),
+    ("the method's own bytecode stops being gitignored, and the drop-in commits it",
+     edit("install.sh", "      '.ddw/**/__pycache__/' \\\n", "")),
+    ("the protocol stops saying a re-validation prints the table",
+     edit("ddw/rules/validation-rules.instructions.md",
+          "**A re-validation is a validation, and it shows the whole table too.**",
+          "A re-validation is whatever the model feels like.")),
+    ("a validation skill drops it where the protocol is executed",
+     edit("skills/ddw-validate-prd/SKILL.md",
+          "**Every\n   run, including a re-validation of a PRD that has not changed**",
+          "**Every run**")),
+
     # ── Attribution ──────────────────────────────────────────────────────────
     # The rule DDW ships to every repo it is installed in, applied here. Each of
     # these is a way the checker keeps returning success while checking nothing.

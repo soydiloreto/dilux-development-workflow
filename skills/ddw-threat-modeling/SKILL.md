@@ -87,8 +87,9 @@ its receipt. Then run:
 `python3 .ddw/scripts/validate_threat.py docs/ddw/security/threat-{ticket}.md --tier <tier>`
 
 (under a plugin install, resolve `.ddw/scripts/` at the plugin's method path). **Paste its output
-VERBATIM** — every row, every rule ID. A PASSED run writes the content-hashed receipt the `threat`
-gate demands; without it the PLAN→CODE transition refuses.
+VERBATIM** — every row, every rule ID, on **every** run, including a re-validation of a model that
+has not changed. A PASSED run writes the content-hashed receipt the `threat` gate demands; without it
+the PLAN→CODE transition refuses.
 
 **Every ❌ is a mandatory loop:** fix the model, run it again, until zero FAILs. Fix only what the
 rule names — a threat invented to fill a STRIDE row is security theater, which is the exact thing

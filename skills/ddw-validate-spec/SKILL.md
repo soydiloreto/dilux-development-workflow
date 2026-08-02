@@ -79,7 +79,9 @@ runs*. What follows is what they mean here.
 4. **Then ask about what is genuinely undecided**, with 2–4 concrete options and what each one
    means, in the user's language and not the repo's.
 5. Show the whole table, the totals, the verdict and **the link to the full report** the script
-   wrote next to the spec, and ask for approval.
+   wrote next to the spec, and ask for approval. **Every run, including a re-validation of a spec
+   that has not changed** — the receipt matching says the bytes are the same, not that anyone read
+   what was checked.
 
 If the spec is edited after validating, run the script again: the receipt is bound to the content,
 and a stale one does not open the gate.
