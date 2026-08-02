@@ -116,12 +116,13 @@ pass, which DDW did not watch happen.
 
 ## Status
 
-- **Claude Code** — exercised end to end, and **all four acceptance checks pass against the live
-  tool** (2.1.220, 2026-07-28; the record is in `scripts/acceptance.md`). Told to write source with
-  no approved spec, the write is refused by the hook rather than declined by the model.
-- **OpenCode** — the same four, against the live tool (1.18.9, 2026-07-29). That session is also
+- **Claude Code** — exercised end to end, and **all five acceptance checks pass against the live
+  tool** (2.1.220, 2026-08-02; the record is in `scripts/acceptance.md`). Told to write source with
+  no approved spec, the write is refused by the hook rather than declined by the model. That session
+  found four defects, none of which the suite could have reached.
+- **OpenCode** — the first four, against the live tool (1.18.9, 2026-07-29). That session is also
   where two defects were found, which is the argument for doing this by hand.
-- **Copilot CLI** — three of the four (1.0.75, 2026-07-29). The fourth is **detected and not
+- **Copilot CLI** — three of the first four (1.0.75, 2026-07-29). The fourth is **detected and not
   prevented**, and the ceiling is the tool's: its post hook cannot refuse anything.
 - **Codex CLI, Cursor, Gemini CLI** — each adapter is driven through its own hook, with its own
   event format, by the test suite: it must refuse an illegal transition and let a legal one through.

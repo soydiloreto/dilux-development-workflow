@@ -2310,13 +2310,13 @@ CLAUDE_ROW="$(grep '^| Claude Code | drop-in |' "$ACC" || true)"
 # is a check that reads as green while measuring nothing.
 case "$CLAUDE_ROW" in
   *"| — |"*)
-    grep -q "all four acceptance checks pass" "$SELF/README.md" \
-      && bad "the README says Claude passed all four, and acceptance.md records fewer" \
+    grep -q "all five acceptance checks pass" "$SELF/README.md" \
+      && bad "the README says Claude passed all five, and acceptance.md records fewer" \
       || ok "the README claims no more for Claude than the record holds" ;;
   *)
-    grep -q "all four acceptance checks pass" "$SELF/README.md" \
-      && ok "the README reports Claude's four acceptance checks, as the record does" \
-      || bad "acceptance.md records four passes for Claude and the README never says so" ;;
+    grep -q "all five acceptance checks pass" "$SELF/README.md" \
+      && ok "the README reports Claude's five acceptance checks, as the record does" \
+      || bad "acceptance.md records five passes for Claude and the README never says so" ;;
 esac
 
 # That check reads one row. The status section is a claim about all of them, and
@@ -2331,13 +2331,20 @@ root = sys.argv[1]
 acc = open(os.path.join(root, "scripts/acceptance.md"), encoding="utf-8").read()
 readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
 
-# | Tool | Install | Version | Date | 1 | 2 | 3 | 4 |. A tool is "driven" if any
-# install path shows a live pass, because that is what the sentence is about:
-# whether anyone has ever watched this tool run, not how far they got.
+# A tool is "driven" if any install path shows a live pass, because that is what
+# the sentence is about: whether anyone has ever watched this tool run, not how
+# far they got. The row width comes from the header rather than a literal — it
+# was pinned at eight, the ritual grew a fifth observation, and every row stopped
+# matching at once. A parser that silently matches nothing reports whatever the
+# check's default is, which here was "the README is fine".
+rows = [[c.strip() for c in ln.strip().strip("|").split("|")]
+        for ln in acc.splitlines() if ln.strip().startswith("|")]
+header = next((r for r in rows if r and r[0] == "Tool"), None)
+assert header, "acceptance.md has no record table with a Tool column"
+width = len(header)
 driven, known = set(), set()
-for line in acc.splitlines():
-    cells = [c.strip() for c in line.strip().strip("|").split("|")]
-    if len(cells) != 8:
+for cells in rows:
+    if len(cells) != width:
         continue
     tool = cells[0].replace("*", "").strip()
     if tool == "Tool" or set(tool) <= set("- "):

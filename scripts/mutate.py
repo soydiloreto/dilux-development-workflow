@@ -676,6 +676,9 @@ MUTATIONS = [
           "    if all(_outside_repo(t, root) for t in targets):",
           "    if any(_outside_repo(t, root) for t in targets):")),
 
+    ("the record's row width goes back to being pinned, and every row stops matching",
+     edit("scripts/verify_install.sh", "    if len(cells) != width:", "    if len(cells) != 8:")),
+
     # ── What the user actually reads ─────────────────────────────────────────
     # Three defects found by installing it and using it, not by any of the above.
     ("the refusal doubles its prefix and reads DDW blocked this write: DDW:",
