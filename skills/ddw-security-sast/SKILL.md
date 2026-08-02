@@ -94,14 +94,31 @@ Critical and High can never be suppressed. They get fixed.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**This skill has no script and writes no receipt, on purpose.** Its finding is a model reading code,
-and a receipt would dress that up as proof (`docs/RATIONALE.md` decision 16). What it still owes the
-user is the same table everything else in the catalog produces: **every rule ID it evaluated, with
-its ✅ / ⚠️ / ❌ — never a count with the rows dropped** — written to
-`docs/ddw/security/sast-{ticket}.md` and shown in full, with the **Report** row above pointing at it
-so the user can read it again without asking. The four steps in the catalog's *How a validation runs*
-apply here too: evaluate, fix what is fixable, ask about what needs a decision, then show the whole
-table and ask for approval.
+**Write the report to `docs/ddw/security/sast-{ticket}.md`, then validate it:**
+
+`python3 .ddw/scripts/validate_sast.py docs/ddw/security/sast-{ticket}.md --tier <tier>`
+
+(under a plugin install, resolve `.ddw/scripts/` at the plugin's method path). **Paste its output
+VERBATIM** — every row, every rule ID, on **every** run, including a re-validation of a report that
+has not changed. A PASSED run writes the content-hashed receipt the `sast` gate demands; without it
+the CODE→VERIFY transition refuses.
+
+**What that receipt does and does not say.** DDW does not scan your code — the scan above is a model
+reading it, and no file can make that a proof. What the validator answers is whether the **report**
+is complete: every catalogued category carrying a verdict, every finding naming a file and a line,
+the stated result consistent with the severities listed, every Medium fixed or suppressed, every
+suppression carrying its fields and still inside its review window. The judgement stays yours to
+read; what stops being optional is the shape of the record. The script says exactly this on every
+run, because a receipt whose scope is unstated gets read as covering everything.
+
+The four steps in the catalog's *How a validation runs* apply here: run the script, loop on every ❌
+(fixing only what the rule names), ask about what genuinely needs a human decision, then show the
+whole table plus the link to the report on disk and ask for approval.
+
+**The report has to be parseable, which means the rule IDs travel with their verdicts.** One line per
+catalogued category, its ID and its ✅ / ⚠️ / ❌ on that same line, and a `file:line` on anything
+found. A prose paragraph that says the same thing is a report nothing can check — which is how
+nineteen catalogued rules went years without one of them being executed.
 
 ## PASS/FAIL criteria
 - **PASSED:** 0 Critical or High vulnerabilities, and every Medium either fixed or properly

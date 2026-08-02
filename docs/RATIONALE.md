@@ -366,13 +366,14 @@ purpose, and the grade is written down rather than implied:
 | `spec` | A **receipt** naming the spec's (or fix-plan's) current bytes |
 | `threat` | A **receipt** naming the threat model's current bytes |
 | `verify` | A **receipt** naming the verification verdict's current bytes |
+| `sast` | A **receipt** naming the SAST report's current bytes — the report, never the code |
 | `commit` | **git**, asked directly: tracked changes in the working tree contradict "this is committed" |
-| `tests`, `sast`, `pr` | The model's record of what it did |
+| `tests`, `pr` | The model's record of what it did |
 
-**What the three added receipts say, and what they do not.** Each one attests that a validator ran
+**What the four added receipts say, and what they do not.** Each one attests that a validator ran
 over those exact bytes and found zero FAILs against the catalog's rules for that artifact — that the
 spec covers every FR and every AC has a test, that every component got all six STRIDE categories and
-every threat a treatment, that the verdict accounts for every criterion and states its coverage. None
+every threat a treatment, that the verdict accounts for every criterion and states its coverage, that the SAST report judges every catalogued category and locates what it found. None
 of them attests that the analysis is *right*. `validate_verify.py` in particular does not run your
 suite: it checks that the verdict is complete, and the numbers in it remain the model's report of
 what it ran. Every one of these scripts prints, on every run, which rules it answered and which it
@@ -386,17 +387,38 @@ the work cannot forge it. A required status check on a pull request is the same 
 everyone already uses daily — you cannot merge until **the CI** reports the check, and you cannot
 report it on CI's behalf.
 
-Read against that ladder, DDW's gates were all level 1 and five of them are now level 2. Saying so is
+Read against that ladder, DDW's gates were all level 1; five of them are now level 2, and `sast` is a
+sixth of a different kind — the receipt is produced by a script the model does not write, over a
+document the model does. Level 2 for the shape of the record, level 1 for its content, and the run
+says which is which rather than leaving the reader to assume the better of the two. Saying so is
 the point: a framework whose gates all look alike, while some are evidence and the rest are records,
 is teaching its own users something false about their pipeline.
 
 **Why not raise all of them.** Because two of them cannot be raised honestly, and pretending
 otherwise is the failure this repository names everywhere else.
 
-`sast` has nothing to run. DDW's SAST is a reading of the code by a model, plus the package
-manager's audit where one exists. A receipt would take "the model reported it looked" and write it
-into a file that reads as proof. That is worse than the boolean it replaces — an honest record does
-not pretend to be evidence, and decision 11 refuses the same trade for the same reason.
+**`sast` was on this list, and the argument for keeping it there was answering a question nobody
+asked.** It read: a receipt would take "the model reported it looked" and write it into a file that
+reads as proof. True — of the *code*. DDW does not scan anything and no file will make its reading a
+proof, so that receipt is still refused, and always will be.
+
+What the paragraph never noticed is that it was defending the code and leaving the **report**
+undefended. Nineteen FAIL rules are catalogued for SAST in this repository, with severities fixed per
+category and a seven-field suppression protocol, and **not one of them was ever executed**. A model
+could file a hardcoded secret as Medium, suppress it with three of the seven fields, write PASSED
+underneath, and the `sast` gate turned true. The rules existed, the report existed, and the distance
+between them was the model's goodwill.
+
+`validate_sast.py` closes exactly that distance and nothing more: every catalogued category carries a
+verdict, every finding names a file and a line, the stated result is consistent with the severities
+listed, every Medium is fixed or formally suppressed, every suppression has its fields and is inside
+its review window. Whether a finding is *right* stays the model's judgement, the script says so on
+every run, and the receipt is bound to the report's bytes so editing it afterwards costs another run.
+
+This is the same split `validate_verify.py` already makes and the same one this section already
+blessed: the numbers stay the model's, the completeness stops being optional. Applying it to `sast`
+was not a change of principle. It was noticing that the principle had been used to justify checking
+nothing, which is the more comfortable of the two readings and was never the honest one.
 
 `tests` is the one people will ask for, and the one that would make DDW something it must not
 become. Verifying it means DDW runs your suite: knowing whether this is pytest or jest or a
@@ -405,12 +427,12 @@ somebody else's repository. CI can do that because CI **is** the environment. DD
 project and cannot honestly promise it — the same reasoning as decision 2, where the missing DAST
 gate is missing on purpose.
 
-So `tests` and `sast` stay in the flow, gated and sequenced and recorded, and stay honest about what
-they are. **The cycle is complete; the evidence is not uniform, and the table above is where you
+So `tests` stays in the flow, gated and sequenced and recorded, and stays honest about what it is. **The cycle is complete; the evidence is not uniform, and the table above is where you
 find out which is which.**
 
-**The cost.** Three of the eight gates rest on the model's report, and this document is the only
-place that says so plainly. A reader who skims the word "gate" will assume more than is there, and
+**The cost.** Two of the eight gates rest on the model's report, and this document is the only
+place that says so plainly. A third, `sast`, rests on a receipt over a document the model wrote — a
+complete report can be a complete fiction, and the receipt will not know. A reader who skims the word "gate" will assume more than is there, and
 the README now spends a paragraph correcting that assumption instead of enjoying it.
 
 The second cost is subtler and belongs to the three that were raised: a receipt is a stronger claim
@@ -419,10 +441,14 @@ repeated — in the script's own output, in the skill, and in the table above. A
 than it knows is the failure this section exists to name, and raising a gate is a new chance to
 commit it.
 
-`spec`, `threat` and `verify` followed `define` the day their validators wrote receipts, which is
-what the previous version of this section predicted: the mechanism was one table in
-`validate-transition.py`, not new machinery. `tests`, `sast` and `pr` are not on that path, and
-adding them would cost more than it is worth.
+`spec`, `threat` and `verify` followed `define` the day their validators wrote receipts, and `sast`
+followed them the day someone asked why nineteen catalogued rules had no script. Each was one row in
+`validate-transition.py`'s table plus a validator — the mechanism this section promised, used four
+times, exactly as promised.
+
+`tests` is next and is not free: it has no artifact at all today, so it needs one invented, with its
+own rule family, before a validator has anything to read. `pr` is the odd one out and the cheapest —
+it can ask a system instead of a document, the way `commit` asks git.
 
 **What it buys.** The evidence check now runs where the model cannot route around it. It used to
 live only in the helper the model is asked to call, so the same state written with the write tool

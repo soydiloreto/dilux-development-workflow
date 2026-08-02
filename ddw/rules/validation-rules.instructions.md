@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Validation Rules — Central Catalog
@@ -352,14 +352,23 @@ has not validated anything, whatever its box says.
 | `ddw-validate-spec` | `.ddw/scripts/validate_spec.py <artifact> --tier <tier>` | `.ddw-sessions/spec-validated-<hash>` |
 | `ddw-threat-modeling` | `.ddw/scripts/validate_threat.py <artifact> --tier <tier>` | `.ddw-sessions/threat-validated-<hash>` |
 | `ddw-verify-module` | `.ddw/scripts/validate_verify.py <artifact> --tier <tier>` | `.ddw-sessions/verify-validated-<hash>` |
+| `ddw-security-sast` | `.ddw/scripts/validate_sast.py <artifact> --tier <tier>` | `.ddw-sessions/sast-validated-<hash>` |
 
 The hash is of the artifact's **current bytes**, and the gate the phase needs asks for exactly that
 receipt. So the incentive points the right way: there is no route to the next phase that goes around
 the checklist, and editing the artifact afterwards costs another run rather than nothing.
 
-`ddw-security-sast` has no script and no receipt, on purpose: its finding is a model reading code,
-and a receipt would dress that up as proof (`docs/RATIONALE.md` decision 16). It still owes the user
-the same table, produced by hand, with every rule ID it evaluated.
+`ddw-security-sast`'s receipt is the newest and the one whose scope is easiest to overread. **It
+attests the REPORT, never the code.** DDW does not scan anything: the finding is a model reading
+source, and no file will make that a proof. What the validator answers is structural — every
+catalogued category carrying a verdict, every finding naming a file and a line, the stated result
+consistent with the severities listed, every Medium fixed or suppressed, every suppression carrying
+its fields and inside its review window.
+
+That distinction is the whole of it, and it is the same one `validate_verify.py` already makes: the
+numbers stay the model's, the completeness stops being optional. What went unguarded while the
+distinction was being argued about was the report itself — nineteen rules catalogued here, none of
+them ever executed, and a `sast` gate that turned true because the model said the reading went well.
 
 ### 2. Fix what the script found — the loop, before anyone is asked anything
 

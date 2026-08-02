@@ -873,9 +873,29 @@ def _commit_evidence_missing(root, state):
             "only exists on your disk." % (", ".join(names), more))
 
 
+def _sast_receipt_missing(root, state):
+    """The sast gate.
+
+    What the receipt attests is the REPORT, never the code: every catalogued
+    category judged, every finding carrying a file and a line, the stated result
+    consistent with the severities listed, suppressions documented and in date.
+    Whether a finding is right stays the model's judgement and the script says so
+    on every run — the same split `validate_verify.py` makes for the verdict.
+
+    `docs/RATIONALE.md` decision 16 refused a receipt here, and the refusal was
+    aimed at a different object: a receipt claiming the code is safe. That one is
+    still refused, because nothing can write it. What was left unguarded in the
+    meantime was the report itself — nineteen rules catalogued, none executed,
+    and a `sast` gate that turned true because the model said the reading went
+    well.
+    """
+    return _receipt_missing(root, state, "sast", "sast", "security", ("sast",),
+                            "validate_sast.py", "SAST report")
+
+
 GATE_EVIDENCE = {"define": _prd_receipt_missing, "spec": _spec_receipt_missing,
                  "threat": _threat_receipt_missing, "verify": _verify_receipt_missing,
-                 "commit": _commit_evidence_missing}
+                 "sast": _sast_receipt_missing, "commit": _commit_evidence_missing}
 
 
 def gate_evidence_missing(root, state, gates):

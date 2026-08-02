@@ -174,10 +174,11 @@ MUTATIONS = [
           "    reason = None or (lambda *a: None)(\n")),
     ("the spec, threat and verify gates go back to trusting the boolean",
      edit("ddw/scripts/validate-transition.py",
-          'GATE_EVIDENCE = {"define": _prd_receipt_missing, "spec": _spec_receipt_missing,\n'
-          '                 "threat": _threat_receipt_missing, "verify": _verify_receipt_missing,\n'
-          '                 "commit": _commit_evidence_missing}',
-          'GATE_EVIDENCE = {"define": _prd_receipt_missing, "commit": _commit_evidence_missing}')),
+          # Anchored on the first line of the table only: the table grows every
+          # time a gate earns a receipt, and pinning all of it meant raising a
+          # gate broke the mutation that guards the others.
+          '''GATE_EVIDENCE = {"define": _prd_receipt_missing, "spec": _spec_receipt_missing,''',
+          '''GATE_EVIDENCE = {"define": _prd_receipt_missing, "_spec": _spec_receipt_missing,''')),
     ("the spec validator stops counting a block's errors against its tests",
      edit("ddw/scripts/validate_spec.py",
           "        if errors and len(sad) < len(errors):\n",
@@ -611,8 +612,8 @@ MUTATIONS = [
           '    if glob.glob(os.path.join(root, ".ddw-sessions", "%s-validated-*" % receipt)):')),
     ("the commit gate goes back to taking the model's word",
      edit("ddw/scripts/validate-transition.py",
-          '                 "commit": _commit_evidence_missing}',
-          '                 }')),
+          '"commit": _commit_evidence_missing}',
+          '}')),
     ("an untracked build directory starts blocking the closeout",
      edit("ddw/scripts/validate-transition.py",
           'dirty = _git(root, "status", "--porcelain", "--untracked-files=no")',
@@ -697,6 +698,29 @@ MUTATIONS = [
     ("a mutation's anchor moves and the fast check does not notice",
      edit("scripts/mutate.py", 'edit("ddw/scripts/hook-gate.py", "vt.decide_pre("',
           'edit("ddw/scripts/hook-gate.py", "vt.decide_pre_THIS_IS_NOT_THERE("')),
+
+    # ── The SAST report, which was catalogued and never checked ──────────────
+    ("the sast gate goes back to turning true on the model's say-so",
+     edit("ddw/scripts/validate-transition.py",
+          '"sast": _sast_receipt_missing, "commit": _commit_evidence_missing}',
+          '"commit": _commit_evidence_missing}')),
+    ("a PASSED SAST validation stops leaving its receipt",
+     edit("ddw/scripts/validate_sast.py",
+          '        with open(os.path.join(sess, f"sast-validated-{digest}"), "w", encoding="utf-8") as fh:\n'
+          '            fh.write(os.path.basename(abs_p) + "\\n")\n',
+          '        pass\n')),
+    ("a category nobody judged stops being noticed",
+     edit("ddw/scripts/validate_sast.py",
+          "    missing = [r for r in CATEGORIES if r not in lines]",
+          "    missing = []")),
+    ("a Critical finding above a PASSED verdict stops being a contradiction",
+     edit("ddw/scripts/validate_sast.py",
+          "    if blocking and not says_blocked:",
+          "    if False:")),
+    ("a suppression stops ageing, and six months means nothing",
+     edit("ddw/scripts/validate_sast.py",
+          "        if due < today:",
+          "        if False:")),
 
     # ── What the user actually reads ─────────────────────────────────────────
     # Three defects found by installing it and using it, not by any of the above.

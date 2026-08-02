@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-424}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-431}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -1237,6 +1237,97 @@ case "$VTOUT" in
   *) bad "a component analysed against five of the six STRIDE categories passed" ;;
 esac
 
+# SAST. Nineteen rules were catalogued here and none of them ran: the report was
+# the model's to write and the gate turned true on its say-so. What the receipt
+# attests is the REPORT — categories judged, findings located, the verdict
+# consistent with the severities, suppressions documented and in date — never
+# the code, which DDW does not read.
+cat > "$VTM/sast-FEAT-001.md" <<'SASTEOF'
+# SAST FEAT-001
+
+| Rule | Verdict | Notes |
+|---|---|---|
+| F-SAST-01 | ✅ | sin secretos embebidos; la key sale de .env |
+| F-SAST-02 | ✅ | consultas parametrizadas |
+| F-SAST-03 | ✅ | no se invoca la shell |
+| F-SAST-04 | ✅ | sin pickle ni yaml.load |
+| F-SAST-05 | ✅ | rutas no controladas por el usuario |
+| F-SAST-06 | ✅ | salida escapada |
+| F-SAST-07 | ✅ | sin fetch dirigido por entrada del usuario |
+| F-SAST-08 | ✅ | bcrypt costo 12 |
+| F-SAST-09 | ✅ | debug apagado en producción |
+| F-SAST-10 | ✅ | sin PII en los logs |
+| F-SAST-11 | ✅ | este ticket no sube archivos |
+| F-SAST-12 | ✅ | token CSRF en el formulario público |
+| F-SAST-13 | ✅ | auditoría de dependencias limpia |
+| F-SAST-14 | ❌ | app/routes/tickets.py:41 — largo del email sin cota |
+| F-SAST-15 | ✅ | los errores devuelven un 500 genérico |
+| F-SAST-16 | ✅ | sin CVE Medium |
+| F-SAST-17 | ✅ | sin eval ni exec |
+
+Total: 16 clean, 1 vulnerability (0 critical, 0 high)
+Result: PASSED
+
+### Suppression: F-SAST-14
+
+| Field | Value |
+|---|---|
+| File | app/routes/tickets.py:41 |
+| Category | incomplete input validation |
+| Disposition | ACCEPTED_RISK |
+| Reviewer | Pablo Di Loreto |
+| Date | 2026-08-02 |
+| Justification | El validador de email ya lo acota a 254 caracteres. |
+| Compensating control | Rate limit por IP en el endpoint público. |
+| Review by | 2026-12-01 |
+SASTEOF
+python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-FEAT-001.md" --tier FEATURE --today 2026-08-02 >/dev/null 2>&1 \
+  && compgen -G "$VP/.ddw-sessions/sast-validated-*" >/dev/null \
+  && ok "validate_sast.py passes a complete SAST report and leaves the content-hashed receipt" \
+  || bad "the SAST validator rejects a complete report or writes no receipt"
+
+# The one contradiction a complete report can still contain, and the one that
+# matters: a Critical listed above a PASSED verdict advances the phase.
+python3 - "$VTM" <<'PYSAST'
+import sys, os
+p = os.path.join(sys.argv[1], "sast-FEAT-001.md")
+s = open(p, encoding="utf-8").read().replace(
+    "| F-SAST-01 | ✅ | sin secretos embebidos; la key sale de .env |",
+    "| F-SAST-01 | ❌ | app/config.py:9 — API key embebida |")
+open(os.path.join(sys.argv[1], "sast-critical.md"), "w", encoding="utf-8").write(s)
+PYSAST
+VSAOUT="$(python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-critical.md" --tier FEATURE \
+         --today 2026-08-02 2>/dev/null || true)"
+case "$VSAOUT" in
+  *"F-SAST-VERDICT"*BLOCKED*) ok "and a Critical finding above a PASSED verdict is refused, by the rule that fixes severities" ;;
+  *) bad "a report listing a hardcoded secret and declaring PASSED earned a receipt" ;;
+esac
+
+# A category with no verdict was not evaluated, and silence is the shape an
+# unrun check takes. This is the rule the other nineteen were waiting for.
+grep -v 'F-SAST-07' "$VTM/sast-FEAT-001.md" > "$VTM/sast-gap.md"
+VSGOUT="$(python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-gap.md" --tier FEATURE \
+         --today 2026-08-02 2>/dev/null || true)"
+case "$VSGOUT" in
+  *"F-SAST-COVERAGE"*F-SAST-07*) ok "and a category left with no verdict is named, not averaged away" ;;
+  *) bad "a report that never judged SSRF passed as complete" ;;
+esac
+
+# F-SAST-19 reads the clock from the document. A suppression whose review date
+# has passed is an unreviewed finding wearing a review.
+python3 - "$VTM" <<'PYSUP'
+import sys, os
+p = os.path.join(sys.argv[1], "sast-FEAT-001.md")
+s = open(p, encoding="utf-8").read().replace("2026-12-01", "2026-01-01")
+open(os.path.join(sys.argv[1], "sast-expired.md"), "w", encoding="utf-8").write(s)
+PYSUP
+VSEOUT="$(python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-expired.md" --tier FEATURE \
+         --today 2026-08-02 2>/dev/null || true)"
+case "$VSEOUT" in
+  *"F-SAST-19"*) ok "and a suppression past its review date is refused — six months is the catalog's number" ;;
+  *) bad "a suppression that expired seven months ago still opened the gate" ;;
+esac
+
 VRP="$VP/docs/ddw/reports"; mkdir -p "$VRP"
 cat > "$VRP/verify-FEAT-001.md" <<'VEREOF'
 # Verify FEAT-001
@@ -1282,7 +1373,7 @@ esac
 # graph path and the hook path — and a bare `for G in …` here silently rebound
 # both for every check that came after, which is a whole class of green turning
 # red for reasons that have nothing to do with the code under test.
-for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE verify:reports:verify:VERIFY:RELEASE; do
+for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE sast:security:sast:CODE:VERIFY verify:reports:verify:VERIFY:RELEASE; do
   RCP_GATE="${RCP_ROW%%:*}"; RCP_REST="${RCP_ROW#*:}"
   RCP_DIR="${RCP_REST%%:*}"; RCP_REST="${RCP_REST#*:}"
   RCP_STEM="${RCP_REST%%:*}"; RCP_REST="${RCP_REST#*:}"
@@ -1292,7 +1383,7 @@ for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE verify
 import json, sys
 root, gate, frm, to = sys.argv[1:5]
 LADDER = ["define", "spec", "threat", "tests", "sast", "verify"]
-EDGE_GATES = {"CODE": ["spec", "threat"], "RELEASE": ["verify"]}
+EDGE_GATES = {"CODE": ["spec", "threat"], "VERIFY": ["tests", "sast"], "RELEASE": ["verify"]}
 EDGES = [("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"), ("DEFINE", "PLAN"),
          ("PLAN", "CODE"), ("CODE", "VERIFY"), ("VERIFY", "RELEASE")]
 # The gate under test must be claimed BY THIS WRITE. Evidence is checked for the
