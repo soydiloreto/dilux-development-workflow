@@ -22,6 +22,7 @@ run splits:
 
     python3 scripts/mutate.py --shard 3/10           # one slice, in its own job
     python3 scripts/mutate.py --cover <workflow.yml> # do the slices cover it all?
+    python3 scripts/mutate.py --check-anchors        # do they all still apply?
 
 Splitting a measurement is how a measurement goes quietly missing — a matrix
 that loses an entry leaves faults nobody injects, and every job that did run is
@@ -50,6 +51,9 @@ def edit(rel, old, new):
             return f"the anchor is gone from {rel} — update this mutation"
         open(p, "w", encoding="utf-8").write(s.replace(old, new, 1))
         return None
+    # What this mutation needs to still be true of the tree, cheap enough to ask
+    # about without running anything. See `--check-anchors`.
+    apply.probe = ("text", rel, old)
     return apply
 
 
@@ -60,6 +64,7 @@ def delete(rel):
             return f"{rel} does not exist — update this mutation"
         shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
         return None
+    apply.probe = ("exists", rel, None)
     return apply
 
 
@@ -70,6 +75,7 @@ def json_edit(rel, fn):
         fn(d)
         json.dump(d, open(p, "w", encoding="utf-8"), indent=2)
         return None
+    apply.probe = ("exists", rel, None)
     return apply
 
 
@@ -87,6 +93,7 @@ def copy_to(src, dest):
         os.makedirs(os.path.dirname(d), exist_ok=True)
         shutil.copyfile(s, d)
         return None
+    apply.probe = ("exists", src, None)
     return apply
 
 
@@ -610,10 +617,15 @@ MUTATIONS = [
      edit("ddw/scripts/validate-transition.py",
           'dirty = _git(root, "status", "--porcelain", "--untracked-files=no")',
           'dirty = _git(root, "status", "--porcelain")')),
+    # Anchored on the row's identity \u2014 the tool and the install path \u2014 and not on
+    # its date or its verdicts. Pinning the whole row meant recording a run broke
+    # the mutation that guards the record, which is a mutation that goes stale
+    # every time the thing it protects is used as intended.
     ("the README claims a tool passed acceptance that the record does not",
      edit("scripts/acceptance.md",
-          "| Claude Code | drop-in | 2.1.220 | 2026-07-28 | \u2705 | \u2705 | \u2705 | \u2705 |",
-          "| Claude Code | drop-in | 2.1.220 | 2026-07-28 | \u2705 | \u2705 | \u2705 | \u2014 |")),
+          "| Claude Code | drop-in |",
+          "| Claude Code | drop-in | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 |\n"
+          "| Claude Code (shadowed by the mutation) | drop-in |")),
     ("a tool the record has driven live is still called unverified in the wild",
      edit("README.md",
           "- **Codex CLI, Cursor, Gemini CLI** \u2014 each adapter is driven through its own",
@@ -678,6 +690,13 @@ MUTATIONS = [
 
     ("the record's row width goes back to being pinned, and every row stops matching",
      edit("scripts/verify_install.sh", "    if len(cells) != width:", "    if len(cells) != 8:")),
+
+    # Breaks an anchor rather than the check that reads it: a mutation that
+    # merely disabled the check would leave the suite green and survive, which
+    # is a mutation measuring nothing — the thing this whole file is about.
+    ("a mutation's anchor moves and the fast check does not notice",
+     edit("scripts/mutate.py", 'edit("ddw/scripts/hook-gate.py", "vt.decide_pre("',
+          'edit("ddw/scripts/hook-gate.py", "vt.decide_pre_THIS_IS_NOT_THERE("')),
 
     # ── What the user actually reads ─────────────────────────────────────────
     # Three defects found by installing it and using it, not by any of the above.
@@ -975,6 +994,45 @@ def slice_of(spec, count):
     return [k for k in range(1, count + 1) if (k - 1) % n == i - 1]
 
 
+def check_anchors():
+    """Does every mutation still find the thing it is supposed to break?
+
+    A mutation whose anchor moved is not a mutation: it is a line in a list, and
+    the run reports it apart from the kill rate so it cannot be read as a pass.
+    But it reports it after injecting the other two hundred, which is thirty
+    minutes in CI and hours in one process — for a question that is a substring
+    search. Asked here, the answer arrives before the run.
+
+    Whoever edits a file this list quotes finds out from the suite that runs in
+    two minutes, instead of from the job that runs last.
+    """
+    cache, stale = {}, []
+    for i, (label, mutate) in enumerate(MUTATIONS, 1):
+        probe = getattr(mutate, "probe", None)
+        if probe is None:
+            stale.append((i, label, "carries no probe — this constructor cannot be checked cheaply"))
+            continue
+        kind, rel, needle = probe
+        path = os.path.join(ROOT, rel)
+        if not os.path.exists(path):
+            stale.append((i, label, f"{rel} does not exist"))
+            continue
+        if kind == "text":
+            if rel not in cache:
+                cache[rel] = open(path, encoding="utf-8").read()
+            if needle not in cache[rel]:
+                stale.append((i, label, f"the anchor is gone from {rel}"))
+    if stale:
+        print(f"check-anchors: {len(stale)} of {len(MUTATIONS)} mutations no longer apply.\n"
+              "A mutation that cannot be injected proves nothing, and the list is the "
+              "coverage figure:")
+        for i, label, why in stale:
+            print(f"  {i:3d}. {label}\n       {why}")
+        return 1
+    print(f"check-anchors: all {len(MUTATIONS)} mutations still find what they break.")
+    return 0
+
+
 def cover(path, count):
     """Do the shards in this workflow add up to every mutation, or only look it?
 
@@ -1031,12 +1089,17 @@ def main():
                     help="run slice I of N; the slices together are the whole list")
     ap.add_argument("--cover", metavar="WORKFLOW",
                     help="check that workflow's shards cover every mutation, then exit")
+    ap.add_argument("--check-anchors", action="store_true",
+                    help="check every mutation still finds what it breaks, then exit")
     args = ap.parse_args()
 
     if args.list:
         for i, (label, _) in enumerate(MUTATIONS, 1):
             print(f"  {i:2d}. {label}")
         return 0
+
+    if args.check_anchors:
+        return check_anchors()
 
     if args.cover:
         return cover(args.cover, len(MUTATIONS))

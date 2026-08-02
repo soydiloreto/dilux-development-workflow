@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-422}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-423}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -3118,6 +3118,17 @@ section "A corrupt state can be reported, and cannot be repaired away"
 ! grep -rq 'git checkout -- \.ddw-state\.json' "$SELF/ddw/scripts" \
   && ok "the recovery advice never points at git for a file git never had" \
   || bad "a runtime message recommends git checkout for a gitignored file — that door is painted on"
+
+# A mutation whose anchor moved is a line in a list. The run says so — apart from
+# the kill rate, so it cannot be read as a pass — but it says so after injecting
+# the other two hundred, which is half an hour in CI and hours in one process.
+# Whether the anchor is still there is a substring search. Asking it here means
+# whoever edits a file the list quotes finds out from the suite that runs in two
+# minutes; it went the other way once, and the answer arrived from the last job.
+python3 "$SELF/scripts/mutate.py" --check-anchors >/dev/null 2>&1 \
+  && ok "every mutation still finds the thing it is supposed to break" \
+  || { python3 "$SELF/scripts/mutate.py" --check-anchors 2>&1 | sed 's/^/    /' >&2
+       bad "a mutation's anchor moved — it injects nothing and proves nothing"; }
 
 # The second painted door, found live on Claude Code: the refusal tells the model
 # to write the corrected state to a scratch path OUTSIDE the repo and hand the
