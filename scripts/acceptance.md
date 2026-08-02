@@ -103,7 +103,7 @@ second is the one that cannot be talked past.
 | Tool | Install | Version | Date | 1. boots | 2. classifies | 3. refuses source | 4. refuses a forged state | 5. stale receipt |
 |---|---|---|---|---|---|---|---|---|
 | Claude Code | drop-in | 2.1.220 | 2026-08-02 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Claude Code | **plugin** | 2.1.220 | 2026-07-28 | ✅ | ✅ | ✅ | — | — |
+| Claude Code | **plugin** | 2.1.220 | 2026-08-02 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Codex CLI | drop-in | — | — | — | — | — | — | — |
 | Copilot CLI | drop-in | 1.0.75 | 2026-07-29 | ✅ | ✅ | ✅ | ⚠️ detects | — |
 | Cursor | drop-in | — | — | — | — | — | — | — |
@@ -112,6 +112,17 @@ second is the one that cannot be talked past.
 | OpenCode | drop-in | 1.18.9 | 2026-07-29 | ✅ | ✅ | ✅ | ✅ | — |
 | OpenCode | **plugin** (global) | 1.18.9 | 2026-07-29 | ✅ | ❌ see below | ✅ | ✅ | — |
 
+> **Claude Code, plugin, driven 2026-08-02 on DDW 0.9.3.** All five, plus the
+> fifth observation this file asks for: told to implement a whole PRD it did not
+> run `install.sh`, and no `.ddw/` appeared in the repository. Check 3's refusal
+> named `${CLAUDE_PLUGIN_ROOT}`, which is what distinguishes this row from the
+> drop-in one above it. Check 4 exercised the recovery end to end: it objected,
+> stopped, did not repair, and wrote the reconstructed state to a scratch path
+> outside the repo — the write that 0.9.2 refused, which is the whole reason
+> 0.9.2 exists. Four of the five fixes shipped today were confirmed live in this
+> run; the fifth (the demand printed by each validator) could not be isolated,
+> because that run loaded the skill as well.
+>
 > **Copilot plugin — what was driven.** Install via `copilot plugin marketplace
 > add` + `install ddw@dilux` against this repo (private, through the user's
 > GitHub login). Skills load and get used; Copilot ignores the Claude-format
