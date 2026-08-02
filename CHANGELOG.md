@@ -19,7 +19,7 @@ move at different speeds. So the promise is specific:
 
 ---
 
-## [0.9.1] — Unreleased
+## [0.9.2] — Unreleased
 
 Four defects from the first real session against Claude Code. None of them was
 findable by the suite as it stood: each is about what a person sees or is left
@@ -57,6 +57,12 @@ with after using the thing, which is the whole argument for driving it by hand.
   forever. Both writers of the managed `.gitignore` block now cover it.
 
 Eleven checks and six mutations, so none of the four can come back quietly.
+
+> Numbered 0.9.2 and not 0.9.1 because the fourth fix landed on top of the first
+> three under the number they had already shipped under — one product version
+> describing two different products, which is the failure the rule was written
+> for. `check_versions` said so, in CI, on the commit that did it. The rule was
+> applied to the run that broke it rather than argued with.
 
 ---
 
