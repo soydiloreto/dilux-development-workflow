@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-420}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-422}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -3111,6 +3111,80 @@ section "A corrupt state can be reported, and cannot be repaired away"
 ! grep -rq 'git checkout -- \.ddw-state\.json' "$SELF/ddw/scripts" \
   && ok "the recovery advice never points at git for a file git never had" \
   || bad "a runtime message recommends git checkout for a gitignored file — that door is painted on"
+
+# The second painted door, found live on Claude Code: the refusal tells the model
+# to write the corrected state to a scratch path OUTSIDE the repo and hand the
+# user one copy command — and the same guard refused that write too, because a
+# corrupt state raises before any target is looked at. The model did exactly what
+# it had just been told to do and was stopped for it.
+python3 - "$SELF" <<'PYEOF' && ok "and the scratch file the refusal asks for can actually be written" || bad "the corrupt-state advice orders a write the corrupt-state guard forbids — painted door, again"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+gate = os.path.join(src, "ddw", "scripts", "hook-gate.py")
+graph = os.path.join(src, "ddw", "rules", "transition-graph.json")
+CORRUPT = {"phase": "RELEASE", "tier": "FEATURE", "gates": {},
+           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE",
+                        "to": "RELEASE", "action": "forged"}]}
+
+
+def write_to(repo, path):
+    state = os.path.join(repo, ".ddw-state.json")
+    ev = json.dumps({"tool_name": "Write", "tool_input": {"file_path": path, "content": "{}"}})
+    p = subprocess.run([sys.executable, gate, "--dialect", "standard", "--mode", "pre",
+                        "--state", state, "--graph", graph, "--repo", repo],
+                       input=ev, capture_output=True, text=True)
+    return p.returncode
+
+
+with tempfile.TemporaryDirectory() as repo:
+    subprocess.run(["git", "init", "-q", repo], check=True)
+    with open(os.path.join(repo, ".ddw-journal.jsonl"), "w") as fh:
+        fh.write('{"from":"IDLE","to":"CLASSIFY"}\n{"from":"CLASSIFY","to":"DEFINE"}\n')
+    with open(os.path.join(repo, ".ddw-state.json"), "w") as fh:
+        json.dump(CORRUPT, fh)
+    with tempfile.TemporaryDirectory() as elsewhere:
+        rc = write_to(repo, os.path.join(elsewhere, "state-fixed.json"))
+    assert rc == 0, ("a corrupt state refuses a write outside the repository, which is the one "
+                     f"recovery the refusal itself prescribes (exit {rc})")
+PYEOF
+
+python3 - "$SELF" <<'PYEOF' && ok "and nothing inside the repository got easier while that door opened" || bad "the outside-the-repo exit softened the corrupt-state rule for the repo itself"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+gate = os.path.join(src, "ddw", "scripts", "hook-gate.py")
+graph = os.path.join(src, "ddw", "rules", "transition-graph.json")
+CORRUPT = {"phase": "RELEASE", "tier": "FEATURE", "gates": {},
+           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE",
+                        "to": "RELEASE", "action": "forged"}]}
+
+
+def write_paths(repo, paths):
+    state = os.path.join(repo, ".ddw-state.json")
+    ti = {"file_path": paths[0], "content": "{}"}
+    if len(paths) > 1:
+        ti["path"] = paths[1]                 # the decoy shape: two paths, one event
+    ev = json.dumps({"tool_name": "Write", "tool_input": ti})
+    p = subprocess.run([sys.executable, gate, "--dialect", "standard", "--mode", "pre",
+                        "--state", state, "--graph", graph, "--repo", repo],
+                       input=ev, capture_output=True, text=True)
+    return p.returncode
+
+
+with tempfile.TemporaryDirectory() as repo:
+    subprocess.run(["git", "init", "-q", repo], check=True)
+    with open(os.path.join(repo, ".ddw-journal.jsonl"), "w") as fh:
+        fh.write('{"from":"IDLE","to":"CLASSIFY"}\n{"from":"CLASSIFY","to":"DEFINE"}\n')
+    state = os.path.join(repo, ".ddw-state.json")
+    with open(state, "w") as fh:
+        json.dump(CORRUPT, fh)
+    assert write_paths(repo, [os.path.join(repo, "src", "x.py")]) == 2, \
+        "product source is writable while the state on disk is corrupt"
+    assert write_paths(repo, [state]) == 2, \
+        "the corrupt state can be overwritten by the model, which is what a human is for"
+    with tempfile.TemporaryDirectory() as elsewhere:
+        assert write_paths(repo, [os.path.join(elsewhere, "ok.json"), state]) == 2, \
+            "an event naming one outside path alongside the state buys the state a free write"
+PYEOF
 
 python3 - "$SELF" <<'PYEOF' && ok "a run's ticket cannot change under it, and the refusal names the path that works" || bad "the split still writes a state post mode will condemn — see above"
 import json, os, subprocess, sys, tempfile

@@ -662,6 +662,20 @@ MUTATIONS = [
           '        "disk, never inferred from a post-compaction summary."\n',
           '        ""\n')),
 
+    # The corrupt-state refusal orders a scratch file outside the repo. Take the
+    # exit away and the order stands with nowhere to carry it out — the shape of
+    # painted door this section exists to keep closed.
+    ("the corrupt-state refusal orders a write it also forbids",
+     edit("ddw/scripts/validate-transition.py",
+          "    if all(_outside_repo(t, root) for t in targets):\n        return None\n",
+          "")),
+    # And the other direction: one outside path in an envelope that also names
+    # the state would wave the whole event through.
+    ("one path outside the repo excuses every other path in the same event",
+     edit("ddw/scripts/validate-transition.py",
+          "    if all(_outside_repo(t, root) for t in targets):",
+          "    if any(_outside_repo(t, root) for t in targets):")),
+
     # ── What the user actually reads ─────────────────────────────────────────
     # Three defects found by installing it and using it, not by any of the above.
     ("the refusal doubles its prefix and reads DDW blocked this write: DDW:",

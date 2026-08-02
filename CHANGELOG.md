@@ -21,12 +21,23 @@ move at different speeds. So the promise is specific:
 
 ## [0.9.1] — Unreleased
 
-Three defects from the first real session against Claude Code. None of them was
+Four defects from the first real session against Claude Code. None of them was
 findable by the suite as it stood: each is about what a person sees or is left
 with after using the thing, which is the whole argument for driving it by hand.
 
 ### Fixed
 
+- **The corrupt-state refusal ordered a write it also forbade.** Shown a forged
+  state, the guard tells the model to compute the corrected file, save it to a
+  scratch path **outside the repo**, and hand the user one copy command — and
+  then refused that write too, because a corrupt state raises before any target
+  is looked at. The model did exactly what it had just been told to do and was
+  stopped for it, which is the second painted door found in this same advice.
+  An event whose every path is outside the repository is now none of DDW's
+  business, as it already was in the normal path. Nothing inside the repository
+  moved: product source, and the state itself, stay refused until a human
+  restores them — including an envelope that names one outside path next to the
+  state, which is the decoy shape that has bought a free write here before.
 - **A re-validation stopped printing its checklist.** The protocol says paste
   the script's output verbatim, and a live run pasted five complete tables and
   then collapsed the sixth — a re-validation of an unchanged PRD — to
@@ -45,7 +56,7 @@ with after using the thing, which is the whole argument for driving it by hand.
   be committed — so the choice was commit `.pyc` files or read the noise
   forever. Both writers of the managed `.gitignore` block now cover it.
 
-Nine checks and four mutations, so none of the three can come back quietly.
+Eleven checks and six mutations, so none of the four can come back quietly.
 
 ---
 

@@ -619,6 +619,17 @@ def resolve_in_repo(path, root):
     return os.path.realpath(path)
 
 
+def _outside_repo(target, root):
+    """Is this resolved path outside the repository DDW is guarding?
+
+    Written once because three callers were asking it, each with its own copy of
+    the same `os.pardir` comparison — and the fourth caller, the one that needed
+    it most, did not ask at all.
+    """
+    rel = os.path.relpath(target, root)
+    return rel == os.pardir or rel.startswith(os.pardir + os.sep)
+
+
 def source_write_denied(target, root, phase):
     """Is this write product source, in a phase that forbids it?
 
@@ -628,10 +639,9 @@ def source_write_denied(target, root, phase):
     if phase not in NO_SOURCE_PHASES:
         return None
 
-    rel = os.path.relpath(target, root)
-    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+    if _outside_repo(target, root):
         return None                                  # outside the repo, not ours
-    rel = rel.replace(os.sep, "/")
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
 
     head = rel.split("/", 1)[0]
     if head in ALLOWED_WIRING_DIRS:
@@ -726,10 +736,9 @@ def quickfix_scope_denied(target, root, state):
     if (state.get("tier") or "") != "QUICK-FIX":
         return None
 
-    rel = os.path.relpath(target, root)
-    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+    if _outside_repo(target, root):
         return None                                  # outside the repo, not ours
-    rel = rel.replace(os.sep, "/")
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
     if rel.startswith("docs/"):
         return None                                  # artifacts, not the code being changed
 
@@ -1017,6 +1026,20 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
     targets = [resolve_in_repo(pth, root) for pth in paths if isinstance(pth, str) and pth]
     if not targets:
         return None                                   # no path to judge
+
+    # Nothing this event names is in the repository, so none of it is DDW's to
+    # judge. The per-target guards below already say that — but they run after
+    # the state is read, and a corrupt state refuses before any target is looked
+    # at. That turned the one recovery this product prescribes into a painted
+    # door: the refusal tells the model to write the corrected state to a scratch
+    # path OUTSIDE the repo and hand the user a copy command, and then the same
+    # guard refuses that write too. Measured live — the model tried exactly what
+    # it had just been told to do, and was stopped.
+    #
+    # This does not soften the corrupt-state rule. Every path inside the repo,
+    # the state file first, stays refused until a human restores it.
+    if all(_outside_repo(t, root) for t in targets):
+        return None
 
     # Is this event a WRITE at all?
     #
