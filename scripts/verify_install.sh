@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-423}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-424}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -2586,6 +2586,19 @@ VR="$SELF/ddw/rules/validation-rules.instructions.md"
 grep -q 'A re-validation is a validation' "$VR" \
   && ok "a re-validation shows the whole table too, and the protocol says so" \
   || bad "nothing tells a re-run to print the table; 'you already saw this' collapses it again"
+
+# And in the SCRIPT'S OWN OUTPUT, which is the only one of the three that is
+# guaranteed to be in the room. Both live collapses ran the validator directly —
+# `Ran 1 shell command`, no skill loaded — so the rule in the skill and the rule
+# in the catalog were both in files nobody had opened. This one arrives attached
+# to the table it governs.
+VRSCRIPTS=""
+for S in validate_prd validate_spec validate_threat validate_verify; do
+  grep -q 'Show the user this table IN FULL' "$SELF/ddw/scripts/$S.py" || VRSCRIPTS="$VRSCRIPTS $S"
+done
+[ -z "$VRSCRIPTS" ] \
+  && ok "and every validator demands it in its own output, where the model is already looking" \
+  || bad "these validators print a table and nothing that says to show it:$VRSCRIPTS"
 
 # In the catalog AND in each skill: the skill is what the model loads and
 # executes. The one that collapsed the table had read the skill, not the catalog.

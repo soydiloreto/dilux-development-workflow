@@ -706,6 +706,14 @@ MUTATIONS = [
           'return ("DDW: the %s gate needs a validation receipt for %s and there is none for its "')),
     ("the method's own bytecode stops being gitignored, and the drop-in commits it",
      edit("install.sh", "      '.ddw/**/__pycache__/' \\\n", "")),
+    # The rule that reached the model twice and worked neither time lived in a
+    # file the model had not opened. Take it out of the output and it goes back
+    # to depending on which files were loaded that turn.
+    ("the validator stops telling the model to show the table it just printed",
+     edit("ddw/scripts/validate_prd.py",
+          'print("Show the user this table IN FULL',
+          'print("" or "Show the user this table IN FULL')),
+
     ("the protocol stops saying a re-validation prints the table",
      edit("ddw/rules/validation-rules.instructions.md",
           "**A re-validation is a validation, and it shows the whole table too.**",

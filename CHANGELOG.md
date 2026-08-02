@@ -19,6 +19,27 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.9.3] — Unreleased
+
+### Fixed
+
+- **The rule that a validation shows its whole table was in files the model had
+  not opened.** 0.9.2 put it in the catalog and in each validation skill. On the
+  next live run it collapsed again — `Validación: ✅ PASSED (7 checks)` — because
+  that run reached the validator directly (`Ran 1 shell command`, no skill
+  loaded), so neither copy of the rule was in the room. Both collapses have now
+  happened on the re-validation path, and both times the instruction existed
+  somewhere the model was not reading.
+
+  So every validator now prints the demand **as part of its own output**, under
+  the table it governs: show this in full, including on a re-validation of
+  something unchanged, because the receipt says the bytes are the same and not
+  that anyone read what was checked. That is the one place guaranteed to be in
+  the context of whoever ran it — a rule that depends on which files were loaded
+  this turn is a rule with a coin flip in front of it.
+
+---
+
 ## [0.9.2] — Unreleased
 
 Four defects from the first real session against Claude Code. None of them was

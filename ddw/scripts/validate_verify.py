@@ -237,6 +237,22 @@ def main():
         with open(os.path.join(sess, f"verify-validated-{digest}"), "w", encoding="utf-8") as fh:
             fh.write(os.path.basename(abs_) + "\n")
         print(f"Receipt: .ddw-sessions/verify-validated-{digest}")
+
+    # The table above is for the USER, and it does not reach them by itself.
+    #
+    # Twice now, live, a model ran this script and showed the person a summary:
+    # "PASSED (7 checks)". Both times the instruction not to existed — in the
+    # skill and in the catalog — and both times the model had not loaded either,
+    # because it ran the script directly. A rule in a file nobody opened is a
+    # rule that is not in the room. This line is: it arrives attached to the very
+    # output it governs, in the same context window, every single run.
+    print("Show the user this table IN FULL — every rule ID, every ✅ / ⚠️ / ❌ — "
+          "and the Report line above it.\n"
+          "This applies to a re-validation of something unchanged too: they are "
+          "approving what they can see, and\na summary is an approval of the "
+          "summary. The receipt says the bytes are the same; it does not say "
+          "anyone read this.")
+
     sys.exit(0 if fails == 0 else 2)
 
 
