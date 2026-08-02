@@ -19,30 +19,9 @@ move at different speeds. So the promise is specific:
 
 ---
 
-## [0.10.0] — Unreleased
+## [0.11.0] — Unreleased
 
 ### Added
-
-- **The `sast` gate rests on a receipt now — over the report, never over the
-  code.** Nineteen FAIL rules were catalogued for SAST in this repository, with a
-  severity fixed per category and a seven-field suppression protocol, and **not
-  one of them had ever been executed**. A model could file a hardcoded secret as
-  Medium, suppress it with three of the seven fields, write PASSED underneath,
-  and the gate turned true.
-
-  `validate_sast.py` answers the structural half and says so on every run: every
-  catalogued category carries a verdict, every finding names a file and a line,
-  the stated result is consistent with the severities listed, every Medium is
-  fixed or formally suppressed, every suppression has its fields and is inside
-  its review window. It does not scan your code and it does not know whether a
-  finding is right — that judgement stays the model's, exactly as
-  `validate_verify.py` leaves the numbers to the model while refusing an
-  incomplete verdict.
-
-  `docs/RATIONALE.md` decision 16 refused this receipt and the refusal is now
-  narrowed rather than reversed: a receipt claiming the *code* is safe is still
-  impossible and still refused. What the old paragraph never noticed is that it
-  was defending the code while leaving the report undefended.
 
 - **The `tests` gate rests on a receipt over the run report.** DDW still does not
   run your suite — it does not know your runner, your directory or your
@@ -76,6 +55,34 @@ move at different speeds. So the promise is specific:
   receipts over documents the model wrote. A complete report can be a complete
   fiction; what it can no longer be is absent, vague or arithmetically
   impossible.
+
+---
+
+## [0.10.0] — Unreleased
+
+### Added
+
+- **The `sast` gate rests on a receipt now — over the report, never over the
+  code.** Nineteen FAIL rules were catalogued for SAST in this repository, with a
+  severity fixed per category and a seven-field suppression protocol, and **not
+  one of them had ever been executed**. A model could file a hardcoded secret as
+  Medium, suppress it with three of the seven fields, write PASSED underneath,
+  and the gate turned true.
+
+  `validate_sast.py` answers the structural half and says so on every run: every
+  catalogued category carries a verdict, every finding names a file and a line,
+  the stated result is consistent with the severities listed, every Medium is
+  fixed or formally suppressed, every suppression has its fields and is inside
+  its review window. It does not scan your code and it does not know whether a
+  finding is right — that judgement stays the model's, exactly as
+  `validate_verify.py` leaves the numbers to the model while refusing an
+  incomplete verdict.
+
+  `docs/RATIONALE.md` decision 16 refused this receipt and the refusal is now
+  narrowed rather than reversed: a receipt claiming the *code* is safe is still
+  impossible and still refused. What the old paragraph never noticed is that it
+  was defending the code while leaving the report undefended.
+
 
 ---
 
