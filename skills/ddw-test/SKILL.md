@@ -61,6 +61,20 @@ Runs the project's tests. Generates missing tests where needed. A blocking gate.
 - **PASSED:** 0 failing tests → `gates.tests` = `true`.
 - **BLOCKED:** 1+ failing tests → fix and re-run.
 
+> **The run leaves a report, and the report is validated.** Write
+> `docs/ddw/reports/tests-{ticket}.md` — runner, exact command, total/passed/failed/skipped,
+> line/branch/function coverage, the floor and where it comes from, every failure by test ID, every
+> skip with a reason, the lint result — then run
+> `python3 .ddw/scripts/validate_tests.py docs/ddw/reports/tests-{ticket}.md --tier <tier>` and
+> **paste its output VERBATIM**, every rule ID, on every run including a re-validation of something
+> unchanged. A PASSED run writes the receipt the `tests` gate demands; without it, CODE→VERIFY
+> refuses.
+>
+> **DDW does not run your suite, and that receipt does not say it did.** It says the account of the
+> run is complete: reproducible, arithmetically possible, named where it failed, measured against a
+> floor the project set rather than one the report chose. The numbers stay yours. What they can no
+> longer be is absent.
+
 > This skill is a **runner**, not an artifact validator: it reports pass/fail. Test *quality*
 > (coverage thresholds, AC traceability, sad paths) is evaluated in the VERIFY phase by
 > `ddw-verify-module`, against §5 of the rule catalog. A green suite here does not mean the tests

@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Validation Rules — Central Catalog
@@ -284,6 +284,40 @@ To suppress a Medium finding as a false positive or an accepted risk:
 
 ---
 
+## 6. Test Run Report (`ddw-test`)
+
+**Applies in:** the CODE phase, before the `tests` gate is claimed.
+**Artifact:** `docs/ddw/reports/tests-{ticket}.md`.
+
+**DDW does not run your suite, and this section does not pretend otherwise.** It does not know
+whether this is pytest or jest or a monorepo with five runners, in what directory, with which
+environment; being wrong about that in somebody else's repository is what `docs/RATIONALE.md`
+decision 2 refuses. The numbers below are the model's account of a run it did.
+
+What stops being optional is the account. `tests: true` used to be a sentence — no runner, no
+command, no numbers, no names, nothing anyone could reproduce or act on. These rules make the report
+a document; whether it is a true document remains the reader's judgement, and every run says so.
+
+### FAIL rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| F-TEST-01 | Run not reproducible | The report must name the **runner** and the **exact command**. Missing either → FAIL. | A result nobody can re-run is an anecdote. This is also the only verification available to a human in ten seconds, which is the whole point of writing it down. |
+| F-TEST-02 | Counts absent or impossible | Total, passed and failed must be present, and `passed + failed + skipped` must equal `total`. Missing or contradictory → FAIL. | Arithmetic is the one thing a report cannot get wrong quietly. A count that does not add up is a report about two different runs. |
+| F-TEST-03 | Failure with no name | Every reported failure must be identified by its test ID. A count with no names → FAIL. | The corrective loop needs something to work from. "3 failed" tells nobody which three. |
+| F-TEST-04 | Coverage incomplete or under the floor | Line, branch and function coverage must each be stated as a number, and each must be at or above the floor. Missing one, or under → FAIL. | One coverage number hides the other two: a suite can touch every line and no branch. Under the floor is the condition the loop exists for. |
+| F-TEST-05 | Floor not stated or not sourced | The report must state the coverage floor and where it comes from (`AGENTS.md`, the spec). Absent → FAIL; stated without a source → WARNING. | A report that chooses its own floor passes itself. The floor belongs to the project. |
+| F-TEST-06 | Silent skip | Every skipped test must carry a reason. Skips with no explanation → FAIL. | A silent skip is the cheapest way to make a suite green, and it looks identical to a test that exists. |
+
+### WARNING rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| W-TEST-01 | No lint or type-check result | The report does not state the linter or type checker's result. | VERIFY asks for it under F-VER-05, so this is a reminder rather than a block — but a CODE phase that never ran the linter will find out two phases later. |
+
+
+---
+
 ## 5. Module Verification (`ddw-verify-module`)
 
 **Applies in:** the VERIFY phase.
@@ -353,6 +387,7 @@ has not validated anything, whatever its box says.
 | `ddw-threat-modeling` | `.ddw/scripts/validate_threat.py <artifact> --tier <tier>` | `.ddw-sessions/threat-validated-<hash>` |
 | `ddw-verify-module` | `.ddw/scripts/validate_verify.py <artifact> --tier <tier>` | `.ddw-sessions/verify-validated-<hash>` |
 | `ddw-security-sast` | `.ddw/scripts/validate_sast.py <artifact> --tier <tier>` | `.ddw-sessions/sast-validated-<hash>` |
+| `ddw-test` | `.ddw/scripts/validate_tests.py <artifact> --tier <tier>` | `.ddw-sessions/tests-validated-<hash>` |
 
 The hash is of the artifact's **current bytes**, and the gate the phase needs asks for exactly that
 receipt. So the incentive points the right way: there is no route to the next phase that goes around

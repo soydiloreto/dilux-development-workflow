@@ -611,9 +611,12 @@ MUTATIONS = [
           '    if os.path.exists(os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))):',
           '    if glob.glob(os.path.join(root, ".ddw-sessions", "%s-validated-*" % receipt)):')),
     ("the commit gate goes back to taking the model's word",
+     # One key, never its neighbours: this table grows every time a gate earns
+     # evidence, and an anchor that includes the next entry breaks on the growth
+     # it is supposed to be indifferent to.
      edit("ddw/scripts/validate-transition.py",
-          '"commit": _commit_evidence_missing}',
-          '}')),
+          '"commit": _commit_evidence_missing,',
+          '"_commit": _commit_evidence_missing,')),
     ("an untracked build directory starts blocking the closeout",
      edit("ddw/scripts/validate-transition.py",
           'dirty = _git(root, "status", "--porcelain", "--untracked-files=no")',
@@ -702,8 +705,8 @@ MUTATIONS = [
     # ── The SAST report, which was catalogued and never checked ──────────────
     ("the sast gate goes back to turning true on the model's say-so",
      edit("ddw/scripts/validate-transition.py",
-          '"sast": _sast_receipt_missing, "commit": _commit_evidence_missing}',
-          '"commit": _commit_evidence_missing}')),
+          '"sast": _sast_receipt_missing,',
+          '"_sast": _sast_receipt_missing,')),
     ("a PASSED SAST validation stops leaving its receipt",
      edit("ddw/scripts/validate_sast.py",
           '        with open(os.path.join(sess, f"sast-validated-{digest}"), "w", encoding="utf-8") as fh:\n'
@@ -721,6 +724,32 @@ MUTATIONS = [
      edit("ddw/scripts/validate_sast.py",
           "        if due < today:",
           "        if False:")),
+
+    # ── The test run, which used to be one word ──────────────────────────────
+    ("the tests gate goes back to turning true on a sentence",
+     edit("ddw/scripts/validate-transition.py",
+          '"tests": _tests_receipt_missing,',
+          '"_tests": _tests_receipt_missing,')),
+    ("a run report stops needing the command that produced it",
+     edit("ddw/scripts/validate_tests.py",
+          "    if runner and command:",
+          "    if True:")),
+    ("counts that do not add up stop being a contradiction",
+     edit("ddw/scripts/validate_tests.py",
+          "    elif abs((passed + failed + skipped) - total) > 0.5:",
+          "    elif False:")),
+    ("coverage under the floor stops blocking",
+     edit("ddw/scripts/validate_tests.py",
+          "        under = [f\"{n} {v:.0f}%\" for n, v in have if v < floor]",
+          "        under = []")),
+    ("the pr gate stops asking the forge and takes the model's word again",
+     edit("ddw/scripts/validate-transition.py",
+          '"pr": _pr_evidence_missing}',
+          '}')),
+    # The field itself: absent has to read as assisted, or every repo that
+    # upgrades is reported broken by its own self-check.
+    ("the state schema forgets the autonomy field",
+     edit("ddw/scripts/session-boot.py", '    "autonomy": None,\n', "")),
 
     # ── What the user actually reads ─────────────────────────────────────────
     # Three defects found by installing it and using it, not by any of the above.
@@ -782,8 +811,11 @@ MUTATIONS = [
     # ── Versions ─────────────────────────────────────────────────────────────
     ("the product ships two different version numbers",
      json_edit(".claude-plugin/plugin.json", lambda d: d.update({"version": "2.2.0"}))),
+    # Anchored on the frontmatter, not the number: a rule file's version moves
+    # every time the rule does, and pinning it meant that editing a rule broke
+    # the mutation that guards every rule's version.
     ("a rule's version stops being semver",
-     edit("ddw/rules/code.instructions.md", "version: 1.5.0", "version: latest")),
+     edit("ddw/rules/code.instructions.md", "\nversion: ", "\nversion: latest-")),
     ("the validator reads a graph of any format it is handed",
      edit("ddw/scripts/validate-transition.py",
           "        if major != GRAPH_FORMAT_MAJOR:", "        if False:")),

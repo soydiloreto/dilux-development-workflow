@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.6.0
+version: 1.7.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`
@@ -18,6 +18,7 @@ version: 1.6.0
   "ticket": "string | null",
   "title": "string | null",
   "tracker": "string | null",
+  "autonomy": "string | null",
   "gates": {},
   "block": "string | null",
   "discovery": "object | null",
@@ -34,6 +35,7 @@ version: 1.6.0
 | `ticket` | `string \| null` | Tracker ID (e.g. `"PROJ-123"`) or internal (e.g. `"FIX-001"`, `"FEAT-001"`, `"DISC-001"`) | The ticket identifier. `null` in IDLE. |
 | `title` | `string \| null` | Free text | Descriptive title of the ticket. `null` in IDLE. |
 | `tracker` | `string \| null` | The tracker's ID | Set when the ticket comes from a tracker. `null` when the ID is internal. |
+| `autonomy` | `string \| null` | `"assisted"`, `"minimal"`, `null` | How much of the pipeline runs without being asked. Set in CLASSIFY, alongside the tier. **Absent or `null` means `assisted`** — a state written before this field existed is not a state that opted into anything. |
 | `gates` | `object` | `{"spec": true, …}` | The gates earned in the current phase. A transition reads them; it never trusts a promise. |
 | `block` | `string \| null` | Free text | Which block of the spec is being implemented (CODE phase). |
 | `discovery` | `object \| null` | Free object | DISCOVERY's working notes. |
@@ -93,3 +95,28 @@ able to read six months later.
 not merely expected. Leaving them behind let the NEXT ticket inherit gates the previous one paid
 for, and walk the whole pipeline having earned none of them. `history` is the exception — it is the
 audit trail, and it only ever grows.
+
+### `autonomy`, and what it does not change
+
+`assisted` is the default and is what DDW has always done: every arrow waits for the user.
+
+`minimal` stops asking for the arrows and keeps everything else. It does **not** relax a single
+gate: the same eight receipts and answers are required, refused by the same hook, over the same
+bytes. What it removes is the confirmation on a transition whose evidence is already on disk —
+because asking a person to approve what a receipt already attests is asking them to rubber-stamp,
+and a rubber stamp teaches people that approvals mean nothing.
+
+**Three things stop the pipeline in `minimal` anyway, and they are not configurable:**
+
+1. **A decision nobody wrote down.** A ❌ the script names is a defect to fix; a question that comes
+   from missing information is not. Inventing a requirement to clear a check is a worse defect than
+   the one it silenced, and that rule does not have a mode.
+2. **The corrective loop hitting its ceiling.** `PRD loops`, `Spec loops` and the CODE phase's three
+   attempts are the counters; reaching one means the automatic path has been tried and did not
+   converge, and the run stops with what it tried in the record.
+3. **A corrupt state.** Already true in both modes, for the reasons decision 14 gives.
+
+Every transition taken without a human carries `"autonomy": "minimal"` in its history entry. Six
+months later the record has to distinguish a run somebody watched from one that went through at
+three in the morning, and a `history` that reads identically for both is a record that lies by
+omission.

@@ -51,8 +51,10 @@ ls "$ROOT"/.claude/hooks/*.sh "$ROOT"/.codex/hooks/ddw/*.sh "$ROOT"/.cursor/hook
 
 - The file exists (if it does not, ASSUMING IDLE is valid — it is created on the first write by the
   `enforce.sh` hook).
-- If it exists, the **9** mandatory fields are present: `tier`, `phase`, `ticket`, `title`,
-  `tracker`, `gates`, `block`, `discovery`, `history`.
+- If it exists, the **10** mandatory fields are present: `tier`, `phase`, `ticket`, `title`,
+  `tracker`, `autonomy`, `gates`, `block`, `discovery`, `history`. `autonomy` absent or `null` reads
+  as `assisted` and is NOT an inconsistency — a state written before the field existed did not opt
+  into anything, and reporting it as broken would fail every repo that upgraded.
 - `phase` is a valid value (`IDLE`, `CLASSIFY`, `DEFINE`, `PLAN`, `CODE`, `VERIFY`, `RELEASE`,
   `DISCOVERY`).
 - `tier` is `null` (in IDLE/CLASSIFY) or a valid value (`QUICK-FIX`, `FIX`, `FEATURE`,
@@ -86,7 +88,7 @@ A state that claims a gate no artifact backs is the failure this skill exists to
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
 │  Installation:  [✅/❌] method · context file · wiring   │
-│  State schema:  [✅/❌] 9 fields, valid values           │
+│  State schema:  [✅/❌] 10 fields, valid values           │
 │  Artifacts:     [✅/❌] every earned gate has its file   │
 │  History:       [✅/❌] contiguous, ends at {phase}      │
 │                                                          │

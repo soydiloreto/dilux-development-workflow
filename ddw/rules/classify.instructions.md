@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.5.1
+version: 1.6.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -243,11 +243,39 @@ the ticket's branch, never on `main`.
 
 ---
 
+## Step 5b: How much of this runs without being asked
+
+Along with the tier, the classification records **`autonomy`**, and the CLASSIFY box shows it so the
+user sees what they are agreeing to before anything is written.
+
+- **`assisted`** — the default, and what DDW has always done: every arrow waits for the user. Use
+  this unless the user asked otherwise, in those words or plainly equivalent ones ("no me preguntes
+  en cada paso", "corré solo", "minimal intervention"). **Never infer it from impatience.**
+- **`minimal`** — the arrows stop waiting. Nothing else changes: the same eight gates, the same
+  receipts, refused by the same hook over the same bytes. What goes away is the confirmation on a
+  transition whose evidence is already on disk.
+
+**Say what it costs, once, here, before they agree:** in `minimal` nobody reads the tables. The
+receipts still refuse an incomplete PRD, an unvalidated spec, a SAST report that never judged SSRF
+or a test run whose numbers do not add up — but *complete* is not *true*, and the person who would
+have noticed the difference is the one who just stepped out of the loop.
+
+Three things still stop the run, in either mode, and they are not configurable: a decision nobody
+wrote down (asking is the only correct move — inventing a requirement to clear a check is a worse
+defect than the one it silences), a corrective loop that hit its ceiling, and a corrupt state.
+
+Every transition taken without a human carries `"autonomy": "minimal"` in its history entry, because
+six months later the record has to distinguish a run somebody watched from one that did not have
+anyone to watch it.
+
+---
+
 ## Step 6: Transition
 
 1. Update `.ddw-state.json`:
    - `tier` → the confirmed tier (`"QUICK-FIX"`, `"FIX"`, `"FEATURE"` or
      `"DISCOVERY"`)
+   - `autonomy` → `"assisted"` unless the user asked for the other one (see below)
    - `phase`:
      - For `QUICK-FIX`, `FIX`, `FEATURE` → `"DEFINE"`
      - For `DISCOVERY` → `"DISCOVERY"`

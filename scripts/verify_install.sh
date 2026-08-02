@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-431}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-437}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -1328,6 +1328,64 @@ case "$VSEOUT" in
   *) bad "a suppression that expired seven months ago still opened the gate" ;;
 esac
 
+
+# The test run report. `tests: true` used to be a sentence — no runner, no
+# command, no numbers, no names, nothing anyone could reproduce. DDW still does
+# not run your suite; what it refuses now is the account being absent, vague or
+# arithmetically impossible.
+mkdir -p "$VP/docs/ddw/reports"
+cat > "$VP/docs/ddw/reports/tests-FEAT-001.md" <<'TSTEOF'
+# Test run — FEAT-001
+
+| Field | Value |
+|---|---|
+| Runner | pytest 8.2 |
+| Command | uv run pytest -q --cov=app |
+| Total | 42 |
+| Passed | 40 |
+| Failed | 0 |
+| Skipped | 2 |
+| Line coverage | 87% |
+| Branch coverage | 81% |
+| Function coverage | 92% |
+| Coverage floor | 80% (AGENTS.md) |
+| Lint | ruff clean |
+
+## Skipped
+- `tests/test_email.py::test_send` — reason: needs network credentials, covered by the fake
+- `tests/test_kb.py::test_big` — reason: 50 MB fixture, runs nightly
+TSTEOF
+python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-FEAT-001.md" --tier FEATURE >/dev/null 2>&1 \
+  && compgen -G "$VP/.ddw-sessions/tests-validated-*" >/dev/null \
+  && ok "validate_tests.py passes a complete run report and leaves the content-hashed receipt" \
+  || bad "the test-report validator rejects a complete report or writes no receipt"
+
+# Arithmetic is the one thing a report cannot get wrong quietly.
+python3 - "$VP" <<'PYTC'
+import sys, os
+p = os.path.join(sys.argv[1], "docs/ddw/reports/tests-FEAT-001.md")
+s = open(p, encoding="utf-8").read().replace("| Total | 42 |", "| Total | 50 |")
+open(os.path.join(sys.argv[1], "docs/ddw/reports/tests-bad.md"), "w", encoding="utf-8").write(s)
+PYTC
+VTCOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-bad.md" 2>/dev/null || true)"
+case "$VTCOUT" in
+  *"F-TEST-02"*"do not add up"*) ok "and counts that do not add up are refused — that is two runs in one report" ;;
+  *) bad "a report claiming 50 tests over 40 passed + 0 failed + 2 skipped earned a receipt" ;;
+esac
+
+# The floor belongs to the project. A report that picks its own passes itself.
+python3 - "$VP" <<'PYTF'
+import sys, os
+p = os.path.join(sys.argv[1], "docs/ddw/reports/tests-FEAT-001.md")
+s = open(p, encoding="utf-8").read().replace("| Line coverage | 87% |", "| Line coverage | 61% |")
+open(os.path.join(sys.argv[1], "docs/ddw/reports/tests-low.md"), "w", encoding="utf-8").write(s)
+PYTF
+VTFOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-low.md" 2>/dev/null || true)"
+case "$VTFOUT" in
+  *"F-TEST-04"*"under the floor"*61*) ok "and coverage under the quoted floor is named with its number" ;;
+  *) bad "61% line coverage passed a report quoting an 80% floor" ;;
+esac
+
 VRP="$VP/docs/ddw/reports"; mkdir -p "$VRP"
 cat > "$VRP/verify-FEAT-001.md" <<'VEREOF'
 # Verify FEAT-001
@@ -1373,7 +1431,7 @@ esac
 # graph path and the hook path — and a bare `for G in …` here silently rebound
 # both for every check that came after, which is a whole class of green turning
 # red for reasons that have nothing to do with the code under test.
-for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE sast:security:sast:CODE:VERIFY verify:reports:verify:VERIFY:RELEASE; do
+for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE sast:security:sast:CODE:VERIFY tests:reports:tests:CODE:VERIFY verify:reports:verify:VERIFY:RELEASE; do
   RCP_GATE="${RCP_ROW%%:*}"; RCP_REST="${RCP_ROW#*:}"
   RCP_DIR="${RCP_REST%%:*}"; RCP_REST="${RCP_REST#*:}"
   RCP_STEM="${RCP_REST%%:*}"; RCP_REST="${RCP_REST#*:}"

@@ -40,6 +40,7 @@ IDLE_STATE = {
     "tracker": None,
     "gates": {},
     "block": None,
+    "autonomy": None,
     "discovery": None,
     "history": [],
 }

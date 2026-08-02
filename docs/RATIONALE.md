@@ -367,8 +367,9 @@ purpose, and the grade is written down rather than implied:
 | `threat` | A **receipt** naming the threat model's current bytes |
 | `verify` | A **receipt** naming the verification verdict's current bytes |
 | `sast` | A **receipt** naming the SAST report's current bytes — the report, never the code |
+| `tests` | A **receipt** naming the run report's current bytes — the account of the run, never the run |
 | `commit` | **git**, asked directly: tracked changes in the working tree contradict "this is committed" |
-| `tests`, `pr` | The model's record of what it did |
+| `pr` | **the forge**, asked through `gh`: the branch has a pull request or it does not |
 
 **What the four added receipts say, and what they do not.** Each one attests that a validator ran
 over those exact bytes and found zero FAILs against the catalog's rules for that artifact — that the
@@ -427,12 +428,27 @@ somebody else's repository. CI can do that because CI **is** the environment. DD
 project and cannot honestly promise it — the same reasoning as decision 2, where the missing DAST
 gate is missing on purpose.
 
-So `tests` stays in the flow, gated and sequenced and recorded, and stays honest about what it is. **The cycle is complete; the evidence is not uniform, and the table above is where you
+`tests` was the last one, and its paragraph made the same move `sast`'s did: it defended the *run*
+and left the *report* undefended. DDW running your suite is still refused and still impossible for
+the reasons above. What `tests: true` meant in the meantime was one word — no runner, no command, no
+counts, no names, nothing reproducible. `validate_tests.py` refuses that: the runner and the exact
+command, counts that add up, every failure named, three coverage numbers against a floor quoted from
+the project rather than chosen by the report, every skip explained. The numbers stay the model's
+account of a run it did. What they can no longer be is absent.
+
+`pr` went the other way and is now the strongest of the eight: it asks the forge through `gh`, and
+that is evidence the model cannot produce by writing a file. Three states, distinguished rather than
+blurred — no remote means no pull request is owed; a remote with `gh` answering is a verdict; a
+remote with `gh` missing is not verifiable here and falls back to the record, which the skill says
+out loud. **The cycle is complete; the evidence is not uniform, and the table above is where you
 find out which is which.**
 
-**The cost.** Two of the eight gates rest on the model's report, and this document is the only
-place that says so plainly. A third, `sast`, rests on a receipt over a document the model wrote — a
-complete report can be a complete fiction, and the receipt will not know. A reader who skims the word "gate" will assume more than is there, and
+**The cost.** Six of the eight rest on a receipt over a document the model wrote, and **a complete
+report can be a complete fiction — the receipt will not know.** That is the sentence this section
+exists for, and it is more important now than when three gates were honestly labelled "the model's
+record": a reader who sees eight gates all backed by something will assume more than is there. The
+grading did not disappear when the labels improved. It moved down a level, from *is there evidence*
+to *what is the evidence of*. A reader who skims the word "gate" will assume more than is there, and
 the README now spends a paragraph correcting that assumption instead of enjoying it.
 
 The second cost is subtler and belongs to the three that were raised: a receipt is a stronger claim

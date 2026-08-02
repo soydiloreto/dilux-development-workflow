@@ -44,10 +44,38 @@ move at different speeds. So the promise is specific:
   impossible and still refused. What the old paragraph never noticed is that it
   was defending the code while leaving the report undefended.
 
-  Six of the eight gates now rest on something outside the model's word. `tests`
-  has no artifact at all yet, so it needs one invented before a validator has
-  anything to read; `pr` can ask a system rather than a document, the way
-  `commit` asks git.
+- **The `tests` gate rests on a receipt over the run report.** DDW still does not
+  run your suite — it does not know your runner, your directory or your
+  environment, and decision 2 refuses to pretend. What `tests: true` meant until
+  now was one word, on a run nobody could reproduce. There is an artifact now
+  (`docs/ddw/reports/tests-{ticket}.md`), a rule family (`F-TEST-01`…`06`,
+  `W-TEST-01`) and `validate_tests.py`: the runner and the exact command, counts
+  that add up, every failure named by test ID, line/branch/function coverage
+  against a floor **quoted from the project** rather than chosen by the report,
+  every skip explained. The numbers stay the model's account of a run it did.
+
+- **The `pr` gate asks the forge.** `gh` is asked whether the branch has a pull
+  request, which is the one piece of evidence in the pipeline the model cannot
+  produce by writing a file. Three states, distinguished rather than blurred: no
+  remote means none is owed; a remote with `gh` answering is a verdict; a remote
+  with `gh` missing is not verifiable here and falls back to the record, said out
+  loud rather than passed silently.
+
+- **`autonomy`, set at classification time.** `assisted` (the default, and what a
+  state written before this field says) waits for you on every arrow. `minimal`
+  stops waiting and changes nothing else — same gates, same receipts, same hook,
+  same bytes. Three things still stop the run in either mode and are not
+  configurable: a decision nobody wrote down, a corrective loop at its ceiling,
+  and a corrupt state. Every transition taken without a human carries
+  `"autonomy": "minimal"` in its history entry, because a record that reads
+  identically for a watched run and an unwatched one lies by omission.
+
+  **All eight gates now rest on something outside the model's word** — and the
+  grading did not disappear when the labels improved, it moved down a level:
+  from *is there evidence* to *what is the evidence of*. Six of the eight are
+  receipts over documents the model wrote. A complete report can be a complete
+  fiction; what it can no longer be is absent, vague or arithmetically
+  impossible.
 
 ---
 

@@ -179,7 +179,8 @@ the corresponding Skill.`
 - NEVER load files belonging to a phase other than the current `phase` according to the router.
 - NEVER run skills or agents not listed for the active phase.
 - NEVER advance a phase without: (a) exit conditions met, (b) state updated, (c) explicit user
-  approval.
+  approval — **unless `autonomy` is `"minimal"`**, in which case (a) and (b) still hold and the
+  arrow does not wait. See *Autonomy* below; the exceptions there are not optional.
 - NEVER write source code in the CLASSIFY, DEFINE, PLAN or DISCOVERY phases.
 - NEVER create specs or fix-plans in the CLASSIFY, DEFINE or DISCOVERY phases.
 - NEVER fix code in the VERIFY phase. If verification fails, go back to CODE to fix it.
@@ -197,7 +198,34 @@ the corresponding Skill.`
 - NEVER run more than one phase transition in a single response. Finish the current phase, show the
   closing summary, wait for EXPLICIT confirmation, and only then start the next phase. Phrases like
   "go ahead", "next one", "continue" approve ONLY the immediate step proposed — they do NOT approve
-  a classification, a transition, or skipping steps.
+  a classification, a transition, or skipping steps. Under `minimal` the confirmation is what goes
+  away; **one transition per response does not** — the state is written once per arrow either way,
+  and the hook refuses a write that appends two.
+
+## Autonomy
+
+`.ddw-state.json` carries `autonomy`, set in CLASSIFY. Absent or `null` reads as `"assisted"`.
+
+**`assisted`** — what everything above describes: every arrow waits for the user.
+
+**`minimal`** — the arrows stop waiting, and **nothing else changes**. Same eight gates, same
+receipts, refused by the same hook over the same bytes. What goes away is asking a person to
+approve a transition whose evidence is already on disk, which is a rubber stamp, and rubber stamps
+are how approvals come to mean nothing.
+
+**Stop and ask anyway, in either mode:**
+
+1. **A decision nobody wrote down.** A ❌ the script names is a defect to fix; a question born of
+   missing information is not. Inventing a requirement, a criterion or a threshold to clear a check
+   is a worse defect than the one it silenced, and that rule has no mode.
+2. **A corrective loop at its ceiling.** `PRD loops`, `Spec loops`, and CODE's three attempts. Hitting
+   one means the automatic path was tried and did not converge; stop, with what was tried in the
+   record.
+3. **A corrupt state.** Unchanged: stop, report, repair nothing.
+
+**Every transition taken without a human carries `"autonomy": "minimal"` in its history entry.** A
+record that reads identically for a run somebody watched and one that had nobody to watch it is a
+record that lies by omission — and this is the one field that says which happened.
 - DDW's skills and any the project brings coexist in `.claude/skills/`. **NEVER invoke a skill that
   is not listed in the active phase's router**, whether it belongs to DDW or to the project. If the
   project ships a skill with the SAME name as one of DDW's, that is ambiguous: tell the user and ask

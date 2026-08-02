@@ -48,7 +48,7 @@ class Block(Exception):
 
 
 def _idle_template():
-    return {"tier": None, "phase": IDLE, "gates": {}, "history": []}
+    return {"tier": None, "phase": IDLE, "autonomy": None, "gates": {}, "history": []}
 
 
 def _load_disk_state(path):
@@ -873,6 +873,65 @@ def _commit_evidence_missing(root, state):
             "only exists on your disk." % (", ".join(names), more))
 
 
+def _tests_receipt_missing(root, state):
+    """The tests gate.
+
+    DDW does not run your suite and this receipt does not claim it did. What it
+    attests is the REPORT of the run: the runner and the exact command named, the
+    counts adding up, every failure identified, three coverage numbers against a
+    floor quoted from the project rather than chosen by the report, every skip
+    explained. `docs/RATIONALE.md` decision 16 refused a receipt that would mean
+    DDW running the suite — it still refuses that, because it is still true.
+
+    What the refusal covered for was the sentence underneath: `tests: true`, on a
+    run nobody could reproduce, with no numbers and no names. That is what this
+    replaces.
+    """
+    return _receipt_missing(root, state, "tests", "tests", "reports", ("tests",),
+                            "validate_tests.py", "test report")
+
+
+def _pr_evidence_missing(root, state):
+    """The pr gate: the forge is asked, rather than the model.
+
+    This is the only gate whose evidence lives outside the repository entirely,
+    and the only one the model cannot produce by writing a file — which makes it
+    the strongest of the eight when it can be checked at all.
+
+    Three states, and the difference between them is stated rather than blurred:
+
+    - **No remote.** There is no pull request to have. A local-only repo closing
+      a ticket owes nothing here, and refusing would make the pipeline unusable
+      in exactly the setup people try it in first.
+    - **A remote, and `gh` can answer.** The branch either has a pull request or
+      it does not, and no wording from the model changes that.
+    - **A remote, and `gh` is absent or unauthenticated.** Nothing here can
+      verify it, so this falls back to the model's record — the same stance
+      `_commit_evidence_missing` takes when git cannot answer. A guard that
+      refuses because a tool is missing teaches people to route around it, and
+      one that pretends it checked is worse. `ddw-create-pr` says which of the
+      three happened, because the difference is the whole point.
+    """
+    if not _git(root, "remote"):
+        return None                                   # nothing to open a PR against
+    branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if not branch or branch == "HEAD":
+        return None                                   # detached: not a branch that has a PR
+    try:
+        out = subprocess.run(["gh", "pr", "view", branch, "--json", "number,state"],
+                             cwd=root, capture_output=True, text=True, timeout=15)
+    except Exception:
+        return None                                   # gh absent: not verifiable here
+    if out.returncode == 0 and out.stdout.strip():
+        return None                                   # the forge says it exists
+    err = (out.stderr or "").lower()
+    if "no pull requests found" in err or "could not resolve" in err or out.returncode == 1:
+        return ("the pr gate says a pull request was opened for `%s`, and the forge has none. "
+                "Open it, or close this ticket without claiming the gate — a PR that only "
+                "exists in the report is the one thing this gate is for." % branch)
+    return None                                       # auth, network, rate limit: not a verdict
+
+
 def _sast_receipt_missing(root, state):
     """The sast gate.
 
@@ -895,7 +954,9 @@ def _sast_receipt_missing(root, state):
 
 GATE_EVIDENCE = {"define": _prd_receipt_missing, "spec": _spec_receipt_missing,
                  "threat": _threat_receipt_missing, "verify": _verify_receipt_missing,
-                 "sast": _sast_receipt_missing, "commit": _commit_evidence_missing}
+                 "sast": _sast_receipt_missing, "tests": _tests_receipt_missing,
+                 "commit": _commit_evidence_missing,
+                 "pr": _pr_evidence_missing}
 
 
 def gate_evidence_missing(root, state, gates):
