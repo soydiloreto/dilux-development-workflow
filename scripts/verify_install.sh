@@ -2471,20 +2471,32 @@ ACC="$SELF/scripts/acceptance.md"
 # The drop-in row specifically. There are two now — plugin mode is a separate
 # install path with its own row — and matching both meant one incomplete row
 # made the check read the other as incomplete too.
-CLAUDE_ROW="$(grep '^| Claude Code | drop-in |' "$ACC" || true)"
-# Keyed on the claim itself, not on a phrase the README also uses for the five
-# tools nobody has driven yet — grepping for that one passed either way, which
-# is a check that reads as green while measuring nothing.
-case "$CLAUDE_ROW" in
-  *"| — |"*)
-    grep -q "all five acceptance checks pass" "$SELF/README.md" \
-      && bad "the README says Claude passed all five, and acceptance.md records fewer" \
-      || ok "the README claims no more for Claude than the record holds" ;;
-  *)
-    grep -q "all five acceptance checks pass" "$SELF/README.md" \
-      && ok "the README reports Claude's five acceptance checks, as the record does" \
-      || bad "acceptance.md records five passes for Claude and the README never says so" ;;
-esac
+# The drop-in row specifically, and only the five observation columns in it. The
+# row grew a `mode` column and a sixth observation; matching the whole line for
+# `| — |` then read "minimal not driven yet" as "check 4 not driven yet" and
+# called the README a liar. A check that reads a table by pattern instead of by
+# column breaks the first time the table earns a column — which it will, because
+# the ritual grows every time it finds something.
+python3 - "$SELF" <<'PYCLAUDE' && ok "the README claims for Claude exactly what the record holds" || bad "README status vs the Claude drop-in row — see above"
+import os, re, sys
+root = sys.argv[1]
+acc = open(os.path.join(root, "scripts/acceptance.md"), encoding="utf-8").read()
+readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
+rows = [[c.strip() for c in ln.strip().strip("|").split("|")]
+        for ln in acc.splitlines() if ln.strip().startswith("|")]
+header = next((r for r in rows if r and r[0] == "Tool"), None)
+assert header, "acceptance.md has no record table"
+first = next(i for i, h in enumerate(header) if h.startswith("1."))
+last = max(i for i, h in enumerate(header) if re.match(r"^[1-5]\.", h))
+row = next((r for r in rows if r[0] == "Claude Code" and r[1] == "drop-in"), None)
+assert row, "no Claude Code drop-in row in the record"
+verdicts = row[first:last + 1]
+complete = all("✅" in v for v in verdicts)
+claims = "all five acceptance checks pass" in readme
+assert complete == claims, (
+    f"the record has {sum('✅' in v for v in verdicts)}/{len(verdicts)} for Claude drop-in "
+    f"and the README {'claims' if claims else 'does not claim'} all five")
+PYCLAUDE
 
 # A step that dies at its first command never ran, and a step that only runs on
 # pull requests dies unwatched in a repository whose work lands on main. Both

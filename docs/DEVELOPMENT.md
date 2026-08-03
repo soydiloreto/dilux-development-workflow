@@ -168,9 +168,10 @@ yet, which is how a `jq`/`sed` write is caught.
 `transition.py` calls the same function rather than carrying its own copy. It used to hold the only
 one, which is precisely how the hook came to allow what the helper refused.
 
-Which gates get an entry and which stay self-declared is
-[decision 16](RATIONALE.md#16-a-gate-is-an-attestation-and-they-are-not-all-the-same-strength), not
-a to-do list.
+Every gate has an entry now: six resolve a receipt, `commit` asks git, `pr` asks the forge. What
+each receipt is *of* — the document, never the work it describes — is
+[decision 16](RATIONALE.md#16-a-gate-is-an-attestation-and-they-are-not-all-the-same-strength),
+and it is the part a reader will overreach on.
 
 ## One write, one transition
 

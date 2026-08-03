@@ -19,6 +19,26 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.11.1] — Unreleased
+
+### Changed
+
+- **`/ddw-status` shows `autonomy`.** A mode that decides whether the pipeline
+  waits for you is not something to learn by reading a JSON file, and the status
+  panel is where people look.
+- **`docs/METHOD.md` describes the gates that exist.** Its table still said
+  `spec`, `threat` and `verify` rest on the model's record — wrong before this
+  release and wronger after it — on the canonical page a reader is sent to for
+  what a gate is worth. It now carries the real table, *Minimal intervention* in
+  full, and the sentence a reader will overreach on: a complete report can still
+  be a false one.
+- **The acceptance ritual gains a sixth observation and a `mode` column.**
+  `minimal` is a separate code path; a tool passing `assisted` says nothing about
+  it. Watching it stop asking is half — the half that matters is watching it stop
+  ANYWAY on a hole nobody decided.
+
+---
+
 ## [0.11.0] — Unreleased
 
 ### Added

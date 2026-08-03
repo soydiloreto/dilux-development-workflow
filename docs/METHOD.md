@@ -12,7 +12,9 @@ You ask for something in plain language. You never invoke a phase by hand.
    spec, and the verdict written to a report. If it fails, back to CODE. Never patched here.
 6. **RELEASE** — CHANGELOG, PR, ticket, closeout.
 
-Every arrow needs your explicit approval. The machine closes the phase, shows you a summary, and
+Every arrow needs your explicit approval — unless you asked for `minimal` autonomy when the work was
+classified, in which case the arrows stop asking and nothing else changes (see *Minimal
+intervention*, below). The machine closes the phase, shows you a summary, and
 waits.
 
 **Each phase commits what it produced, as it closes it.** The PRD lands before the spec, the spec
@@ -84,16 +86,51 @@ What each gate rests on is not uniform, and the difference is graded on purpose:
 
 | Gate | What backs it |
 |---|---|
-| `define` | A **receipt** naming the PRD's current bytes, written only by a validation run that passed |
+| `define`, `spec`, `threat`, `sast`, `tests`, `verify` | A **receipt** naming that document's current bytes, written only by a validation run with zero FAILs |
 | `commit` | **git**, asked directly — tracked changes still in the working tree contradict the claim |
-| `spec`, `threat`, `verify`, `tests`, `sast`, `pr` | The model's record of what it did |
+| `pr` | **the forge**, asked through `gh` — the branch has a pull request or it does not |
 
-The two on top cannot be produced by saying so, and the check runs in the hook, so writing the state
-by hand does not get around it. The rest are records: the machine enforces that the claim exists,
-before the move, in the phase that owns it, and that it lands in an append-only history. **It does
-not run your test suite**, and a framework that implied otherwise would be doing the thing this one
-was built to stop.
+None of these can be produced by saying so, and the check runs in the hook, so writing the state by
+hand does not get around it. Edit the document after validating and its receipt stops matching: the
+hash is of the bytes, not of the filename.
 
-That is worth considerably more than a prompt and less than a test run. Where the line falls, why
-`tests` and `sast` stay on the lower rung deliberately, and what the industry calls this ladder, is
+**What they do not attest is that the work is right, and that distinction is the whole design.** DDW
+does not run your suite and does not scan your code. The `tests` receipt says the account of the run
+is complete — runner, exact command, counts that add up, failures named, three coverage numbers
+against a floor quoted from your project, skips explained. The `sast` receipt says the report judged
+every catalogued category and did not declare PASSED above a Critical. **A complete report can still
+be a false one.** What it can no longer be is absent, vague or arithmetically impossible — which is
+what "the model's record" meant, and what `tests: true` used to be: one word, on a run nobody could
+reproduce.
+
+Where the line falls and what the industry calls this ladder is
 [`RATIONALE.md` decision 16](RATIONALE.md#16-a-gate-is-an-attestation-and-they-are-not-all-the-same-strength).
+
+---
+
+## Minimal intervention
+
+Classification records **how much of the run waits for you**, alongside the tier.
+
+**`assisted`** is the default and is everything above: every arrow asks.
+
+**`minimal`** stops the arrows asking. Nothing else changes — the same eight gates, the same
+receipts, refused by the same hook over the same bytes. What goes away is being asked to approve a
+transition whose evidence is already on disk, which is a rubber stamp, and rubber stamps are how
+approvals come to mean nothing.
+
+**What it costs:** nobody reads the tables. The receipts still refuse an incomplete PRD, an
+unvalidated spec, a SAST report that never judged SSRF, a test run whose numbers do not add up — but
+*complete* is not *true*, and the person who would have caught the difference is the one who stepped
+out of the loop.
+
+**Three things stop the run in either mode, and they are not configurable:**
+
+1. **A decision nobody wrote down.** A ❌ the script names is a defect to fix; a question born of
+   missing information is not. Inventing a requirement to clear a check is a worse defect than the
+   one it silenced.
+2. **A corrective loop at its ceiling** — `PRD loops`, `Spec loops`, CODE's three attempts.
+3. **A corrupt state.**
+
+Every transition taken without a human carries `"autonomy": "minimal"` in its history entry. A record
+that reads the same for a run you watched and one that had nobody to watch it lies by omission.
