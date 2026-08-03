@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.1.0
+version: 1.2.0
 ---
 
 # DISCOVERY Tier (Ideation and Product Definition)
