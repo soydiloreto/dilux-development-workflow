@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-445}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-446}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -1458,6 +1458,25 @@ PYPRST
 [ "$?" = "2" ] \
   && ok "and claiming the pr gate is refused through the gate table, not only by the function" \
   || bad "the pr gate is in the code and the table that consults it does not name it"
+
+# The corrective loop's ceiling, which was a number in four documents and a
+# comparison in none of them. `PRD loops` and `Spec loops` were incremented by
+# the skills and measured against nothing, so one of the three stops that are
+# supposed to hold under `minimal` could never be reached.
+python3 - "$VP" <<'PYLOOP'
+import os, re, sys
+p = os.path.join(sys.argv[1], "docs/ddw/prd/prd-FEAT-001.md")
+s = open(p, encoding="utf-8").read()
+s = re.sub(r"^\|\s*PRD loops\s*\|.*$", "| PRD loops | 4 |", s, count=1, flags=re.M)
+if "PRD loops" not in s:
+    s = s.replace("\n## ", "\n| PRD loops | 4 |\n\n## ", 1)
+open(os.path.join(sys.argv[1], "docs/ddw/prd/prd-looped.md"), "w", encoding="utf-8").write(s)
+PYLOOP
+VLOUT="$(python3 "$SELF/ddw/scripts/validate_prd.py" "$VP/docs/ddw/prd/prd-looped.md" --tier FEATURE 2>/dev/null || true)"
+case "$VLOUT" in
+  *"❌ F-PRD-LOOP"*) ok "a PRD past its corrective-loop ceiling is refused — the counter is compared, not just kept" ;;
+  *) bad "the loop ceiling is a number nothing measures against, and minimal has one fewer stop" ;;
+esac
 
 # ── autonomy: the field that decides whether a human is in the loop ──────────
 #

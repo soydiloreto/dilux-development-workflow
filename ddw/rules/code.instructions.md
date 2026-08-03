@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Phase 3: CODE (Implementation)
@@ -254,6 +254,13 @@ Present the summary to the user:
 │  Do you approve moving to the verification phase?        │
 └─────────────────────────────────────────────────────────┘
 ```
+
+> **Under `autonomy: "minimal"` this arrow does not wait.** The state is still
+> written, the gates are still owed and still refused by the hook, and the
+> closing box is still shown — what goes away is the pause for a confirmation of
+> something a receipt already attests. Three things stop the run anyway, in
+> either mode: a decision nobody wrote down, a corrective loop at its ceiling,
+> and a corrupt state. See `.ddw/orchestrator.md` § Autonomy.
 
 After the user approves:
 1. **Commit whatever the closeout produced** with `Skill(skill="ddw-commit")`: the fixes the full

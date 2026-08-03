@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Phase 4: VERIFY
@@ -92,6 +92,12 @@ Present to the user:
 ```
 
 Wait for the user's explicit approval.
+> **Under `autonomy: "minimal"` this arrow does not wait.** The state is still
+> written, the gates are still owed and still refused by the hook, and the
+> closing box is still shown — what goes away is the pause for a confirmation of
+> something a receipt already attests. Three things stop the run anyway, in
+> either mode: a decision nobody wrote down, a corrective loop at its ceiling,
+> and a corrupt state. See `.ddw/orchestrator.md` § Autonomy.
 
 ---
 

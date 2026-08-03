@@ -19,6 +19,38 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.13.0] — Unreleased
+
+### Fixed
+
+- **`minimal` did not take effect anywhere.** Eight phase files and six router
+  exits still said "wait for the user", with no mention of the mode, and the
+  router loads exactly one phase file per turn — so in every phase the model read
+  a phase-specific imperative contradicting the general rule. Each arrow now
+  carries the carve-out.
+- **The mode was forgotten by every compaction.** The boot sequence listed the
+  fields to re-derive the pipeline from and `autonomy` was not one of them, so it
+  survived only while the CLASSIFY turn stayed in context. The runs `minimal`
+  exists for are the long ones, and the long ones are the ones that compact.
+- **The corrective loop's ceiling was a number in four documents and a comparison
+  in none.** `PRD loops` and `Spec loops` were incremented by the skills and
+  measured against nothing, which made one of the three stops that hold under
+  `minimal` unreachable. `F-PRD-LOOP` and `F-SPEC-LOOP` compare it at 3 — and
+  failing there shuts the gate, which forces the one thing a loop cannot produce
+  for itself: a person deciding.
+- **The history's "strict shape" forbade the fields the method requires.** The
+  orchestrator told the model to omit `tier` and `ticket`, which the helper
+  stamps and the post-write replay depends on.
+
+### Changed
+
+- **What `minimal` does not touch, said where it is read:** merging a pull
+  request and closing a tracker ticket are not arrows — they are irreversible
+  acts on systems other people read, no receipt attests that the user wanted
+  them, and they keep their confirmation in both modes.
+
+---
+
 ## [0.12.0] — Unreleased
 
 Five independent reviews of the previous release. What they found is in the

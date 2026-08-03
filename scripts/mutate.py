@@ -706,6 +706,10 @@ MUTATIONS = [
     ("mutate.py stops verifying its anchors before it starts injecting",
      edit("scripts/mutate.py", "    if check_anchors() != 0:\n        return 1",
           "    if False:\n        return 1")),
+    # The ceiling was a number in four documents and a comparison in none of
+    # them, so one of the three stops that hold under `minimal` was unreachable.
+    ("the corrective loop's ceiling goes back to being a number nothing compares",
+     edit("ddw/scripts/validate_prd.py", "    if loops >= LOOP_CEILING:", "    if False:")),
     ("the sast gate goes back to turning true on the model's say-so",
      edit("ddw/scripts/validate-transition.py",
           '"sast": _sast_receipt_missing,',
