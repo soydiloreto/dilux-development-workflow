@@ -19,6 +19,274 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.14.2] — Unreleased
+
+### Fixed
+
+- **A rule that could be taken apart in halves without anything noticing.**
+  `F-SAST-VERDICT` was written as two overlapping branches — "the result says
+  PASSED" and "the result does not say BLOCKED" — which caught the same report,
+  so disabling either left the other catching it and no mutation could tell the
+  rule was half gone. CI found it: the mutation survived on the sharded run. One
+  condition now.
+
+---
+
+## [0.14.1] — Unreleased
+
+### Changed
+
+- **The documentation described a product that had stopped existing.** Three
+  statements were false about enforcement, and each was the first thing a reader
+  reaches on its page: `docs/DEVELOPMENT.md` said two gates have an entry in the
+  evidence table (all eight do, and it contradicted itself nine lines later);
+  `docs/RATIONALE.md` decision 3 said only one gate is verified against anything
+  outside the model's report; and the catalog told readers `ddw-test` has no
+  rules in the catalog while carrying eight of them, in the same file.
+- **The counts.** 84 rules, not 69. 17 skills, not 15. Five Claude hooks, not
+  six. The catalog's own summary table was wrong in four cells and missing a row;
+  it is computed from the rule tables now rather than maintained beside them.
+- **The artifact table that calls itself the single definition of where every
+  artifact lives** omitted both files under `docs/ddw/reports/` — the two that
+  two gate receipts are named after.
+- **`ddw-help` now answers what `/ddw-status` sends people there for**: what a
+  gate rests on, and how much of the run waits for you.
+- **`.github/INSTALL.md` claimed 4/4 for a run the record shows as three passes
+  and one "detected, not prevented".** Two files in one repository giving
+  different results for the same session.
+
+---
+
+## [0.14.0] — Unreleased
+
+An adversarial review of the two newest validators, written against them rather
+than about them: every hole below came with a report that slipped through.
+
+### Fixed — reports that were not complete and passed anyway
+
+- **A `⚠️` was a free pass out of every severity rule.** Only `❌` fed the
+  location, verdict and suppression checks, so a hardcoded secret filed as a
+  warning owed no file:line, no BLOCKED and no suppression. The cheapest bypass
+  either script had, and the skill's own output box puts the three markers on one
+  line. `F-SAST-SEVERITY` refuses it: the catalog fixes the severity per
+  category, and a marker does not change it.
+- **`BLOCKED` anywhere in the file defused the contradiction check.** The skill's
+  template header (`— [PASSED | BLOCKED]`, copied verbatim) or a Spanish "no
+  bloqueado" satisfied it, and the row then told the reader the contradiction had
+  been checked. Both verdicts are read from the stated result line now, and a
+  Critical above `Result: PASSED` fails.
+- **Critical and High were suppressible.** §4.1 says they are not; nothing
+  enforced it, so the seven fields were validated for a finding that has to be
+  fixed. `F-SAST-SUPPRESS`.
+- **A red test run earned the `tests` gate.** `ddw-test`'s own criterion is zero
+  failing tests and the validator that writes the receipt never checked it:
+  seven failures, named, arithmetic consistent, receipt written. `F-TEST-08`.
+- **A per-suite report was read as its first suite.** A green unit suite above a
+  red integration suite passed as one green run, with five failures on the page
+  nobody counted. `F-TEST-07`.
+- **`F-TEST-03` counted anything path-shaped anywhere** — the skip list and a
+  coverage-by-file table both satisfied it. Scoped to a failures heading.
+- **`F-TEST-06` cleared every skip with one word.** "For that reason the
+  integration suite was not touched" excused seven silent skips. One reason per
+  skip now.
+- **The coverage floor was whatever the report said.** `0.8` read as 0.8% made
+  every comparison vacuous; a report quoting 20% passed itself. Ratios are
+  normalised and a floor under the pipeline's own minimum is a warning.
+- **`1,204` tests parsed as 1.204** — a thousands separator read as a decimal
+  comma, which passed silently whenever failed and skipped were zero.
+- **A Medium was cleared by the word "fixed", including "not fixed".**
+- **A dependency finding satisfied the location rule with a version number.**
+  `urllib3 2.0.7: 2` matched; the regex also backtracked quadratically, so a
+  minified line in a report was a multi-second hang (381 ms at 1600 tokens, now
+  0.6 ms).
+
+### Fixed — correct reports that were rejected
+
+- **`## Suppressions` with no suppressions failed a clean report**: the section
+  heading matched the block pattern and became a suppression titled `s` with
+  every field missing. The model could not fix it by adding information, only by
+  deleting the section, which no message suggested.
+- **Suppression fields were English-only**, in an artifact the method tells the
+  model to write in the user's language — and `ACCEPTED_RISK`, which does match
+  `riesgo aceptado`, was read out of a cell that could never be found in Spanish.
+- **A bullet-list report failed four rules at once.** `ddw-test`'s skill gives no
+  table template, so bullets are a likely first draft.
+- **A marker set narrower than what models write**: `⚠` without the variation
+  selector, `✔`, `🔴/🟡/🟢` — the emoji the severity section itself uses.
+- **An impossible date crashed with a traceback** and exit 1, outside the file's
+  documented contract, with no rule ID to loop on.
+
+---
+
+## [0.13.0] — Unreleased
+
+### Fixed
+
+- **`minimal` did not take effect anywhere.** Eight phase files and six router
+  exits still said "wait for the user", with no mention of the mode, and the
+  router loads exactly one phase file per turn — so in every phase the model read
+  a phase-specific imperative contradicting the general rule. Each arrow now
+  carries the carve-out.
+- **The mode was forgotten by every compaction.** The boot sequence listed the
+  fields to re-derive the pipeline from and `autonomy` was not one of them, so it
+  survived only while the CLASSIFY turn stayed in context. The runs `minimal`
+  exists for are the long ones, and the long ones are the ones that compact.
+- **The corrective loop's ceiling was a number in four documents and a comparison
+  in none.** `PRD loops` and `Spec loops` were incremented by the skills and
+  measured against nothing, which made one of the three stops that hold under
+  `minimal` unreachable. `F-PRD-LOOP` and `F-SPEC-LOOP` compare it at 3 — and
+  failing there shuts the gate, which forces the one thing a loop cannot produce
+  for itself: a person deciding.
+- **The history's "strict shape" forbade the fields the method requires.** The
+  orchestrator told the model to omit `tier` and `ticket`, which the helper
+  stamps and the post-write replay depends on.
+
+### Changed
+
+- **What `minimal` does not touch, said where it is read:** merging a pull
+  request and closing a tracker ticket are not arrows — they are irreversible
+  acts on systems other people read, no receipt attests that the user wanted
+  them, and they keep their confirmation in both modes.
+
+---
+
+## [0.12.0] — Unreleased
+
+Five independent reviews of the previous release. What they found is in the
+commit; what matters most is that **the mutation score was measuring itself**.
+
+### Fixed
+
+- **The mutation run was crediting 180 of 217 faults with a kill they did not
+  earn.** The anchor check added one release earlier ran inside `verify_install.sh`
+  — which `mutate.py` executes from inside the MUTATED copy of the tree, where
+  the fault under test has just deleted its own anchor. The suite went red by
+  construction and the fault was recorded as caught, whether or not any real
+  check had noticed. Measured: with that one line neutralised, the `pr` gate and
+  the `autonomy` field were both surviving while reported killed. The check now
+  runs in `mutate.py` itself, before anything is injected, against the tree as it
+  is, plus its own CI job; the suite asserts the suite does not run it.
+- **Checks that could not fail.** Every validator prints a rule's ID on the ✅ row
+  and the ❌ row, so a `case` grepping for the bare ID matched either. Five did.
+  One of them — the fix-plan rollback rule — was also built from a fixture that
+  `grep -v -A 2` had left byte-identical to the sound one, so it asserted the
+  opposite of its own message and could not go red for two independent reasons.
+- **`autonomy` was inert and unsafe.** The field a model has the most reason to
+  set for itself had none of `tier`'s protection: `assisted → minimal` mid-run
+  was accepted, `"banana"` was accepted, and `minimal` survived the closeout into
+  the next ticket. It is now an enum, immutable outside CLASSIFY, cleared at IDLE,
+  writable through `transition.py --autonomy`, and stamped on every edge taken
+  without a human.
+- **A report with Windows line endings could never satisfy its gate.** The gate
+  hashed raw bytes and every validator hashed decoded text, so `\r\n` produced
+  two digests: the validator PASSED, wrote a receipt under one, and the gate
+  looked for the other. The refusal said "validate it again", and validating
+  again could not help. Routine under WSL.
+- **A receipt was portable between tickets.** The digest is of content alone, so
+  two byte-identical documents — what a split produces — shared one receipt.
+  The receipt records the filename it was written for; now that is read back.
+- **The `pr` gate read every `gh` failure as "there is no pull request".**
+  Offline, rate-limited, a fork with no default remote, authenticated elsewhere:
+  each refused a closeout while asserting a fact the guard never established. It
+  now distinguishes an answer from an error, uses `gh pr list --head` (so a
+  branch named `123` stops resolving to PR #123), and a pull request closed
+  without merging no longer counts as one that was opened.
+
+### Added
+
+- Checks for `autonomy` (enum, immutability, IDLE reset, the helper's stamp, the
+  materialised state) and for the `pr` gate (seven `gh` outcomes through a stub,
+  plus the gate table itself), neither of which had a single check before.
+
+---
+
+## [0.11.1] — Unreleased
+
+### Changed
+
+- **`/ddw-status` shows `autonomy`.** A mode that decides whether the pipeline
+  waits for you is not something to learn by reading a JSON file, and the status
+  panel is where people look.
+- **`docs/METHOD.md` describes the gates that exist.** Its table still said
+  `spec`, `threat` and `verify` rest on the model's record — wrong before this
+  release and wronger after it — on the canonical page a reader is sent to for
+  what a gate is worth. It now carries the real table, *Minimal intervention* in
+  full, and the sentence a reader will overreach on: a complete report can still
+  be a false one.
+- **The acceptance ritual gains a sixth observation and a `mode` column.**
+  `minimal` is a separate code path; a tool passing `assisted` says nothing about
+  it. Watching it stop asking is half — the half that matters is watching it stop
+  ANYWAY on a hole nobody decided.
+
+---
+
+## [0.11.0] — Unreleased
+
+### Added
+
+- **The `tests` gate rests on a receipt over the run report.** DDW still does not
+  run your suite — it does not know your runner, your directory or your
+  environment, and decision 2 refuses to pretend. What `tests: true` meant until
+  now was one word, on a run nobody could reproduce. There is an artifact now
+  (`docs/ddw/reports/tests-{ticket}.md`), a rule family (`F-TEST-01`…`06`,
+  `W-TEST-01`) and `validate_tests.py`: the runner and the exact command, counts
+  that add up, every failure named by test ID, line/branch/function coverage
+  against a floor **quoted from the project** rather than chosen by the report,
+  every skip explained. The numbers stay the model's account of a run it did.
+
+- **The `pr` gate asks the forge.** `gh` is asked whether the branch has a pull
+  request, which is the one piece of evidence in the pipeline the model cannot
+  produce by writing a file. Three states, distinguished rather than blurred: no
+  remote means none is owed; a remote with `gh` answering is a verdict; a remote
+  with `gh` missing is not verifiable here and falls back to the record, said out
+  loud rather than passed silently.
+
+- **`autonomy`, set at classification time.** `assisted` (the default, and what a
+  state written before this field says) waits for you on every arrow. `minimal`
+  stops waiting and changes nothing else — same gates, same receipts, same hook,
+  same bytes. Three things still stop the run in either mode and are not
+  configurable: a decision nobody wrote down, a corrective loop at its ceiling,
+  and a corrupt state. Every transition taken without a human carries
+  `"autonomy": "minimal"` in its history entry, because a record that reads
+  identically for a watched run and an unwatched one lies by omission.
+
+  **All eight gates now rest on something outside the model's word** — and the
+  grading did not disappear when the labels improved, it moved down a level:
+  from *is there evidence* to *what is the evidence of*. Six of the eight are
+  receipts over documents the model wrote. A complete report can be a complete
+  fiction; what it can no longer be is absent, vague or arithmetically
+  impossible.
+
+---
+
+## [0.10.0] — Unreleased
+
+### Added
+
+- **The `sast` gate rests on a receipt now — over the report, never over the
+  code.** Nineteen FAIL rules were catalogued for SAST in this repository, with a
+  severity fixed per category and a seven-field suppression protocol, and **not
+  one of them had ever been executed**. A model could file a hardcoded secret as
+  Medium, suppress it with three of the seven fields, write PASSED underneath,
+  and the gate turned true.
+
+  `validate_sast.py` answers the structural half and says so on every run: every
+  catalogued category carries a verdict, every finding names a file and a line,
+  the stated result is consistent with the severities listed, every Medium is
+  fixed or formally suppressed, every suppression has its fields and is inside
+  its review window. It does not scan your code and it does not know whether a
+  finding is right — that judgement stays the model's, exactly as
+  `validate_verify.py` leaves the numbers to the model while refusing an
+  incomplete verdict.
+
+  `docs/RATIONALE.md` decision 16 refused this receipt and the refusal is now
+  narrowed rather than reversed: a receipt claiming the *code* is safe is still
+  impossible and still refused. What the old paragraph never noticed is that it
+  was defending the code while leaving the report undefended.
+
+
+---
+
 ## [0.9.3] — Unreleased
 
 ### Fixed

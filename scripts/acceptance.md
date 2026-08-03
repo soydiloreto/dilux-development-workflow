@@ -29,7 +29,7 @@ Fill in the `Stack` section of the context file it created — one line is enoug
 > starting, or everything below will pass for the wrong reason: nothing is
 > enforcing anything yet.
 
-## The five things to observe
+## The six things to observe
 
 **1. It boots on its own.** Send `where is the pipeline?` as the very first
 message. It must answer **knowing DDW is here**, without being told. If it
@@ -98,19 +98,32 @@ asks "is what I am about to approve the thing that passed". Try it through the
 helper and through a hand-written state: they are two different nets and the
 second is the one that cannot be talked past.
 
+**6. It runs the arrows without asking, and still stops where it must.** Classify something with
+`autonomy: minimal` — say "no me preguntes en cada paso" in the classification exchange — and watch
+two things, because only the pair is the answer:
+
+- **It stops asking.** DEFINE closes and PLAN opens without a confirmation, and the history entry
+  for that arrow carries `"autonomy": "minimal"`. If it still asks, the flag reached nothing.
+- **It stops anyway where it has to.** Leave a genuine hole in the PRD — a requirement with no
+  number, a criterion nobody decided — and it must come back and ask rather than inventing one. A
+  `minimal` run that answers its own product questions is worse than one that never had the flag.
+
+This is a separate row from the same tool's `assisted` row: different code path, and passing one
+says nothing about the other.
+
 ## The record
 
-| Tool | Install | Version | Date | 1. boots | 2. classifies | 3. refuses source | 4. refuses a forged state | 5. stale receipt |
-|---|---|---|---|---|---|---|---|---|
-| Claude Code | drop-in | 2.1.220 | 2026-08-02 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Claude Code | **plugin** | 2.1.220 | 2026-08-02 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Codex CLI | drop-in | — | — | — | — | — | — | — |
-| Copilot CLI | drop-in | 1.0.75 | 2026-07-29 | ✅ | ✅ | ✅ | ⚠️ detects | — |
-| Cursor | drop-in | — | — | — | — | — | — | — |
-| Gemini CLI | drop-in | — | — | — | — | — | — | — |
-| Copilot CLI | **plugin** | 1.0.75 | 2026-07-29 | — | — | — | ✅ model stopped | — |
-| OpenCode | drop-in | 1.18.9 | 2026-07-29 | ✅ | ✅ | ✅ | ✅ | — |
-| OpenCode | **plugin** (global) | 1.18.9 | 2026-07-29 | ✅ | ❌ see below | ✅ | ✅ | — |
+| Tool | Install | Mode | Version | Date | 1. boots | 2. classifies | 3. refuses source | 4. refuses a forged state | 5. stale receipt | 6. minimal |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Claude Code | drop-in | assisted | 2.1.220 | 2026-08-02 | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| Claude Code | **plugin** | assisted | 2.1.220 | 2026-08-02 | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| Codex CLI | drop-in | assisted | — | — | — | — | — | — | — | — |
+| Copilot CLI | drop-in | assisted | 1.0.75 | 2026-07-29 | ✅ | ✅ | ✅ | ⚠️ detects | — | — |
+| Cursor | drop-in | assisted | — | — | — | — | — | — | — | — |
+| Gemini CLI | drop-in | assisted | — | — | — | — | — | — | — | — |
+| Copilot CLI | **plugin** | assisted | 1.0.75 | 2026-07-29 | — | — | — | ✅ model stopped | — | — |
+| OpenCode | drop-in | assisted | 1.18.9 | 2026-07-29 | ✅ | ✅ | ✅ | ✅ | — | — |
+| OpenCode | **plugin** (global) | assisted | 1.18.9 | 2026-07-29 | ✅ | ❌ see below | ✅ | ✅ | — | — |
 
 > **Claude Code, plugin, driven 2026-08-02 on DDW 0.9.3.** All five, plus the
 > fifth observation this file asks for: told to implement a whole PRD it did not

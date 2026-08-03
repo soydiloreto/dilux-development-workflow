@@ -46,7 +46,7 @@ in the wild*, and the README will say so by name.
 ## Field reports
 
 The most useful contribution is not a patch. It is: this tool, this version, on
-this date, and which of the four acceptance checks failed. That is what tells us
+this date, and which of the six acceptance checks failed. That is what tells us
 a tool changed its contract.
 
 ## Versions

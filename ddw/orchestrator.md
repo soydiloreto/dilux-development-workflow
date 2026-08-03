@@ -20,7 +20,11 @@ wins.
 1. Read `.ddw-state.json` from the repo. If it **does not exist**, ASSUME `phase: "IDLE"` — the
    state is materialized when the pipeline transitions to `CLASSIFY`, or when the PreToolUse hook
    creates it before the first write. If it **does exist**, extract `phase`, `tier`, `ticket`,
-   `title`, `tracker`, `discovery`.
+   `title`, `tracker`, `autonomy`, `discovery`. **`autonomy` absent or null means `assisted`.**
+   It was missing from this list for one release, which meant the mode was remembered only for as
+   long as the CLASSIFY turn stayed in the context window: a compaction or a new session silently
+   put the run back to asking. The runs `minimal` exists for are the long ones, and the long ones
+   are the ones that compact.
 2. Load `.ddw/rules/state.instructions.md` (state schema and management — loaded ALWAYS, regardless
    of phase).
 3. Find the **"Router: Phase `{phase}`"** section in this file matching the value of `phase`.
@@ -179,7 +183,8 @@ the corresponding Skill.`
 - NEVER load files belonging to a phase other than the current `phase` according to the router.
 - NEVER run skills or agents not listed for the active phase.
 - NEVER advance a phase without: (a) exit conditions met, (b) state updated, (c) explicit user
-  approval.
+  approval — **unless `autonomy` is `"minimal"`**, in which case (a) and (b) still hold and the
+  arrow does not wait. See *Autonomy* below; the exceptions there are not optional.
 - NEVER write source code in the CLASSIFY, DEFINE, PLAN or DISCOVERY phases.
 - NEVER create specs or fix-plans in the CLASSIFY, DEFINE or DISCOVERY phases.
 - NEVER fix code in the VERIFY phase. If verification fails, go back to CODE to fix it.
@@ -197,7 +202,46 @@ the corresponding Skill.`
 - NEVER run more than one phase transition in a single response. Finish the current phase, show the
   closing summary, wait for EXPLICIT confirmation, and only then start the next phase. Phrases like
   "go ahead", "next one", "continue" approve ONLY the immediate step proposed — they do NOT approve
-  a classification, a transition, or skipping steps.
+  a classification, a transition, or skipping steps. Under `minimal` the confirmation is what goes
+  away; **one transition per response does not** — the state is written once per arrow either way,
+  and the hook refuses a write that appends two.
+
+## Autonomy
+
+`.ddw-state.json` carries `autonomy`, set in CLASSIFY. Absent or `null` reads as `"assisted"`.
+
+**`assisted`** — what everything above describes: every arrow waits for the user.
+
+**`minimal`** — the arrows stop waiting, and **nothing else changes**. Same eight gates, same
+receipts, refused by the same hook over the same bytes. What goes away is asking a person to
+approve a transition whose evidence is already on disk, which is a rubber stamp, and rubber stamps
+are how approvals come to mean nothing.
+
+**What `minimal` does NOT touch: acts that leave the repository.** Merging a pull request and
+closing a tracker ticket are not arrows in this graph — they are irreversible things done to systems
+other people read, and no receipt attests that the user wanted them. They keep their confirmation in
+both modes, and the skills that perform them say so. `minimal` removes the pause on a transition
+whose evidence is already on disk; it does not hand the model the merge button.
+
+**And the gates are earned by their receipts, not by the approval.** `gates.define` turns true
+because `validate_prd.py` passed and left a receipt bound to those bytes — the approval was never
+what made it true, which is why removing the approval leaves the gate chain intact. A skill that
+says "set the gate once the user approves" means "once the validation passed and you showed them";
+under `minimal` the showing still happens and the asking does not.
+
+**Stop and ask anyway, in either mode:**
+
+1. **A decision nobody wrote down.** A ❌ the script names is a defect to fix; a question born of
+   missing information is not. Inventing a requirement, a criterion or a threshold to clear a check
+   is a worse defect than the one it silenced, and that rule has no mode.
+2. **A corrective loop at its ceiling.** `PRD loops`, `Spec loops`, and CODE's three attempts. Hitting
+   one means the automatic path was tried and did not converge; stop, with what was tried in the
+   record.
+3. **A corrupt state.** Unchanged: stop, report, repair nothing.
+
+**Every transition taken without a human carries `"autonomy": "minimal"` in its history entry.** A
+record that reads identically for a run somebody watched and one that had nobody to watch it is a
+record that lies by omission — and this is the one field that says which happened.
 - DDW's skills and any the project brings coexist in `.claude/skills/`. **NEVER invoke a skill that
   is not listed in the active phase's router**, whether it belongs to DDW or to the project. If the
   project ships a skill with the SAME name as one of DDW's, that is ambiguous: tell the user and ask
@@ -242,7 +286,7 @@ any other section.
 - **Skills:** `/ddw-context-check`, `/ddw-status`, `/ddw-self-check`, `/ddw-help`
 - **Blocked:** writing code, creating the PRD, creating specs, running tests, committing.
 - **Status line:** `🔍 Classifying request...`
-- **Exit:** stack read + tier classified + ticket assigned + user confirms + branch created → state
+- **Exit:** stack read + tier classified + ticket assigned + user confirms (not under `minimal` — see § Autonomy) + branch created → state
   set per tier. Details in `.ddw/rules/classify.instructions.md`.
 
 ---
@@ -259,7 +303,7 @@ any other section.
 - **Critical rule:** `/ddw-validate-prd` is ALWAYS MANDATORY — even if the PRD came from DISCOVERY
   or was validated before. No exceptions.
 - **Exit:** branch OK + `define` gate approved (requires validate-prd PASSED) + (FIX: RCA) +
-  (FEATURE: scope check) + user confirms → `phase`→`PLAN`, `gates.define`=true.
+  (FEATURE: scope check) + user confirms (not under `minimal` — see § Autonomy) → `phase`→`PLAN`, `gates.define`=true.
 
 ---
 
@@ -295,7 +339,7 @@ any other section.
 - **Per block:** dispatch `ddw-implementer`, then review in two stages (`ddw-module-verifier` for
   spec compliance, `ddw-arch-auditor` for quality). Details in `.ddw/rules/code.instructions.md`.
 - **On finishing:** `/ddw-test` → PASS + `/ddw-security-sast` → PASS (BLOCKING GATE).
-- **Exit:** `tests` and `sast` gates present + user confirms → `phase`→`VERIFY`.
+- **Exit:** `tests` and `sast` gates present + user confirms (not under `minimal` — see § Autonomy) → `phase`→`VERIFY`.
 
 ---
 
@@ -311,7 +355,7 @@ any other section.
 - **Sequence:** `/ddw-verify-module` → PASS (BLOCKING GATE).
 - **If it fails:** apply the corrective loop back to CODE (update state + clear gates + history). Do
   NOT fix code in VERIFY. Protocol in `.ddw/rules/verify.instructions.md`.
-- **Exit:** the `verify` gate present + user confirms → `phase`→`RELEASE`.
+- **Exit:** the `verify` gate present + user confirms (not under `minimal` — see § Autonomy) → `phase`→`RELEASE`.
 
 ---
 
@@ -324,7 +368,7 @@ any other section.
 - **Status line:** `🚀 {TIER} · Releasing [5/5] | {ticket}: {title}`
 - **Mandatory sequence (every step is a blocking gate):** CHANGELOG → `/ddw-commit` (gate `commit`)
   → `/ddw-create-pr` (gate `pr`, MANDATORY) → tracker update (a mandatory step, but not a gate: it depends on an external system and the graph carries no `tracker` edge condition) → closeout.
-- **Exit:** ALL RELEASE gates present + user confirms closeout → reset state to IDLE. Resetting to
+- **Exit:** ALL RELEASE gates present + user confirms (not under `minimal` — see § Autonomy) closeout → reset state to IDLE. Resetting to
   IDLE without completing every step is FORBIDDEN.
 
 ---
@@ -340,7 +384,7 @@ any other section.
 - **Free flow:** exploration ↔ formalization, no ordering constraints.
 - **`/ddw-commit`:** each artifact is committed as it is approved. **`/ddw-create-pr`:** only at
   closeout (gate met).
-- **Closing gate:** `discovery.concept`=`"complete"` + all PRDs `"validated"` + user confirms →
+- **Closing gate:** `discovery.concept`=`"complete"` + all PRDs `"validated"` + user confirms (not under `minimal` — see § Autonomy) →
   commit + PR + reset to IDLE.
 
 ---

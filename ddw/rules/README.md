@@ -66,7 +66,7 @@ continues normally. See `classify.instructions.md`.
 CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE → IDLE
 ```
 
-Every `→` transition requires the user's explicit approval.
+Every `→` transition requires the user's explicit approval. **Unless the ticket was classified `autonomy: "minimal"`**, where the arrows stop waiting and nothing else changes — see `.ddw/orchestrator.md` § Autonomy.
 
 Six phases. CLASSIFY is not numbered in the status line, so the numbering the agent shows you
 runs over the other five: DEFINE(1) → PLAN(2) → CODE(3) → VERIFY(4) → RELEASE(5).
@@ -106,7 +106,7 @@ each phase. The agent **never** loads instructions from a phase other than the c
 ### 2. Blocking gates
 - **SAST** (CODE phase): `ddw-security-sast` must pass before advancing to VERIFY.
 - **Tests**: the full suite must pass before leaving CODE.
-- **User approval**: every phase transition is confirmed by the user.
+- **User approval**: every phase transition is confirmed by the user. Under `minimal`, only the acts that leave the repository are (a merge, a tracker ticket).
 
 ### 3. Multi-session persistence
 The state is stored in `.ddw-state.json`. If a session is interrupted, the next one picks up where
@@ -147,7 +147,7 @@ what it is doing and the current phase, it stops and reports.
 
 .claude/                     ← THE WIRING (one of these per tool)
   settings.json                     Which hooks run and when
-  skills/*/                         15 pipeline skills (invoked as `ddw-<name>`)
+  skills/*/                         17 pipeline skills (invoked as `ddw-<name>`)
   agents/*.md                       5 specialized agents (spawned as `ddw-<name>`)
   hooks/                            The enforcement scripts
 
@@ -193,7 +193,7 @@ rule and `scripts/check_versions.py` enforces it.
 - **Architecture conventions** — defined in the target project's `AGENTS.md` (not a DDW file; the
   user fills it in)
 - [state.instructions.md](state.instructions.md) — The `.ddw-state.json` schema and how to write it
-- [validation-rules.instructions.md](validation-rules.instructions.md) — The 69 validation rules
+- [validation-rules.instructions.md](validation-rules.instructions.md) — The 84 validation rules
 - [testing.instructions.md](testing.instructions.md) — Testing and coverage conventions
 - [commits.instructions.md](commits.instructions.md) — Gitmoji + Conventional Commits and PRs
 - [security.instructions.md](security.instructions.md) — Security practices and SAST

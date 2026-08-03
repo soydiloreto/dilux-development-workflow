@@ -38,6 +38,7 @@ no file.
 │  Ticket: [ticket] — [title]                              │
 │  Tracker: [tracker or "—"]                               │
 │  Block: [block or "—"]  (FEATURE, during CODE)           │
+│  Autonomy: [assisted | minimal]                          │
 │                                                          │
 │  Gates:                                                  │
 │    [✅/⬜] define                                        │
@@ -48,6 +49,9 @@ no file.
 │    [✅/⬜] verify                                        │
 │    [✅/⬜] commit                                        │
 │    [✅/⬜] pr                                            │
+│                                                          │
+│  (every gate rests on a receipt, git, or the forge —     │
+│   `/ddw-help` or RATIONALE 16 for which is which)        │
 │                                                          │
 │  Artifacts (derived from the ticket):                    │
 │    PRD:   docs/ddw/prd/prd-{ticket}.md                   │

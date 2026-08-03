@@ -37,6 +37,11 @@ jobs:
           # check_versions --since needs the base commit to diff against, and a
           # shallow clone does not have it.
           fetch-depth: 0
+          # `--depth=0` is not "no limit", it is an error: `fatal: depth 0 is not
+          # a positive number`. Both pull-request-only steps carried it, so both
+          # died at the fetch and neither had ever run — on the first pull
+          # request this repository ever opened, which is where it surfaced. The
+          # explicit refspec is what makes `origin/<base>` exist for the diff.
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
@@ -64,7 +69,7 @@ jobs:
       - name: Versions describe what they are attached to
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
+            git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
             python3 scripts/check_versions.py --since "origin/${{ github.base_ref }}"
           elif git rev-parse --verify -q HEAD~1 >/dev/null; then
             python3 scripts/check_versions.py --since HEAD~1
@@ -78,7 +83,7 @@ jobs:
       - name: Commits carry the attribution this repo requires of everyone else
         if: github.event_name == 'pull_request'
         run: |
-          git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
+          git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
           python3 scripts/check_commits.py --since "origin/${{ github.base_ref }}"
 
       - name: The suite

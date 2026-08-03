@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.5.0
+version: 1.7.0
 ---
 
 # Phase 3: CODE (Implementation)
@@ -186,7 +186,15 @@ Once the WHOLE implementation is complete (all blocks or all steps):
 ### 1. Full test suite
 Invoke `Skill(skill="ddw-test")` (the whole suite, not just the new tests).
 - If it FAILS → fix. Do not advance. Max 3 attempts.
-- If it PASSES → `gates.tests` = `true`.
+- If it PASSES → **write the run report** to `docs/ddw/reports/tests-{ticket}.md` and validate it:
+  `python3 .ddw/scripts/validate_tests.py docs/ddw/reports/tests-{ticket}.md --tier <tier>`.
+  The rules are `F-TEST-01` to `F-TEST-06` and `W-TEST-01` in
+  `.ddw/rules/validation-rules.instructions.md` §6: the runner and the exact command, counts that
+  add up, every failure named, three coverage numbers against a floor quoted from the project, every
+  skip explained. A PASSED run writes the receipt the `tests` gate demands.
+- `gates.tests` = `true` only with that receipt on disk. DDW does not run your suite and the receipt
+  does not say it did — it says the report of the run you did is complete enough to be read and
+  re-run by someone else.
 - **Re-closeout after a fix:** if you corrected something and need to revalidate the suite,
   **invoke `Skill(skill="ddw-test")` again** — do NOT run `npm run test:all`/`npx jest` directly.
   The re-closeout is NOT an exception to the rule.
@@ -194,7 +202,8 @@ Invoke `Skill(skill="ddw-test")` (the whole suite, not just the new tests).
 ### 2. Type checker / Lint
 Run the project's type checker and linter (if they are configured in `AGENTS.md`, "Stack" section).
 - If it FAILS → fix. Max 3 attempts.
-- If it PASSES → continue to SAST.
+- If it PASSES → record the result in the test report (`W-TEST-01` asks for it there, and F-VER-05
+  will ask for it again in VERIFY) and continue to SAST.
 
 Report format:
 ```
@@ -245,6 +254,13 @@ Present the summary to the user:
 │  Do you approve moving to the verification phase?        │
 └─────────────────────────────────────────────────────────┘
 ```
+
+> **Under `autonomy: "minimal"` this arrow does not wait.** The state is still
+> written, the gates are still owed and still refused by the hook, and the
+> closing box is still shown — what goes away is the pause for a confirmation of
+> something a receipt already attests. Three things stop the run anyway, in
+> either mode: a decision nobody wrote down, a corrective loop at its ceiling,
+> and a corrupt state. See `.ddw/orchestrator.md` § Autonomy.
 
 After the user approves:
 1. **Commit whatever the closeout produced** with `Skill(skill="ddw-commit")`: the fixes the full

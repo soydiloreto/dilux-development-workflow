@@ -64,7 +64,7 @@ What was driven live on Copilot CLI 1.0.75, and what it means:
   report, which is the strongest thing this tool offers.
 
 The drop-in (`bash install.sh . --target copilot`) remains the everything-in-
-the-repo alternative, verified 4/4.
+the-repo alternative, driven live for three of the ritual's checks, with the fourth detected and not prevented — Copilot's post hook cannot refuse. `scripts/acceptance.md` holds the row.
 
 ## Uninstall
 

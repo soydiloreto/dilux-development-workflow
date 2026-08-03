@@ -159,8 +159,9 @@ else — that is what keeps it a pure function the suite can drive with syntheti
 anything outside the model **backs** the claim is a different question, it needs the repository, and
 it lives in `GATE_EVIDENCE` next to `decide_pre`/`decide_post`.
 
-Two gates have an entry. `define` wants a receipt naming the PRD's current bytes; `commit` asks git
-whether tracked changes are still in the working tree. Both run on the write that makes the claim —
+All eight have an entry. Six want a receipt naming their artifact's current bytes — `define`,
+`spec`, `threat`, `sast`, `tests`, `verify` — `commit` asks git whether tracked changes are still in
+the working tree, and `pr` asks the forge through `gh`. Each runs on the write that makes the claim —
 not on every later write, or editing a PRD two phases on would brick the session — and on both
 paths: pre-write for the write tools, and in post mode for the edge the journal has not recorded
 yet, which is how a `jq`/`sed` write is caught.
@@ -168,9 +169,10 @@ yet, which is how a `jq`/`sed` write is caught.
 `transition.py` calls the same function rather than carrying its own copy. It used to hold the only
 one, which is precisely how the hook came to allow what the helper refused.
 
-Which gates get an entry and which stay self-declared is
-[decision 16](RATIONALE.md#16-a-gate-is-an-attestation-and-they-are-not-all-the-same-strength), not
-a to-do list.
+Every gate has an entry now: six resolve a receipt, `commit` asks git, `pr` asks the forge. What
+each receipt is *of* — the document, never the work it describes — is
+[decision 16](RATIONALE.md#16-a-gate-is-an-attestation-and-they-are-not-all-the-same-strength),
+and it is the part a reader will overreach on.
 
 ## One write, one transition
 

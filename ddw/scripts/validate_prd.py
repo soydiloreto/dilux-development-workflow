@@ -95,6 +95,26 @@ def _section_body(text, names):
     return "\n".join(body).strip()
 
 
+
+# ── The corrective loop has a ceiling, and it is a number ─────────────────────
+#
+# `PRD loops` / `Spec loops` were incremented by the skills and compared to
+# nothing. Four documents named them as one of the three things that stop an
+# unattended run, so the ceiling was asserted in prose and unreachable in fact:
+# a counter with no limit is a tally, not a stop.
+#
+# The ceiling is not a wall. It fails, which shuts the gate, which is what forces
+# the one thing the loop cannot produce for itself — a person deciding. Getting
+# past it means editing the artifact with them, which is the point: three rounds
+# of the model correcting its own document without converging is the signal that
+# what is missing is a decision, not another pass.
+LOOP_CEILING = 3
+
+
+def _loop_count(text, label):
+    m = re.search(rf"^\s*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
+    return int(m.group(1)) if m else 0
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("prd")
@@ -214,6 +234,18 @@ def main():
 
         rows.append("  👁  F-PRD-02 (binary ACs) and F-PRD-07 (undeclared cross-references) are")
         rows.append("      MANUAL: judge them and say so explicitly in your report.")
+
+    loops = _loop_count(text, "PRD loops")
+    if loops >= LOOP_CEILING:
+        fail("F-PRD-LOOP", f"this artifact has been through {loops} corrective loops "
+                       f"(the ceiling is {LOOP_CEILING}). Three rounds of correcting a document "
+                       "without converging is the signal that what is missing is a decision, not "
+                       "another pass. Stop and put the open question to the user; getting past this "
+                       "means editing it with them and resetting the counter with their answer "
+                       "recorded. Under `autonomy: minimal` this is one of the three stops that do "
+                       "not have a mode.")
+    else:
+        ok("F-PRD-LOOP", f"{loops} corrective loop(s), under the ceiling of {LOOP_CEILING}")
 
     verdict = "PASSED" if fails == 0 else f"FAILED ({fails} FAIL{'S' if fails > 1 else ''})"
     report = [f"/ddw-validate-prd {args.prd} — {verdict}", "─" * 64]

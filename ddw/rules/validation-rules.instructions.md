@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.2.0
+version: 1.7.0
 ---
 
 # Validation Rules — Central Catalog
@@ -10,7 +10,7 @@ has a unique ID, a precise description, a severity (FAIL or WARNING) and a basis
 standards or best practices.
 
 **The validation skills (`ddw-validate-prd`, `ddw-validate-spec`, `ddw-threat-modeling`,
-`ddw-security-sast`, `ddw-verify-module`) MUST evaluate these rules
+`ddw-security-sast`, `ddw-test`, `ddw-verify-module`) MUST evaluate these rules
 mechanically. There is no room for subjective interpretation.**
 
 > **Requirement identifiers.** Functional requirements are `FR-xx`, non-functional requirements are
@@ -82,6 +82,7 @@ Valuable, Estimable, Small, Testable), EARS (Easy Approach to Requirements Synta
 | F-PRD-06 | Ambiguous verb | Requirements must use defined imperative verbs: "must", "must not". If a requirement uses "should", "could", "may", "ideally", "it is recommended" → FAIL. | IEEE 830 §3.1: "shall" for mandatory; "should" is forbidden in requirements because it creates contractual ambiguity. A requirement that "should" be met is a requirement that can be ignored. |
 | F-PRD-07 | Undeclared dependencies | If an FR references another module, an external service, or an existing feature, that dependency must be listed in the "Dependencies" section. If there are undeclared cross-references → FAIL. | Undeclared dependencies cause implementation blockers and integration errors. |
 | F-PRD-08 | Missing structural section | The PRD must contain ALL of these sections: Context and Problem, Goals, Functional Requirements, Non-Functional Requirements, Acceptance Criteria, Out of Scope (FEATURE), Dependencies. If any is missing → FAIL. | A structurally incomplete PRD cannot be validated. Missing sections are requirements nobody thought about. |
+| F-PRD-LOOP | Corrective loop at its ceiling | The PRD header's `PRD loops` counter reached 3. The loop is mandatory while it converges; three rounds without converging means what is missing is a decision nobody wrote down, not another pass. → FAIL, and the way past it is a human answering, with the counter reset and their answer recorded. | Under `autonomy: minimal` this is one of the three stops that have no mode. A counter incremented and compared to nothing is a tally, not a stop. |
 | F-PRD-09 | AC not in EARS form | Every acceptance criterion must match one of the five EARS patterns (see below). An AC that matches none → FAIL, quoting it and naming the pattern it most likely wants. **Does not apply to DISCOVERY**, whose PRDs are exploratory, or to QUICK-FIX, whose artifact is the 4-line fix-brief. | EARS (Easy Approach to Requirements Syntax, Rolls-Royce) turns a criterion into a shape a reader can check rather than a sentence they have to interpret. It is what AWS's Kiro adopted for spec-driven work with agents, for the same reason: a template makes an *absent* case visible, and free prose does not. |
 
 ### WARNING rules
@@ -154,6 +155,7 @@ completeness principle (every design decision must be documented).
 | F-SPEC-09 | Input with no validation | Every block that receives user input must specify validation rules: type, maximum length, format, allowed values. If the block accepts input and does not document validation → FAIL. | OWASP Top 10 A03 (Injection). Input with no documented validation = input with no implemented validation = a vulnerability. |
 | F-SPEC-10 | No error handling | Every block must document which errors can occur and how they are handled (error code, message, action). If a block has no error-handling section → FAIL. | Undocumented error handling gets implemented ad hoc: every developer invents their own format, errors get swallowed, and the user sees inconsistent messages or stack traces. |
 | F-SPEC-11 | Undocumented dependencies between blocks/steps | The spec (or fix-plan) must have a dependencies section stating which blocks (FEATURE) or steps (FIX) depend on which. If blocks or steps reference other blocks' entities/services with no declared ordering → FAIL. | Without a dependency order, parallel implementation causes merge conflicts and integration errors. |
+| F-SPEC-LOOP | Corrective loop at its ceiling | The spec header's `Spec loops` counter reached 3. Same rule and same reason as `F-PRD-LOOP`. | Same. |
 | F-SPEC-16 | Documented error with no test | **Every error a block documents under F-SPEC-10 must appear in that block's test list (F-SPEC-06).** Count them: fewer tests naming an error condition than errors documented → FAIL, naming which ones are unaccounted for. | This is the same standard F-VER-04 already applies — every input path needs a sad-path test — moved to the phase where it can still be met. F-SPEC-10 makes the errors *written down*; without this rule nothing makes them *tested*, so a spec passes PLAN with a full error section and a happy-path-only test list. VERIFY then catches it two phases later, when the code exists and the test can no longer be written first: a test added to cover an error path that already works documents the status quo, which is exactly what Rule #-1 in `testing.instructions.md` says proves nothing. The gap is not in CODE. It is here. |
 
 ### 2.4 Spec ↔ PRD consistency
@@ -278,6 +280,8 @@ To suppress a Medium finding as a false positive or an accepted risk:
 
 | ID | Check | Severity |
 |---|---|---|
+| F-SAST-SEVERITY | Severity downgraded by marker | A Critical or High category filed under `⚠️`. The catalog fixes the severity per category; a marker does not change it, and *What can NEVER be a WARNING* names a confirmed vulnerability explicitly. → FAIL, and it still owes a location, a BLOCKED verdict and (never) a suppression. | It was the cheapest bypass in the script: a warning marker exempted a Critical from every other rule at once. |
+| F-SAST-SUPPRESS | Critical or High suppressed | §4.1 says Critical and High cannot be suppressed. A suppression block naming one → FAIL. | Nothing enforced it, so the seven fields were being validated for a finding the catalog says has to be fixed. |
 | F-SAST-18 | Every suppression must have all 7 fields filled in. If any is missing → FAIL. | FAIL |
 | F-SAST-19 | Suppressions must be reviewed when SAST is re-run. If a suppression is more than 6 months old → FAIL (it must be re-evaluated). | FAIL |
 | W-SAST-01 | Low or Informational finding left undocumented. | WARNING |
@@ -309,17 +313,54 @@ To suppress a Medium finding as a false positive or an accepted risk:
 | W-VER-03 | Fragile test | A test depending on execution order, global state, or hardcoded values (timestamps, IDs). | Test maintainability. Does not block but causes future flakiness. |
 
 ---
+## 6. Test Run Report (`ddw-test`)
+
+**Applies in:** the CODE phase, before the `tests` gate is claimed.
+**Artifact:** `docs/ddw/reports/tests-{ticket}.md`.
+
+**DDW does not run your suite, and this section does not pretend otherwise.** It does not know
+whether this is pytest or jest or a monorepo with five runners, in what directory, with which
+environment; being wrong about that in somebody else's repository is what `docs/RATIONALE.md`
+decision 2 refuses. The numbers below are the model's account of a run it did.
+
+What stops being optional is the account. `tests: true` used to be a sentence — no runner, no
+command, no numbers, no names, nothing anyone could reproduce or act on. These rules make the report
+a document; whether it is a true document remains the reader's judgement, and every run says so.
+
+### FAIL rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| F-TEST-01 | Run not reproducible | The report must name the **runner** and the **exact command**. Missing either → FAIL. | A result nobody can re-run is an anecdote. This is also the only verification available to a human in ten seconds, which is the whole point of writing it down. |
+| F-TEST-02 | Counts absent or impossible | Total, passed and failed must be present, and `passed + failed + skipped` must equal `total`. Missing or contradictory → FAIL. | Arithmetic is the one thing a report cannot get wrong quietly. A count that does not add up is a report about two different runs. |
+| F-TEST-03 | Failure with no name | Every reported failure must be identified by its test ID. A count with no names → FAIL. | The corrective loop needs something to work from. "3 failed" tells nobody which three. |
+| F-TEST-04 | Coverage incomplete or under the floor | Line, branch and function coverage must each be stated as a number, and each must be at or above the floor. Missing one, or under → FAIL. | One coverage number hides the other two: a suite can touch every line and no branch. Under the floor is the condition the loop exists for. |
+| F-TEST-05 | Floor not stated or not sourced | The report must state the coverage floor and where it comes from (`AGENTS.md`, the spec). Absent → FAIL; stated without a source → WARNING. | A report that chooses its own floor passes itself. The floor belongs to the project. |
+| F-TEST-07 | More than one run in one report | A count or coverage field appearing twice (a per-suite breakdown). Every rule reads the first value it finds, so a second suite is not checked at all → FAIL. | A green unit suite above a red integration suite was read as the unit suite alone, with five failures on the page nobody counted. |
+| F-TEST-08 | A red run earning the gate | `Failed` greater than zero → FAIL. `ddw-test`'s own criterion is 0 failing tests, and the validator that writes the gate's receipt was not checking it. | A report of a red run does not earn the tests gate, however complete the report is. |
+| F-TEST-06 | Silent skip | Every skipped test must carry a reason. Skips with no explanation → FAIL. | A silent skip is the cheapest way to make a suite green, and it looks identical to a test that exists. |
+
+### WARNING rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| W-TEST-01 | No lint or type-check result | The report does not state the linter or type checker's result. | VERIFY asks for it under F-VER-05, so this is a reminder rather than a block — but a CODE phase that never ran the linter will find out two phases later. |
+
+
+---
+
 
 ## Quantitative Summary
 
 | Area | FAIL rules | WARNING rules | Total |
 |---|---|---|---|
-| PRD | 8 | 5 | 13 |
-| Spec / Fix-Plan | 15 | 3 | 18 |
+| PRD | 10 | 5 | 15 |
+| Spec / Fix-Plan | 17 | 3 | 20 |
 | Threat Model | 7 | 2 | 9 |
-| SAST | 19 | 1 | 20 |
+| SAST | 21 | 1 | 22 |
+| Test Run Report | 8 | 1 | 9 |
 | Module Verify | 6 | 3 | 9 |
-| **Total** | **55** | **14** | **69** |
+| **Total** | **69** | **15** | **84** |
 
 ---
 
@@ -331,7 +372,7 @@ this catalog. Their behavior is defined in their respective instruction files:
 | Skill | Phase | Behavior | Defined in |
 |---|---|---|---|
 | `ddw-validate-arch` | CODE | Validates the project's architecture conventions. The rules depend on the target project (`AGENTS.md`). If it reports violations → BLOCKED. | `.ddw/rules/code.instructions.md` |
-| `ddw-test` | CODE | Runs the test suite. If it fails → BLOCKED. It is a runner, not an artifact validator. | `.ddw/rules/code.instructions.md`, `.ddw/rules/testing.instructions.md` |
+| `ddw-test` | CODE | **Moved to §6.** Its run report has `F-TEST-01`…`08` and `W-TEST-01`, and the `tests` gate refuses without the receipt they write. This row said it was a runner with no rules in this catalog while the catalog carried eight of them. | Runs the test suite. If it fails → BLOCKED. It is a runner, not an artifact validator. | `.ddw/rules/code.instructions.md`, `.ddw/rules/testing.instructions.md` |
 
 These skills are operational gates: they run and report pass/fail. Test quality rules (coverage,
 traceability, sad paths) are evaluated in the VERIFY phase by `ddw-verify-module` (section 5 of this
@@ -352,14 +393,24 @@ has not validated anything, whatever its box says.
 | `ddw-validate-spec` | `.ddw/scripts/validate_spec.py <artifact> --tier <tier>` | `.ddw-sessions/spec-validated-<hash>` |
 | `ddw-threat-modeling` | `.ddw/scripts/validate_threat.py <artifact> --tier <tier>` | `.ddw-sessions/threat-validated-<hash>` |
 | `ddw-verify-module` | `.ddw/scripts/validate_verify.py <artifact> --tier <tier>` | `.ddw-sessions/verify-validated-<hash>` |
+| `ddw-security-sast` | `.ddw/scripts/validate_sast.py <artifact> --tier <tier>` | `.ddw-sessions/sast-validated-<hash>` |
+| `ddw-test` | `.ddw/scripts/validate_tests.py <artifact> --tier <tier>` | `.ddw-sessions/tests-validated-<hash>` |
 
 The hash is of the artifact's **current bytes**, and the gate the phase needs asks for exactly that
 receipt. So the incentive points the right way: there is no route to the next phase that goes around
 the checklist, and editing the artifact afterwards costs another run rather than nothing.
 
-`ddw-security-sast` has no script and no receipt, on purpose: its finding is a model reading code,
-and a receipt would dress that up as proof (`docs/RATIONALE.md` decision 16). It still owes the user
-the same table, produced by hand, with every rule ID it evaluated.
+`ddw-security-sast`'s receipt is the newest and the one whose scope is easiest to overread. **It
+attests the REPORT, never the code.** DDW does not scan anything: the finding is a model reading
+source, and no file will make that a proof. What the validator answers is structural — every
+catalogued category carrying a verdict, every finding naming a file and a line, the stated result
+consistent with the severities listed, every Medium fixed or suppressed, every suppression carrying
+its fields and inside its review window.
+
+That distinction is the whole of it, and it is the same one `validate_verify.py` already makes: the
+numbers stay the model's, the completeness stops being optional. What went unguarded while the
+distinction was being argued about was the report itself — nineteen rules catalogued here, none of
+them ever executed, and a `sast` gate that turned true because the model said the reading went well.
 
 ### 2. Fix what the script found — the loop, before anyone is asked anything
 

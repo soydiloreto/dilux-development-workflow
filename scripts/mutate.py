@@ -174,10 +174,11 @@ MUTATIONS = [
           "    reason = None or (lambda *a: None)(\n")),
     ("the spec, threat and verify gates go back to trusting the boolean",
      edit("ddw/scripts/validate-transition.py",
-          'GATE_EVIDENCE = {"define": _prd_receipt_missing, "spec": _spec_receipt_missing,\n'
-          '                 "threat": _threat_receipt_missing, "verify": _verify_receipt_missing,\n'
-          '                 "commit": _commit_evidence_missing}',
-          'GATE_EVIDENCE = {"define": _prd_receipt_missing, "commit": _commit_evidence_missing}')),
+          # Anchored on the first line of the table only: the table grows every
+          # time a gate earns a receipt, and pinning all of it meant raising a
+          # gate broke the mutation that guards the others.
+          '''GATE_EVIDENCE = {"define": _prd_receipt_missing, "spec": _spec_receipt_missing,''',
+          '''GATE_EVIDENCE = {"define": _prd_receipt_missing, "_spec": _spec_receipt_missing,''')),
     ("the spec validator stops counting a block's errors against its tests",
      edit("ddw/scripts/validate_spec.py",
           "        if errors and len(sad) < len(errors):\n",
@@ -607,12 +608,15 @@ MUTATIONS = [
           "            pass")),
     ("the receipt stops naming the PRD's current bytes, and attests to a rewrite",
      edit("ddw/scripts/validate-transition.py",
-          '    if os.path.exists(os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))):',
-          '    if glob.glob(os.path.join(root, ".ddw-sessions", "%s-validated-*" % receipt)):')),
+          'marker = os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))',
+          'marker = (glob.glob(os.path.join(root, ".ddw-sessions", "%s-validated-*" % receipt)) or [""])[0]')),
     ("the commit gate goes back to taking the model's word",
+     # One key, never its neighbours: this table grows every time a gate earns
+     # evidence, and an anchor that includes the next entry breaks on the growth
+     # it is supposed to be indifferent to.
      edit("ddw/scripts/validate-transition.py",
-          '                 "commit": _commit_evidence_missing}',
-          '                 }')),
+          '"commit": _commit_evidence_missing,',
+          '"_commit": _commit_evidence_missing,')),
     ("an untracked build directory starts blocking the closeout",
      edit("ddw/scripts/validate-transition.py",
           'dirty = _git(root, "status", "--porcelain", "--untracked-files=no")',
@@ -694,9 +698,74 @@ MUTATIONS = [
     # Breaks an anchor rather than the check that reads it: a mutation that
     # merely disabled the check would leave the suite green and survive, which
     # is a mutation measuring nothing — the thing this whole file is about.
-    ("a mutation's anchor moves and the fast check does not notice",
-     edit("scripts/mutate.py", 'edit("ddw/scripts/hook-gate.py", "vt.decide_pre("',
-          'edit("ddw/scripts/hook-gate.py", "vt.decide_pre_THIS_IS_NOT_THERE("')),
+    # The preflight runs against the tree as it is, before anything is injected —
+    # the only place it can run without scoring its own side effect as a kill.
+    # That also puts it out of reach of a mutation: breaking an anchor inside the
+    # copy is invisible now, because the copy no longer checks. So what gets
+    # mutated is the CALL, and the suite asserts the call is there and is first.
+    ("mutate.py stops verifying its anchors before it starts injecting",
+     edit("scripts/mutate.py", "    if check_anchors() != 0:\n        return 1",
+          "    if False:\n        return 1")),
+    # The ceiling was a number in four documents and a comparison in none of
+    # them, so one of the three stops that hold under `minimal` was unreachable.
+    ("the corrective loop's ceiling goes back to being a number nothing compares",
+     edit("ddw/scripts/validate_prd.py", "    if loops >= LOOP_CEILING:", "    if False:")),
+    ("the sast gate goes back to turning true on the model's say-so",
+     edit("ddw/scripts/validate-transition.py",
+          '"sast": _sast_receipt_missing,',
+          '"_sast": _sast_receipt_missing,')),
+    ("a warning marker exempts a Critical from every other rule again",
+     edit("ddw/scripts/validate_sast.py",
+          "    downgraded = [r for r, ls in lines.items()", "    downgraded = [] or [r for r, ls in lines.items()"[:0] + "    downgraded = []\n    _unused = [r for r, ls in lines.items()")),
+    ("a Critical becomes suppressible again",
+     edit("ddw/scripts/validate_sast.py", "    if unsuppressible:", "    if False:")),
+    ("a red test run earns the tests gate again",
+     edit("ddw/scripts/validate_tests.py", "    elif failed > 0:", "    elif False:")),
+    ("two runs in one report stop being two runs",
+     edit("ddw/scripts/validate_tests.py", "    if dupes:", "    if False:")),
+    ("a PASSED SAST validation stops leaving its receipt",
+     edit("ddw/scripts/validate_sast.py",
+          '        with open(os.path.join(sess, f"sast-validated-{digest}"), "w", encoding="utf-8") as fh:\n'
+          '            fh.write(os.path.basename(abs_p) + "\\n")\n',
+          '        pass\n')),
+    ("a category nobody judged stops being noticed",
+     edit("ddw/scripts/validate_sast.py",
+          "    missing = [r for r in CATEGORIES if r not in lines]",
+          "    missing = []")),
+    ("a Critical finding above a PASSED verdict stops being a contradiction",
+     edit("ddw/scripts/validate_sast.py",
+          "    if blocking and (says_passed or not says_blocked):",
+          "    if False:")),
+    ("a suppression stops ageing, and six months means nothing",
+     edit("ddw/scripts/validate_sast.py",
+          "        if due < today:",
+          "        if False:")),
+
+    # ── The test run, which used to be one word ──────────────────────────────
+    ("the tests gate goes back to turning true on a sentence",
+     edit("ddw/scripts/validate-transition.py",
+          '"tests": _tests_receipt_missing,',
+          '"_tests": _tests_receipt_missing,')),
+    ("a run report stops needing the command that produced it",
+     edit("ddw/scripts/validate_tests.py",
+          "    if runner and command:",
+          "    if True:")),
+    ("counts that do not add up stop being a contradiction",
+     edit("ddw/scripts/validate_tests.py",
+          "    elif abs((passed + failed + skipped) - total) > 0.5:",
+          "    elif False:")),
+    ("coverage under the floor stops blocking",
+     edit("ddw/scripts/validate_tests.py",
+          "        under = [f\"{n} {v:.0f}%\" for n, v in have if v < floor]",
+          "        under = []")),
+    ("the pr gate stops asking the forge and takes the model's word again",
+     edit("ddw/scripts/validate-transition.py",
+          '"pr": _pr_evidence_missing}',
+          '}')),
+    # The field itself: absent has to read as assisted, or every repo that
+    # upgrades is reported broken by its own self-check.
+    ("the state schema forgets the autonomy field",
+     edit("ddw/scripts/session-boot.py", '    "autonomy": None,\n', "")),
 
     # ── What the user actually reads ─────────────────────────────────────────
     # Three defects found by installing it and using it, not by any of the above.
@@ -710,9 +779,13 @@ MUTATIONS = [
     # file the model had not opened. Take it out of the output and it goes back
     # to depending on which files were loaded that turn.
     ("the validator stops telling the model to show the table it just printed",
+     # Not `print("" or "Show…")`, which is what this said first: that evaluates
+     # to the same string and prints the same line, so nothing could kill it and
+     # the run reported it surviving for two releases. An equivalent mutant is a
+     # line in a list.
      edit("ddw/scripts/validate_prd.py",
-          'print("Show the user this table IN FULL',
-          'print("" or "Show the user this table IN FULL')),
+          '    print("Show the user this table IN FULL',
+          '    _ = ("Show the user this table IN FULL')),
 
     ("the protocol stops saying a re-validation prints the table",
      edit("ddw/rules/validation-rules.instructions.md",
@@ -744,6 +817,9 @@ MUTATIONS = [
      edit("scripts/check_commits.py",
           '            skipped.append(f"{sha[:9]} {name}")',
           "            pass")),
+    ("the pull request's own merge commit is held to the attribution rule again",
+     edit("scripts/check_commits.py", '"log", "--no-merges",', '"log",')),
+
     ("a range git cannot read reports success instead of saying it did not run",
      edit("scripts/check_commits.py",
           '        print(f"check_commits: cannot read {args.since}..HEAD — the check did NOT run\\n"\n'
@@ -758,8 +834,11 @@ MUTATIONS = [
     # ── Versions ─────────────────────────────────────────────────────────────
     ("the product ships two different version numbers",
      json_edit(".claude-plugin/plugin.json", lambda d: d.update({"version": "2.2.0"}))),
+    # Anchored on the frontmatter, not the number: a rule file's version moves
+    # every time the rule does, and pinning it meant that editing a rule broke
+    # the mutation that guards every rule's version.
     ("a rule's version stops being semver",
-     edit("ddw/rules/code.instructions.md", "version: 1.5.0", "version: latest")),
+     edit("ddw/rules/code.instructions.md", "\nversion: ", "\nversion: latest-")),
     ("the validator reads a graph of any format it is handed",
      edit("ddw/scripts/validate-transition.py",
           "        if major != GRAPH_FORMAT_MAJOR:", "        if False:")),
@@ -820,6 +899,13 @@ MUTATIONS = [
      edit("scripts/check_versions.py",
           "    for rel in PRODUCT_MANIFESTS[1:]:",
           "    for rel in []:")),
+    # The failure that hid for the whole life of the repository: a step whose
+    # first command cannot run, on the only event that reaches it.
+    ("CI's pull-request fetch goes back to a depth git refuses",
+     edit(".github/workflows/verify.yml",
+          'git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"',
+          'git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"')),
+
     ("the version rule goes back to applying on pull requests alone",
      edit(".github/workflows/verify.yml",
           "          elif git rev-parse --verify -q HEAD~1 >/dev/null; then\n"
@@ -1114,6 +1200,21 @@ def main():
 
     if args.only and args.shard:
         raise SystemExit("--only and --shard both pick what runs; use one")
+
+    # Anchors are verified HERE, before anything is injected, against the tree as
+    # it is on disk. This check lived inside `verify_install.sh` for one
+    # afternoon and it was worse than not having it: the suite runs inside the
+    # MUTATED copy, where the mutation being tested has just removed its own
+    # anchor, so the check failed, the suite exited non-zero, and this file
+    # recorded the mutation as KILLED — whether or not a single real check had
+    # noticed the defect. Two mutations were caught surviving that way (the `pr`
+    # gate and the `autonomy` field); both had been reported killed.
+    #
+    # A measurement whose instrument reports success for its own side effect is
+    # not a weak measurement, it is a fabricated one — and this file exists to
+    # say so about everything else.
+    if check_anchors() != 0:
+        return 1
 
     wanted = set(slice_of(args.shard, len(MUTATIONS))) if args.shard else None
     chosen = [(i, m) for i, m in enumerate(MUTATIONS, 1)

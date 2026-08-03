@@ -40,6 +40,7 @@ IDLE_STATE = {
     "tracker": None,
     "gates": {},
     "block": None,
+    "autonomy": None,
     "discovery": None,
     "history": [],
 }
@@ -276,7 +277,8 @@ def compaction_nudge(orchestrator):
         "DDW POST-COMPACTION: the summary you are now working from is not the pipeline. "
         "RE-RUN the orchestrator's boot sequence before answering the user:\n"
         f"\n1. Read `{orchestrator}` (global agent rules + phase router)."
-        "\n2. Read the repo's `.ddw-state.json` (phase, tier, ticket, title, gates)."
+        "\n2. Read the repo's `.ddw-state.json` (phase, tier, ticket, title, gates, autonomy —"
+        "\n   absent or null means assisted; this is what a compaction used to lose)."
         f"\n3. In `{orchestrator}`, find the \"Router: Phase `{{phase}}`\" section and load ONLY "
         "the files it lists."
         "\n4. Re-apply the mandatory status line at the start of your response.\n"

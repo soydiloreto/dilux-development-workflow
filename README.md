@@ -56,7 +56,8 @@ None of these is fixed by a better prompt. They are structural.
 ## What it does
 
 `CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE`, one phase at a time, with a gate between each
-pair and your approval on every arrow. Only the current phase's rules enter the context. Every phase
+pair and your approval on every arrow — or, if you ask for it at classification time, on none of
+them (see *Minimal intervention* below). Only the current phase's rules enter the context. Every phase
 commits what it produced. The state lives on disk, so closing the terminal costs you nothing.
 
 And the ceremony matches the size of the request: a question gets an answer, a ten-line fix gets a
@@ -86,10 +87,11 @@ executed, it does not get to call itself a gate.
 ### Not every gate is the same strength, and DDW says which
 
 A gate is refused-without and recorded. What **backs** the claim is graded, and the grading is
-written down instead of implied: the gates for the **PRD, the spec, the threat model and the
-verification verdict** each rest on a receipt naming that document's current bytes — edit the
-document afterwards and the receipt stops matching — the commit gate asks git, and `tests`, `sast`
-and `pr` rest on the model's record of what it did.
+written down instead of implied. **All eight rest on something outside the model's word**: six on a
+receipt naming a document's current bytes — the PRD, the spec, the threat model, the SAST report,
+the test run report, the verification verdict — so that editing the document afterwards stops the
+receipt matching; `commit` asks git; `pr` asks the forge, which is the one piece of evidence the
+model cannot produce by writing a file.
 
 Each receipt is written by a validator that prints its whole checklist: every rule ID, what was
 checked, and ✅ / ⚠️ / ❌. That output is what you approve, and it is saved next to the artifact as
@@ -103,16 +105,41 @@ self-declared by whoever did the work, and from level 2 it is produced by the pl
 forged by the party doing the work. A required status check is the same idea in the shape everyone
 uses daily: you cannot merge until CI reports the check, and you cannot report it for CI.
 
-**Two gates stay self-declared on purpose.** `sast` has nothing to run — it is a model reading code,
-and a receipt would dress a report up as proof. `tests` would mean DDW running your suite in your
-repository, guessing your runner and your environment: CI can do that because CI *is* the
-environment, and a gate that cannot be satisfied honestly gets satisfied dishonestly. Both stay in
-the pipeline, gated and sequenced, and stay honest about what they are. For the same reason the
-`verify` receipt attests that the **verdict is complete** — no acceptance criterion missing, no
-block unaccounted for, the coverage numbers stated and above the floor — and not that the tests
-pass, which DDW did not watch happen.
+**What none of them attest is that the work is right, and the distinction is the whole design.**
+DDW does not run your suite and does not scan your code. The `tests` receipt says the account of the
+run is complete — the runner and the exact command named, the counts adding up, every failure
+identified, three coverage numbers against a floor quoted from your project, every skip explained.
+The `sast` receipt says the report judged every catalogued category, located what it found, and did
+not declare PASSED above a Critical. The `verify` receipt says the verdict accounts for every
+criterion. **A complete report can still be a false one.** What it can no longer be is absent,
+vague, or arithmetically impossible — which is what "the model's record" meant before, and what
+`tests: true` used to be: one word, on a run nobody could reproduce.
+
+Six of the eight are receipts a validator wrote over bytes the model produced: level 2 for the shape
+of the record, level 1 for its content. The run says which is which rather than leaving you to
+assume the better of the two.
 
 → [**Which gate rests on what, and why**](docs/RATIONALE.md#16-a-gate-is-an-attestation-and-they-are-not-all-the-same-strength)
+
+### Minimal intervention
+
+Classification records **how much of the run waits for you**. The default, `assisted`, is what this
+README describes: every arrow asks. Say so at classification time and you get `minimal` instead —
+the arrows stop asking, and **nothing else changes**. The same eight gates, the same receipts,
+refused by the same hook over the same bytes. What goes away is being asked to approve a transition
+whose evidence is already on disk, which is a rubber stamp, and rubber stamps are how approvals come
+to mean nothing.
+
+**What it costs, plainly:** nobody reads the tables. The receipts still refuse an incomplete PRD, an
+unvalidated spec, a SAST report that never judged SSRF, a test run whose numbers do not add up. But
+*complete* is not *true* — and the person who would have caught the difference is the one who just
+stepped out of the loop.
+
+Three things stop the run in either mode, and they are not configurable: **a decision nobody wrote
+down** (inventing a requirement to clear a check is a worse defect than the one it silences), **a
+corrective loop that hit its ceiling**, and **a corrupt state**. And every transition taken without
+a human says so in the history, because a record that reads the same for a run you watched and one
+that ran at three in the morning is a record that lies by omission.
 
 ## Status
 

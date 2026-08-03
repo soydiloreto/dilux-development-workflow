@@ -17,8 +17,9 @@ JSON is emitted.
 edge: IDLE→CLASSIFY and CLASSIFY→DEFINE are separate runs (a direct IDLE→DEFINE
 is not in the graph and gets rejected).
 
-The ONLY metadata the helper sets is `--tier` (an enum — shell-safe, and the only
-thing the FSM needs to route the graph). The other fields
+The only metadata the helper sets is `--tier` and `--autonomy` (both enums —
+shell-safe, and the two things chosen once in CLASSIFY that the rest of the run
+is routed by). The other fields
 (ticket/title/tracker, and the discovery object) are NOT handled here:
 the model fills them in in the SAME Write where it pastes this output. Passing
 free text (e.g. a title with spaces) through shell args broke the quoting, so
@@ -87,7 +88,7 @@ def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=()):
+def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(), autonomy=None):
     """The complete state for the next step. Read-only over old_state (deep copy)."""
     new_state = json.loads(json.dumps(old_state))  # deep copy
     from_phase = old_state.get("phase", "IDLE")
@@ -95,12 +96,17 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=()):
     if to_phase == "IDLE":
         # Reset: clean metadata, gates {}, history preserved (--gate/--tier ignored).
         new_state["tier"] = None
-        for key in ("ticket", "title", "tracker", "block", "discovery"):
+        # `autonomy` resets with the ticket, for the reason tier and gates do:
+        # otherwise the next request inherits a decision to stop asking that
+        # nobody made for it. The hook refuses an IDLE state that keeps it.
+        for key in ("ticket", "title", "tracker", "block", "discovery", "autonomy"):
             new_state[key] = None
         new_state["gates"] = {}
     else:
         if tier is not None:
             new_state["tier"] = tier
+        if autonomy is not None:
+            new_state["autonomy"] = autonomy
         merged = dict(new_state.get("gates") or {})
         for gate in clear_gates:
             merged.pop(gate, None)
@@ -123,6 +129,14 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=()):
     run_tier = old_state.get("tier") or new_state.get("tier")
     if run_tier:
         entry["tier"] = run_tier
+    # And the mode the edge was taken under, stamped on the edge itself, when it
+    # was taken without anyone being asked. A history that reads identically for
+    # a run somebody watched and one that had nobody to watch it is a record that
+    # lies by omission — and this is the only place that distinction can live,
+    # because the header resets when the ticket closes.
+    run_auto = new_state.get("autonomy") or old_state.get("autonomy")
+    if run_auto == "minimal":
+        entry["autonomy"] = "minimal"
     history.append(entry)
     new_state["history"] = history
     return new_state
@@ -138,6 +152,10 @@ def main():
                          "tests and sast: the fix has to re-earn them.")
     ap.add_argument("--tier", choices=_TIERS, default=None,
                     help="Tier of the work (enum). The only metadata the FSM needs to route the graph.")
+    ap.add_argument("--autonomy", choices=("assisted", "minimal"), default=None,
+                    help="How much of the run waits for the user. Set in CLASSIFY, with the user "
+                         "looking at the box; the hook refuses a change anywhere else. Absent "
+                         "leaves whatever the state carries, and absent there means assisted.")
     # --set was removed (free text through shell args broke the quoting). It is
     # kept registered and hidden only so we can return an actionable message.
     ap.add_argument("--set", dest="sets", action="append", default=[], help=argparse.SUPPRESS)
@@ -165,7 +183,7 @@ def main():
     _, old_state = vt._load_disk_state(args.state)
     graph = vt._load_graph(args.graph)  # exits 2 with a message if the graph will not load
     new_state = build_next_state(old_state, args.to, args.action, args.gate, args.tier,
-                                 args.clear_gates)
+                                 args.clear_gates, autonomy=args.autonomy)
 
     # A gate that rests on evidence is asked for it here too — the same function
     # the hook calls, never a second copy. This helper used to hold the only

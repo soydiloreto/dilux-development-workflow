@@ -51,7 +51,7 @@ both driven live on OpenCode 1.18.9), the packaged method, the **skills**
 the first user message so the model knows the method's path and phase before it
 acts. The acceptance record is `scripts/acceptance.md`.
 
-## Drop-in (everything in the repo — verified 4/4)
+## Drop-in (everything in the repo — driven live for the ritual's first four checks; 5 and 6 are still owed)
 
 ```bash
 bash install.sh . --target opencode
