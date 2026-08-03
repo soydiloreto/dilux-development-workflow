@@ -2996,13 +2996,29 @@ grep -q 'A re-validation is a validation' "$VR" \
 # `Ran 1 shell command`, no skill loaded — so the rule in the skill and the rule
 # in the catalog were both in files nobody had opened. This one arrives attached
 # to the table it governs.
-VRSCRIPTS=""
-for S in validate_prd validate_spec validate_threat validate_verify; do
-  grep -q 'Show the user this table IN FULL' "$SELF/ddw/scripts/$S.py" || VRSCRIPTS="$VRSCRIPTS $S"
-done
-[ -z "$VRSCRIPTS" ] \
-  && ok "and every validator demands it in its own output, where the model is already looking" \
-  || bad "these validators print a table and nothing that says to show it:$VRSCRIPTS"
+python3 - "$SELF" "$VP" <<'PYDEMAND' && ok "and every validator PRINTS the demand under the table it produced, where the model is already looking" || bad "a validator's table goes out with nothing telling anyone to show it — see above"
+import os, subprocess, sys
+src, repo = sys.argv[1], sys.argv[2]
+DEMAND = "Show the user this table IN FULL"
+cases = [("validate_prd.py", "docs/ddw/prd/prd-FEAT-001.md"),
+         ("validate_spec.py", "docs/ddw/specs/spec-FEAT-001.md"),
+         ("validate_threat.py", "docs/ddw/security/threat-FEAT-001.md"),
+         ("validate_verify.py", "docs/ddw/reports/verify-FEAT-001.md"),
+         ("validate_sast.py", "docs/ddw/security/sast-FEAT-001.md"),
+         ("validate_tests.py", "docs/ddw/reports/tests-FEAT-001.md")]
+missing = []
+for script, artifact in cases:
+    path = os.path.join(repo, artifact)
+    if not os.path.exists(path):
+        continue                      # fixture not built in this section; not this check's job
+    out = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts", script), path,
+                          "--tier", "FEATURE"], capture_output=True, text=True)
+    if DEMAND not in out.stdout:
+        missing.append(script)
+assert cases, "no validators to check"
+assert not missing, ("these validators printed a checklist and nothing telling the user it has to "
+                     "be shown: " + ", ".join(missing))
+PYDEMAND
 
 # In the catalog AND in each skill: the skill is what the model loads and
 # executes. The one that collapsed the table had read the skill, not the catalog.

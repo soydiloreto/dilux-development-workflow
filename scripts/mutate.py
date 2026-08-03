@@ -766,9 +766,13 @@ MUTATIONS = [
     # file the model had not opened. Take it out of the output and it goes back
     # to depending on which files were loaded that turn.
     ("the validator stops telling the model to show the table it just printed",
+     # Not `print("" or "Show…")`, which is what this said first: that evaluates
+     # to the same string and prints the same line, so nothing could kill it and
+     # the run reported it surviving for two releases. An equivalent mutant is a
+     # line in a list.
      edit("ddw/scripts/validate_prd.py",
-          'print("Show the user this table IN FULL',
-          'print("" or "Show the user this table IN FULL')),
+          '    print("Show the user this table IN FULL',
+          '    _ = ("Show the user this table IN FULL')),
 
     ("the protocol stops saying a re-validation prints the table",
      edit("ddw/rules/validation-rules.instructions.md",
