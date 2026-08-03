@@ -480,6 +480,67 @@ prevent.
 
 ---
 
+## 17. A pull request waits for people, and the pipeline has to wait with it
+
+**The decision.** You can step back one phase, always, and stepping back gives up what that phase
+granted. A ticket can be **paused at RELEASE** once its commit and its pull request exist. Resuming
+there asks about both again. And when the phase is IDLE and the repo has a remote, DDW asks the
+forge what is waiting for you.
+
+**The complaint this answers.** You finish, you open the pull request, and the review takes two
+days. There is one state per directory, so the ticket sat in RELEASE and you could not start
+anything else — and when the review came back asking for changes, the method's own advice was to
+open a *new* ticket, on a *new* branch, for work that belongs to the same pull request. That is
+bookkeeping nobody believes, and people route around a method that asks them to lie in it.
+
+**Why stepping back is one phase at a time, declared in the graph.** The alternative was a rule in
+code — "any earlier phase is legal" — and the graph would have stopped being the authority. Instead
+each backward edge is data, with a `clears` list naming exactly what it takes away, and the
+validator refuses a backward write that still holds them. Four steps to get from RELEASE to DEFINE,
+and each one is a history entry saying why. The record ends up saying how far back a review sent
+you, which is worth more than the convenience of one jump.
+
+**And it closes a hole that predates the feature.** `PLAN→DEFINE` already existed and cleared
+nothing, so you could step back, rewrite the PRD, and step forward claiming `define` — with no
+receipt asked for, because evidence is owed only when a gate is claimed for the *first* time and
+this one never stopped being true. The helper refused it. The hook did not. That is the same shape
+as decision 16's own worst moment, in the pipeline's documented recovery path, and it was reachable
+until the `clears` rule landed in `validate()`.
+
+**Why the pause exception is exactly this narrow.** `no_walkaway` exists so `"abandon"` cannot be a
+skeleton key: relabel the exit and ship with no commit and no PR. That reasoning does not cover a
+ticket whose commit and pull request are already paid for and whose only remaining dependency is
+another person. So: a **pause** is allowed there, an **abandon** is not, and both gates are read
+from the state *before* the write so the same write cannot grant them and spend them.
+
+Resuming gives `commit` and `pr` back false. A gate already true is never re-asked, and days passed
+— the pull request may have been closed, the branch may have moved. Two instant questions, one to
+git and one to the forge, against a closeout that would otherwise be satisfied by evidence earned
+before the wait.
+
+**Why the ceiling counts two numbers.** `PRD loops` is the running total and nobody resets it: six
+months on, "this document cost five rounds" is worth being able to read. The ceiling measures
+something else — rounds since a person last decided anything — because a round the model drove and
+a round a reviewer asked for are not the same event, and a review comment is already the decision
+the ceiling exists to provoke. Charging it would spend the model's budget on the one case where a
+human was demonstrably in the loop.
+
+**Why the forge is asked at IDLE and nowhere else.** The rule is deterministic on purpose: phase is
+IDLE and the repo has a remote → ask, every time; anything else → never. A network call on every
+session start, in every repo DDW is installed in, is a cost this project should refuse to hide; and
+mid-ticket the answer is not one you need. IDLE is where you decide what is next, and it is also the
+only moment a fresh clone on another machine can be told anything — the pause lives in
+`.ddw-paused/`, which never leaves the machine that wrote it.
+
+**The cost.** Three things this does not do, said plainly. Two machines on one ticket are not
+coordinated: git is the arbiter, and DDW only reports that your branch fell behind. The `history`
+does not travel between machines — the shared record of that work is the commits and the pull
+request. And resuming on a second machine means re-walking the pipeline over the committed
+artifacts, re-earning each receipt, because writing a state that claims eight gates is the forged
+state the hook exists to refuse.
+
+---
+
 ## Disagreeing
 
 If one of these is wrong, the useful form of the argument is: which entry, what does it cost that is

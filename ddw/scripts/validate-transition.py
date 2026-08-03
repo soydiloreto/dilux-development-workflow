@@ -231,6 +231,15 @@ def _is_walkaway(entry):
     return first in ("abandon", "abandoned", "pause", "paused")
 
 
+def _is_pause(entry):
+    """A pause specifically, as opposed to an abandon. The two are the same edge
+    and mean opposite things: one comes back, the other never does."""
+    action = entry.get("action")
+    if not isinstance(action, str):
+        return False
+    return action.strip().lower().split(":", 1)[0].strip() in ("pause", "paused")
+
+
 def _walkaway_blocked(graph, phase):
     """Phases you are not allowed to walk away from. There is exactly one so far
     — RELEASE, where nothing is left to decide, only steps to finish — and it
@@ -583,6 +592,22 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
             # owed none either, and the gates it had earned come back with it.
             # But it has to BE a resume: proven by a pause, from this phase.
             _resume_allowed(entry, old_h + appended, len(old_h) + idx)
+            # Except the two that describe the world outside this repository.
+            # A pause at RELEASE is a pause waiting on a person, and days pass:
+            # the pull request can be closed, the branch can be force-pushed,
+            # the commit can be gone. `commit` and `pr` come back false and get
+            # asked again — one question to git, one to the forge, both instant.
+            # Without this the closeout is satisfied by a gate earned before the
+            # wait, because a gate already true is never re-asked.
+            if dst == "RELEASE":
+                stale = [g for g in ("commit", "pr") if gates.get(g) is True]
+                if stale:
+                    raise Block(
+                        "resuming at RELEASE has to ask again about what happened while you were "
+                        f"away: {', '.join(stale)} came back true. Days passed — the pull request "
+                        "may have been closed and the branch may have moved. Drop them and earn "
+                        "them again; both are instant."
+                    )
             continue
         if dst == IDLE and _is_walkaway(entry):
             # Walking away — abandon or pause. Always allowed, from anywhere the
@@ -590,10 +615,33 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
             # to ship, so there is nothing to demand of it. It must SAY so, since
             # a closeout takes the same edge and does owe its gates.
             if _walkaway_blocked(graph, src):
-                raise Block(
-                    f"you cannot walk away from {src}: at this point nothing is left to decide, "
-                    "only steps to finish. Complete the closeout."
-                )
+                # One exception, and it is narrow on purpose: a PAUSE at RELEASE
+                # whose `commit` and `pr` are already paid for.
+                #
+                # The rule exists because "abandon" would otherwise be a skeleton
+                # key — relabel the exit and ship with no commit and no PR. That
+                # reasoning does not cover the case it was catching in practice:
+                # the work IS committed, the pull request IS open, and what you
+                # are waiting for is another person. Refusing there does not
+                # protect anything; it just means the ticket sits in RELEASE for
+                # two days while you cannot start anything else, because there is
+                # one state per directory.
+                #
+                # An abandon is still refused here, which is what the skeleton
+                # key was about. And both gates are read from the state BEFORE
+                # this write, so the same write cannot grant them and spend them.
+                paid = all(gates_before.get(g) is True for g in ("commit", "pr"))
+                if not (_is_pause(entry) and paid):
+                    missing = [g for g in ("commit", "pr") if gates_before.get(g) is not True]
+                    detail = ("an abandon" if not _is_pause(entry)
+                              else "a pause with " + ", ".join(missing) + " unpaid")
+                    raise Block(
+                        f"you cannot walk away from {src} with {detail}: at this point nothing is "
+                        "left to decide, only steps to finish. A pause is allowed here ONLY once "
+                        "`commit` and `pr` are true — the work is committed, the pull request is "
+                        "open, and what you are waiting for is a person. Anything else is a "
+                        "closeout that owes its gates."
+                    )
             continue
         if key not in edges:
             hint = ""
@@ -615,6 +663,28 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
             for gate in gates_required:
                 if available.get(gate) is not True:
                     raise Block(f"gate {gate!r} required for {key} is not true")
+
+        # Going back takes away what going forward granted, and the rule lives
+        # HERE — in the function the hook calls — not in the helper.
+        #
+        # Clearing them in the helper alone is the shape of defect this file has
+        # been bitten by twice: a hand-written state stepped back, kept the
+        # gates, rewrote the artifact and stepped forward again, and nothing
+        # asked for a receipt, because evidence is owed only when a gate is
+        # claimed for the FIRST time. That is a rewritten PRD laundered through
+        # the pipeline's own recovery path. Measured on the version before this.
+        cleared = edge_cfg.get("clears", [])
+        if not isinstance(cleared, list):
+            raise Block(f"malformed graph: the `clears` of {key!r} is not a list")
+        still_held = [g for g in cleared if gates.get(g) is True]
+        if still_held:
+            raise Block(
+                f"{key} goes back a phase, so it must give up what that phase granted: "
+                f"{', '.join(sorted(still_held))} is still true. Going back is always allowed "
+                "and always costs — the work from here on has to be earned again, against the "
+                "artifacts as they now are. Use `.ddw/scripts/transition.py`, which drops them "
+                "for you."
+            )
 
     # Landing on IDLE means the ticket is over: the tier and the gates go with
     # it. Not enforcing this let one ticket's earned gates survive into the next

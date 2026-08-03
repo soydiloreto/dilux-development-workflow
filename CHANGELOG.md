@@ -19,6 +19,42 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.15.0] — Unreleased
+
+A pull request waits for people. The pipeline could not.
+
+### Added
+
+- **Step back one phase, always** — `RELEASE→VERIFY`, `CODE→PLAN` (and
+  `RELEASE→CODE`, `CODE→DEFINE` for QUICK-FIX) join the two that existed.
+  Each backward edge declares in the graph what it **gives up**, and the
+  validator refuses a backward write that still holds those gates. Four steps
+  from RELEASE to DEFINE, each one a history entry saying why.
+- **Pause at RELEASE**, once `commit` and `pr` are both paid for. An abandon
+  there is still refused. Resuming gives both back false and asks again — days
+  passed, and a gate already true is never re-asked.
+- **The forge is asked what is waiting for you**, when the phase is IDLE and the
+  repo has a remote. Deterministic: those two conditions → ask, every time;
+  anything else → never. When it cannot look it says why — `gh` missing, not
+  authenticated, no answer in five seconds — because an empty answer and an
+  unanswerable question are different things.
+
+### Fixed
+
+- **The corrective loop laundered rewritten artifacts.** `PLAN→DEFINE` cleared
+  nothing, so you could step back, rewrite the PRD, and step forward claiming
+  `define` with no receipt asked for — evidence is owed only when a gate is
+  claimed for the first time, and this one never stopped being true. The helper
+  refused it; the hook did not. Reachable before this release.
+
+### Changed
+
+- **The loop ceiling counts two numbers.** `PRD loops` stays the running total
+  and nobody resets it. The ceiling measures rounds since a human last decided
+  something — a review comment is already the decision it exists to provoke.
+
+---
+
 ## [0.14.2] — Unreleased
 
 ### Fixed

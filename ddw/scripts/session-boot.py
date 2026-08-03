@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -152,6 +153,64 @@ def other_live_sessions(repo, session_id):
         return others if registered else others
     except OSError:
         return 0
+
+
+def awaiting_review(repo, timeout=5):
+    """Your open pull requests in this repo, or why they could not be read.
+
+    Deterministic, and that is the whole design of it: **phase is IDLE and the
+    repo has a remote → ask, every time. Anything else → never ask.** No
+    heuristics, no "sometimes". Mid-ticket it stays quiet — you know what you are
+    doing and a network call on every session start, in every repo DDW is
+    installed in, is a cost worth refusing.
+
+    IDLE is the moment the question is worth asking: you have nothing in flight
+    and you are about to decide what is next. It also covers the case a local
+    file cannot — a fresh clone on another machine, where there is no paused
+    ticket to notice, because the pause lives in `.ddw-paused/` and that never
+    leaves the machine that wrote it. The forge is the only shared record.
+
+    It never raises and never guesses. When it cannot look, it says so and says
+    why: an empty answer and an unanswerable question are different things, and
+    printing nothing for both is how a tool teaches people it has nothing to say.
+    """
+    try:
+        remote = subprocess.run(["git", "-C", repo, "remote"], capture_output=True,
+                                text=True, timeout=timeout)
+    except Exception:
+        return []
+    if remote.returncode != 0 or not remote.stdout.strip():
+        return []                      # no remote: no pull requests to have, and no noise
+    try:
+        out = subprocess.run(["gh", "pr", "list", "--author", "@me", "--state", "open",
+                              "--json", "number,title,headRefName,reviewDecision,updatedAt"],
+                             cwd=repo, capture_output=True, text=True, timeout=timeout,
+                             stdin=subprocess.DEVNULL)
+    except FileNotFoundError:
+        return ["🔕 DDW: could not check your open pull requests — `gh` is not installed."]
+    except Exception:
+        return ["🔕 DDW: could not check your open pull requests — the forge did not answer in "
+                f"{timeout}s."]
+    if out.returncode != 0:
+        why = (out.stderr or "").strip().splitlines()
+        detail = why[0][:120] if why else f"gh exited {out.returncode}"
+        return [f"🔕 DDW: could not check your open pull requests — {detail}"]
+    try:
+        prs = json.loads(out.stdout or "[]")
+    except ValueError:
+        return ["🔕 DDW: could not check your open pull requests — gh returned something "
+                "unparseable."]
+    if not prs:
+        return []
+    lines = [f"🔎 DDW: {len(prs)} open pull request(s) of yours in this repo:"]
+    for pr in prs[:8]:
+        decision = (pr.get("reviewDecision") or "").upper()
+        note = {"CHANGES_REQUESTED": "  ← changes requested",
+                "APPROVED": "  ← approved, ready to merge"}.get(decision, "")
+        lines.append(f"   #{pr.get('number')} {str(pr.get('headRefName'))[:44]}{note}")
+    lines.append("   A ticket paused at RELEASE resumes there; what a reviewer asks for is a step "
+                 "back, and each step back gives up the gates that phase granted.")
+    return lines
 
 
 def pending_subtickets(repo):
@@ -361,6 +420,7 @@ def main():
             "   worktree: git worktree add ../<repo>-<TICKET> -b feat/<TICKET>",
         ]
     if phase == "IDLE":
+        lines += awaiting_review(repo)
         pending = pending_subtickets(repo)
         if pending:
             listed = ", ".join(t for _, t in pending)

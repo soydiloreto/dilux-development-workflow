@@ -448,8 +448,11 @@ MUTATIONS = [
     # ── Unfinished sub-tickets ───────────────────────────────────────────────
     ("the boot stops looking for sub-tickets nobody ran",
      edit("ddw/scripts/session-boot.py",
-          "    if phase == \"IDLE\":\n        pending = pending_subtickets(repo)",
-          "    if False:\n        pending = pending_subtickets(repo)")),
+          # Anchored on the call, not on the `if` above it: that line now carries
+          # the pull-request notice too, and pinning both meant adding a second
+          # thing to the same branch broke the mutation guarding the first.
+          "        pending = pending_subtickets(repo)",
+          "        pending = []")),
     ("a closed sub-ticket keeps being offered (the history's ticket is ignored)",
      edit("ddw/scripts/session-boot.py",
           "        if ticket in left or ticket == active:",
@@ -708,6 +711,26 @@ MUTATIONS = [
           "    if False:\n        return 1")),
     # The ceiling was a number in four documents and a comparison in none of
     # them, so one of the three stops that hold under `minimal` was unreachable.
+    # ── Going back, and what going back costs ────────────────────────────────
+    ("a backward transition may keep the gates it is supposed to give up",
+     edit("ddw/scripts/validate-transition.py",
+          "        still_held = [g for g in cleared if gates.get(g) is True]",
+          "        still_held = []")),
+    ("the graph stops saying what stepping back gives up",
+     edit("ddw/rules/transition-graph.json",
+          '"clears": [\n          "define"\n        ]', '"clears": []')),
+    ("RELEASE takes an abandon again, and the closeout's gates are dodgeable",
+     edit("ddw/scripts/validate-transition.py",
+          "                if not (_is_pause(entry) and paid):",
+          "                if False:")),
+    ("a pause at RELEASE stops needing the work committed and the PR open",
+     edit("ddw/scripts/validate-transition.py",
+          '                paid = all(gates_before.get(g) is True for g in ("commit", "pr"))',
+          "                paid = True")),
+    ("resuming at RELEASE keeps the commit and the PR earned before the wait",
+     edit("ddw/scripts/validate-transition.py",
+          '            if dst == "RELEASE":\n                stale = [g for g in ("commit", "pr") if gates.get(g) is True]',
+          '            if False:\n                stale = [g for g in ("commit", "pr") if gates.get(g) is True]')),
     ("the corrective loop's ceiling goes back to being a number nothing compares",
      edit("ddw/scripts/validate_prd.py", "    if loops >= LOOP_CEILING:", "    if False:")),
     ("the sast gate goes back to turning true on the model's say-so",

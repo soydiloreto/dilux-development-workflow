@@ -115,6 +115,16 @@ def _loop_count(text, label):
     m = re.search(rf"^\s*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else 0
 
+
+def _loops_since_human(text):
+    """Rounds since a person last decided something, which is what the ceiling
+    is about. Absent, it falls back to the running total — an older document has
+    no second number, and reading its total is the safe direction to be wrong
+    in: it stops sooner, never later."""
+    m = re.search(r"^\s*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
+                  text, re.IGNORECASE | re.MULTILINE)
+    return int(m.group(1)) if m else None
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("prd")
@@ -235,7 +245,9 @@ def main():
         rows.append("  👁  F-PRD-02 (binary ACs) and F-PRD-07 (undeclared cross-references) are")
         rows.append("      MANUAL: judge them and say so explicitly in your report.")
 
-    loops = _loop_count(text, "PRD loops")
+    total_loops = _loop_count(text, "PRD loops")
+    since = _loops_since_human(text)
+    loops = total_loops if since is None else since
     if loops >= LOOP_CEILING:
         fail("F-PRD-LOOP", f"this artifact has been through {loops} corrective loops "
                        f"(the ceiling is {LOOP_CEILING}). Three rounds of correcting a document "
@@ -245,7 +257,8 @@ def main():
                        "recorded. Under `autonomy: minimal` this is one of the three stops that do "
                        "not have a mode.")
     else:
-        ok("F-PRD-LOOP", f"{loops} corrective loop(s), under the ceiling of {LOOP_CEILING}")
+        ok("F-PRD-LOOP", f"{loops} loop(s) since a human decided, under the ceiling of "
+                     f"{LOOP_CEILING}; {total_loops} in total for this document")
 
     verdict = "PASSED" if fails == 0 else f"FAILED ({fails} FAIL{'S' if fails > 1 else ''})"
     report = [f"/ddw-validate-prd {args.prd} — {verdict}", "─" * 64]

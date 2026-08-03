@@ -88,7 +88,8 @@ def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(), autonomy=None):
+def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
+                     autonomy=None, edge_clears=()):
     """The complete state for the next step. Read-only over old_state (deep copy)."""
     new_state = json.loads(json.dumps(old_state))  # deep copy
     from_phase = old_state.get("phase", "IDLE")
@@ -108,11 +109,22 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(), a
         if autonomy is not None:
             new_state["autonomy"] = autonomy
         merged = dict(new_state.get("gates") or {})
+        # What the graph says this edge gives up. Going back a phase takes away
+        # what that phase granted: the work from here on has to be earned again
+        # against the artifacts as they now are. The validator REFUSES a backward
+        # write that still holds them, so this is convenience, not enforcement —
+        # the rule lives where the hook can see it.
+        for gate in edge_clears:
+            merged.pop(gate, None)
         for gate in clear_gates:
             merged.pop(gate, None)
         for gate in gates:
             merged[gate] = True
         new_state["gates"] = merged
+        # Stepping back out of CODE means you are not implementing a block any
+        # more, and a stale block name outlives the thing it named.
+        if from_phase == "CODE" and to_phase != "CODE" and edge_clears:
+            new_state["block"] = None
 
     new_state["phase"] = to_phase
     history = list(new_state.get("history") or [])
@@ -182,8 +194,12 @@ def main():
     vt = _load_validator()
     _, old_state = vt._load_disk_state(args.state)
     graph = vt._load_graph(args.graph)  # exits 2 with a message if the graph will not load
+    # The edge decides what it gives up, and the graph is where that is written.
+    _edges = vt._effective_edges(graph, args.tier or old_state.get("tier"))
+    _cfg = _edges.get("%s->%s" % (old_state.get("phase", "IDLE"), args.to)) or {}
+    _clears = _cfg.get("clears", []) if isinstance(_cfg, dict) else []
     new_state = build_next_state(old_state, args.to, args.action, args.gate, args.tier,
-                                 args.clear_gates, autonomy=args.autonomy)
+                                 args.clear_gates, autonomy=args.autonomy, edge_clears=_clears)
 
     # A gate that rests on evidence is asked for it here too — the same function
     # the hook calls, never a second copy. This helper used to hold the only

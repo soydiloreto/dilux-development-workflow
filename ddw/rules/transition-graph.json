@@ -1,5 +1,5 @@
 {
-  "format_version": "1.0",
+  "format_version": "1.1",
   "common": {
     "IDLE->CLASSIFY": {
       "gates": []
@@ -43,10 +43,30 @@
         ]
       },
       "PLAN->DEFINE": {
-        "gates": []
+        "gates": [],
+        "clears": [
+          "define"
+        ]
       },
       "VERIFY->CODE": {
-        "gates": []
+        "gates": [],
+        "clears": [
+          "tests",
+          "sast"
+        ]
+      },
+      "CODE->PLAN": {
+        "gates": [],
+        "clears": [
+          "spec",
+          "threat"
+        ]
+      },
+      "RELEASE->VERIFY": {
+        "gates": [],
+        "clears": [
+          "verify"
+        ]
       }
     },
     "FIX": {
@@ -73,6 +93,19 @@
           "commit",
           "pr"
         ]
+      },
+      "CODE->DEFINE": {
+        "gates": [],
+        "clears": [
+          "define"
+        ]
+      },
+      "RELEASE->CODE": {
+        "gates": [],
+        "clears": [
+          "tests",
+          "sast"
+        ]
       }
     },
     "DISCOVERY": {
@@ -87,5 +120,6 @@
       }
     }
   },
-  "_resume_note": "Resuming a paused ticket re-enters the phase it was paused in. There is no list of resumable phases: the proof is the pause itself. The entry before the resume must be a `pause:` ending at IDLE, and the phase it paused FROM is the only one the resume may re-enter. A list would have been a second, weaker way to say the same thing — and one more place to forget to update."
+  "_resume_note": "Resuming a paused ticket re-enters the phase it was paused in. There is no list of resumable phases: the proof is the pause itself. The entry before the resume must be a `pause:` ending at IDLE, and the phase it paused FROM is the only one the resume may re-enter. A list would have been a second, weaker way to say the same thing — and one more place to forget to update.",
+  "_backward_note": "Backward edges carry `clears`: the gates the forward edge granted, which going back takes away. The validator REFUSES a backward transition whose new state still holds them — clearing them in the helper alone would leave a hand-written state able to step back, keep the gates and step forward without re-earning anything, which is how a rewritten artifact used to be laundered through the corrective loop."
 }

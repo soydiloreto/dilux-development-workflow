@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-450}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-452}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -1419,6 +1419,61 @@ assert "autonomy" in st, "the materialised state has no `autonomy` key"
 assert st["autonomy"] is None, f"a fresh state opts into a mode: {st['autonomy']!r}"
 PYSB
 
+# A pause at RELEASE is allowed once the work is committed and the pull request
+# is open — you are waiting on a person, not dodging a gate. An abandon there is
+# still refused, which is what the rule was written for: relabel the exit and
+# ship with no commit and no PR.
+python3 - "$SELF" <<'PYPAUSE' && ok "RELEASE takes a pause once commit and pr are paid, and still refuses an abandon" || bad "the pause exception at RELEASE is a skeleton key, or it refuses the case it exists for"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json")))
+EDGES = [("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"), ("DEFINE", "PLAN"), ("PLAN", "CODE"),
+         ("CODE", "VERIFY"), ("VERIFY", "RELEASE")]
+H = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t, "action": "x",
+      "tier": "FEATURE", "ticket": "T-1"} for i, (f, t) in enumerate(EDGES)]
+FULL = {"define": True, "spec": True, "threat": True, "tests": True, "sast": True,
+        "verify": True, "commit": True, "pr": True}
+
+
+def rel(gates):
+    return {"tier": "FEATURE", "phase": "RELEASE", "ticket": "T-1", "title": None, "tracker": None,
+            "autonomy": None, "gates": dict(gates), "block": None, "discovery": None, "history": H}
+
+
+def out(action):
+    return {"tier": None, "phase": "IDLE", "ticket": None, "title": None, "tracker": None,
+            "autonomy": None, "gates": {}, "block": None, "discovery": None,
+            "history": H + [{"timestamp": "2026-01-01T02:00:00Z", "from": "RELEASE", "to": "IDLE",
+                             "action": action, "tier": "FEATURE", "ticket": "T-1"}]}
+
+
+def blocked(old, new):
+    try:
+        m.validate(old, new, g, max_appended=1)
+        return False
+    except m.Block:
+        return True
+
+
+assert not blocked(rel(FULL), out("pause: waiting on review")), \
+    "a pause at RELEASE with the work committed and the PR open is refused"
+assert blocked(rel({k: v for k, v in FULL.items() if k != "pr"}), out("pause: later")), \
+    "a pause at RELEASE with no pull request open — the skeleton key, wearing the other word"
+assert blocked(rel(FULL), out("abandon: no")), "an abandon at RELEASE is allowed"
+# And coming back has to ask again about the world outside this repository.
+resumed = dict(rel({k: v for k, v in FULL.items() if k not in ("commit", "pr")}),
+               history=out("pause: waiting on review")["history"] + [
+                   {"timestamp": "2026-01-01T03:00:00Z", "from": "IDLE", "to": "RELEASE",
+                    "action": "resume: changes requested", "tier": "FEATURE", "ticket": "T-1"}])
+idle = out("pause: waiting on review")
+assert not blocked(idle, resumed), "resuming a ticket paused at RELEASE is refused"
+kept = dict(resumed, gates=dict(resumed["gates"], commit=True, pr=True))
+assert blocked(idle, kept), \
+    "resuming brings `commit` and `pr` back true — the closeout is then satisfied by evidence from before the wait"
+PYPAUSE
+
 # ── The pr gate asks the forge, and had no check of any kind ─────────────────
 #
 # It is the only evidence in the pipeline the model cannot produce by writing a
@@ -1524,6 +1579,65 @@ case "$VLOUT" in
   *"❌ F-PRD-LOOP"*) ok "a PRD past its corrective-loop ceiling is refused — the counter is compared, not just kept" ;;
   *) bad "the loop ceiling is a number nothing measures against, and minimal has one fewer stop" ;;
 esac
+
+# ── Going back, and what going back costs ────────────────────────────────────
+#
+# The corrective loop used to launder a rewritten artifact: step back to DEFINE,
+# rewrite the PRD, step forward claiming `define` — and nothing asked for a
+# receipt, because evidence is owed only when a gate is claimed for the FIRST
+# time and this one had never stopped being true. The helper refused it and the
+# hook did not, which is the same shape as the defect that moved the receipt
+# check into the hook in the first place.
+python3 - "$SELF" <<'PYBACK' && ok "stepping back gives up what that phase granted, and the hook refuses a step that keeps it" || bad "a backward transition can keep its gates — the corrective loop launders a rewritten artifact again"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json")))
+EDGES = [("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"), ("DEFINE", "PLAN"), ("PLAN", "CODE"),
+         ("CODE", "VERIFY"), ("VERIFY", "RELEASE")]
+
+
+def hist(n):
+    return [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t, "action": "x",
+             "tier": "FEATURE", "ticket": "T-1"} for i, (f, t) in enumerate(EDGES[:n])]
+
+
+def st(phase, gates, n, block=None):
+    return {"tier": "FEATURE", "phase": phase, "ticket": "T-1", "title": None, "tracker": None,
+            "autonomy": None, "gates": dict(gates), "block": block, "discovery": None,
+            "history": hist(n)}
+
+
+def step(old, dst, gates, block=None):
+    new = st(dst, gates, len(old["history"]), block)
+    new["history"] = old["history"] + [{"timestamp": "2026-01-01T01:00:00Z",
+                                        "from": old["phase"], "to": dst, "action": "review: back",
+                                        "tier": "FEATURE", "ticket": "T-1"}]
+    return new
+
+
+def blocked(old, new):
+    try:
+        m.validate(old, new, g, max_appended=1)
+        return False
+    except m.Block:
+        return True
+
+
+SIX = {"define": True, "spec": True, "threat": True, "tests": True, "sast": True, "verify": True}
+rel = st("RELEASE", SIX, 6, block="Block 3")
+# Every backward edge must refuse to keep what it gives up …
+assert blocked(rel, step(rel, "VERIFY", SIX)), "RELEASE->VERIFY kept `verify`"
+ver = st("VERIFY", {k: v for k, v in SIX.items() if k != "verify"}, 6)
+assert blocked(ver, step(ver, "CODE", ver["gates"])), "VERIFY->CODE kept tests/sast"
+cod = st("CODE", {"define": True, "spec": True, "threat": True}, 6)
+assert blocked(cod, step(cod, "PLAN", cod["gates"])), "CODE->PLAN kept spec/threat"
+pln = st("PLAN", {"define": True}, 6)
+assert blocked(pln, step(pln, "DEFINE", pln["gates"])), "PLAN->DEFINE kept `define`"
+# … and allow the same step once they are given up.
+assert not blocked(pln, step(pln, "DEFINE", {})), "a correct step back is refused"
+PYBACK
 
 # ── autonomy: the field that decides whether a human is in the loop ──────────
 #
