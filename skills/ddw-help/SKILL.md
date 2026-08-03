@@ -61,6 +61,28 @@ and so on) are orchestrated by the state machine; you rarely invoke them yoursel
 Not every request pays the full price: CLASSIFY assigns a **tier** and the tier picks the pipeline.
 A question is answered directly, a typo takes a short lane, a feature runs the whole thing.
 
+## 2b. How much of it waits for you
+
+At classification time DDW records **`autonomy`**. The default, `assisted`, asks you to approve every
+arrow. Say "no me preguntes en cada paso" (or the equivalent) and you get `minimal`: the arrows stop
+waiting and **nothing else changes** — the same eight gates, refused by the same hook, over the same
+bytes. What goes away is being asked to approve something a receipt already attests.
+
+Three things stop the run in either mode: a decision nobody wrote down, a corrective loop that hit
+its ceiling, and a corrupt state. And merging a pull request or closing a tracker ticket always asks
+— those are acts on systems other people read.
+
+## What a gate rests on
+
+Eight gates, and none of them is the model's word. Six need a **receipt** naming their document's
+current bytes (the PRD, the spec, the threat model, the SAST report, the test run report, the
+verification verdict); `commit` asks git; `pr` asks the forge. Editing the document after validating
+it stops the receipt matching.
+
+**What that does not say:** DDW does not run your suite and does not scan your code. The receipts
+attest that the *report* is complete — not that the work it describes was done right. A complete
+report can still be a false one; what it can no longer be is absent or vague.
+
 ## 3. Work on two things at once
 
 The state is one per directory. For real parallelism use a worktree — each gets its own state:

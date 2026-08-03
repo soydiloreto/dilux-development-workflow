@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Branch Conventions
@@ -187,6 +187,8 @@ Paths are derived from the ticket; they are not saved in the state:
 | RCA (FIX only) | `docs/ddw/specs/rca-{ticket}.md` |
 | Threat model | `docs/ddw/security/threat-{ticket}.md` |
 | SAST report | `docs/ddw/security/sast-{ticket}.md` |
+| Verification verdict | `docs/ddw/reports/verify-{ticket}.md` | VERIFY | The `verify` gate's receipt names its bytes |
+| Test run report | `docs/ddw/reports/tests-{ticket}.md` | CODE | The `tests` gate's receipt names its bytes |
 | ADR | `docs/adr/adr-NNN-title.md` — **outside `docs/ddw/`, deliberately** |
 | Branch | `feat/{ticket}`, `fix/{ticket}`, or `discovery/{ticket}` |
 

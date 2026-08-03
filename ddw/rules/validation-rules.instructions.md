@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Validation Rules — Central Catalog
@@ -10,7 +10,7 @@ has a unique ID, a precise description, a severity (FAIL or WARNING) and a basis
 standards or best practices.
 
 **The validation skills (`ddw-validate-prd`, `ddw-validate-spec`, `ddw-threat-modeling`,
-`ddw-security-sast`, `ddw-verify-module`) MUST evaluate these rules
+`ddw-security-sast`, `ddw-test`, `ddw-verify-module`) MUST evaluate these rules
 mechanically. There is no room for subjective interpretation.**
 
 > **Requirement identifiers.** Functional requirements are `FR-xx`, non-functional requirements are
@@ -288,6 +288,31 @@ To suppress a Medium finding as a false positive or an accepted risk:
 
 ---
 
+## 5. Module Verification (`ddw-verify-module`)
+
+**Applies in:** the VERIFY phase.
+**Basis:** requirements traceability, test coverage, the principle of independent verification.
+
+### FAIL rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| F-VER-01 | AC with no passing test | **Every AC in the PRD must have at least one test validating it, and that test must be passing.** If an AC has no test, or the test exists but fails → FAIL. | The AC is the contract with the user. Without a test validating it, there is no evidence it works. |
+| F-VER-02 | Spec task not implemented | **Every task/block in the spec, or step in the fix-plan, must be implemented.** If a whole block or a fix-plan step has no corresponding code → FAIL. | The spec is the approved plan. Partial implementation = an incomplete feature = a bug. |
+| F-VER-03 | Test coverage below the minimum | **Line coverage ≥ 80%, branch coverage ≥ 80%, and function coverage ≥ 80%** over the new/modified code. If any is below → FAIL. | `.ddw/rules/testing.instructions.md` defines these three minimums. Verify they are met, not just that "there are tests". |
+| F-VER-04 | No sad-path tests | **Every endpoint or function accepting input must have at least one test with invalid input.** If there are only happy-path tests → FAIL. | The worst bugs live in edge cases and sad paths. Testing only the happy path tests only 20% of the real behavior. |
+| F-VER-05 | Lint/type checker fails | If the project has a linter or type checker configured and there are errors → FAIL. | Lint/type errors indicate code that can fail at runtime. You cannot verify code that does not compile or pass lint. |
+| F-VER-06 | Spec tests not implemented | **Every test listed in the spec must exist and pass.** If the spec says "test: creating a product with an empty name returns 400" and that test does not exist → FAIL. | The spec's tests are quality commitments the user approved. Not implementing them is breaching the spec. |
+
+### WARNING rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| W-VER-01 | Dead code | Unused imports, unreferenced functions, declared-but-unused variables. | Cleanliness. Does not affect functionality but reduces maintainability. |
+| W-VER-02 | Business-logic coverage < 90% | Core business logic (services, domain) has coverage between 80–90%. It does not fail (it is above the minimum) but it should be higher. | `.ddw/rules/testing.instructions.md` recommends 90%+ for business logic. |
+| W-VER-03 | Fragile test | A test depending on execution order, global state, or hardcoded values (timestamps, IDs). | Test maintainability. Does not block but causes future flakiness. |
+
+---
 ## 6. Test Run Report (`ddw-test`)
 
 **Applies in:** the CODE phase, before the `tests` gate is claimed.
@@ -324,42 +349,18 @@ a document; whether it is a true document remains the reader's judgement, and ev
 
 ---
 
-## 5. Module Verification (`ddw-verify-module`)
-
-**Applies in:** the VERIFY phase.
-**Basis:** requirements traceability, test coverage, the principle of independent verification.
-
-### FAIL rules
-
-| ID | Check | Precise description | Basis |
-|---|---|---|---|
-| F-VER-01 | AC with no passing test | **Every AC in the PRD must have at least one test validating it, and that test must be passing.** If an AC has no test, or the test exists but fails → FAIL. | The AC is the contract with the user. Without a test validating it, there is no evidence it works. |
-| F-VER-02 | Spec task not implemented | **Every task/block in the spec, or step in the fix-plan, must be implemented.** If a whole block or a fix-plan step has no corresponding code → FAIL. | The spec is the approved plan. Partial implementation = an incomplete feature = a bug. |
-| F-VER-03 | Test coverage below the minimum | **Line coverage ≥ 80%, branch coverage ≥ 80%, and function coverage ≥ 80%** over the new/modified code. If any is below → FAIL. | `.ddw/rules/testing.instructions.md` defines these three minimums. Verify they are met, not just that "there are tests". |
-| F-VER-04 | No sad-path tests | **Every endpoint or function accepting input must have at least one test with invalid input.** If there are only happy-path tests → FAIL. | The worst bugs live in edge cases and sad paths. Testing only the happy path tests only 20% of the real behavior. |
-| F-VER-05 | Lint/type checker fails | If the project has a linter or type checker configured and there are errors → FAIL. | Lint/type errors indicate code that can fail at runtime. You cannot verify code that does not compile or pass lint. |
-| F-VER-06 | Spec tests not implemented | **Every test listed in the spec must exist and pass.** If the spec says "test: creating a product with an empty name returns 400" and that test does not exist → FAIL. | The spec's tests are quality commitments the user approved. Not implementing them is breaching the spec. |
-
-### WARNING rules
-
-| ID | Check | Precise description | Basis |
-|---|---|---|---|
-| W-VER-01 | Dead code | Unused imports, unreferenced functions, declared-but-unused variables. | Cleanliness. Does not affect functionality but reduces maintainability. |
-| W-VER-02 | Business-logic coverage < 90% | Core business logic (services, domain) has coverage between 80–90%. It does not fail (it is above the minimum) but it should be higher. | `.ddw/rules/testing.instructions.md` recommends 90%+ for business logic. |
-| W-VER-03 | Fragile test | A test depending on execution order, global state, or hardcoded values (timestamps, IDs). | Test maintainability. Does not block but causes future flakiness. |
-
----
 
 ## Quantitative Summary
 
 | Area | FAIL rules | WARNING rules | Total |
 |---|---|---|---|
-| PRD | 8 | 5 | 13 |
-| Spec / Fix-Plan | 15 | 3 | 18 |
+| PRD | 10 | 5 | 15 |
+| Spec / Fix-Plan | 17 | 3 | 20 |
 | Threat Model | 7 | 2 | 9 |
-| SAST | 19 | 1 | 20 |
+| SAST | 21 | 1 | 22 |
+| Test Run Report | 8 | 1 | 9 |
 | Module Verify | 6 | 3 | 9 |
-| **Total** | **55** | **14** | **69** |
+| **Total** | **69** | **15** | **84** |
 
 ---
 
@@ -371,7 +372,7 @@ this catalog. Their behavior is defined in their respective instruction files:
 | Skill | Phase | Behavior | Defined in |
 |---|---|---|---|
 | `ddw-validate-arch` | CODE | Validates the project's architecture conventions. The rules depend on the target project (`AGENTS.md`). If it reports violations → BLOCKED. | `.ddw/rules/code.instructions.md` |
-| `ddw-test` | CODE | Runs the test suite. If it fails → BLOCKED. It is a runner, not an artifact validator. | `.ddw/rules/code.instructions.md`, `.ddw/rules/testing.instructions.md` |
+| `ddw-test` | CODE | **Moved to §6.** Its run report has `F-TEST-01`…`08` and `W-TEST-01`, and the `tests` gate refuses without the receipt they write. This row said it was a runner with no rules in this catalog while the catalog carried eight of them. | Runs the test suite. If it fails → BLOCKED. It is a runner, not an artifact validator. | `.ddw/rules/code.instructions.md`, `.ddw/rules/testing.instructions.md` |
 
 These skills are operational gates: they run and report pass/fail. Test quality rules (coverage,
 traceability, sad paths) are evaluated in the VERIFY phase by `ddw-verify-module` (section 5 of this

@@ -56,21 +56,22 @@ what DDW checks. It says so rather than implying coverage it does not have.
 machine refuses to move past. A **mandatory step** is resolved out loud in front of you and recorded,
 but nothing in the repo can verify it happened.
 
-Gates: the PRD validates, the spec is approved, the suite is green, SAST is clean, there is a
-commit, the PR step was resolved. Mandatory steps: updating the tracker, and where the branch lands.
+Gates: the PRD validates, the spec is approved, the threat model is complete, the suite is green,
+SAST is clean, the verdict accounts for every criterion, there is a commit, the PR step was
+resolved. Mandatory steps: updating the tracker, and where the branch lands.
 
-**And a gate is not automatically evidence.** Only one of them is verified against something outside
-the model's own report: the PRD's, which needs a receipt naming the file's current hash, written by a
-`validate_prd.py` that passed. The rest are a field in the state that the model sets, and what the
-validator refuses is a move made *without* the claim — not a claim that turns out to be false. That
-is worth less than a test run and considerably more than a prompt: the claim has to be made before
-the move rather than after it, in the phase that owns it, and it lands in an append-only history that
-names who claimed what and when. Nothing here runs your test suite, and a framework that implied
-otherwise would be doing the exact thing it was built to stop.
+**And a gate is not automatically evidence.** When this was written only one of them was verified
+against anything outside the model's own report — the PRD's — and the rest were a field in the state
+that the model set. All eight rest on something now (decision 16 has the table), and the distinction
+did not disappear with them: it moved down a level. Six of the eight are receipts over documents the
+model wrote, so what is attested is that the *document* is complete, not that the work it describes
+was done. **Nothing here runs your test suite or scans your code**, a framework that implied
+otherwise would be doing the exact thing it was built to stop, and a complete report can still be a
+false one.
 
-The distance between the two is the argument for the receipt, and for extending it. `gates.tests`
-is the obvious next one: a run whose output was seen is a fact, and "the suite is green" is a
-sentence until it is.
+What that buys is narrower than it sounds and worth stating exactly: the claim has to be made before
+the move rather than after it, in the phase that owns it, backed by an artifact whose bytes the
+receipt names, and it lands in an append-only history that says who claimed what and when.
 
 **Why.** A gate can only demand what the repo can see. Whether a human merged a branch, or moved a
 ticket in Jira, depends on people and systems outside it. Calling those gates would mean either
@@ -371,7 +372,7 @@ purpose, and the grade is written down rather than implied:
 | `commit` | **git**, asked directly: tracked changes in the working tree contradict "this is committed" |
 | `pr` | **the forge**, asked through `gh`: the branch has a pull request or it does not |
 
-**What the four added receipts say, and what they do not.** Each one attests that a validator ran
+**What the five added receipts say, and what they do not.** Each one attests that a validator ran
 over those exact bytes and found zero FAILs against the catalog's rules for that artifact — that the
 spec covers every FR and every AC has a test, that every component got all six STRIDE categories and
 every threat a treatment, that the verdict accounts for every criterion and states its coverage, that the SAST report judges every catalogued category and locates what it found. None
@@ -388,15 +389,19 @@ the work cannot forge it. A required status check on a pull request is the same 
 everyone already uses daily — you cannot merge until **the CI** reports the check, and you cannot
 report it on CI's behalf.
 
-Read against that ladder, DDW's gates were all level 1; five of them are now level 2, and `sast` is a
-sixth of a different kind — the receipt is produced by a script the model does not write, over a
+Read against that ladder, DDW's gates were all level 1. `commit` and `pr` are level 2 — a system
+answers, and the party doing the work cannot forge the answer. The six receipts are a kind of their
+own — the receipt is produced by a script the model does not write, over a
 document the model does. Level 2 for the shape of the record, level 1 for its content, and the run
 says which is which rather than leaving the reader to assume the better of the two. Saying so is
 the point: a framework whose gates all look alike, while some are evidence and the rest are records,
 is teaching its own users something false about their pipeline.
 
-**Why not raise all of them.** Because two of them cannot be raised honestly, and pretending
-otherwise is the failure this repository names everywhere else.
+**What could not be raised, and was not.** Two claims cannot be made honestly by anything in this
+repository, and pretending otherwise is the failure it names everywhere else: that your code is safe,
+and that your suite passed. Neither is attested by anything here. What was raised is the report of
+each — complete, located, arithmetically possible, measured against a floor the project set — which
+is a different claim and is labelled as one on every run.
 
 **`sast` was on this list, and the argument for keeping it there was answering a question nobody
 asked.** It read: a receipt would take "the model reported it looked" and write it into a file that
@@ -462,9 +467,10 @@ followed them the day someone asked why nineteen catalogued rules had no script.
 `validate-transition.py`'s table plus a validator — the mechanism this section promised, used four
 times, exactly as promised.
 
-`tests` is next and is not free: it has no artifact at all today, so it needs one invented, with its
-own rule family, before a validator has anything to read. `pr` is the odd one out and the cheapest —
-it can ask a system instead of a document, the way `commit` asks git.
+Both landed. `tests` got the artifact it had none of — `docs/ddw/reports/tests-{ticket}.md`, with
+`F-TEST-01`…`08` — and `pr` turned out to be the strongest of the eight, because a forge answering
+about a branch is the one piece of evidence in this pipeline a model cannot produce by writing a
+file.
 
 **What it buys.** The evidence check now runs where the model cannot route around it. It used to
 live only in the helper the model is asked to call, so the same state written with the write tool

@@ -19,6 +19,31 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.14.1] — Unreleased
+
+### Changed
+
+- **The documentation described a product that had stopped existing.** Three
+  statements were false about enforcement, and each was the first thing a reader
+  reaches on its page: `docs/DEVELOPMENT.md` said two gates have an entry in the
+  evidence table (all eight do, and it contradicted itself nine lines later);
+  `docs/RATIONALE.md` decision 3 said only one gate is verified against anything
+  outside the model's report; and the catalog told readers `ddw-test` has no
+  rules in the catalog while carrying eight of them, in the same file.
+- **The counts.** 84 rules, not 69. 17 skills, not 15. Five Claude hooks, not
+  six. The catalog's own summary table was wrong in four cells and missing a row;
+  it is computed from the rule tables now rather than maintained beside them.
+- **The artifact table that calls itself the single definition of where every
+  artifact lives** omitted both files under `docs/ddw/reports/` — the two that
+  two gate receipts are named after.
+- **`ddw-help` now answers what `/ddw-status` sends people there for**: what a
+  gate rests on, and how much of the run waits for you.
+- **`.github/INSTALL.md` claimed 4/4 for a run the record shows as three passes
+  and one "detected, not prevented".** Two files in one repository giving
+  different results for the same session.
+
+---
+
 ## [0.14.0] — Unreleased
 
 An adversarial review of the two newest validators, written against them rather
