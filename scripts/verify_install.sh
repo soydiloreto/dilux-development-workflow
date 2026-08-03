@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-437}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-438}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -2467,6 +2467,24 @@ case "$CLAUDE_ROW" in
       && ok "the README reports Claude's five acceptance checks, as the record does" \
       || bad "acceptance.md records five passes for Claude and the README never says so" ;;
 esac
+
+# A step that dies at its first command never ran, and a step that only runs on
+# pull requests dies unwatched in a repository whose work lands on main. Both
+# pull-request-only steps carried `git fetch --depth=0` — not "no limit" but
+# `fatal: depth 0 is not a positive number` — so the version rule and the
+# attribution rule had never once been applied to a pull request. It surfaced on
+# the first one this repository ever opened, which is the whole argument for
+# opening one.
+python3 - "$SELF" <<'PYFETCH' && ok "CI's pull-request fetch is a command git will actually run" || bad "a fetch in verify.yml cannot execute, so the step that needs it has never run"
+import os, re, sys
+y = open(os.path.join(sys.argv[1], ".github/workflows/verify.yml"), encoding="utf-8").read()
+bad = re.findall(r"git fetch[^\n]*--depth=0[^\n]*", y)
+assert not bad, ("`--depth=0` is an error, not a depth: " + "; ".join(bad))
+fetches = re.findall(r"git fetch[^\n]*", y)
+assert fetches, "no fetch at all: the ranged checks have nothing to diff against"
+for f in fetches:
+    assert "--depth" not in f or re.search(r"--depth=[1-9]", f), f"unusable depth in: {f}"
+PYFETCH
 
 # That check reads one row. The status section is a claim about all of them, and
 # it went stale in the other direction: OpenCode and Copilot were driven live and

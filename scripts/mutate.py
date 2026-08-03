@@ -876,6 +876,13 @@ MUTATIONS = [
      edit("scripts/check_versions.py",
           "    for rel in PRODUCT_MANIFESTS[1:]:",
           "    for rel in []:")),
+    # The failure that hid for the whole life of the repository: a step whose
+    # first command cannot run, on the only event that reaches it.
+    ("CI's pull-request fetch goes back to a depth git refuses",
+     edit(".github/workflows/verify.yml",
+          'git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"',
+          'git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"')),
+
     ("the version rule goes back to applying on pull requests alone",
      edit(".github/workflows/verify.yml",
           "          elif git rev-parse --verify -q HEAD~1 >/dev/null; then\n"
