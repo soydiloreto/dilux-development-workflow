@@ -734,7 +734,7 @@ MUTATIONS = [
           "    missing = []")),
     ("a Critical finding above a PASSED verdict stops being a contradiction",
      edit("ddw/scripts/validate_sast.py",
-          "    if blocking and says_passed:",
+          "    if blocking and (says_passed or not says_blocked):",
           "    if False:")),
     ("a suppression stops ageing, and six months means nothing",
      edit("ddw/scripts/validate_sast.py",

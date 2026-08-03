@@ -248,12 +248,16 @@ def main():
                              text, re.IGNORECASE | re.MULTILINE)
     says_passed = re.search(r"^\s*(?:Result|Resultado)\s*:?\s*\**\s*PASSED", text,
                             re.IGNORECASE | re.MULTILINE)
-    if blocking and says_passed:
+    # ONE condition, not two overlapping ones. Written as `if says_passed: … elif
+    # not says_blocked: …` the branches caught the same report, so disabling
+    # either left the other catching it and no mutation could tell the rule was
+    # half gone. A rule that can be taken apart in pieces without anything
+    # noticing is a rule with no measurement behind it.
+    if blocking and (says_passed or not says_blocked):
         fail("F-SAST-VERDICT", f"{len(blocking)} Critical/High finding(s) "
-                               f"({', '.join(blocking)}) above a stated result of PASSED")
-    elif blocking and not says_blocked:
-        fail("F-SAST-VERDICT", f"{len(blocking)} Critical/High finding(s) "
-                               f"({', '.join(blocking)}) and the report does not say BLOCKED")
+                               f"({', '.join(blocking)}) and the stated result is "
+                               + ("PASSED" if says_passed else "not BLOCKED")
+                               + ". Critical and High block, always")
     elif blocking:
         ok("F-SAST-VERDICT", f"{len(blocking)} Critical/High finding(s) and the report says BLOCKED")
     elif says_passed or not blocking:

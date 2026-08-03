@@ -19,6 +19,19 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.14.2] — Unreleased
+
+### Fixed
+
+- **A rule that could be taken apart in halves without anything noticing.**
+  `F-SAST-VERDICT` was written as two overlapping branches — "the result says
+  PASSED" and "the result does not say BLOCKED" — which caught the same report,
+  so disabling either left the other catching it and no mutation could tell the
+  rule was half gone. CI found it: the mutation survived on the sharded run. One
+  condition now.
+
+---
+
 ## [0.14.1] — Unreleased
 
 ### Changed
