@@ -208,7 +208,7 @@ def awaiting_review(repo, timeout=5):
         note = {"CHANGES_REQUESTED": "  ← changes requested",
                 "APPROVED": "  ← approved, ready to merge"}.get(decision, "")
         lines.append(f"   #{pr.get('number')} {str(pr.get('headRefName'))[:44]}{note}")
-    lines.append("   A ticket paused at RELEASE resumes there; what a reviewer asks for is a step "
+    lines.append("   A ticket paused at CLOSEOUT resumes there; what a reviewer asks for is a step "
                  "back, and each step back gives up the gates that phase granted.")
     return lines
 

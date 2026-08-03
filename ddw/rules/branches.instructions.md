@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.4.0
+version: 2.0.0
 ---
 
 # Branch Conventions
@@ -21,7 +21,7 @@ written on `main`.
 2. Create the branch immediately, following the naming convention.
 3. Update the state and transition to DEFINE (already on the branch).
 4. All artifacts (PRD, spec, code, tests) are written on this branch.
-5. The branch is pushed and the PR is opened in the RELEASE phase.
+5. The branch is pushed and the PR is opened in the CLOSEOUT phase.
 
 ---
 
@@ -129,7 +129,7 @@ If it is 0, say nothing. If it is not:
 for is not a convenience, and a conflict resolved by an agent nobody was watching is worse than a
 conflict.
 
-### 3. Before opening the PR (RELEASE)
+### 3. Before opening the PR (CLOSEOUT)
 
 The same measurement, in the phase where the drift actually costs something: a PR built against a
 base that moved 40 commits ago merges code that was never tested against what is there now. This is
@@ -140,7 +140,7 @@ still cheap to act on.
 
 When a sub-ticket depends on other sub-tickets (e.g. `FEAT-002c` depends on `FEAT-002a` and
 `FEAT-002b`), check whether those dependencies are merged into the base branch BEFORE creating the
-branch. **RELEASE's integration step recorded the answer** for each one that already closed — read
+branch. **CLOSEOUT's integration step recorded the answer** for each one that already closed — read
 it there instead of guessing, and verify it against git:
 
 - **If the dependencies are merged into `main`/`develop`** → create the branch from the base branch
@@ -163,7 +163,7 @@ it there instead of guessing, and verify it against git:
 ## Rules
 
 - **One branch per ticket.** Every ticket in the pipeline gets its own branch.
-- **Do not reuse branches.** When a ticket closes (RELEASE phase), the branch is merged and not
+- **Do not reuse branches.** When a ticket closes (CLOSEOUT phase), the branch is merged and not
   reused.
 - **Do not work on `main` directly.** Always create a branch, even for small fixes.
 - **Lowercase names.** No spaces, no special characters except `-` and `/`.
@@ -216,4 +216,4 @@ it.
   freshen the base.
 - If the branch already exists (resuming a session), check it out instead of creating a new one —
   **and measure the drift**, checkpoint 2 above.
-- In the RELEASE phase, the `ddw-create-pr` skill derives the branch name from the ticket.
+- In the CLOSEOUT phase, the `ddw-create-pr` skill derives the branch name from the ticket.

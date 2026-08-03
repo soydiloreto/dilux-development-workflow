@@ -177,7 +177,7 @@ and it is the part a reader will overreach on.
 ## One write, one transition
 
 The pre-write mode caps a single write at **one** appended history entry. Without the cap, one
-`Write` could append the whole pipeline — IDLE through RELEASE, every gate asserted at the end — and
+`Write` could append the whole pipeline — IDLE through CLOSEOUT, every gate asserted at the end — and
 pass: no gate is missing, and the sequencing that is the entire point of a state machine evaporates.
 
 ## Agents
@@ -224,13 +224,13 @@ A tier is **declarative**: the FSM validator indexes by tier generically (`_effe
    than the PRD.
 
 **Three ways to reach IDLE.** A **closeout** ships the work and owes the edge's gates —
-`RELEASE → IDLE` requires `commit` and `pr`, so a ticket cannot be marked done without them.
+`CLOSEOUT → IDLE` requires `commit` and `pr`, so a ticket cannot be marked done without them.
 **Abandoning** and **pausing** owe nothing, because the work is not going to ship, but they must be
 declared: the history entry's `action` starts with `abandon` or `pause` (matched on the first word —
 an unanchored prefix once made "abandonware cleanup" a valid exit).
 
 Walking away is allowed from anywhere except the phases the graph lists under `no_walkaway`, which
-today is `RELEASE`: at that point nothing is left to decide, only steps to finish. Without that
+today is `CLOSEOUT`: at that point nothing is left to decide, only steps to finish. Without that
 rule the word `abandon` is a skeleton key — relabel the exit and ship with no commit and no PR.
 
 Since closing resets `tier` and `gates`, the validator evaluates those edges against the state as it

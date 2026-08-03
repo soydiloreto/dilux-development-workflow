@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.8.0
+version: 2.0.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`
@@ -31,7 +31,7 @@ version: 1.8.0
 | Field | Type | Valid values | Description |
 |-------|------|--------------|-------------|
 | `tier` | `string \| null` | `"QUICK-FIX"`, `"FIX"`, `"FEATURE"`, `"DISCOVERY"`, `null` | Tier of the current work. `null` in IDLE. |
-| `phase` | `string` | `"IDLE"`, `"CLASSIFY"`, `"DEFINE"`, `"PLAN"`, `"CODE"`, `"VERIFY"`, `"RELEASE"`, `"DISCOVERY"` | Current phase of the state machine. |
+| `phase` | `string` | `"IDLE"`, `"CLASSIFY"`, `"DEFINE"`, `"PLAN"`, `"CODE"`, `"VERIFY"`, `"CLOSEOUT"`, `"DISCOVERY"` | Current phase of the state machine. |
 | `ticket` | `string \| null` | Tracker ID (e.g. `"PROJ-123"`) or internal (e.g. `"FIX-001"`, `"FEAT-001"`, `"DISC-001"`) | The ticket identifier. `null` in IDLE. |
 | `title` | `string \| null` | Free text | Descriptive title of the ticket. `null` in IDLE. |
 | `tracker` | `string \| null` | The tracker's ID | Set when the ticket comes from a tracker. `null` when the ID is internal. |
@@ -74,18 +74,18 @@ They look identical in the `phase` field and owe completely different things:
 | **Pause** | Set aside, to be resumed | none | `action: "pause: <reason>"` |
 
 Walking away — abandon or pause — is allowed from any phase **except the ones listed in the graph's
-`no_walkaway`**, which today means RELEASE. At RELEASE nothing is left to decide, only steps to
+`no_walkaway`**, which today means CLOSEOUT. At CLOSEOUT nothing is left to decide, only steps to
 finish, so an exit there is a closeout and owes its gates. Without that rule the word `"abandon"`
 would be a skeleton key: relabel the exit and ship without a commit or a PR.
 
-**One exception, and it is narrow.** A **pause** at RELEASE is allowed once `commit` and `pr` are
+**One exception, and it is narrow.** A **pause** at CLOSEOUT is allowed once `commit` and `pr` are
 both true. The work is committed, the pull request is open, and what you are waiting for is another
-person — refusing there protects nothing and leaves the ticket sitting in RELEASE for two days while
-you cannot start anything else, because there is one state per directory. An **abandon** at RELEASE
+person — refusing there protects nothing and leaves the ticket sitting in CLOSEOUT for two days while
+you cannot start anything else, because there is one state per directory. An **abandon** at CLOSEOUT
 is still refused, which is what the skeleton key was about, and both gates are read from the state
 *before* the write, so the same write cannot grant them and spend them.
 
-**Resuming at RELEASE gives `commit` and `pr` back false.** Days passed: the pull request may have
+**Resuming at CLOSEOUT gives `commit` and `pr` back false.** Days passed: the pull request may have
 been closed, the branch may have been force-pushed. A gate already true is never re-asked, so
 without this the closeout would be satisfied by evidence earned before the wait. Both questions are
 instant — one to git, one to the forge.
@@ -106,11 +106,11 @@ able to read six months later.
 ### Going back
 
 **You can always step back one phase, and stepping back gives up what that phase granted.** The
-graph declares it per edge, in `clears`: `RELEASE→VERIFY` gives up `verify`, `VERIFY→CODE` gives up
+graph declares it per edge, in `clears`: `CLOSEOUT→VERIFY` gives up `verify`, `VERIFY→CODE` gives up
 `tests` and `sast`, `CODE→PLAN` gives up `spec` and `threat`, `PLAN→DEFINE` gives up `define`.
 Stepping out of CODE backwards also clears `block` — you are not implementing one any more.
 
-To go from RELEASE back to DEFINE you take four steps, and each one is a history entry saying why.
+To go from CLOSEOUT back to DEFINE you take four steps, and each one is a history entry saying why.
 That is the record of how far back a review sent you.
 
 **The validator refuses a backward write that still holds those gates**, and that is not tidiness.

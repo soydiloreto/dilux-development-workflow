@@ -19,7 +19,7 @@ giant PR with no documented requirements.
 3. **PLAN**: threat modeling + a spec with 2 blocks
 4. **CODE**: block 1 → test → block 2 → test → SAST
 5. **VERIFY**: verify-module
-6. **RELEASE**: commit, PR, tracker updated
+6. **CLOSEOUT**: commit, PR, tracker updated
 
 ## Rules applied
 - `.ddw/rules/define.instructions.md` — the scope control gate

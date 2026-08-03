@@ -38,7 +38,7 @@ what happens to the code, not everything you are asked for.
 
 **Stateful** — `QUICK-FIX`, `FIX`, `FEATURE`, `DISCOVERY`. They record a `tier` in
 the state and advance through phases. FIX/FEATURE walk the full pipeline; QUICK-FIX takes
-a short subset (`CLASSIFY → DEFINE → CODE → RELEASE`, skipping PLAN and VERIFY); DISCOVERY has its
+a short subset (`CLASSIFY → DEFINE → CODE → CLOSEOUT`, skipping PLAN and VERIFY); DISCOVERY has its
 own ideation flow (`CLASSIFY → DISCOVERY`).
 
 ### Tiers (canonical table)
@@ -46,7 +46,7 @@ own ideation flow (`CLASSIFY → DISCOVERY`).
 | Tier | What it is | Pipeline | Notes |
 |---|---|---|---|
 | `QUERY` | An informational question | none (stateless) | Read-only. Does not touch the state. |
-| `QUICK-FIX` | A ≤ 10 LOC change with no attack surface | `CLASSIFY → DEFINE → CODE → RELEASE` | Artifact: a 4-line fix-brief. SAST still blocks. Guarded by the shared gate, on every tool. |
+| `QUICK-FIX` | A ≤ 10 LOC change with no attack surface | `CLASSIFY → DEFINE → CODE → CLOSEOUT` | Artifact: a 4-line fix-brief. SAST still blocks. Guarded by the shared gate, on every tool. |
 | `FIX` | A defect in existing behavior, including a live production bug | the full pipeline | Fix-plan instead of a spec with blocks. Requires an RCA, a regression test and a rollback plan. |
 | `FEATURE` | New functionality | the full pipeline | PRD + spec with blocks + scope control. |
 | `DISCOVERY` | Ideation, no implementation | `CLASSIFY → DISCOVERY` | Produces a concept + validated PRDs. No code. |
@@ -63,13 +63,13 @@ continues normally. See `classify.instructions.md`.
 ## Pipeline
 
 ```
-CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE → IDLE
+CLASSIFY → DEFINE → PLAN → CODE → VERIFY → CLOSEOUT → IDLE
 ```
 
 Every `→` transition requires the user's explicit approval. **Unless the ticket was classified `autonomy: "minimal"`**, where the arrows stop waiting and nothing else changes — see `.ddw/orchestrator.md` § Autonomy.
 
 Six phases. CLASSIFY is not numbered in the status line, so the numbering the agent shows you
-runs over the other five: DEFINE(1) → PLAN(2) → CODE(3) → VERIFY(4) → RELEASE(5).
+runs over the other five: DEFINE(1) → PLAN(2) → CODE(3) → VERIFY(4) → CLOSEOUT(5).
 
 | Phase | What it does | Exit gate |
 |-------|--------------|-----------|
@@ -78,7 +78,7 @@ runs over the other five: DEFINE(1) → PLAN(2) → CODE(3) → VERIFY(4) → RE
 | **PLAN** | Designs the technical solution, writes the spec/fix-plan to disk | Spec approved + threat model |
 | **CODE** | Implements block by block, writes tests | Tests pass + clean SAST |
 | **VERIFY** | Cross-verification against the PRD and the spec, written to a report | verify-module passes |
-| **RELEASE** | Commit, PR, tracker update | The user confirms the closeout |
+| **CLOSEOUT** | Commit, PR, tracker update | The user confirms the closeout |
 
 ### Behavior by tier in each phase
 
@@ -89,7 +89,7 @@ runs over the other five: DEFINE(1) → PLAN(2) → CODE(3) → VERIFY(4) → RE
 | **PLAN** | Spec with blocks + threat modeling | Fix-plan + rollback plan + threat modeling |
 | **CODE** | Block by block from the spec | Steps from the fix-plan, stability first |
 | **VERIFY** | verify-module | verify-module |
-| **RELEASE** | Commit + PR + tracker | Commit + PR + tracker |
+| **CLOSEOUT** | Commit + PR + tracker | Commit + PR + tracker |
 
 > **QUICK-FIX** and **DISCOVERY** are not in this table (which compares FEATURE and FIX):
 > QUICK-FIX uses the short pipeline (DEFINE = fix-brief, CODE = tests + SAST, no PLAN and no
@@ -129,7 +129,7 @@ what it is doing and the current phase, it stops and reports.
     plan.instructions.md              Phase: technical planning and specs
     code.instructions.md              Phase: implementation
     verify.instructions.md            Phase: verification
-    release.instructions.md           Phase: commit, PR and closeout
+    closeout.instructions.md           Phase: commit, PR and the closeout itself
     discovery.instructions.md         Tier: ideation and product definition
     state.instructions.md             The state schema (always loaded)
     validation-rules.instructions.md  The central catalog of validation rules
@@ -185,7 +185,7 @@ rule and `scripts/check_versions.py` enforces it.
 - [plan.instructions.md](plan.instructions.md) — Technical planning and specs
 - [code.instructions.md](code.instructions.md) — Implementation
 - [verify.instructions.md](verify.instructions.md) — Verification
-- [release.instructions.md](release.instructions.md) — Commit, PR, tracker and closeout
+- [closeout.instructions.md](closeout.instructions.md) — Commit, PR, tracker and closeout
 - [discovery.instructions.md](discovery.instructions.md) — The DISCOVERY tier
 
 ## Rule files — Conventions

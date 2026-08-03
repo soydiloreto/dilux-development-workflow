@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.5.0
+version: 2.0.0
 ---
 
 # Phase 4: VERIFY
@@ -50,7 +50,7 @@ ones that did not block. If this is a return trip after a corrective loop, appen
 than overwriting the old one; how many rounds verification took is part of what happened.
 
 Then run `.ddw/scripts/validate_verify.py` over it. A PASSED run writes
-`.ddw-sessions/verify-validated-<hash>` and **the `verify` gate asks for it**, so VERIFY→RELEASE no
+`.ddw-sessions/verify-validated-<hash>` and **the `verify` gate asks for it**, so VERIFY→CLOSEOUT no
 longer rests on the boolean alone. What that receipt attests is that the verdict is **complete** —
 no acceptance criterion missing, no block unaccounted for, the three coverage numbers stated and
 above the floor, lint and the sad paths answered. It does not attest that the tests pass: DDW does
@@ -87,7 +87,7 @@ Present to the user:
 │  Files modified:                                         │
 │    - [file list]                                         │
 │                                                          │
-│  Do you approve moving to the release phase?             │
+│  Do you approve moving to the closeout phase?             │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -109,10 +109,10 @@ Only after the user approves:
    Documentation commit — `📝 docs`, no source code. What was verified goes on the record before
    the closeout, not as part of it.
 2. Update `.ddw-state.json`:
-   - `phase` → `"RELEASE"`
-   - Add an entry to `history`: transition VERIFY → RELEASE, **stamped with `ticket` and `tier`** (see `.ddw/rules/state.instructions.md`)
+   - `phase` → `"CLOSEOUT"`
+   - Add an entry to `history`: transition VERIFY → CLOSEOUT, **stamped with `ticket` and `tier`** (see `.ddw/rules/state.instructions.md`)
 
-Report: "Moving on to the RELEASE phase."
+Report: "Moving on to the CLOSEOUT phase."
 
 ---
 

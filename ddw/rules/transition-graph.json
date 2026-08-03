@@ -5,9 +5,9 @@
       "gates": []
     }
   },
-  "_note": "no_walkaway: phases you cannot abandon or pause out of. At RELEASE nothing is left to decide, only steps to finish — so the closeout's gates cannot be dodged by relabelling the exit.",
+  "_note": "no_walkaway: phases you cannot abandon or pause out of. At CLOSEOUT nothing is left to decide, only steps to finish — so the closeout's gates cannot be dodged by relabelling the exit.",
   "no_walkaway": [
-    "RELEASE"
+    "CLOSEOUT"
   ],
   "tiers": {
     "FEATURE": {
@@ -31,12 +31,12 @@
           "sast"
         ]
       },
-      "VERIFY->RELEASE": {
+      "VERIFY->CLOSEOUT": {
         "gates": [
           "verify"
         ]
       },
-      "RELEASE->IDLE": {
+      "CLOSEOUT->IDLE": {
         "gates": [
           "commit",
           "pr"
@@ -62,7 +62,7 @@
           "threat"
         ]
       },
-      "RELEASE->VERIFY": {
+      "CLOSEOUT->VERIFY": {
         "gates": [],
         "clears": [
           "verify"
@@ -81,14 +81,14 @@
           "define"
         ]
       },
-      "CODE->RELEASE": {
+      "CODE->CLOSEOUT": {
         "gates": [
           "define",
           "tests",
           "sast"
         ]
       },
-      "RELEASE->IDLE": {
+      "CLOSEOUT->IDLE": {
         "gates": [
           "commit",
           "pr"
@@ -100,7 +100,7 @@
           "define"
         ]
       },
-      "RELEASE->CODE": {
+      "CLOSEOUT->CODE": {
         "gates": [],
         "clears": [
           "tests",

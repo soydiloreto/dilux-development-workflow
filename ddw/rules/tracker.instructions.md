@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.0.0
+version: 3.0.0
 ---
 
 # Ticket Tracker Conventions
@@ -14,7 +14,7 @@ version: 2.0.0
 
 ## Integration with the Pipeline
 
-The tracker is consulted in the **CLASSIFY** phase and updated in the **RELEASE** phase.
+The tracker is consulted in the **CLASSIFY** phase and updated in the **CLOSEOUT** phase.
 
 When there is a tracker ticket, its ID is used as the primary `ticket` in `.ddw-state.json` (no
 internal ID is generated). Every artifact, path, status line and branch uses that ID directly. The
@@ -90,7 +90,7 @@ Examples:
 
 ---
 
-## Ticket Update (RELEASE phase)
+## Ticket Update (CLOSEOUT phase)
 
 ### Suggested Transitions
 

@@ -37,7 +37,7 @@ wins.
 - **Stateless:** `💬 [query]` → direct answer, no phase, no ticket.
 - **Pipeline:** `{emoji} {TIER} · {action} [{N}/5] | {ticket}: {title}`
 - **DISCOVERY:** `📝 DISCOVERY · {action} | {ticket}: {title}`
-- CLASSIFY is not numbered. The 5 phases: DEFINE(1)→PLAN(2)→CODE(3)→VERIFY(4)→RELEASE(5).
+- CLASSIFY is not numbered. The 5 phases: DEFINE(1)→PLAN(2)→CODE(3)→VERIFY(4)→CLOSEOUT(5).
 - DISCOVERY does not use numbered phases — it reflects current activity (Exploring / Formalizing /
   Closing).
 
@@ -192,9 +192,9 @@ the corresponding Skill.`
   the threat model and any ADR, CODE the implementation once it is green and the SAST report,
   VERIFY its verification report, DISCOVERY its concept and PRDs. CLASSIFY produces no file and
   therefore commits nothing.
-- NEVER modify the PRD in the PLAN, CODE, VERIFY or RELEASE phases. If PLAN reveals the PRD needs
+- NEVER modify the PRD in the PLAN, CODE, VERIFY or CLOSEOUT phases. If PLAN reveals the PRD needs
   changes, apply the corrective loop back to DEFINE (protocol in `.ddw/rules/plan.instructions.md`).
-- NEVER modify the spec in the CODE, VERIFY or RELEASE phases.
+- NEVER modify the spec in the CODE, VERIFY or CLOSEOUT phases.
 - NEVER write outside `docs/ddw/discovery/` and `docs/ddw/prd/` in the DISCOVERY phase.
 - If the user asks for something belonging to another phase, answer: "That action belongs to phase
   [X]. We are currently in [Y]. Let's finish this phase first."
@@ -355,20 +355,20 @@ any other section.
 - **Sequence:** `/ddw-verify-module` → PASS (BLOCKING GATE).
 - **If it fails:** apply the corrective loop back to CODE (update state + clear gates + history). Do
   NOT fix code in VERIFY. Protocol in `.ddw/rules/verify.instructions.md`.
-- **Exit:** the `verify` gate present + user confirms (not under `minimal` — see § Autonomy) → `phase`→`RELEASE`.
+- **Exit:** the `verify` gate present + user confirms (not under `minimal` — see § Autonomy) → `phase`→`CLOSEOUT`.
 
 ---
 
-## Router: Phase `RELEASE`
+## Router: Phase `CLOSEOUT`
 
-- **Load:** `.ddw/rules/release.instructions.md`, `.ddw/rules/commits.instructions.md`,
+- **Load:** `.ddw/rules/closeout.instructions.md`, `.ddw/rules/commits.instructions.md`,
   `.ddw/rules/branches.instructions.md`, `.ddw/rules/tracker.instructions.md`
 - **Skills:** `/ddw-commit`, `/ddw-create-pr`, `/ddw-self-check`, `/ddw-status`
 - **Blocked:** new code. Modifying the PRD. Modifying specs. Tests.
 - **Status line:** `🚀 {TIER} · Releasing [5/5] | {ticket}: {title}`
 - **Mandatory sequence (every step is a blocking gate):** CHANGELOG → `/ddw-commit` (gate `commit`)
   → `/ddw-create-pr` (gate `pr`, MANDATORY) → tracker update (a mandatory step, but not a gate: it depends on an external system and the graph carries no `tracker` edge condition) → closeout.
-- **Exit:** ALL RELEASE gates present + user confirms (not under `minimal` — see § Autonomy) closeout → reset state to IDLE. Resetting to
+- **Exit:** ALL CLOSEOUT gates present + user confirms (not under `minimal` — see § Autonomy) closeout → reset state to IDLE. Resetting to
   IDLE without completing every step is FORBIDDEN.
 
 ---
@@ -391,7 +391,7 @@ any other section.
 
 ## Router: Tier QUICK-FIX (cross-cutting modifier)
 
-**Applies when `tier == "QUICK-FIX"`.** It modifies the behavior of DEFINE/CODE/RELEASE; PLAN and
+**Applies when `tier == "QUICK-FIX"`.** It modifies the behavior of DEFINE/CODE/CLOSEOUT; PLAN and
 VERIFY **do not exist** for this tier (the graph blocks them).
 
 - **DEFINE:** produce the fix-brief (4 lines) via `Skill(skill="ddw-create-prd")` (QUICK-FIX
@@ -400,8 +400,8 @@ VERIFY **do not exist** for this tier (the graph blocks them).
   non-empty), never with the full `F-PRD-*` rules.
 - **CODE:** implement the fix + `Skill(skill="ddw-test")` (gate `tests`) +
   `Skill(skill="ddw-security-sast")` (gate `sast`), then commit it. Transition straight to
-  **RELEASE**. Do NOT go through VERIFY.
-- **RELEASE:** `Skill(skill="ddw-commit")` + `Skill(skill="ddw-create-pr")`. Reset to IDLE.
+  **CLOSEOUT**. Do NOT go through VERIFY.
+- **CLOSEOUT:** `Skill(skill="ddw-commit")` + `Skill(skill="ddw-create-pr")`. Reset to IDLE.
 
 Allowed transition graph: `.ddw/rules/transition-graph.json`, key `"QUICK-FIX"` under `tiers`. The
 PreToolUse hook `validate-state-transition.sh` validates every transition against that graph;

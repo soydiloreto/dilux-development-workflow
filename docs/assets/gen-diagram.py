@@ -55,7 +55,7 @@ PHASES = [
     ("PLAN",     "The how, and what\ncould go wrong", "docs/ddw/specs/\n+ threat model"),
     ("CODE",     "Implement,\nblock by block",      "code + tests"),
     ("VERIFY",   "Have someone\nelse review it",     "docs/ddw/reports/"),
-    ("RELEASE",  "Close out and\nleave a trail",     "commit + PR"),
+    ("CLOSEOUT",  "Close out and\nleave a trail",     "commit + PR"),
 ]
 GATES = [                      # condition to LEAVE each phase
     "you confirm the\nclassification",
@@ -152,7 +152,7 @@ d.text(sc(285, ly + 90)[0:2],
        "Hook-enforced — code outside the model reads the state and refuses. Not a promise.",
        font=F_FOOT, fill=INK)
 
-center("Every arrow needs your explicit approval   ·   every phase leaves an artifact and commits it",
+center("Every arrow waits for you (unless you asked it not to)   ·   every phase leaves an artifact and commits it",
        F_SMALL, W / 2, ly + 148, MUTED)
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)

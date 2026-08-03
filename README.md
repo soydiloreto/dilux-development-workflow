@@ -55,7 +55,7 @@ None of these is fixed by a better prompt. They are structural.
 
 ## What it does
 
-`CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE`, one phase at a time, with a gate between each
+`CLASSIFY → DEFINE → PLAN → CODE → VERIFY → CLOSEOUT`, one phase at a time, with a gate between each
 pair and your approval on every arrow — or, if you ask for it at classification time, on none of
 them (see *Minimal intervention* below). Only the current phase's rules enter the context. Every phase
 commits what it produced. The state lives on disk, so closing the terminal costs you nothing.

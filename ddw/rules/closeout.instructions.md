@@ -1,22 +1,22 @@
 ---
 applyTo: '**'
-version: 1.4.0
+version: 2.0.0
 ---
 
-# Phase 5: RELEASE (Commit, PR and Closeout)
+# Phase 5: CLOSEOUT (Commit, PR and Closeout)
 
 **Goal:** close out what the earlier phases already committed — the CHANGELOG, the PR, the tracker
 and the ticket itself.
 
 > Each phase commits its own artifacts as it closes them (the PRD in DEFINE, the spec and the threat
 > model in PLAN, code and tests in CODE). By the time you get here, the branch already holds the
-> whole trail; RELEASE commits what is left.
+> whole trail; CLOSEOUT commits what is left.
 
 Read `.ddw-state.json.tier` to determine your behavior.
 
 ---
 
-## Mandatory Sequence — RELEASE Gates
+## Mandatory Sequence — CLOSEOUT Gates
 
 **EVERY step is blocking. Resetting to IDLE without completing ALL the gates is FORBIDDEN.**
 
@@ -31,8 +31,8 @@ Read `.ddw-state.json.tier` to determine your behavior.
 
 **Non-negotiable rule:** you cannot run step N+1 without having completed step N. You cannot reset
 to IDLE without going through step 6 — and that is enforced by the FSM, not just written here:
-`RELEASE → IDLE` is a declared edge requiring the `commit` and `pr` gates. Abandoning a ticket from
-an earlier phase is always allowed; abandoning from RELEASE is not, because at this point there is
+`CLOSEOUT → IDLE` is a declared edge requiring the `commit` and `pr` gates. Abandoning a ticket from
+an earlier phase is always allowed; abandoning from CLOSEOUT is not, because at this point there is
 nothing left to decide, only steps to finish.
 
 **The PR is mandatory for every tier** — but "mandatory" means *the step gets resolved in front of
@@ -72,7 +72,7 @@ the step in silence.
 
 1. Run `ddw-create-pr`. **It checks first whether this repo can host a PR** (remote, `gh`,
    authentication). If it cannot, it reports why and offers the options — it does not fail silently
-   and does not leave the ticket stranded in RELEASE.
+   and does not leave the ticket stranded in CLOSEOUT.
    - The title includes the `ticket`.
    - The body includes:
      - A link to the spec/fix-plan (derived path: `docs/ddw/specs/spec-{ticket}.md` or
@@ -102,7 +102,7 @@ Then resolve, out loud:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  RELEASE — Integration                                   │
+│  CLOSEOUT — Integration                                   │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
 │  Branch: [branch]                                        │
@@ -151,7 +151,7 @@ If there is no tracker ticket:
 
 ## Step 6: Closeout
 
-**Precondition:** verify that ALL the mandatory RELEASE gates are present in
+**Precondition:** verify that ALL the mandatory CLOSEOUT gates are present in
 `.ddw-state.json.gates`: `commit` and `pr`. If any is missing → STOP and complete the corresponding step.
 
 **And the `Integration` line below must not be blank.** It is not a gate — the FSM cannot see
@@ -162,7 +162,7 @@ Present the final summary:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  RELEASE — Closeout                                      │
+│  CLOSEOUT — Closeout                                      │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
 │  Ticket: [ticket] — [title]                              │
@@ -191,7 +191,7 @@ Only after the user confirms:
    beside it, and the next one in the order to `active`. Commit it with the CHANGELOG. The index is
    the human-readable half of "what is left"; the machine derives the same thing from the history,
    and the two should not be allowed to disagree.
-2. Add an entry to `history`: transition RELEASE → IDLE, **stamped with this `ticket` and `tier`**
+2. Add an entry to `history`: transition CLOSEOUT → IDLE, **stamped with this `ticket` and `tier`**
    (see `.ddw/rules/state.instructions.md`). The reset on the next line wipes `ticket`, so this
    entry is where the finished ticket's name survives — and what stops the session boot from
    offering work that is already done.

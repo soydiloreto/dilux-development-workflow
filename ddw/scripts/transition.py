@@ -156,7 +156,7 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
 
 def main():
     ap = argparse.ArgumentParser(description="Emit the next .ddw-state.json for an FSM transition.")
-    ap.add_argument("--to", required=True, help="Destination phase (CLASSIFY, DEFINE, PLAN, CODE, VERIFY, RELEASE, IDLE, DISCOVERY).")
+    ap.add_argument("--to", required=True, help="Destination phase (CLASSIFY, DEFINE, PLAN, CODE, VERIFY, CLOSEOUT, IDLE, DISCOVERY).")
     ap.add_argument("--action", required=True, help="Description of the transition, for the history entry.")
     ap.add_argument("--gate", action="append", default=[], help="Gate to set to true (repeatable).")
     ap.add_argument("--clear-gate", dest="clear_gates", action="append", default=[],

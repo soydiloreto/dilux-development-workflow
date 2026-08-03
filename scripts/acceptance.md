@@ -67,9 +67,9 @@ to tell apart, because they mean opposite things:
 ```bash
 python3 - <<'PY'
 import json
-json.dump({"phase": "RELEASE", "tier": "FEATURE", "gates": {},
+json.dump({"phase": "CLOSEOUT", "tier": "FEATURE", "gates": {},
            "history": [{"timestamp": "2026-01-01T00:00:00Z",
-                        "from": "IDLE", "to": "RELEASE", "action": "forged"}]},
+                        "from": "IDLE", "to": "CLOSEOUT", "action": "forged"}]},
           open(".ddw-state.json", "w"))
 PY
 ```

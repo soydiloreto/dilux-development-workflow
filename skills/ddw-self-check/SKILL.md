@@ -55,7 +55,7 @@ ls "$ROOT"/.claude/hooks/*.sh "$ROOT"/.codex/hooks/ddw/*.sh "$ROOT"/.cursor/hook
   `tracker`, `autonomy`, `gates`, `block`, `discovery`, `history`. `autonomy` absent or `null` reads
   as `assisted` and is NOT an inconsistency — a state written before the field existed did not opt
   into anything, and reporting it as broken would fail every repo that upgraded.
-- `phase` is a valid value (`IDLE`, `CLASSIFY`, `DEFINE`, `PLAN`, `CODE`, `VERIFY`, `RELEASE`,
+- `phase` is a valid value (`IDLE`, `CLASSIFY`, `DEFINE`, `PLAN`, `CODE`, `VERIFY`, `CLOSEOUT`,
   `DISCOVERY`).
 - `tier` is `null` (in IDLE/CLASSIFY) or a valid value (`QUICK-FIX`, `FIX`, `FEATURE`,
   `DISCOVERY`).

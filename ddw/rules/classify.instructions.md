@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.6.0
+version: 2.0.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -94,7 +94,7 @@ If **ALL** hold → `tier="QUICK-FIX"`. If **any** fails → continue with the n
 
 - Valid examples: fixing a typo in a log message, adjusting a comment, changing a non-sensitive
   constant's value.
-- Short pipeline: `CLASSIFY → DEFINE → CODE → RELEASE` (skips PLAN and VERIFY). Only artifact: a
+- Short pipeline: `CLASSIFY → DEFINE → CODE → CLOSEOUT` (skips PLAN and VERIFY). Only artifact: a
   4-line fix-brief. Only security validation: SAST.
 - Safeguard: if during CODE something tries to write a sensitive path or the diff exceeds 10 LOC,
   the shared gate blocks and asks you to abandon the ticket and reclassify

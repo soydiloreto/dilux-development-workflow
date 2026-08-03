@@ -19,18 +19,44 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.16.0] — Unreleased
+
+### Changed — BREAKING
+
+- **The `RELEASE` phase is now `CLOSEOUT`.** The phase does not release anything:
+  it commits the artifacts, opens the pull request, updates the tracker and says
+  where the branch lands. The release — the merge, the deploy — happens after,
+  done by other people, possibly days later. The name promised the one thing the
+  phase does not do, and the pause added in 0.15.0 made the gap plain: you can
+  now sit there for two days having released nothing.
+
+  The method was already using the right word for it everywhere else — *"an exit
+  there is a closeout and owes its gates"* — so the phase and the act it performs
+  had two names for one thing. Now they have one.
+
+  **What breaks:** any `.ddw-state.json` carrying `phase: "RELEASE"`, and any
+  history entry naming it. Done now, before 1.0.0, because this is the cheapest
+  this rename will ever be: after publishing it is a migration and a broken
+  promise instead of a correction.
+
+  `ddw/rules/release.instructions.md` is `closeout.instructions.md`. The pipeline
+  diagram is regenerated, and its footer stops claiming every arrow waits for
+  you — under `minimal` it does not.
+
+---
+
 ## [0.15.0] — Unreleased
 
 A pull request waits for people. The pipeline could not.
 
 ### Added
 
-- **Step back one phase, always** — `RELEASE→VERIFY`, `CODE→PLAN` (and
-  `RELEASE→CODE`, `CODE→DEFINE` for QUICK-FIX) join the two that existed.
+- **Step back one phase, always** — `CLOSEOUT→VERIFY`, `CODE→PLAN` (and
+  `CLOSEOUT→CODE`, `CODE→DEFINE` for QUICK-FIX) join the two that existed.
   Each backward edge declares in the graph what it **gives up**, and the
   validator refuses a backward write that still holds those gates. Four steps
-  from RELEASE to DEFINE, each one a history entry saying why.
-- **Pause at RELEASE**, once `commit` and `pr` are both paid for. An abandon
+  from CLOSEOUT to DEFINE, each one a history entry saying why.
+- **Pause at CLOSEOUT**, once `commit` and `pr` are both paid for. An abandon
   there is still refused. Resuming gives both back false and asks again — days
   passed, and a gate already true is never re-asked.
 - **The forge is asked what is waiting for you**, when the phase is IDLE and the
@@ -453,7 +479,7 @@ in, with the tool-specific wiring generalised from one agent to six.
 
 ### The method
 
-- Six phases — `CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE` — with a
+- Six phases — `CLASSIFY → DEFINE → PLAN → CODE → VERIFY → CLOSEOUT` — with a
   gate between each pair and state that survives closing the session.
 - Five tiers, so the ceremony matches the size of the request: `QUERY`,
   `QUICK-FIX`, `FIX`, `FEATURE`, `DISCOVERY`.

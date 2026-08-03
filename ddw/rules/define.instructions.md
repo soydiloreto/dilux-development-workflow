@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.4.0
+version: 2.0.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -310,7 +310,7 @@ The original PRD (`prd-{TICKET}.md`) becomes an index document:
 ## Suggested implementation order
 a → b → c
 
-> **The `Status` column is maintained, not decorative.** RELEASE's closeout moves the finished
+> **The `Status` column is maintained, not decorative.** CLOSEOUT's closeout moves the finished
 > sub-ticket to `done` — with where its branch landed — and the next one to `active`. Left
 > unmaintained it says every sub-ticket is pending forever, and a reader has no way to tell that
 > from the truth.

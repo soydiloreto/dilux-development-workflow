@@ -18,7 +18,7 @@ DDW (Dilux Development Workflow) is a phased development pipeline, driven by an 
 (a state machine), that takes over on its own as soon as you ask for a code change:
 
 ```
-CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE
+CLASSIFY → DEFINE → PLAN → CODE → VERIFY → CLOSEOUT
 ```
 
 The method lives in `.ddw/` and is the same for every tool. What changes per tool is the wiring —

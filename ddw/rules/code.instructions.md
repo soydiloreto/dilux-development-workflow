@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.7.0
+version: 2.0.0
 ---
 
 # Phase 3: CODE (Implementation)
@@ -176,7 +176,7 @@ state's `block`. On resume, work continues from the last incomplete block.
 ## Closeout Sequence (MANDATORY, every tier that reaches CODE)
 
 > **Where it goes next depends on the tier.** QUICK-FIX has no VERIFY phase: it
-> transitions straight to **RELEASE** (`CODE → RELEASE`, gates `define`, `tests`,
+> transitions straight to **CLOSEOUT** (`CODE → CLOSEOUT`, gates `define`, `tests`,
 > `sast`). FIX and FEATURE go to **VERIFY** (`CODE → VERIFY`, gates `tests`,
 > `sast`). The graph is the authority; taking the other edge is a refused write,
 > not a detour.

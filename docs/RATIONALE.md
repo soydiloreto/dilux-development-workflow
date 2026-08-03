@@ -483,12 +483,12 @@ prevent.
 ## 17. A pull request waits for people, and the pipeline has to wait with it
 
 **The decision.** You can step back one phase, always, and stepping back gives up what that phase
-granted. A ticket can be **paused at RELEASE** once its commit and its pull request exist. Resuming
+granted. A ticket can be **paused at CLOSEOUT** once its commit and its pull request exist. Resuming
 there asks about both again. And when the phase is IDLE and the repo has a remote, DDW asks the
 forge what is waiting for you.
 
 **The complaint this answers.** You finish, you open the pull request, and the review takes two
-days. There is one state per directory, so the ticket sat in RELEASE and you could not start
+days. There is one state per directory, so the ticket sat in CLOSEOUT and you could not start
 anything else — and when the review came back asking for changes, the method's own advice was to
 open a *new* ticket, on a *new* branch, for work that belongs to the same pull request. That is
 bookkeeping nobody believes, and people route around a method that asks them to lie in it.
@@ -496,7 +496,7 @@ bookkeeping nobody believes, and people route around a method that asks them to 
 **Why stepping back is one phase at a time, declared in the graph.** The alternative was a rule in
 code — "any earlier phase is legal" — and the graph would have stopped being the authority. Instead
 each backward edge is data, with a `clears` list naming exactly what it takes away, and the
-validator refuses a backward write that still holds them. Four steps to get from RELEASE to DEFINE,
+validator refuses a backward write that still holds them. Four steps to get from CLOSEOUT to DEFINE,
 and each one is a history entry saying why. The record ends up saying how far back a review sent
 you, which is worth more than the convenience of one jump.
 

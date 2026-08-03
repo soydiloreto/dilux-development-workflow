@@ -250,7 +250,7 @@ _ANTI_PER_BLOCK = (
 def check_history_stamp(root):
     """A phase that appends to `history` must say what to stamp on the entry.
 
-    The schema promises `ticket` and `tier` on every entry, and only RELEASE
+    The schema promises `ticket` and `tier` on every entry, and only CLOSEOUT
     told the model to put them there — so six phases wrote "add an entry:
     transition X → Y" and got exactly that. A live run came back with `tier`
     stamped (an older convention the model had picked up) and `ticket` on none

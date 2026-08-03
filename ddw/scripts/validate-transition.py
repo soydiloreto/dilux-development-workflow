@@ -242,7 +242,7 @@ def _is_pause(entry):
 
 def _walkaway_blocked(graph, phase):
     """Phases you are not allowed to walk away from. There is exactly one so far
-    — RELEASE, where nothing is left to decide, only steps to finish — and it
+    — CLOSEOUT, where nothing is left to decide, only steps to finish — and it
     lives in the graph rather than in this file so a project can say otherwise."""
     return phase in set(graph.get("no_walkaway", []))
 
@@ -344,7 +344,7 @@ def _check_tier(old_state, new_state, appended):
     checked. It ran after the early return for writes that append no history
     entry, so a write changing only `tier` skipped it entirely — and that is all
     it takes: flip a FEATURE to QUICK-FIX in one silent write, then walk
-    DEFINE→CODE→RELEASE, skipping PLAN and VERIFY and never earning `spec`,
+    DEFINE→CODE→CLOSEOUT, skipping PLAN and VERIFY and never earning `spec`,
     `threat` or `verify`. Post mode does not notice, because it replays the run
     against the FINAL tier, under which that path is perfectly legal.
 
@@ -395,7 +395,7 @@ def _check_ticket_continuity(old_state, new_state):
     exit 0, no warning — and post then declared the file on disk illegal, on
     every subsequent tool call, forever. Nothing could clear it: the header
     could not go back without a history entry, and the entry it needed
-    (RELEASE→DEFINE, or its equivalent) is not in the graph. A model told to fix
+    (CLOSEOUT→DEFINE, or its equivalent) is not in the graph. A model told to fix
     it tried eight times, and the only thing that ever worked was deleting the
     file — which took the history with it.
 
@@ -493,7 +493,7 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     new_phase = new_state.get("phase", IDLE)
 
     # A single write declares a single transition. Without this, one Write could
-    # append the entire pipeline — IDLE through RELEASE, every gate asserted at
+    # append the entire pipeline — IDLE through CLOSEOUT, every gate asserted at
     # the end — and pass: each gate is present, so nothing is "missing", and the
     # sequencing that is the entire point of the machine evaporates. The
     # sanctioned helper never emits more than one edge; post mode replays a whole
@@ -593,17 +593,17 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
             # But it has to BE a resume: proven by a pause, from this phase.
             _resume_allowed(entry, old_h + appended, len(old_h) + idx)
             # Except the two that describe the world outside this repository.
-            # A pause at RELEASE is a pause waiting on a person, and days pass:
+            # A pause at CLOSEOUT is a pause waiting on a person, and days pass:
             # the pull request can be closed, the branch can be force-pushed,
             # the commit can be gone. `commit` and `pr` come back false and get
             # asked again — one question to git, one to the forge, both instant.
             # Without this the closeout is satisfied by a gate earned before the
             # wait, because a gate already true is never re-asked.
-            if dst == "RELEASE":
+            if dst == "CLOSEOUT":
                 stale = [g for g in ("commit", "pr") if gates.get(g) is True]
                 if stale:
                     raise Block(
-                        "resuming at RELEASE has to ask again about what happened while you were "
+                        "resuming at CLOSEOUT has to ask again about what happened while you were "
                         f"away: {', '.join(stale)} came back true. Days passed — the pull request "
                         "may have been closed and the branch may have moved. Drop them and earn "
                         "them again; both are instant."
@@ -615,7 +615,7 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
             # to ship, so there is nothing to demand of it. It must SAY so, since
             # a closeout takes the same edge and does owe its gates.
             if _walkaway_blocked(graph, src):
-                # One exception, and it is narrow on purpose: a PAUSE at RELEASE
+                # One exception, and it is narrow on purpose: a PAUSE at CLOSEOUT
                 # whose `commit` and `pr` are already paid for.
                 #
                 # The rule exists because "abandon" would otherwise be a skeleton
@@ -623,7 +623,7 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
                 # reasoning does not cover the case it was catching in practice:
                 # the work IS committed, the pull request IS open, and what you
                 # are waiting for is another person. Refusing there does not
-                # protect anything; it just means the ticket sits in RELEASE for
+                # protect anything; it just means the ticket sits in CLOSEOUT for
                 # two days while you cannot start anything else, because there is
                 # one state per directory.
                 #
@@ -700,7 +700,7 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
 # write code from PLAN, and "no approved spec, no code" — the one rule this
 # pipeline exists to guarantee — collapses into a line in a prompt.
 #
-# Phases whose rules forbid touching product source. RELEASE is not here: it
+# Phases whose rules forbid touching product source. CLOSEOUT is not here: it
 # writes the CHANGELOG and its own gates already close it.
 NO_SOURCE_PHASES = frozenset({"CLASSIFY", "DEFINE", "PLAN", "VERIFY", "DISCOVERY"})
 
@@ -724,7 +724,7 @@ ALLOWED_WIRING_DIRS = frozenset({
     # The runtime the pipeline keeps for itself. `.ddw-paused/` matters: saving
     # the state there is step one of the pause protocol, and leaving it out made
     # pause — advertised as available from any phase — work only from CODE and
-    # RELEASE.
+    # CLOSEOUT.
     ".ddw-paused", ".ddw-sessions", ".ddw-work",
 })
 ALLOWED_ROOT_FILES = frozenset({
@@ -1477,7 +1477,7 @@ def decide_post(state_path, graph_path):
     prior = {"phase": IDLE, "tier": tier, "gates": {}, "history": history[:start]}
 
     # A closed ticket's gates are unverifiable after the fact, because closing
-    # it is what erased them: `RELEASE->IDLE` demands `commit` and `pr`, and the
+    # it is what erased them: `CLOSEOUT->IDLE` demands `commit` and `pr`, and the
     # same write that takes that edge resets `gates` to {}. Replaying it against
     # the empty snapshot declared every finished ticket illegal — and since the
     # post matcher fires on every Bash and Edit, the session stayed wedged from

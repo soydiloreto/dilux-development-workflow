@@ -73,7 +73,7 @@ block, the three coverage numbers, the sad-path answer and the lint answer. Then
 (under a plugin install, resolve `.ddw/scripts/` at the plugin's method path). **Paste its output
 VERBATIM** — every row, every rule ID, on **every** run, including a re-validation of a verdict that
 has not changed. A PASSED run writes the content-hashed receipt the `verify` gate demands; without it
-the VERIFY→RELEASE transition refuses.
+the VERIFY→CLOSEOUT transition refuses.
 
 **What that receipt does and does not say.** DDW does not run your suite — it does not know your
 runner, your directory or your environment, and a gate that cannot be satisfied honestly gets

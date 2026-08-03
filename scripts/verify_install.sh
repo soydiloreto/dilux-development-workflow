@@ -560,7 +560,7 @@ for edges in (m._effective_edges(g, t) for t in g["tiers"]):
 PY
 
 # Closing is gated; abandoning is not. This is the guarantee the whole pipeline
-# rests on: you cannot reach IDLE from RELEASE without a commit and a PR.
+# rests on: you cannot reach IDLE from CLOSEOUT without a commit and a PR.
 CLOSE="$WORK/close"; mkdir -p "$CLOSE"; git -C "$CLOSE" init -q .
 bash "$SELF/install.sh" "$CLOSE" --target claude >/dev/null 2>&1
 export CLAUDE_PROJECT_DIR="$CLOSE"
@@ -571,7 +571,7 @@ step --to DEFINE --action c --tier FEATURE
 step --to PLAN   --action p --gate define
 step --to CODE   --action x --gate spec --gate threat
 step --to VERIFY --action x --gate tests --gate sast
-step --to RELEASE --action x --gate verify
+step --to CLOSEOUT --action x --gate verify
 python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
   && bad "closed WITHOUT commit+pr" || ok "closeout blocked without commit+pr"
 python3 "$TRC" --to IDLE --action done --gate commit --graph "$G" >/dev/null 2>&1 \
@@ -620,7 +620,7 @@ V="$R/.ddw/scripts/validate-transition.py"
 python3 - "$R" > "$R/ev.json" <<'PY'
 import json, sys
 repo = sys.argv[1]
-bad = {"tier":"FEATURE","phase":"RELEASE","gates":{},"history":json.load(open(f"{repo}/.ddw-state.json"))["history"]}
+bad = {"tier":"FEATURE","phase":"CLOSEOUT","gates":{},"history":json.load(open(f"{repo}/.ddw-state.json"))["history"]}
 print(json.dumps({"tool_name":"Write","tool_input":{"file_path":f"{repo}/.ddw-state.json","content":json.dumps(bad)}}))
 PY
 python3 "$V" --mode pre --state "$R/.ddw-state.json" --graph "$G" < "$R/ev.json" >/dev/null 2>&1 \
@@ -722,7 +722,7 @@ else:
     print(json.dumps({"tool_name": "write", "tool_input": {"file_path": path, "content": "x = 1\n"}}))
 PY
 }
-ILLEGAL='{"phase":"RELEASE","tier":"FEATURE","gates":{},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"RELEASE"}]}'
+ILLEGAL='{"phase":"CLOSEOUT","tier":"FEATURE","gates":{},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLOSEOUT"}]}'
 LEGAL='{"phase":"CLASSIFY","tier":null,"gates":{},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLASSIFY","action":"classify"}]}'
 IDLE_STATE='{"phase":"IDLE","tier":null,"gates":{},"history":[]}'
 # The one rule the pipeline is built to guarantee. The FSM only ever guarded the
@@ -793,7 +793,7 @@ gate_pre() {  # $1 = dialect, stdin = event; echoes the exit code
     >/dev/null 2>&1; echo $?
 }
 
-WHOLE_RUN='{"tier":"FEATURE","phase":"RELEASE","gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-27T10:00:01Z","from":"CLASSIFY","to":"DEFINE","action":"a"},{"timestamp":"2026-07-27T10:00:02Z","from":"DEFINE","to":"PLAN","action":"a"},{"timestamp":"2026-07-27T10:00:03Z","from":"PLAN","to":"CODE","action":"a"},{"timestamp":"2026-07-27T10:00:04Z","from":"CODE","to":"VERIFY","action":"a"},{"timestamp":"2026-07-27T10:00:05Z","from":"VERIFY","to":"RELEASE","action":"a"}]}'
+WHOLE_RUN='{"tier":"FEATURE","phase":"CLOSEOUT","gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-27T10:00:01Z","from":"CLASSIFY","to":"DEFINE","action":"a"},{"timestamp":"2026-07-27T10:00:02Z","from":"DEFINE","to":"PLAN","action":"a"},{"timestamp":"2026-07-27T10:00:03Z","from":"PLAN","to":"CODE","action":"a"},{"timestamp":"2026-07-27T10:00:04Z","from":"CODE","to":"VERIFY","action":"a"},{"timestamp":"2026-07-27T10:00:05Z","from":"VERIFY","to":"CLOSEOUT","action":"a"}]}'
 
 printf '%s' "$IDLE_STATE" > "$GST"
 ddw_event snake "$WHOLE_RUN"
@@ -1419,18 +1419,18 @@ assert "autonomy" in st, "the materialised state has no `autonomy` key"
 assert st["autonomy"] is None, f"a fresh state opts into a mode: {st['autonomy']!r}"
 PYSB
 
-# A pause at RELEASE is allowed once the work is committed and the pull request
+# A pause at CLOSEOUT is allowed once the work is committed and the pull request
 # is open — you are waiting on a person, not dodging a gate. An abandon there is
 # still refused, which is what the rule was written for: relabel the exit and
 # ship with no commit and no PR.
-python3 - "$SELF" <<'PYPAUSE' && ok "RELEASE takes a pause once commit and pr are paid, and still refuses an abandon" || bad "the pause exception at RELEASE is a skeleton key, or it refuses the case it exists for"
+python3 - "$SELF" <<'PYPAUSE' && ok "CLOSEOUT takes a pause once commit and pr are paid, and still refuses an abandon" || bad "the pause exception at CLOSEOUT is a skeleton key, or it refuses the case it exists for"
 import importlib.util, json, os, sys
 src = sys.argv[1]
 spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json")))
 EDGES = [("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"), ("DEFINE", "PLAN"), ("PLAN", "CODE"),
-         ("CODE", "VERIFY"), ("VERIFY", "RELEASE")]
+         ("CODE", "VERIFY"), ("VERIFY", "CLOSEOUT")]
 H = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t, "action": "x",
       "tier": "FEATURE", "ticket": "T-1"} for i, (f, t) in enumerate(EDGES)]
 FULL = {"define": True, "spec": True, "threat": True, "tests": True, "sast": True,
@@ -1438,14 +1438,14 @@ FULL = {"define": True, "spec": True, "threat": True, "tests": True, "sast": Tru
 
 
 def rel(gates):
-    return {"tier": "FEATURE", "phase": "RELEASE", "ticket": "T-1", "title": None, "tracker": None,
+    return {"tier": "FEATURE", "phase": "CLOSEOUT", "ticket": "T-1", "title": None, "tracker": None,
             "autonomy": None, "gates": dict(gates), "block": None, "discovery": None, "history": H}
 
 
 def out(action):
     return {"tier": None, "phase": "IDLE", "ticket": None, "title": None, "tracker": None,
             "autonomy": None, "gates": {}, "block": None, "discovery": None,
-            "history": H + [{"timestamp": "2026-01-01T02:00:00Z", "from": "RELEASE", "to": "IDLE",
+            "history": H + [{"timestamp": "2026-01-01T02:00:00Z", "from": "CLOSEOUT", "to": "IDLE",
                              "action": action, "tier": "FEATURE", "ticket": "T-1"}]}
 
 
@@ -1458,17 +1458,17 @@ def blocked(old, new):
 
 
 assert not blocked(rel(FULL), out("pause: waiting on review")), \
-    "a pause at RELEASE with the work committed and the PR open is refused"
+    "a pause at CLOSEOUT with the work committed and the PR open is refused"
 assert blocked(rel({k: v for k, v in FULL.items() if k != "pr"}), out("pause: later")), \
-    "a pause at RELEASE with no pull request open — the skeleton key, wearing the other word"
-assert blocked(rel(FULL), out("abandon: no")), "an abandon at RELEASE is allowed"
+    "a pause at CLOSEOUT with no pull request open — the skeleton key, wearing the other word"
+assert blocked(rel(FULL), out("abandon: no")), "an abandon at CLOSEOUT is allowed"
 # And coming back has to ask again about the world outside this repository.
 resumed = dict(rel({k: v for k, v in FULL.items() if k not in ("commit", "pr")}),
                history=out("pause: waiting on review")["history"] + [
-                   {"timestamp": "2026-01-01T03:00:00Z", "from": "IDLE", "to": "RELEASE",
+                   {"timestamp": "2026-01-01T03:00:00Z", "from": "IDLE", "to": "CLOSEOUT",
                     "action": "resume: changes requested", "tier": "FEATURE", "ticket": "T-1"}])
 idle = out("pause: waiting on review")
-assert not blocked(idle, resumed), "resuming a ticket paused at RELEASE is refused"
+assert not blocked(idle, resumed), "resuming a ticket paused at CLOSEOUT is refused"
 kept = dict(resumed, gates=dict(resumed["gates"], commit=True, pr=True))
 assert blocked(idle, kept), \
     "resuming brings `commit` and `pr` back true — the closeout is then satisfied by evidence from before the wait"
@@ -1534,16 +1534,16 @@ PYPR
 # consults it was invisible to every one of them — a check that tests the part
 # instead of the path, which is the failure this file is about. Evidence is owed
 # when the claim is MADE, so the write under test is the one that turns `pr` on
-# while still in RELEASE, not the closeout that follows it.
+# while still in CLOSEOUT, not the closeout that follows it.
 PRS="$PRT/state"; mkdir -p "$PRS"; git -C "$PRS" init -q .
 git -C "$PRS" -c user.email=ddw@test -c user.name=ddw -c commit.gpgsign=false \
   commit -q --allow-empty -m base
 git -C "$PRS" remote add origin https://github.com/example/example.git
-PRHIST='[{"timestamp":"2026-07-29T20:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-29T20:01:00Z","from":"CLASSIFY","to":"DEFINE","action":"b","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:02:00Z","from":"DEFINE","to":"PLAN","action":"c","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:03:00Z","from":"PLAN","to":"CODE","action":"d","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:04:00Z","from":"CODE","to":"VERIFY","action":"e","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:05:00Z","from":"VERIFY","to":"RELEASE","action":"f","tier":"FEATURE","ticket":"FEAT-001"}]'
+PRHIST='[{"timestamp":"2026-07-29T20:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-29T20:01:00Z","from":"CLASSIFY","to":"DEFINE","action":"b","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:02:00Z","from":"DEFINE","to":"PLAN","action":"c","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:03:00Z","from":"PLAN","to":"CODE","action":"d","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:04:00Z","from":"CODE","to":"VERIFY","action":"e","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:05:00Z","from":"VERIFY","to":"CLOSEOUT","action":"f","tier":"FEATURE","ticket":"FEAT-001"}]'
 python3 - "$PRS" "$PRHIST" <<'PYPRST'
 import json, os, sys
 repo, hist = sys.argv[1], json.loads(sys.argv[2])
-base = {"tier": "FEATURE", "phase": "RELEASE", "ticket": "FEAT-001", "title": None,
+base = {"tier": "FEATURE", "phase": "CLOSEOUT", "ticket": "FEAT-001", "title": None,
         "tracker": None, "autonomy": None, "block": None, "discovery": None, "history": hist,
         "gates": {"define": True, "spec": True, "threat": True, "tests": True,
                   "sast": True, "verify": True, "commit": True}}
@@ -1595,7 +1595,7 @@ spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scrip
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json")))
 EDGES = [("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"), ("DEFINE", "PLAN"), ("PLAN", "CODE"),
-         ("CODE", "VERIFY"), ("VERIFY", "RELEASE")]
+         ("CODE", "VERIFY"), ("VERIFY", "CLOSEOUT")]
 
 
 def hist(n):
@@ -1626,9 +1626,9 @@ def blocked(old, new):
 
 
 SIX = {"define": True, "spec": True, "threat": True, "tests": True, "sast": True, "verify": True}
-rel = st("RELEASE", SIX, 6, block="Block 3")
+rel = st("CLOSEOUT", SIX, 6, block="Block 3")
 # Every backward edge must refuse to keep what it gives up …
-assert blocked(rel, step(rel, "VERIFY", SIX)), "RELEASE->VERIFY kept `verify`"
+assert blocked(rel, step(rel, "VERIFY", SIX)), "CLOSEOUT->VERIFY kept `verify`"
 ver = st("VERIFY", {k: v for k, v in SIX.items() if k != "verify"}, 6)
 assert blocked(ver, step(ver, "CODE", ver["gates"])), "VERIFY->CODE kept tests/sast"
 cod = st("CODE", {"define": True, "spec": True, "threat": True}, 6)
@@ -1847,7 +1847,7 @@ esac
 # graph path and the hook path — and a bare `for G in …` here silently rebound
 # both for every check that came after, which is a whole class of green turning
 # red for reasons that have nothing to do with the code under test.
-for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE sast:security:sast:CODE:VERIFY tests:reports:tests:CODE:VERIFY verify:reports:verify:VERIFY:RELEASE; do
+for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE sast:security:sast:CODE:VERIFY tests:reports:tests:CODE:VERIFY verify:reports:verify:VERIFY:CLOSEOUT; do
   RCP_GATE="${RCP_ROW%%:*}"; RCP_REST="${RCP_ROW#*:}"
   RCP_DIR="${RCP_REST%%:*}"; RCP_REST="${RCP_REST#*:}"
   RCP_STEM="${RCP_REST%%:*}"; RCP_REST="${RCP_REST#*:}"
@@ -1857,9 +1857,9 @@ for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE sast:s
 import json, sys
 root, gate, frm, to = sys.argv[1:5]
 LADDER = ["define", "spec", "threat", "tests", "sast", "verify"]
-EDGE_GATES = {"CODE": ["spec", "threat"], "VERIFY": ["tests", "sast"], "RELEASE": ["verify"]}
+EDGE_GATES = {"CODE": ["spec", "threat"], "VERIFY": ["tests", "sast"], "CLOSEOUT": ["verify"]}
 EDGES = [("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"), ("DEFINE", "PLAN"),
-         ("PLAN", "CODE"), ("CODE", "VERIFY"), ("VERIFY", "RELEASE")]
+         ("PLAN", "CODE"), ("CODE", "VERIFY"), ("VERIFY", "CLOSEOUT")]
 # The gate under test must be claimed BY THIS WRITE. Evidence is checked for the
 # gates a write newly claims — a state that already had them all asked nothing of
 # the receipt, and the check passed while proving the opposite of its own name.
@@ -1922,7 +1922,7 @@ git -C "$CG" config user.email ddw@example.com; git -C "$CG" config user.name DD
 bash "$SELF/install.sh" "$CG" --target claude >/dev/null 2>&1
 printf 'v1\n' > "$CG/src.txt"; git -C "$CG" add -A >/dev/null 2>&1
 git -C "$CG" commit -qm base >/dev/null 2>&1
-CG_REL='{"tier":"FEATURE","phase":"RELEASE","ticket":"FEAT-001","title":null,"tracker":null,"gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true},"block":null,"discovery":null,"history":[{"timestamp":"2026-07-29T20:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-29T20:01:00Z","from":"CLASSIFY","to":"DEFINE","action":"b","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:02:00Z","from":"DEFINE","to":"PLAN","action":"c","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:03:00Z","from":"PLAN","to":"CODE","action":"d","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:04:00Z","from":"CODE","to":"VERIFY","action":"e","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:05:00Z","from":"VERIFY","to":"RELEASE","action":"f","tier":"FEATURE","ticket":"FEAT-001"}]}'
+CG_REL='{"tier":"FEATURE","phase":"CLOSEOUT","ticket":"FEAT-001","title":null,"tracker":null,"gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true},"block":null,"discovery":null,"history":[{"timestamp":"2026-07-29T20:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-29T20:01:00Z","from":"CLASSIFY","to":"DEFINE","action":"b","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:02:00Z","from":"DEFINE","to":"PLAN","action":"c","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:03:00Z","from":"PLAN","to":"CODE","action":"d","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:04:00Z","from":"CODE","to":"VERIFY","action":"e","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:05:00Z","from":"VERIFY","to":"CLOSEOUT","action":"f","tier":"FEATURE","ticket":"FEAT-001"}]}'
 printf '%s' "$CG_REL" > "$CG/.ddw-state.json"
 python3 - "$CG" "$CG_REL" > "$CG/ev.json" <<'PYCG'
 import json, sys
@@ -2066,9 +2066,9 @@ section "The post-write net speaks the channel each tool actually honours"
 PN="$WORK/postnet"; mkdir -p "$PN"; git -C "$PN" init -q .
 python3 - "$PN" <<'PYPOST'
 import json, sys
-json.dump({"phase": "RELEASE", "tier": "FEATURE", "gates": {},
+json.dump({"phase": "CLOSEOUT", "tier": "FEATURE", "gates": {},
            "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE",
-                        "to": "RELEASE", "action": "forged"}]},
+                        "to": "CLOSEOUT", "action": "forged"}]},
           open(sys.argv[1] + "/.ddw-state.json", "w"))
 PYPOST
 
@@ -2153,9 +2153,9 @@ cp -r "$SELF/ddw" "$CPP/ddw"
 CPR="$WORK/cp-repo"; mkdir -p "$CPR"; git -C "$CPR" init -q . >/dev/null 2>&1 || true
 CPEV="$(python3 - "$CPR" <<'PY'
 import json, os, sys
-state = json.dumps({"phase": "RELEASE", "tier": "FEATURE", "gates": {},
+state = json.dumps({"phase": "CLOSEOUT", "tier": "FEATURE", "gates": {},
                     "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE",
-                                 "to": "RELEASE", "action": "forged"}]})
+                                 "to": "CLOSEOUT", "action": "forged"}]})
 args = json.dumps({"path": os.path.join(sys.argv[1], ".ddw-state.json"), "content": state})
 print(json.dumps({"toolName": "create", "toolArgs": args}))
 PY
@@ -2861,7 +2861,7 @@ bash "$SELF/install.sh" "$UN" --target claude >/dev/null 2>&1
 section "The pipeline never builds on a stale base, and never strands a branch"
 
 BR="$SELF/ddw/rules/branches.instructions.md"
-REL="$SELF/ddw/rules/release.instructions.md"
+REL="$SELF/ddw/rules/closeout.instructions.md"
 DEF="$SELF/ddw/rules/define.instructions.md"
 
 grep -q 'git switch -c .* origin/' "$BR" \
@@ -2986,7 +2986,7 @@ grep -qi "impatience is not approval" "$SELF/ddw/rules/define.instructions.md" \
   || bad "\"just start already\" can be taken as PRD approval — an approval lands in the history that never happened"
 
 grep -q '^## Step 4: Integration' "$REL" \
-  && ok "RELEASE asks where the branch lands before it closes the ticket" \
+  && ok "CLOSEOUT asks where the branch lands before it closes the ticket" \
   || bad "nothing asks where the branch lands: a closed ticket can leave its work on a branch forever"
 
 grep -q '│  Integration:' "$REL" \
@@ -3291,7 +3291,7 @@ done
 python3 - "$SUB" <<'PYEOF'
 import json, sys
 json.dump({"tier": None, "phase": "IDLE", "ticket": None, "gates": {},
-           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "RELEASE", "to": "IDLE",
+           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "CLOSEOUT", "to": "IDLE",
                         "action": "closeout", "ticket": "FEAT-001a", "tier": "FEATURE"}]},
           open(sys.argv[1] + "/.ddw-state.json", "w"))
 PYEOF
@@ -3445,7 +3445,7 @@ mid = {"tier": "FEATURE", "phase": "DEFINE", "gates": {"define": True},
        "history": [h("IDLE", "CLASSIFY"), h("CLASSIFY", "DEFINE", "FEATURE")]}
 
 # A write that appends no history entry can still change the tier, and that was
-# the whole exploit: flip to QUICK-FIX, then take its shortcut and reach RELEASE
+# the whole exploit: flip to QUICK-FIX, then take its shortcut and reach CLOSEOUT
 # without PLAN, VERIFY, spec, threat or verify. Post mode replays against the
 # FINAL tier, under which the path is legal, so it never noticed.
 hop = dict(mid); hop["tier"] = "QUICK-FIX"
@@ -3771,9 +3771,9 @@ import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
 gate = os.path.join(src, "ddw", "scripts", "hook-gate.py")
 graph = os.path.join(src, "ddw", "rules", "transition-graph.json")
-CORRUPT = {"phase": "RELEASE", "tier": "FEATURE", "gates": {},
+CORRUPT = {"phase": "CLOSEOUT", "tier": "FEATURE", "gates": {},
            "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE",
-                        "to": "RELEASE", "action": "forged"}]}
+                        "to": "CLOSEOUT", "action": "forged"}]}
 
 
 def write_to(repo, path):
@@ -3802,9 +3802,9 @@ import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
 gate = os.path.join(src, "ddw", "scripts", "hook-gate.py")
 graph = os.path.join(src, "ddw", "rules", "transition-graph.json")
-CORRUPT = {"phase": "RELEASE", "tier": "FEATURE", "gates": {},
+CORRUPT = {"phase": "CLOSEOUT", "tier": "FEATURE", "gates": {},
            "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE",
-                        "to": "RELEASE", "action": "forged"}]}
+                        "to": "CLOSEOUT", "action": "forged"}]}
 
 
 def write_paths(repo, paths):
@@ -3936,7 +3936,7 @@ graph = os.path.join(src, "ddw", "rules", "transition-graph.json")
 with tempfile.TemporaryDirectory() as repo:
     subprocess.run(["git", "init", "-q", repo], check=True)
     state = os.path.join(repo, ".ddw-state.json")
-    json.dump({"tier": "FEATURE", "phase": "RELEASE", "gates": {},
+    json.dump({"tier": "FEATURE", "phase": "CLOSEOUT", "gates": {},
                "history": [{"timestamp": "2026-07-29T06:00:00Z", "from": "IDLE",
                             "to": "CLASSIFY", "action": "x", "tier": "FEATURE"}]},
               open(state, "w"))
@@ -3973,7 +3973,7 @@ PYEOF
 # is the only thing that catches a state written with sed or jq.
 section "The hooks nothing used to execute"
 
-FORGED_STATE='{"tier":"FEATURE","phase":"RELEASE","gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true,"commit":true,"pr":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"RELEASE","action":"forged with sed","tier":"FEATURE"}]}'
+FORGED_STATE='{"tier":"FEATURE","phase":"CLOSEOUT","gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true,"commit":true,"pr":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLOSEOUT","action":"forged with sed","tier":"FEATURE"}]}'
 
 # $3 = "report" when this tool's post hook cannot refuse, only speak. Copilot is
 # the one: GitHub documents postToolUse as unable to deny, and a non-zero exit
@@ -4197,8 +4197,8 @@ def rc(disk, new):
 # A virgin repo. No ticket has ever existed, so there is nothing to resume — and
 # this used to close a FEATURE in a single write.
 virgin = {"tier": None, "phase": "IDLE", "gates": {}, "history": []}
-forged = {"tier": "FEATURE", "phase": "RELEASE", "gates": {"commit": True, "pr": True},
-          "history": [h("IDLE", "RELEASE", "resume: EVIL-1")]}
+forged = {"tier": "FEATURE", "phase": "CLOSEOUT", "gates": {"commit": True, "pr": True},
+          "history": [h("IDLE", "CLOSEOUT", "resume: EVIL-1")]}
 assert rc(virgin, forged) == 2, "a resume with no pause behind it walked the whole pipeline"
 
 paused = [h("IDLE", "CLASSIFY", tier=None), h("CLASSIFY", "DEFINE"), h("DEFINE", "PLAN"),
@@ -4231,7 +4231,7 @@ state = os.path.join(repo, ".ddw-state.json")
 # so this shape — mid-phase, every gate set, one entry — walked straight through.
 json.dump({"tier": None, "phase": "CODE",
            "gates": {k: True for k in ("define", "spec", "threat", "tests", "sast", "verify")},
-           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "RELEASE",
+           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "CLOSEOUT",
                         "to": "IDLE", "action": "x"}]}, open(state, "w"))
 r = subprocess.run([sys.executable, gate, "--mode", "post", "--state", state,
                     "--graph", graph, "--repo", repo],
@@ -4398,7 +4398,7 @@ for tier in g["tiers"]:
     assert reachable, f"{tier}: nothing is reachable from IDLE"
 
     # Backward: what can still get back. Walking the edges in reverse is the
-    # whole point — CODE reaches IDLE through VERIFY and RELEASE, so any check
+    # whole point — CODE reaches IDLE through VERIFY and CLOSEOUT, so any check
     # that only looks one hop ahead invents a trap that is not there.
     rev = {}
     for src, dsts in adj.items():
@@ -4509,7 +4509,7 @@ rstep --to CODE --action "corrective loop: verification found problems" \
 rpost && ok "the corrective loop — the pipeline's own recovery path — raises nothing" \
       || bad "post mode rejects the corrective loop, wedging the session on every later tool call"
 rstep --to VERIFY  --action recode  --gate tests --gate sast
-rstep --to RELEASE --action verify  --gate verify
+rstep --to CLOSEOUT --action verify  --gate verify
 python3 - "$RST" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1])); d["gates"].update(commit=True, pr=True)
@@ -4528,9 +4528,9 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 d["history"] += [
     {"timestamp": "2026-07-27T11:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "r"},
-    {"timestamp": "2026-07-27T11:01:00Z", "from": "CLASSIFY", "to": "RELEASE",
+    {"timestamp": "2026-07-27T11:01:00Z", "from": "CLASSIFY", "to": "CLOSEOUT",
      "action": "teleport", "tier": "FEATURE"},
-    {"timestamp": "2026-07-27T11:02:00Z", "from": "RELEASE", "to": "IDLE",
+    {"timestamp": "2026-07-27T11:02:00Z", "from": "CLOSEOUT", "to": "IDLE",
      "action": "closeout", "tier": "FEATURE"}]
 d["phase"] = "IDLE"; d["tier"] = None; d["gates"] = {}
 json.dump(d, open(sys.argv[1], "w"))
@@ -4658,9 +4658,9 @@ m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
 T = "2026-07-27T10:00:00Z"
 run = [{"timestamp": T, "from": a, "to": b} for a, b in
        (("IDLE","CLASSIFY"),("CLASSIFY","DEFINE"),("DEFINE","PLAN"),
-        ("PLAN","CODE"),("CODE","VERIFY"),("VERIFY","RELEASE"))]
+        ("PLAN","CODE"),("CODE","VERIFY"),("VERIFY","CLOSEOUT"))]
 earned = {k: True for k in ("define","spec","threat","tests","sast","verify")}   # no commit, no pr
-def attempt(action, src="RELEASE", tier="FEATURE", gates=None, hist=None):
+def attempt(action, src="CLOSEOUT", tier="FEATURE", gates=None, hist=None):
     h = hist if hist is not None else run
     entry = {"timestamp": T, "from": src, "to": "IDLE", "action": action}
     return ({"phase": src, "tier": tier, "gates": gates if gates is not None else earned, "history": h},
@@ -4670,8 +4670,8 @@ def blocked(*a, **k):
         m.validate(*attempt(*a, **k), graph=g, max_appended=1); return False
     except m.Block:
         return True
-assert blocked("abandon"),                  "abandon walked out of RELEASE without commit+pr"
-assert blocked("pause: later"),             "pause walked out of RELEASE without commit+pr"
+assert blocked("abandon"),                  "abandon walked out of CLOSEOUT without commit+pr"
+assert blocked("pause: later"),             "pause walked out of CLOSEOUT without commit+pr"
 assert blocked("abandonware cleanup"),      "an unanchored prefix match counted as an abandon"
 assert blocked("done"),                     "a plain closeout skipped its gates"
 # ...while walking away from a phase that IS abandonable still works.
@@ -4692,7 +4692,7 @@ m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
 T = "2026-07-27T10:00:00Z"
 run = [{"timestamp": T, "from": a, "to": b} for a, b in
        (("IDLE","CLASSIFY"),("CLASSIFY","DEFINE"),("DEFINE","PLAN"),
-        ("PLAN","CODE"),("CODE","VERIFY"),("VERIFY","RELEASE"))]
+        ("PLAN","CODE"),("CODE","VERIFY"),("VERIFY","CLOSEOUT"))]
 full = {k: True for k in ("define","spec","threat","tests","sast","verify")}
 def blocked(old, new, **kw):
     try:
@@ -4701,15 +4701,15 @@ def blocked(old, new, **kw):
         return True
 # the whole pipeline asserted in a single write
 assert blocked({"phase":"IDLE","tier":None,"gates":{},"history":[]},
-               {"phase":"RELEASE","tier":"FEATURE","gates":full,"history":run},
+               {"phase":"CLOSEOUT","tier":"FEATURE","gates":full,"history":run},
                max_appended=1), "a single write declared six transitions"
 # closing out while keeping the tier / the gates
-closed = run + [{"timestamp": T, "from":"RELEASE","to":"IDLE","action":"done"}]
+closed = run + [{"timestamp": T, "from":"CLOSEOUT","to":"IDLE","action":"done"}]
 paid = dict(full, commit=True, pr=True)
-assert blocked({"phase":"RELEASE","tier":"FEATURE","gates":paid,"history":run},
+assert blocked({"phase":"CLOSEOUT","tier":"FEATURE","gates":paid,"history":run},
                {"phase":"IDLE","tier":"FEATURE","gates":{},"history":closed},
                max_appended=1), "the tier survived the closeout"
-assert blocked({"phase":"RELEASE","tier":"FEATURE","gates":paid,"history":run},
+assert blocked({"phase":"CLOSEOUT","tier":"FEATURE","gates":paid,"history":run},
                {"phase":"IDLE","tier":None,"gates":paid,"history":closed},
                max_appended=1), "the gates survived the closeout"
 # hopping tier mid-run to reach an edge the real tier gates
@@ -4717,9 +4717,9 @@ mid = run[:5]
 assert blocked({"phase":"VERIFY","tier":"FEATURE",
                 "gates":{"define":True,"spec":True,"threat":True,"tests":True,"sast":True},
                 "history":mid},
-               {"phase":"RELEASE","tier":"QUICK-FIX",
+               {"phase":"CLOSEOUT","tier":"QUICK-FIX",
                 "gates":{"define":True,"tests":True,"sast":True},
-                "history":mid+[{"timestamp":T,"from":"VERIFY","to":"RELEASE"}]},
+                "history":mid+[{"timestamp":T,"from":"VERIFY","to":"CLOSEOUT"}]},
                max_appended=1), "the tier changed mid-run to dodge a gate"
 # a state whose types are nonsense must be refused, not crash into a fail-open
 assert blocked({"phase":"IDLE","tier":None,"gates":{},"history":[]},

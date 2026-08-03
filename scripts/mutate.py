@@ -98,11 +98,11 @@ def copy_to(src, dest):
 
 
 def _drop_gate(d):
-    d["tiers"]["FEATURE"]["VERIFY->RELEASE"]["gates"] = []
+    d["tiers"]["FEATURE"]["VERIFY->CLOSEOUT"]["gates"] = []
 
 
 def _drop_quickfix_close(d):
-    d["tiers"]["QUICK-FIX"].pop("CODE->RELEASE", None)
+    d["tiers"]["QUICK-FIX"].pop("CODE->CLOSEOUT", None)
 
 
 def _cursor_open(d):
@@ -436,12 +436,12 @@ MUTATIONS = [
      edit("ddw/rules/branches.instructions.md",
           "git rev-list --count HEAD..origin/{base}      # commits the base gained since",
           "# (skip the drift check)")),
-    ("RELEASE stops asking where the branch lands",
-     edit("ddw/rules/release.instructions.md",
+    ("CLOSEOUT stops asking where the branch lands",
+     edit("ddw/rules/closeout.instructions.md",
           "## Step 4: Integration — where does this branch land? (MANDATORY)",
           "## Step 4: Notes")),
     ("the closeout drops the Integration line, so the step can be skipped quietly",
-     edit("ddw/rules/release.instructions.md",
+     edit("ddw/rules/closeout.instructions.md",
           "│  Integration: [merged into X | on the PR | next ticket   │",
           "│                                                          │")),
 
@@ -590,9 +590,9 @@ MUTATIONS = [
           "(or → DISCOVERY).")),
     ("a phase appends to history without being told what to stamp on the entry",
      edit("ddw/rules/verify.instructions.md",
-          "transition VERIFY \u2192 RELEASE, **stamped with `ticket` and `tier`** "
+          "transition VERIFY \u2192 CLOSEOUT, **stamped with `ticket` and `tier`** "
           "(see `.ddw/rules/state.instructions.md`)",
-          "transition VERIFY \u2192 RELEASE")),
+          "transition VERIFY \u2192 CLOSEOUT")),
 
     # ── What a gate rests on ─────────────────────────────────────────────────
     ("the receipt is asked for by the helper again, and not by the hook",
@@ -719,17 +719,17 @@ MUTATIONS = [
     ("the graph stops saying what stepping back gives up",
      edit("ddw/rules/transition-graph.json",
           '"clears": [\n          "define"\n        ]', '"clears": []')),
-    ("RELEASE takes an abandon again, and the closeout's gates are dodgeable",
+    ("CLOSEOUT takes an abandon again, and the closeout's gates are dodgeable",
      edit("ddw/scripts/validate-transition.py",
           "                if not (_is_pause(entry) and paid):",
           "                if False:")),
-    ("a pause at RELEASE stops needing the work committed and the PR open",
+    ("a pause at CLOSEOUT stops needing the work committed and the PR open",
      edit("ddw/scripts/validate-transition.py",
           '                paid = all(gates_before.get(g) is True for g in ("commit", "pr"))',
           "                paid = True")),
-    ("resuming at RELEASE keeps the commit and the PR earned before the wait",
+    ("resuming at CLOSEOUT keeps the commit and the PR earned before the wait",
      edit("ddw/scripts/validate-transition.py",
-          '            if dst == "RELEASE":\n                stale = [g for g in ("commit", "pr") if gates.get(g) is True]',
+          '            if dst == "CLOSEOUT":\n                stale = [g for g in ("commit", "pr") if gates.get(g) is True]',
           '            if False:\n                stale = [g for g in ("commit", "pr") if gates.get(g) is True]')),
     ("the corrective loop's ceiling goes back to being a number nothing compares",
      edit("ddw/scripts/validate_prd.py", "    if loops >= LOOP_CEILING:", "    if False:")),
