@@ -608,8 +608,8 @@ MUTATIONS = [
           "            pass")),
     ("the receipt stops naming the PRD's current bytes, and attests to a rewrite",
      edit("ddw/scripts/validate-transition.py",
-          '    if os.path.exists(os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))):',
-          '    if glob.glob(os.path.join(root, ".ddw-sessions", "%s-validated-*" % receipt)):')),
+          'marker = os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))',
+          'marker = (glob.glob(os.path.join(root, ".ddw-sessions", "%s-validated-*" % receipt)) or [""])[0]')),
     ("the commit gate goes back to taking the model's word",
      # One key, never its neighbours: this table grows every time a gate earns
      # evidence, and an anchor that includes the next entry breaks on the growth
@@ -698,11 +698,14 @@ MUTATIONS = [
     # Breaks an anchor rather than the check that reads it: a mutation that
     # merely disabled the check would leave the suite green and survive, which
     # is a mutation measuring nothing — the thing this whole file is about.
-    ("a mutation's anchor moves and the fast check does not notice",
-     edit("scripts/mutate.py", 'edit("ddw/scripts/hook-gate.py", "vt.decide_pre("',
-          'edit("ddw/scripts/hook-gate.py", "vt.decide_pre_THIS_IS_NOT_THERE("')),
-
-    # ── The SAST report, which was catalogued and never checked ──────────────
+    # The preflight runs against the tree as it is, before anything is injected —
+    # the only place it can run without scoring its own side effect as a kill.
+    # That also puts it out of reach of a mutation: breaking an anchor inside the
+    # copy is invisible now, because the copy no longer checks. So what gets
+    # mutated is the CALL, and the suite asserts the call is there and is first.
+    ("mutate.py stops verifying its anchors before it starts injecting",
+     edit("scripts/mutate.py", "    if check_anchors() != 0:\n        return 1",
+          "    if False:\n        return 1")),
     ("the sast gate goes back to turning true on the model's say-so",
      edit("ddw/scripts/validate-transition.py",
           '"sast": _sast_receipt_missing,',
@@ -1180,6 +1183,21 @@ def main():
 
     if args.only and args.shard:
         raise SystemExit("--only and --shard both pick what runs; use one")
+
+    # Anchors are verified HERE, before anything is injected, against the tree as
+    # it is on disk. This check lived inside `verify_install.sh` for one
+    # afternoon and it was worse than not having it: the suite runs inside the
+    # MUTATED copy, where the mutation being tested has just removed its own
+    # anchor, so the check failed, the suite exited non-zero, and this file
+    # recorded the mutation as KILLED — whether or not a single real check had
+    # noticed the defect. Two mutations were caught surviving that way (the `pr`
+    # gate and the `autonomy` field); both had been reported killed.
+    #
+    # A measurement whose instrument reports success for its own side effect is
+    # not a weak measurement, it is a fabricated one — and this file exists to
+    # say so about everything else.
+    if check_anchors() != 0:
+        return 1
 
     wanted = set(slice_of(args.shard, len(MUTATIONS))) if args.shard else None
     chosen = [(i, m) for i, m in enumerate(MUTATIONS, 1)

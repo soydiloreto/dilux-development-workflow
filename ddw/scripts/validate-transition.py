@@ -270,6 +270,62 @@ def _check_idle_invariant(new_state):
             f"{', '.join(sorted(gates))}). Reaching IDLE ends the ticket; otherwise the next "
             "one starts with gates it never earned."
         )
+    if new_state.get("autonomy") is not None:
+        raise Block(
+            f"at IDLE `autonomy` must be null (it is {new_state.get('autonomy')!r}). It is chosen "
+            "when a request is classified and it ends with the ticket — otherwise the next one "
+            "inherits a decision to stop asking that nobody made for it."
+        )
+
+
+AUTONOMY_VALUES = ("assisted", "minimal")
+
+
+def _check_autonomy(old_state, new_state, appended):
+    """`autonomy` is chosen in CLASSIFY, with the user watching, and holds.
+
+    This is the field that decides whether a person is asked before each arrow,
+    so it is the one field a model has an incentive to set for itself — and it
+    shipped with none of the protection `tier` has. Measured on the version that
+    introduced it: a write flipping `assisted` to `minimal` mid-run was accepted,
+    `"banana"` was accepted, and `minimal` survived the reset to IDLE into the
+    next ticket. A gate the model can open by writing a word is not a gate, and
+    "nobody has to approve this any more" is the last word it should be able to
+    write about itself.
+
+    Absent or null reads as `assisted`: a state written before the field existed
+    did not opt into anything, and refusing it would break every repository that
+    upgrades.
+    """
+    raw_new = new_state.get("autonomy")
+    if raw_new is not None and raw_new not in AUTONOMY_VALUES:
+        raise Block(
+            f"`autonomy` must be null, \"assisted\" or \"minimal\", got {raw_new!r}. An "
+            "unrecognised value is read as 'not assisted' by anything that tests for the string, "
+            "which is the failure mode of every unvalidated enum."
+        )
+    old_auto = old_state.get("autonomy")
+    if old_auto == raw_new:
+        return
+    # ENTERING classify counts too, and that is the one this check first got
+    # wrong: the mode is chosen while the request is being classified, and the
+    # write that materialises the classification is IDLE→CLASSIFY — where the
+    # old phase is still IDLE and the appended edge comes `from` IDLE. Refusing
+    # it made the field unsettable by the only path that sets it. Found by
+    # driving the helper end to end, not by the three adversarial cases, which
+    # all passed.
+    in_classify = old_state.get("phase") == CLASSIFY
+    entering_classify = new_state.get("phase") == CLASSIFY
+    leaving_classify = bool(appended) and appended[0].get("from") == CLASSIFY
+    reaching_idle = new_state.get("phase", IDLE) == IDLE
+    if in_classify or entering_classify or leaving_classify or reaching_idle:
+        return
+    raise Block(
+        f"`autonomy` changed {old_auto!r}→{raw_new!r} outside CLASSIFY. How much of this run "
+        "waits for a human is decided once, when the request is classified and the user is "
+        "looking at the box. To change it, walk away from this ticket "
+        '(action "abandon: …") and reclassify.'
+    )
 
 
 def _check_tier(old_state, new_state, appended):
@@ -419,6 +475,7 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     # Before any early return: a write that appends nothing can still change the
     # tier, and that was enough to walk another tier's shortcut.
     _check_tier(old_state, new_state, appended)
+    _check_autonomy(old_state, new_state, appended)
     _check_ticket_continuity(old_state, new_state)
     _check_entry_ticket(old_state, new_state, appended)
     _check_idle_invariant(new_state)
@@ -803,12 +860,33 @@ def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact
     if path is None:
         return None
     try:
-        with open(path, "rb") as fh:
-            digest = hashlib.sha256(fh.read()).hexdigest()[:12]
-    except OSError:
+        # TEXT mode, exactly as every validator reads it before hashing. Reading
+        # the raw bytes here and text there disagrees on one thing and only one:
+        # `\r\n`. A report authored on Windows — routine under WSL — hashed one
+        # way for the validator and another for this gate, so a PASSED run wrote
+        # a receipt under a digest the gate never looks for and the refusal said
+        # "validate it again". There is no way out of that loop by validating
+        # again, which makes it the worst shape a refusal can have.
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    except (OSError, UnicodeDecodeError):
         return None
-    if os.path.exists(os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))):
-        return None
+    marker = os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))
+    if os.path.exists(marker):
+        # And it has to be a receipt for THIS artifact. The digest is of the
+        # content alone, so two tickets whose documents are byte-identical —
+        # a template filled in the same way twice, which is what a split
+        # produces — shared one receipt: validate `a`, copy it to `b`, and
+        # `b`'s gate opened having never been validated. The receipt records
+        # the filename it was written for; nothing had ever read it back.
+        try:
+            with open(marker, encoding="utf-8") as fh:
+                named = fh.read().strip()
+        except OSError:
+            named = ""
+        if not named or named == os.path.basename(path):
+            return None
     rel = os.path.relpath(path, root)
     # No "DDW: " here. Every caller prefixes this reason with its own wording —
     # `DDW blocked this write:`, `ddw-transition:`, `DDW:` — and a prefix baked
@@ -894,42 +972,58 @@ def _tests_receipt_missing(root, state):
 def _pr_evidence_missing(root, state):
     """The pr gate: the forge is asked, rather than the model.
 
-    This is the only gate whose evidence lives outside the repository entirely,
-    and the only one the model cannot produce by writing a file — which makes it
-    the strongest of the eight when it can be checked at all.
+    The only gate whose evidence lives outside the repository, and the only one
+    the model cannot produce by writing a file — which makes it the strongest of
+    the eight when it can be checked at all, and the one that has to be most
+    careful about the difference between *no* and *I could not find out*.
 
-    Three states, and the difference between them is stated rather than blurred:
+    Three states, distinguished rather than blurred:
 
-    - **No remote.** There is no pull request to have. A local-only repo closing
-      a ticket owes nothing here, and refusing would make the pipeline unusable
-      in exactly the setup people try it in first.
-    - **A remote, and `gh` can answer.** The branch either has a pull request or
-      it does not, and no wording from the model changes that.
-    - **A remote, and `gh` is absent or unauthenticated.** Nothing here can
-      verify it, so this falls back to the model's record — the same stance
-      `_commit_evidence_missing` takes when git cannot answer. A guard that
-      refuses because a tool is missing teaches people to route around it, and
-      one that pretends it checked is worse. `ddw-create-pr` says which of the
-      three happened, because the difference is the whole point.
+    - **No remote, or a detached HEAD.** There is no pull request to have.
+    - **`gh` answers about this branch.** Open or merged is the claim; anything
+      else is not.
+    - **Anything else** — `gh` missing, unauthenticated, offline, rate-limited,
+      no default remote in a fork, authenticated to an account without access —
+      is NOT a verdict, and this falls back to the model's record. A guard that
+      says "the forge has none" because the network was down asserts a fact it
+      never established, and that is the failure this whole file is about.
     """
     if not _git(root, "remote"):
         return None                                   # nothing to open a PR against
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     if not branch or branch == "HEAD":
         return None                                   # detached: not a branch that has a PR
+    # `gh pr list --head`, never `gh pr view <branch>`. `view` takes a number, a
+    # URL *or* a branch, so a branch named after a ticket number — `123`, which
+    # is how plenty of teams name them — resolved to whatever PR #123 happens to
+    # be, in any state, on any topic, and opened the gate.
     try:
-        out = subprocess.run(["gh", "pr", "view", branch, "--json", "number,state"],
-                             cwd=root, capture_output=True, text=True, timeout=15)
+        out = subprocess.run(["gh", "pr", "list", "--head", branch, "--state", "all",
+                              "--json", "number,state"],
+                             cwd=root, capture_output=True, text=True, timeout=15,
+                             stdin=subprocess.DEVNULL)
     except Exception:
-        return None                                   # gh absent: not verifiable here
-    if out.returncode == 0 and out.stdout.strip():
-        return None                                   # the forge says it exists
-    err = (out.stderr or "").lower()
-    if "no pull requests found" in err or "could not resolve" in err or out.returncode == 1:
-        return ("the pr gate says a pull request was opened for `%s`, and the forge has none. "
-                "Open it, or close this ticket without claiming the gate — a PR that only "
-                "exists in the report is the one thing this gate is for." % branch)
-    return None                                       # auth, network, rate limit: not a verdict
+        return None                                   # gh absent or unusable: not a verdict
+    if out.returncode != 0:
+        # An error is not an answer. Offline, rate-limited, unauthenticated, a
+        # fork with no default remote — every one of those used to be read as
+        # "the branch has no pull request", because the code tested the exit
+        # code instead of what it said.
+        return None
+    try:
+        prs = json.loads(out.stdout or "[]")
+    except ValueError:
+        return None
+    # A pull request that was closed without merging is not a pull request that
+    # was opened for this work in any sense the closeout means. `state` was
+    # already being requested from the API and then thrown away.
+    live = [p for p in prs if str(p.get("state", "")).upper() in ("OPEN", "MERGED")]
+    if live:
+        return None
+    closed = " (there is a CLOSED one, which is not the same thing)" if prs else ""
+    return ("the pr gate says a pull request was opened for `%s`, and the forge has none%s. "
+            "Open it, or close this ticket without claiming the gate — a PR that only exists "
+            "in the report is the one thing this gate is for." % (branch, closed))
 
 
 def _sast_receipt_missing(root, state):

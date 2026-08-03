@@ -19,6 +19,56 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.12.0] — Unreleased
+
+Five independent reviews of the previous release. What they found is in the
+commit; what matters most is that **the mutation score was measuring itself**.
+
+### Fixed
+
+- **The mutation run was crediting 180 of 217 faults with a kill they did not
+  earn.** The anchor check added one release earlier ran inside `verify_install.sh`
+  — which `mutate.py` executes from inside the MUTATED copy of the tree, where
+  the fault under test has just deleted its own anchor. The suite went red by
+  construction and the fault was recorded as caught, whether or not any real
+  check had noticed. Measured: with that one line neutralised, the `pr` gate and
+  the `autonomy` field were both surviving while reported killed. The check now
+  runs in `mutate.py` itself, before anything is injected, against the tree as it
+  is, plus its own CI job; the suite asserts the suite does not run it.
+- **Checks that could not fail.** Every validator prints a rule's ID on the ✅ row
+  and the ❌ row, so a `case` grepping for the bare ID matched either. Five did.
+  One of them — the fix-plan rollback rule — was also built from a fixture that
+  `grep -v -A 2` had left byte-identical to the sound one, so it asserted the
+  opposite of its own message and could not go red for two independent reasons.
+- **`autonomy` was inert and unsafe.** The field a model has the most reason to
+  set for itself had none of `tier`'s protection: `assisted → minimal` mid-run
+  was accepted, `"banana"` was accepted, and `minimal` survived the closeout into
+  the next ticket. It is now an enum, immutable outside CLASSIFY, cleared at IDLE,
+  writable through `transition.py --autonomy`, and stamped on every edge taken
+  without a human.
+- **A report with Windows line endings could never satisfy its gate.** The gate
+  hashed raw bytes and every validator hashed decoded text, so `\r\n` produced
+  two digests: the validator PASSED, wrote a receipt under one, and the gate
+  looked for the other. The refusal said "validate it again", and validating
+  again could not help. Routine under WSL.
+- **A receipt was portable between tickets.** The digest is of content alone, so
+  two byte-identical documents — what a split produces — shared one receipt.
+  The receipt records the filename it was written for; now that is read back.
+- **The `pr` gate read every `gh` failure as "there is no pull request".**
+  Offline, rate-limited, a fork with no default remote, authenticated elsewhere:
+  each refused a closeout while asserting a fact the guard never established. It
+  now distinguishes an answer from an error, uses `gh pr list --head` (so a
+  branch named `123` stops resolving to PR #123), and a pull request closed
+  without merging no longer counts as one that was opened.
+
+### Added
+
+- Checks for `autonomy` (enum, immutability, IDLE reset, the helper's stamp, the
+  materialised state) and for the `pr` gate (seven `gh` outcomes through a stub,
+  plus the gate table itself), neither of which had a single check before.
+
+---
+
 ## [0.11.1] — Unreleased
 
 ### Changed

@@ -31,6 +31,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  anchors:
+    name: do the mutations still find what they break?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # Asked here, against the tree as it is, and never from inside a mutated
+      # copy. It lived in `verify_install.sh` for an afternoon: the suite runs
+      # inside the copy where the mutation under test has just deleted its own
+      # anchor, so the check failed, the suite exited non-zero, and the run
+      # recorded the mutation as killed without any real check having noticed.
+      # An instrument that reports success for its own side effect does not
+      # measure anything.
+      - run: python3 scripts/mutate.py --check-anchors
+
   mutations:
     name: can the suite fail? (${{ matrix.shard }}/10)
     runs-on: ubuntu-latest
@@ -58,7 +76,7 @@ jobs:
 
   coverage:
     name: did every fault get injected?
-    needs: mutations
+    needs: [mutations, anchors]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

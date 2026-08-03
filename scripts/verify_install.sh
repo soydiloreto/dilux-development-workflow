@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-439}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-445}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -961,7 +961,7 @@ python3 "$SELF/ddw/scripts/validate_prd.py" "$VP/docs/ddw/prd/prd-FEAT-001.md" -
 sed 's/debe exponer/deberia exponer/' "$VP/docs/ddw/prd/prd-FEAT-001.md" > "$VP/broken.md"
 VPOUT="$(python3 "$SELF/ddw/scripts/validate_prd.py" "$VP/broken.md" --tier FEATURE 2>/dev/null || true)"
 case "$VPOUT" in
-  *"F-PRD-06"*"FR-01"*) ok "and it names the broken rule by ID — the checklist is script output, not model courtesy" ;;
+  *"❌ F-PRD-06"*"FR-01"*) ok "and it names the broken rule by ID — the checklist is script output, not model courtesy" ;;
   *) bad "an ambiguous verb sailed through the mechanical validator" ;;
 esac
 printf '%s' '{"tier":"FEATURE","phase":"DEFINE","ticket":"FEAT-001","title":null,"tracker":null,"gates":{},"block":null,"discovery":null,"history":[{"timestamp":"2026-07-29T20:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-29T20:01:00Z","from":"CLASSIFY","to":"DEFINE","action":"b","tier":"FEATURE","ticket":"FEAT-001"}]}' > "$VP/.ddw-state.json"
@@ -1119,7 +1119,7 @@ PYSPEC
 VSOUT="$(python3 "$SELF/ddw/scripts/validate_spec.py" "$VS/broken.md" --tier FEATURE \
         --prd "$VP/docs/ddw/prd/prd-FEAT-001.md" 2>/dev/null || true)"
 case "$VSOUT" in
-  *"F-SPEC-06"*"Block 1"*) ok "and it names the block with no tests by rule ID — the checklist is script output, not model courtesy" ;;
+  *"❌ F-SPEC-06"*"Block 1"*) ok "and it names the block with no tests by rule ID — the checklist is script output, not model courtesy" ;;
   *) bad "a block with no tests sailed through the mechanical spec validator" ;;
 esac
 
@@ -1179,10 +1179,20 @@ FIXEOF
 python3 "$SELF/ddw/scripts/validate_spec.py" "$VS/fix-FIX-002.md" --tier FIX >/dev/null 2>&1 \
   && ok "validate_spec.py passes a sound fix-plan: FIX answers to an RCA, not to a PRD" \
   || bad "a sound fix-plan is refused — the FIX tier cannot leave PLAN at all"
-grep -v -A 2 '^## Rollback plan' "$VS/fix-FIX-002.md" > "$VS/fix-norollback.md"
+# Built with python3, not `grep -v -A`: that combination prints the WHOLE file
+# (the -A window re-adds every line -v removed), so the "broken" fixture was
+# byte-identical to the sound one and the check asserted the opposite of what it
+# says. It was green either way, twice over — the pattern also matched the ✅ row.
+python3 - "$VS" <<'PYNOROLL'
+import os, re, sys
+p = os.path.join(sys.argv[1], "fix-FIX-002.md")
+s = open(p, encoding="utf-8").read()
+s = re.sub(r"^## Rollback plan.*?(?=^## |\Z)", "", s, flags=re.S | re.M)
+open(os.path.join(sys.argv[1], "fix-norollback.md"), "w", encoding="utf-8").write(s)
+PYNOROLL
 VFOUT="$(python3 "$SELF/ddw/scripts/validate_spec.py" "$VS/fix-norollback.md" --tier FIX 2>/dev/null || true)"
 case "$VFOUT" in
-  *"F-SPEC-15"*) ok "and a fix-plan with no rollback plan is named by its rule ID" ;;
+  *"❌ F-SPEC-15"*) ok "and a fix-plan with no rollback plan is named by its rule ID" ;;
   *) bad "a FIX reached CODE with no rollback plan and nothing said so" ;;
 esac
 
@@ -1233,7 +1243,7 @@ grep -v 'Repudiation' "$VTM/threat-FEAT-001.md" > "$VTM/broken.md"
 VTOUT="$(python3 "$SELF/ddw/scripts/validate_threat.py" "$VTM/broken.md" --tier FEATURE \
         --spec "$VS/spec-FEAT-001.md" 2>/dev/null || true)"
 case "$VTOUT" in
-  *"F-TM-01"*Repudiation*) ok "and a missing STRIDE category is named — a five-sixths analysis is not one" ;;
+  *"❌ F-TM-01"*Repudiation*) ok "and a missing STRIDE category is named — a five-sixths analysis is not one" ;;
   *) bad "a component analysed against five of the six STRIDE categories passed" ;;
 esac
 
@@ -1299,7 +1309,7 @@ PYSAST
 VSAOUT="$(python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-critical.md" --tier FEATURE \
          --today 2026-08-02 2>/dev/null || true)"
 case "$VSAOUT" in
-  *"F-SAST-VERDICT"*BLOCKED*) ok "and a Critical finding above a PASSED verdict is refused, by the rule that fixes severities" ;;
+  *"❌ F-SAST-VERDICT"*) ok "and a Critical finding above a PASSED verdict is refused, by the rule that fixes severities" ;;
   *) bad "a report listing a hardcoded secret and declaring PASSED earned a receipt" ;;
 esac
 
@@ -1309,7 +1319,7 @@ grep -v 'F-SAST-07' "$VTM/sast-FEAT-001.md" > "$VTM/sast-gap.md"
 VSGOUT="$(python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-gap.md" --tier FEATURE \
          --today 2026-08-02 2>/dev/null || true)"
 case "$VSGOUT" in
-  *"F-SAST-COVERAGE"*F-SAST-07*) ok "and a category left with no verdict is named, not averaged away" ;;
+  *"❌ F-SAST-COVERAGE"*F-SAST-07*) ok "and a category left with no verdict is named, not averaged away" ;;
   *) bad "a report that never judged SSRF passed as complete" ;;
 esac
 
@@ -1324,10 +1334,194 @@ PYSUP
 VSEOUT="$(python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-expired.md" --tier FEATURE \
          --today 2026-08-02 2>/dev/null || true)"
 case "$VSEOUT" in
-  *"F-SAST-19"*) ok "and a suppression past its review date is refused — six months is the catalog's number" ;;
+  *"❌ F-SAST-19"*) ok "and a suppression past its review date is refused — six months is the catalog's number" ;;
   *) bad "a suppression that expired seven months ago still opened the gate" ;;
 esac
 
+
+# The mutation run has to ask whether its own faults still apply BEFORE it starts
+# injecting them, and it has to ask against the tree as it is. This check lived
+# in the mutated copy for one afternoon and fabricated 180 kills: the suite ran
+# inside the copy where the fault under test had just deleted its own anchor, so
+# the suite went red by construction and every one of those faults was recorded
+# as caught. An instrument that reports success for its own side effect is not a
+# weak measurement, it is not a measurement.
+python3 - "$SELF" <<'PYPRE' && ok "the mutation run verifies its anchors before injecting, against the real tree" || bad "nothing checks the anchors, or it checks them from inside the copy and scores its own footprint"
+import os, re, sys
+src = open(os.path.join(sys.argv[1], "scripts/mutate.py"), encoding="utf-8").read()
+main = src[src.index("def main("):]
+assert re.search(r"if check_anchors\(\) != 0:\s*\n\s*return 1", main), \
+    "main() does not run the anchor preflight"
+assert main.index("check_anchors()") < main.index("for i, (label, mutate) in chosen"), \
+    "the preflight runs after the injection loop, which is not a preflight"
+suite = open(os.path.join(sys.argv[1], "scripts/verify_install.sh"), encoding="utf-8").read()
+assert not re.search(r"mutate\.py\S*\s+--check-anchors", suite), (
+    "the suite INVOKES the anchor check — inside the mutated copy it goes red for the "
+    "mutation's own footprint and hands it a kill it did not earn")
+PYPRE
+
+# The state a session materialises has to carry the field, or the mode has
+# nowhere to live: `session-boot.py` writes the first state every repo ever gets.
+SBA="$WORK/autonomy-boot"; mkdir -p "$SBA"; git -C "$SBA" init -q .
+mkdir -p "$SBA/.ddw"
+python3 "$SELF/ddw/scripts/session-boot.py" --repo "$SBA" --session-id a1 >/dev/null 2>&1
+python3 - "$SBA" <<'PYSB' && ok "a freshly materialised state carries `autonomy`, so the mode has somewhere to live" || bad "the state template dropped the field the whole mode is carried in"
+import json, os, sys
+st = json.load(open(os.path.join(sys.argv[1], ".ddw-state.json"), encoding="utf-8"))
+assert "autonomy" in st, "the materialised state has no `autonomy` key"
+assert st["autonomy"] is None, f"a fresh state opts into a mode: {st['autonomy']!r}"
+PYSB
+
+# ── The pr gate asks the forge, and had no check of any kind ─────────────────
+#
+# It is the only evidence in the pipeline the model cannot produce by writing a
+# file, and it shipped untested. Worse, its first version read ANY `gh` failure
+# as "the branch has no pull request": offline, rate-limited, a fork with no
+# default remote — each one refused a closeout while asserting a fact it never
+# established. Driven against a stub `gh` on PATH, which is the only way to
+# exercise a guard that talks to a network service.
+PRT="$WORK/prgate"; mkdir -p "$PRT/bin"
+cat > "$PRT/bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+[ -n "${GH_STUB_ERR:-}" ] && echo "$GH_STUB_ERR" >&2
+echo "${GH_STUB_OUT:-[]}"
+exit "${GH_STUB_RC:-0}"
+GHEOF
+chmod +x "$PRT/bin/gh"
+PRR="$PRT/repo"; mkdir -p "$PRR"; git -C "$PRR" init -q .
+git -C "$PRR" -c user.email=ddw@test -c user.name=ddw -c commit.gpgsign=false \
+  commit -q --allow-empty -m "base"
+python3 - "$SELF" "$PRR" "$PRT/bin" <<'PYPR' && ok "the pr gate refuses a branch with no PR and one whose PR was closed, and never mistakes an error for an answer" || bad "the pr gate reads a network failure as a verdict, or takes a closed PR as an open one"
+import importlib.util, os, subprocess, sys
+src, repo, binpath = sys.argv[1:4]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+
+def ask(out="[]", rc="0", err=""):
+    env = dict(os.environ, PATH=binpath + os.pathsep + os.environ["PATH"],
+               GH_STUB_OUT=out, GH_STUB_RC=rc, GH_STUB_ERR=err)
+    old = os.environ.copy()
+    os.environ.clear(); os.environ.update(env)
+    try:
+        return m._pr_evidence_missing(repo, {"ticket": "T-1"})
+    finally:
+        os.environ.clear(); os.environ.update(old)
+
+
+# No remote at all: nothing to open a pull request against, nothing owed.
+assert ask() is None, "a repo with no remote is asked for a pull request it cannot have"
+subprocess.run(["git", "-C", repo, "remote", "add", "origin",
+                "https://github.com/example/example.git"], check=True)
+assert ask("[]") is not None, "a branch with no pull request opens the gate"
+assert ask('[{"number":7,"state":"CLOSED"}]') is not None, \
+    "a pull request closed without merging counts as one that was opened"
+assert ask('[{"number":7,"state":"OPEN"}]') is None, "an open pull request does not satisfy the gate"
+assert ask('[{"number":7,"state":"MERGED"}]') is None, "a merged pull request does not satisfy it"
+for rc, err in (("1", "error connecting to api.github.com"),
+                ("1", "no default remote repository"),
+                ("1", "API rate limit exceeded"),
+                ("4", "gh auth login")):
+    assert ask("", rc, err) is None, (
+        f"gh failing with {err!r} is read as 'the forge has none' — a refusal asserting a fact "
+        "the guard never established")
+PYPR
+
+# Through the GATE TABLE, not through the function. The checks above call
+# `_pr_evidence_missing` directly, so removing the gate from the table that
+# consults it was invisible to every one of them — a check that tests the part
+# instead of the path, which is the failure this file is about. Evidence is owed
+# when the claim is MADE, so the write under test is the one that turns `pr` on
+# while still in RELEASE, not the closeout that follows it.
+PRS="$PRT/state"; mkdir -p "$PRS"; git -C "$PRS" init -q .
+git -C "$PRS" -c user.email=ddw@test -c user.name=ddw -c commit.gpgsign=false \
+  commit -q --allow-empty -m base
+git -C "$PRS" remote add origin https://github.com/example/example.git
+PRHIST='[{"timestamp":"2026-07-29T20:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-29T20:01:00Z","from":"CLASSIFY","to":"DEFINE","action":"b","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:02:00Z","from":"DEFINE","to":"PLAN","action":"c","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:03:00Z","from":"PLAN","to":"CODE","action":"d","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:04:00Z","from":"CODE","to":"VERIFY","action":"e","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:05:00Z","from":"VERIFY","to":"RELEASE","action":"f","tier":"FEATURE","ticket":"FEAT-001"}]'
+python3 - "$PRS" "$PRHIST" <<'PYPRST'
+import json, os, sys
+repo, hist = sys.argv[1], json.loads(sys.argv[2])
+base = {"tier": "FEATURE", "phase": "RELEASE", "ticket": "FEAT-001", "title": None,
+        "tracker": None, "autonomy": None, "block": None, "discovery": None, "history": hist,
+        "gates": {"define": True, "spec": True, "threat": True, "tests": True,
+                  "sast": True, "verify": True, "commit": True}}
+json.dump(base, open(os.path.join(repo, ".ddw-state.json"), "w"))
+claim = dict(base, gates=dict(base["gates"], pr=True))
+json.dump({"tool_name": "Write",
+           "tool_input": {"file_path": os.path.join(repo, ".ddw-state.json"),
+                          "content": json.dumps(claim)}},
+          open(os.path.join(repo, "ev.json"), "w"))
+PYPRST
+( export PATH="$PRT/bin:$PATH" GH_STUB_OUT="[]" GH_STUB_RC=0
+  python3 "$SELF/ddw/scripts/validate-transition.py" --mode pre --state "$PRS/.ddw-state.json" \
+    --graph "$SELF/ddw/rules/transition-graph.json" --repo "$PRS" < "$PRS/ev.json" >/dev/null 2>&1 )
+[ "$?" = "2" ] \
+  && ok "and claiming the pr gate is refused through the gate table, not only by the function" \
+  || bad "the pr gate is in the code and the table that consults it does not name it"
+
+# ── autonomy: the field that decides whether a human is in the loop ──────────
+#
+# It shipped with no validation at all: a model could write itself `minimal` in
+# any state, `"banana"` was accepted, and the value survived the closeout into
+# the next ticket — which is the one field where "the model set it" is the whole
+# problem. Driven through validate(), the function the hook calls.
+python3 - "$SELF" <<'PYAUTO' && ok "autonomy is refused outside CLASSIFY, refused unknown, and cleared at IDLE" || bad "the field that removes the human from the loop can be set by the model — see above"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json")))
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+      "ticket": "T-1", "tier": "FEATURE"}]
+NXT = H + [{"timestamp": "2026-01-01T00:02:00Z", "from": "DEFINE", "to": "PLAN", "action": "c",
+            "ticket": "T-1", "tier": "FEATURE"}]
+
+
+def st(phase, auto, hist=None, gates=None, tier="FEATURE", ticket="T-1"):
+    return {"tier": tier, "phase": phase, "ticket": ticket, "title": None, "tracker": None,
+            "autonomy": auto, "gates": gates or {}, "block": None, "discovery": None,
+            "history": hist or H}
+
+
+def blocked(old, new):
+    try:
+        m.validate(old, new, g, max_appended=1)
+        return False
+    except m.Block:
+        return True
+
+
+assert blocked(st("DEFINE", "assisted"), st("PLAN", "minimal", NXT, {"define": True})), \
+    "a model can grant itself minimal mid-run"
+assert blocked(st("DEFINE", "assisted"), st("PLAN", "banana", NXT, {"define": True})), \
+    "an unrecognised autonomy value is accepted"
+assert blocked(st("DEFINE", "minimal"),
+               st("IDLE", "minimal", NXT, tier=None, ticket=None)), \
+    "minimal survives the closeout into the next ticket"
+assert not blocked(st("CLASSIFY", None), st("CLASSIFY", "minimal")), \
+    "the mode cannot be chosen where it is supposed to be chosen"
+assert not blocked(st("DEFINE", "minimal"), st("PLAN", "minimal", NXT, {"define": True})), \
+    "an ordinary transition under minimal is refused"
+PYAUTO
+
+# And the sanctioned helper has to be able to write what the method promises:
+# the mode on the header, the stamp on the entry, both cleared at the closeout.
+python3 - "$SELF" <<'PYAUTOH' && ok "and the helper sets it, stamps every autonomous edge, and clears it on closeout" || bad "the record that says nobody was watching cannot be written by the sanctioned path"
+import importlib.util, json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("tr", os.path.join(src, "ddw/scripts/transition.py"))
+tr = importlib.util.module_from_spec(spec); spec.loader.exec_module(tr)
+idle = {"tier": None, "phase": "IDLE", "ticket": None, "title": None, "tracker": None,
+        "autonomy": None, "gates": {}, "block": None, "discovery": None, "history": []}
+s1 = tr.build_next_state(idle, "CLASSIFY", "classify", [], None, autonomy="minimal")
+assert s1["autonomy"] == "minimal", "--autonomy does not reach the state"
+assert s1["history"][-1].get("autonomy") == "minimal", "the edge is not stamped"
+s2 = tr.build_next_state(s1, "DEFINE", "confirmed", [], "FEATURE")
+assert s2["history"][-1].get("autonomy") == "minimal", "only the first edge is stamped"
+s3 = tr.build_next_state(s2, "IDLE", "closeout", [], None)
+assert s3["autonomy"] is None, "the closeout leaves the mode behind for the next ticket"
+PYAUTOH
 
 # The test run report. `tests: true` used to be a sentence — no runner, no
 # command, no numbers, no names, nothing anyone could reproduce. DDW still does
@@ -1367,9 +1561,22 @@ p = os.path.join(sys.argv[1], "docs/ddw/reports/tests-FEAT-001.md")
 s = open(p, encoding="utf-8").read().replace("| Total | 42 |", "| Total | 50 |")
 open(os.path.join(sys.argv[1], "docs/ddw/reports/tests-bad.md"), "w", encoding="utf-8").write(s)
 PYTC
+# A run nobody can reproduce is an anecdote, and this is the rule that says so.
+python3 - "$VP" <<'PYTR'
+import sys, os
+p = os.path.join(sys.argv[1], "docs/ddw/reports/tests-FEAT-001.md")
+s = open(p, encoding="utf-8").read().replace("| Command | uv run pytest -q --cov=app |\n", "")
+open(os.path.join(sys.argv[1], "docs/ddw/reports/tests-norun.md"), "w", encoding="utf-8").write(s)
+PYTR
+VTROUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-norun.md" 2>/dev/null || true)"
+case "$VTROUT" in
+  *"❌ F-TEST-01"*Command*) ok "and a run report that does not say how it was produced is refused" ;;
+  *) bad "a test report with no command earned the tests gate — nobody can re-run it" ;;
+esac
+
 VTCOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-bad.md" 2>/dev/null || true)"
 case "$VTCOUT" in
-  *"F-TEST-02"*"do not add up"*) ok "and counts that do not add up are refused — that is two runs in one report" ;;
+  *"❌ F-TEST-02"*"do not add up"*) ok "and counts that do not add up are refused — that is two runs in one report" ;;
   *) bad "a report claiming 50 tests over 40 passed + 0 failed + 2 skipped earned a receipt" ;;
 esac
 
@@ -1382,7 +1589,7 @@ open(os.path.join(sys.argv[1], "docs/ddw/reports/tests-low.md"), "w", encoding="
 PYTF
 VTFOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-low.md" 2>/dev/null || true)"
 case "$VTFOUT" in
-  *"F-TEST-04"*"under the floor"*61*) ok "and coverage under the quoted floor is named with its number" ;;
+  *"❌ F-TEST-04"*"under the floor"*61*) ok "and coverage under the quoted floor is named with its number" ;;
   *) bad "61% line coverage passed a report quoting an 80% floor" ;;
 esac
 
@@ -1418,7 +1625,7 @@ sed 's/- line: 94%/- line: 61%/' "$VRP/verify-FEAT-001.md" > "$VRP/broken.md"
 VVOUT="$(python3 "$SELF/ddw/scripts/validate_verify.py" "$VRP/broken.md" --tier FEATURE \
         --prd "$VP/docs/ddw/prd/prd-FEAT-001.md" --spec "$VS/spec-FEAT-001.md" 2>/dev/null || true)"
 case "$VVOUT" in
-  *"F-VER-03"*"61%"*) ok "and coverage under the minimum is named with its number" ;;
+  *"❌ F-VER-03"*"61%"*) ok "and coverage under the minimum is named with its number" ;;
   *) bad "a verdict reporting 61% line coverage passed the 80% floor" ;;
 esac
 
@@ -3328,17 +3535,6 @@ section "A corrupt state can be reported, and cannot be repaired away"
 ! grep -rq 'git checkout -- \.ddw-state\.json' "$SELF/ddw/scripts" \
   && ok "the recovery advice never points at git for a file git never had" \
   || bad "a runtime message recommends git checkout for a gitignored file — that door is painted on"
-
-# A mutation whose anchor moved is a line in a list. The run says so — apart from
-# the kill rate, so it cannot be read as a pass — but it says so after injecting
-# the other two hundred, which is half an hour in CI and hours in one process.
-# Whether the anchor is still there is a substring search. Asking it here means
-# whoever edits a file the list quotes finds out from the suite that runs in two
-# minutes; it went the other way once, and the answer arrived from the last job.
-python3 "$SELF/scripts/mutate.py" --check-anchors >/dev/null 2>&1 \
-  && ok "every mutation still finds the thing it is supposed to break" \
-  || { python3 "$SELF/scripts/mutate.py" --check-anchors 2>&1 | sed 's/^/    /' >&2
-       bad "a mutation's anchor moved — it injects nothing and proves nothing"; }
 
 # The second painted door, found live on Claude Code: the refusal tells the model
 # to write the corrected state to a scratch path OUTSIDE the repo and hand the
