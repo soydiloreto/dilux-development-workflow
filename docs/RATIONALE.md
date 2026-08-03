@@ -539,14 +539,23 @@ and QUICK-FIX's `CLOSEOUT→CODE` gives up `tests`, `sast`, `commit` and `pr`. S
 review and pausing to wait for one end in the same place, which is the only way it makes sense: the
 question a gate answers is about the work as it stands, not as it stood.
 
-**A resumed ticket comes back asking.** Reaching IDLE clears `autonomy`, and a resume cannot set it —
-that field is chosen in CLASSIFY with the user looking at the box, and it is the one field whose
-whole purpose is to resist a model granting itself permission, so it does not get a second entrance
-through an edge the model can compose. A ticket picked back up after two days therefore runs
-`assisted` until it is reclassified. That is a real cost, stated rather than hidden: you lose the
-"stop asking me" setting across a pause. It is the safe direction to be wrong in, and the edges
-walked before the pause keep their `autonomy: minimal` stamp, so the record still says which arrows
-nobody watched.
+**A resumed ticket asks which mode to come back in.** Reaching IDLE clears `autonomy`, so without a
+second moment to choose it the setting is simply lost across a pause — and the only way back would
+be abandoning the ticket and classifying it again, which throws away the work to recover a
+preference. So resuming is the one other place that field may be set, and the pause protocol makes
+the assistant put it to the user: *this ticket was running in `minimal`, two days have passed, keep
+it?*
+
+Narrow, because a resume cannot be manufactured. It needs a real, unresumed pause **of this ticket**,
+**from the exact phase** being re-entered, and it has to come from IDLE — the first version of this
+matched the word `resume:` anywhere, which meant an ordinary `PLAN→CODE` labelled that way granted
+the mode for free, since the resume rules only run on the edges out of IDLE. The value chosen is
+stamped on the resume edge, so the history says a mode was decided there rather than inherited.
+
+What the hook cannot see is whether the question was actually asked. That stop is the method's, like
+the loop ceiling: a hook can prove a pause happened; it cannot prove a person was consulted. Said
+plainly rather than implied, because a guarantee whose scope is unstated gets read as covering
+everything.
 
 **Pausing means working on something else, so a pause is not the last thing that happened.** The
 first implementation looked at the entry immediately before the resume, which held only if you

@@ -89,8 +89,8 @@ around gates that no check had a shape for.
   loop, closeout — through `transition.py --write` and then the post hook after
   every step. Three of the defects above were invisible to every check that
   drives a function or builds a state to reach it, and visible in the first
-  minute of walking the thing. 8 checks and 30 mutations in total: 462 checks,
-  255 mutations.
+  minute of walking the thing. 9 checks and 33 mutations in total: 462 checks,
+  258 mutations.
 
 - **Eleven mutations that had been reported killed were not.** Three were
   regressions this release caused and hid: the new ticket rule refused the
@@ -103,15 +103,19 @@ around gates that no check had a shape for.
   had no check at all; and the pause exception was never replayed by post mode,
   which is the one place it can brick a repo.
 
-### Known
+### Changed
 
-- **A pause gives up `minimal`.** Reaching IDLE clears `autonomy` and a resume
-  cannot set it — that field is chosen in CLASSIFY, with the user watching, and
-  it does not get a second entrance through an edge the model can compose. So a
-  ticket picked back up after two days runs `assisted` until it is reclassified.
-  The safe direction, and a real cost; `docs/RATIONALE.md` decision 17 says so.
-  The edges walked before the pause keep their `autonomy: minimal` stamp, so the
-  history still says which arrows nobody watched.
+- **Resuming a paused ticket asks which mode to come back in.** Reaching IDLE
+  clears `autonomy`, so without a second moment to choose it the setting was
+  lost across every pause, recoverable only by abandoning the ticket. Resuming
+  is now the one other place it may be set, and the pause protocol makes the
+  assistant put the previous value to the user before restoring anything. It
+  needs a real, unresumed pause of that ticket, from the exact phase, out of
+  IDLE — the first draft matched the word `resume:` on any edge, which granted
+  the mode on an ordinary forward step; the check written alongside it caught
+  that before it shipped. What the hook cannot see is whether the question was
+  asked: that stop is the method's, like the loop ceiling, and it is checked as
+  prose because that is what it is.
 
 ---
 

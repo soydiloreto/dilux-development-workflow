@@ -142,12 +142,24 @@ When the user wants to pause the current ticket:
 When the user wants to resume a paused ticket:
 1. List the paused tickets in `.ddw-paused/`.
 2. The user picks which one to resume.
-3. Restore the saved metadata — `tier`, `ticket`, `title`, `tracker`, `block`, `gates` — into the
+3. **Ask about the mode, before restoring anything.** `autonomy` does NOT come back on its own: it
+   is the setting that decides whether a person is asked before each step, and days have passed.
+   Read what the ticket was walked under — the last history entry of that ticket carrying
+   `"autonomy": "minimal"`, and `assisted` if there is none — and put it to the user:
+
+   > This ticket was running in `minimal` (no confirmation between steps). Two days have passed.
+   > Keep it, or go back to confirming each step?
+
+   Their answer is what you pass as `--autonomy` on the resume. Resuming is the only edge outside
+   CLASSIFY where that field may be set, and it may only be set by asking — the hook can see that a
+   real pause is being resumed, it cannot see whether you asked. Do not skip the question because
+   the previous value was `minimal`; that is exactly the answer that needs re-confirming.
+4. Restore the saved metadata — `tier`, `ticket`, `title`, `tracker`, `block`, `gates` — into the
    CURRENT `.ddw-state.json`, and append a `IDLE → <phase>` entry with
    `action: "resume: <ticket>"`. **Never overwrite the file with the saved copy:** its `history` is
    shorter than the one on disk, and history is append-only — restoring it wholesale reads as a
    truncation and gets refused.
-4. Run the normal "work in progress" flow (propose, do not auto-resume).
+5. Run the normal "work in progress" flow (propose, do not auto-resume).
 
 ## Self-Check before write actions
 

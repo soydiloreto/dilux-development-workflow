@@ -408,13 +408,34 @@ def _check_autonomy(old_state, new_state, appended):
     touches_classify = any(e.get("from") == CLASSIFY or e.get("to") == CLASSIFY
                            for e in appended if isinstance(e, dict))
     reaching_idle = new_state.get("phase", IDLE) == IDLE
-    if in_classify or entering_classify or touches_classify or reaching_idle:
+    # Resuming is the one other moment the mode is chosen, and it has to be, or
+    # the setting is simply lost across a pause: reaching IDLE clears it, and the
+    # only way back would be abandoning the ticket and classifying it again.
+    #
+    # Narrow because a resume cannot be manufactured. `_resume_allowed` demands a
+    # real, unresumed pause of THIS ticket, from the exact phase being re-entered
+    # — so getting here means a ticket was genuinely set aside and picked back
+    # up, which is a user-visible act with two history entries behind it. The
+    # value chosen is stamped on the resume edge, so the record says a mode was
+    # decided there rather than inherited.
+    #
+    # What this cannot see is whether the user was actually asked. That stop is
+    # the method's (`ddw/orchestrator.md`, Pause Protocol), like the loop ceiling
+    # — a hook can prove a pause happened; it cannot prove a question was put.
+    # From IDLE, which is the only place a resume comes from. Matching the word
+    # alone was a skeleton key the first time it was written: `_resume_allowed`
+    # only runs on the edges out of IDLE, so an ordinary PLAN→CODE labelled
+    # "resume: …" was never checked as a resume at all and granted the mode for
+    # free. Caught by the check written alongside this, before it shipped.
+    resuming = any(_is_resume(e) and e.get("from") == IDLE
+                   for e in appended if isinstance(e, dict))
+    if in_classify or entering_classify or touches_classify or reaching_idle or resuming:
         return
     raise Block(
         f"`autonomy` changed {old_auto!r}→{raw_new!r} outside CLASSIFY. How much of this run "
-        "waits for a human is decided once, when the request is classified and the user is "
-        "looking at the box. To change it, walk away from this ticket "
-        '(action "abandon: …") and reclassify.'
+        "waits for a human is decided when the request is classified, with the user looking at "
+        "the box, and again when a paused ticket is resumed — and nowhere else. To change it "
+        'now, walk away from this ticket (action "abandon: …") and reclassify.'
     )
 
 

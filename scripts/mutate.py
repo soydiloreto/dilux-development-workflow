@@ -1119,6 +1119,20 @@ MUTATIONS = [
           "                           for e in appended if isinstance(e, dict))",
           '    touches_classify = bool(appended) and appended[0].get("from") == CLASSIFY')),
 
+    ("resuming stops being a moment the mode can be chosen, so a pause loses it",
+     edit("ddw/scripts/validate-transition.py",
+          "    resuming = any(_is_resume(e) and e.get(\"from\") == IDLE",
+          "    resuming = False and any(_is_resume(e) and e.get(\"from\") == IDLE")),
+    ("the word resume on any edge grants the mode, not only on the one out of IDLE",
+     edit("ddw/scripts/validate-transition.py",
+          '    resuming = any(_is_resume(e) and e.get("from") == IDLE\n'
+          "                   for e in appended if isinstance(e, dict))",
+          "    resuming = any(_is_resume(e) for e in appended if isinstance(e, dict))")),
+    ("the pause protocol stops asking which mode to come back in",
+     edit("ddw/orchestrator.md",
+          "3. **Ask about the mode, before restoring anything.**",
+          "3. **Restore the mode silently.**")),
+
     # ── Pause, work on something else, come back ─────────────────────────────
     ("a pause only resumes if it was the very last thing that happened",
      edit("ddw/scripts/validate-transition.py",
