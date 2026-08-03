@@ -33,7 +33,10 @@ import sys
 # model reaches for varies and the field is what matters.
 def _field(text, *names):
     for name in names:
-        m = re.search(rf"^\s*\|?\s*\*{{0,2}}{name}\*{{0,2}}\s*[:|]\s*(.+?)\s*\|?\s*$",
+        # `| Total | 42 |`, `Total: 42`, `- Total: 42`, `**Total:** 42`. The
+        # bullet form was rejected, and `ddw-test`'s skill gives no table
+        # template, so a first draft in bullets failed four rules at once.
+        m = re.search(rf"^\s*(?:[-*]\s*)?\|?\s*\*{{0,2}}{name}\*{{0,2}}\s*[:|]\s*(.+?)\s*\|?\s*$",
                       text, re.IGNORECASE | re.MULTILINE)
         if m:
             val = m.group(1).strip().strip("`*|").strip()
@@ -45,8 +48,12 @@ def _field(text, *names):
 def _number(text, *names):
     """A field's leading number, or None. `12 (3 skipped)` is 12."""
     raw = _field(text, *names)
-    m = re.match(r"(\d+(?:\.\d+)?)", raw.replace(",", "."))
-    return float(m.group(1)) if m else None
+    # `1,204` is a thousands separator far more often than a decimal comma, and
+    # reading it as `1.204` turned 1204 tests into 1 — which passed, silently,
+    # whenever failed and skipped were zero.
+    raw = re.sub(r"(\d),(\d{3})\b", r"\1\2", raw)
+    m = re.match(r"(\d+(?:[.,]\d+)?)", raw)
+    return float(m.group(1).replace(",", ".")) if m else None
 
 
 def _repo_relative(path):
@@ -69,6 +76,14 @@ def main():
         print(f"validate_tests: cannot read {args.report}: {exc}", file=sys.stderr)
         sys.exit(3)
 
+    # A per-suite breakdown is an ordinary shape and `_field` takes the first
+    # match, so a report with a green unit suite above a red integration suite
+    # was read as the unit suite alone: 12 tests, 0 failures, 91% coverage, and
+    # five failures on the page nobody counted.
+    dupes = [n for n in ("Total", "Passed", "Failed", "Line coverage")
+             if len(re.findall(rf"^\s*(?:[-*]\s*)?\|?\s*\*{{0,2}}{n}\*{{0,2}}\s*[:|]",
+                               text, re.IGNORECASE | re.MULTILINE)) > 1]
+
     rows, fails, warns = [], 0, 0
 
     def fail(rule, msg):
@@ -83,6 +98,13 @@ def main():
         nonlocal warns
         warns += 1
         rows.append(f"  ⚠️ {rule}: {msg}")
+
+    if dupes:
+        fail("F-TEST-07", "this report describes more than one run — " + ", ".join(dupes)
+             + " appear(s) more than once. Every rule below reads the first value it finds, so a "
+               "second suite is not checked at all. Report one run, or total them")
+    else:
+        ok("F-TEST-07", "the report describes one run")
 
     # F-TEST-01: which runner, and the exact command. A report nobody can re-run
     # is an anecdote — and this is the field that makes the rest checkable by a
@@ -114,10 +136,29 @@ def main():
         ok("F-TEST-02", f"{total:.0f} test(s): {passed:.0f} passed, {failed:.0f} failed, "
                         f"{skipped:.0f} skipped — and they add up")
 
+    # The rule the script never had. `ddw-test`'s own criterion is "0 failing
+    # tests → gates.tests = true", and the validator that writes that gate's
+    # receipt was not checking it: 7 failures, named, arithmetic consistent, and
+    # the receipt was written.
+    if failed is None:
+        pass
+    elif failed > 0:
+        fail("F-TEST-08", f"{failed:.0f} test(s) failed. The tests gate is the claim that the "
+                          "suite is green; a report of a red run does not earn it, however "
+                          "complete the report is")
+    else:
+        ok("F-TEST-08", "no failing tests")
+
     # F-TEST-03: a failure is named or it is not reported. A count with no names
     # is a number nobody can act on, and the loop has nothing to work from.
+    # Scoped to a failures section. Unscoped, the skip list and a coverage-by-file
+    # table both satisfied it: `✅ F-TEST-03: 3 failure(s), each named` with zero
+    # failures named anywhere on the page.
+    fsec = re.search(r"^#{1,4}\s*(?:Fail\w*|Fallas?|Fallidos?)\b(.*?)(?=^#{1,4}\s|\Z)",
+                     text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    scope = fsec.group(1) if fsec else ""
     named = re.findall(r"^\s*[-*|]\s*(?:❌\s*)?`?([\w./:\[\]-]+::[\w.\[\]-]+|[\w./-]+\.\w+::?[\w.\[\]-]*)",
-                       text, re.MULTILINE)
+                       scope, re.MULTILINE)
     if failed is None:
         pass                                          # already reported by F-TEST-02
     elif failed == 0:
@@ -125,8 +166,9 @@ def main():
     elif len(named) >= failed:
         ok("F-TEST-03", f"{failed:.0f} failure(s), each named")
     else:
-        fail("F-TEST-03", f"{failed:.0f} failure(s) reported and {len(named)} named. A count "
-                          "with no test IDs is a number the fix loop cannot work from")
+        fail("F-TEST-03", f"{failed:.0f} failure(s) reported and {len(named)} named under a "
+                          "failures heading. A count with no test IDs is a number the fix loop "
+                          "cannot work from, and names scattered elsewhere are not a failure list")
 
     # F-TEST-04 / F-TEST-05: three coverage numbers, against a floor the report
     # quotes rather than invents. The floor belongs to the project — AGENTS.md or
@@ -146,6 +188,16 @@ def main():
     floor_raw = _field(text, "Coverage floor", "Piso de cobertura", "Floor")
     floor_m = re.search(r"(\d+(?:\.\d+)?)", floor_raw)
     floor = float(floor_m.group(1)) if floor_m else None
+    # `0.8` is eighty per cent written as a ratio, and reading it as 0.8% made
+    # every comparison vacuous. Normalised, then held to the project's own
+    # minimum: a report that picks a floor of 20% passes itself.
+    if floor is not None and floor <= 1.0:
+        floor *= 100
+    if floor is not None and floor < args.floor:
+        warn("F-TEST-05", f"the report quotes a floor of {floor:.0f}%, under the {args.floor:.0f}% "
+                          "this pipeline treats as the minimum (F-VER-03). A report that chooses a "
+                          "floor it can clear has not been measured against anything")
+        floor = args.floor
     source = re.search(r"AGENTS\.md|spec-|fix-|docs/ddw", floor_raw)
     if floor is None:
         fail("F-TEST-05", "the report states no coverage floor, so nothing decides whether these "
@@ -163,10 +215,14 @@ def main():
 
     # F-TEST-06: a skip nobody explained is a test that does not exist, and it
     # is the cheapest way to make a suite green.
-    if skipped and not re.search(r"skip\w*\s*[:(-]|omitid\w*\s*[:(-]|reason|motivo", text,
-                                 re.IGNORECASE):
-        fail("F-TEST-06", f"{skipped:.0f} skipped test(s) with no reason given. A silent skip is "
-                          "the cheapest way to make a suite green")
+    # One reason per skip, not one word anywhere. "For that reason the integration
+    # suite was not touched" used to clear seven silent skips at once.
+    reasons = len(re.findall(r"^\s*[-*|].*\b(?:reason|motivo|porque|because)\b", text,
+                             re.IGNORECASE | re.MULTILINE))
+    if skipped and reasons < skipped:
+        fail("F-TEST-06", f"{skipped:.0f} skipped test(s) and {reasons} line(s) giving a reason. A "
+                          "silent skip is the cheapest way to make a suite green, and it looks "
+                          "exactly like a test that exists")
     elif skipped:
         ok("F-TEST-06", f"{skipped:.0f} skipped test(s), with reasons")
     else:

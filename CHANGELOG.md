@@ -19,6 +19,67 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.14.0] — Unreleased
+
+An adversarial review of the two newest validators, written against them rather
+than about them: every hole below came with a report that slipped through.
+
+### Fixed — reports that were not complete and passed anyway
+
+- **A `⚠️` was a free pass out of every severity rule.** Only `❌` fed the
+  location, verdict and suppression checks, so a hardcoded secret filed as a
+  warning owed no file:line, no BLOCKED and no suppression. The cheapest bypass
+  either script had, and the skill's own output box puts the three markers on one
+  line. `F-SAST-SEVERITY` refuses it: the catalog fixes the severity per
+  category, and a marker does not change it.
+- **`BLOCKED` anywhere in the file defused the contradiction check.** The skill's
+  template header (`— [PASSED | BLOCKED]`, copied verbatim) or a Spanish "no
+  bloqueado" satisfied it, and the row then told the reader the contradiction had
+  been checked. Both verdicts are read from the stated result line now, and a
+  Critical above `Result: PASSED` fails.
+- **Critical and High were suppressible.** §4.1 says they are not; nothing
+  enforced it, so the seven fields were validated for a finding that has to be
+  fixed. `F-SAST-SUPPRESS`.
+- **A red test run earned the `tests` gate.** `ddw-test`'s own criterion is zero
+  failing tests and the validator that writes the receipt never checked it:
+  seven failures, named, arithmetic consistent, receipt written. `F-TEST-08`.
+- **A per-suite report was read as its first suite.** A green unit suite above a
+  red integration suite passed as one green run, with five failures on the page
+  nobody counted. `F-TEST-07`.
+- **`F-TEST-03` counted anything path-shaped anywhere** — the skip list and a
+  coverage-by-file table both satisfied it. Scoped to a failures heading.
+- **`F-TEST-06` cleared every skip with one word.** "For that reason the
+  integration suite was not touched" excused seven silent skips. One reason per
+  skip now.
+- **The coverage floor was whatever the report said.** `0.8` read as 0.8% made
+  every comparison vacuous; a report quoting 20% passed itself. Ratios are
+  normalised and a floor under the pipeline's own minimum is a warning.
+- **`1,204` tests parsed as 1.204** — a thousands separator read as a decimal
+  comma, which passed silently whenever failed and skipped were zero.
+- **A Medium was cleared by the word "fixed", including "not fixed".**
+- **A dependency finding satisfied the location rule with a version number.**
+  `urllib3 2.0.7: 2` matched; the regex also backtracked quadratically, so a
+  minified line in a report was a multi-second hang (381 ms at 1600 tokens, now
+  0.6 ms).
+
+### Fixed — correct reports that were rejected
+
+- **`## Suppressions` with no suppressions failed a clean report**: the section
+  heading matched the block pattern and became a suppression titled `s` with
+  every field missing. The model could not fix it by adding information, only by
+  deleting the section, which no message suggested.
+- **Suppression fields were English-only**, in an artifact the method tells the
+  model to write in the user's language — and `ACCEPTED_RISK`, which does match
+  `riesgo aceptado`, was read out of a cell that could never be found in Spanish.
+- **A bullet-list report failed four rules at once.** `ddw-test`'s skill gives no
+  table template, so bullets are a likely first draft.
+- **A marker set narrower than what models write**: `⚠` without the variation
+  selector, `✔`, `🔴/🟡/🟢` — the emoji the severity section itself uses.
+- **An impossible date crashed with a traceback** and exit 1, outside the file's
+  documented contract, with no rule ID to loop on.
+
+---
+
 ## [0.13.0] — Unreleased
 
 ### Fixed

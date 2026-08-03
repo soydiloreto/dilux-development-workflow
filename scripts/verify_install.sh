@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-446}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-450}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -1313,6 +1313,53 @@ case "$VSAOUT" in
   *) bad "a report listing a hardcoded secret and declaring PASSED earned a receipt" ;;
 esac
 
+# The cheapest bypass either script had: a Critical filed under a warning marker
+# owed no location, no BLOCKED verdict and no suppression — all three rules read
+# only `found`. The catalog fixes the severity per category and says a confirmed
+# vulnerability can never be a WARNING.
+python3 - "$VTM" <<'PYSEV'
+import sys, os
+p = os.path.join(sys.argv[1], "sast-FEAT-001.md")
+s = open(p, encoding="utf-8").read().replace(
+    "| F-SAST-01 | ✅ | sin secretos embebidos; la key sale de .env |",
+    "| F-SAST-01 | ⚠️ | app/config.py:9 — clave embebida, la juzgo un fixture |")
+open(os.path.join(sys.argv[1], "sast-warned.md"), "w", encoding="utf-8").write(s)
+PYSEV
+VSWOUT="$(python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-warned.md" --tier FEATURE \
+         --today 2026-08-02 2>/dev/null || true)"
+case "$VSWOUT" in
+  *"❌ F-SAST-SEVERITY"*) ok "and a Critical filed under a warning marker is refused — a marker does not change a severity" ;;
+  *) bad "a hardcoded secret marked ⚠️ skipped location, verdict and suppression at once" ;;
+esac
+
+# §4.1: Critical and High are not suppressible. The seven fields were being
+# validated for a finding the catalog says has to be fixed.
+python3 - "$VTM" <<'PYSUPC'
+import sys, os
+p = os.path.join(sys.argv[1], "sast-FEAT-001.md")
+s = open(p, encoding="utf-8").read() + """
+
+### Suppression: F-SAST-01
+
+| Field | Value |
+|---|---|
+| File | app/config.py:9 |
+| Category | hardcoded secrets |
+| Disposition | FALSE_POSITIVE |
+| Reviewer | Pablo Di Loreto |
+| Date | 2026-08-02 |
+| Justification | es un fixture de test |
+| Review by | 2026-12-01 |
+"""
+open(os.path.join(sys.argv[1], "sast-supcrit.md"), "w", encoding="utf-8").write(s)
+PYSUPC
+VSCOUT="$(python3 "$SELF/ddw/scripts/validate_sast.py" "$VTM/sast-supcrit.md" --tier FEATURE \
+         --today 2026-08-02 2>/dev/null || true)"
+case "$VSCOUT" in
+  *"❌ F-SAST-SUPPRESS"*) ok "and a Critical filed as suppressed is refused — those get fixed, not documented" ;;
+  *) bad "a hardcoded secret was suppressed with seven tidy fields and earned the gate" ;;
+esac
+
 # A category with no verdict was not evaluated, and silence is the shape an
 # unrun check takes. This is the rule the other nineteen were waiting for.
 grep -v 'F-SAST-07' "$VTM/sast-FEAT-001.md" > "$VTM/sast-gap.md"
@@ -1597,6 +1644,35 @@ VTCOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/te
 case "$VTCOUT" in
   *"❌ F-TEST-02"*"do not add up"*) ok "and counts that do not add up are refused — that is two runs in one report" ;;
   *) bad "a report claiming 50 tests over 40 passed + 0 failed + 2 skipped earned a receipt" ;;
+esac
+
+# The rule the script never had: `ddw-test` says 0 failing tests earns the gate,
+# and the validator that writes that gate's receipt was not checking it.
+python3 - "$VP" <<'PYRED'
+import sys, os
+p = os.path.join(sys.argv[1], "docs/ddw/reports/tests-FEAT-001.md")
+s = open(p, encoding="utf-8").read().replace("| Passed | 40 |", "| Passed | 33 |") \
+    .replace("| Failed | 0 |", "| Failed | 7 |")
+s += "\n## Failures\n" + "\n".join(f"- `tests/test_x.py::test_{i}` fails" for i in range(7)) + "\n"
+open(os.path.join(sys.argv[1], "docs/ddw/reports/tests-red.md"), "w", encoding="utf-8").write(s)
+PYRED
+VTDOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-red.md" 2>/dev/null || true)"
+case "$VTDOUT" in
+  *"❌ F-TEST-08"*) ok "and a report of a red run does not earn the tests gate, however complete it is" ;;
+  *) bad "seven failing tests, named and adding up, earned the gate that claims the suite is green" ;;
+esac
+
+# One report, one run. `_field` takes the first match, so a per-suite breakdown
+# was read as its first suite and the rest of the run disappeared.
+printf '%s\n' '## Unit' '| Runner | pytest |' '| Command | pytest -q |' '| Total | 12 |' \
+  '| Passed | 12 |' '| Failed | 0 |' '| Line coverage | 91% |' '| Branch coverage | 88% |' \
+  '| Function coverage | 95% |' '| Coverage floor | 80% (AGENTS.md) |' '' '## Integration' \
+  '| Total | 30 |' '| Passed | 25 |' '| Failed | 5 |' '| Line coverage | 44% |' \
+  > "$VP/docs/ddw/reports/tests-multi.md"
+VTMOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-multi.md" 2>/dev/null || true)"
+case "$VTMOUT" in
+  *"❌ F-TEST-07"*) ok "and a report describing two runs is refused rather than read as its first one" ;;
+  *) bad "a green unit suite above a red integration suite passed as one green run" ;;
 esac
 
 # The floor belongs to the project. A report that picks its own passes itself.

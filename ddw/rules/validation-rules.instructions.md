@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.5.0
+version: 1.6.0
 ---
 
 # Validation Rules — Central Catalog
@@ -280,6 +280,8 @@ To suppress a Medium finding as a false positive or an accepted risk:
 
 | ID | Check | Severity |
 |---|---|---|
+| F-SAST-SEVERITY | Severity downgraded by marker | A Critical or High category filed under `⚠️`. The catalog fixes the severity per category; a marker does not change it, and *What can NEVER be a WARNING* names a confirmed vulnerability explicitly. → FAIL, and it still owes a location, a BLOCKED verdict and (never) a suppression. | It was the cheapest bypass in the script: a warning marker exempted a Critical from every other rule at once. |
+| F-SAST-SUPPRESS | Critical or High suppressed | §4.1 says Critical and High cannot be suppressed. A suppression block naming one → FAIL. | Nothing enforced it, so the seven fields were being validated for a finding the catalog says has to be fixed. |
 | F-SAST-18 | Every suppression must have all 7 fields filled in. If any is missing → FAIL. | FAIL |
 | F-SAST-19 | Suppressions must be reviewed when SAST is re-run. If a suppression is more than 6 months old → FAIL (it must be re-evaluated). | FAIL |
 | W-SAST-01 | Low or Informational finding left undocumented. | WARNING |
@@ -309,6 +311,8 @@ a document; whether it is a true document remains the reader's judgement, and ev
 | F-TEST-03 | Failure with no name | Every reported failure must be identified by its test ID. A count with no names → FAIL. | The corrective loop needs something to work from. "3 failed" tells nobody which three. |
 | F-TEST-04 | Coverage incomplete or under the floor | Line, branch and function coverage must each be stated as a number, and each must be at or above the floor. Missing one, or under → FAIL. | One coverage number hides the other two: a suite can touch every line and no branch. Under the floor is the condition the loop exists for. |
 | F-TEST-05 | Floor not stated or not sourced | The report must state the coverage floor and where it comes from (`AGENTS.md`, the spec). Absent → FAIL; stated without a source → WARNING. | A report that chooses its own floor passes itself. The floor belongs to the project. |
+| F-TEST-07 | More than one run in one report | A count or coverage field appearing twice (a per-suite breakdown). Every rule reads the first value it finds, so a second suite is not checked at all → FAIL. | A green unit suite above a red integration suite was read as the unit suite alone, with five failures on the page nobody counted. |
+| F-TEST-08 | A red run earning the gate | `Failed` greater than zero → FAIL. `ddw-test`'s own criterion is 0 failing tests, and the validator that writes the gate's receipt was not checking it. | A report of a red run does not earn the tests gate, however complete the report is. |
 | F-TEST-06 | Silent skip | Every skipped test must carry a reason. Skips with no explanation → FAIL. | A silent skip is the cheapest way to make a suite green, and it looks identical to a test that exists. |
 
 ### WARNING rules

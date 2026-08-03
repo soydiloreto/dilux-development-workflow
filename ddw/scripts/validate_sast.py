@@ -57,17 +57,33 @@ CATEGORIES = {
 # A verdict marker anywhere on the rule's line. Written this way because the
 # report is prose with a table in it, not a form: what matters is that the ID and
 # a verdict travel together, not which column they sit in.
-CLEAN = ("✅", "[ok]", "[clean]")
-FOUND = ("❌", "[fail]", "[found]")
-WARN = ("⚠️", "[warn]")
+CLEAN = ("✅", "✔", "🟢", "[ok]", "[clean]", "[pass]")
+FOUND = ("❌", "✗", "🔴", "🟠", "[fail]", "[found]")
+WARN = ("⚠️", "⚠", "🟡", "[warn]")
 
 # `path/to/file.py:120`, `app/main.py línea 33`. A finding without a location is
 # a sentence, and the fix cannot be reviewed against it.
-LOCATION = re.compile(r"[\w./\\-]+\.\w{1,6}\s*[:#]\s*\d+|[\w./\\-]+\.\w{1,6}\s+"
-                      r"(?:l[ií]nea|line)\s+\d+", re.IGNORECASE)
+# Anchored on a path separator or a known source extension, and written without
+# the ambiguity that made it backtrack quadratically (`[\w./-]+\.` has `.` inside
+# the class, so `"a."*800` took 95 ms and `*1600` took 381 ms — a minified line
+# or a dependency tree in the report was a multi-second hang). `urllib3 2.0.7: 2`
+# used to satisfy it, which is exactly where a real file:line is least likely.
+LOCATION = re.compile(
+    r"(?:[\w-]+[/\\])+[\w-]+\.\w{1,6}\s*[:#]\s*\d+"
+    r"|[\w-]+\.(?:py|js|ts|tsx|jsx|go|rb|java|kt|rs|php|cs|c|cc|cpp|h|sh|sql|html|yml|yaml|json)"
+    r"\s*[:#]\s*\d+"
+    r"|(?:[\w-]+[/\\])*[\w-]+\.\w{1,6}\s+(?:l[ií]nea|line)\s+\d+", re.IGNORECASE)
 
-SUPPRESSION_FIELDS = ("File", "Category", "Disposition", "Reviewer", "Date",
-                      "Justification", "Review by")
+# Bilingual, because the method tells the model to write every artifact in the
+# user's language and this was the one table that only accepted English. A
+# Spanish suppression failed all seven fields at once, and `ACCEPTED_RISK` — which
+# does match `riesgo aceptado` — was being read out of a cell that could never
+# be found.
+SUPPRESSION_FIELDS = (("File", "Archivo"), ("Category", "Categor[ií]a"),
+                      ("Disposition", "Disposici[oó]n"), ("Reviewer", "Revisor"),
+                      ("Date", "Fecha"), ("Justification", "Justificaci[oó]n"),
+                      ("Review by", "Revisar (?:antes de|para)"))
+COMPENSATING = ("Compensating control", "Control compensatorio")
 ACCEPTED_RISK = re.compile(r"accepted[_ ]risk|riesgo[_ ]aceptado", re.IGNORECASE)
 DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 
@@ -105,7 +121,12 @@ def _suppressions(text):
     """(title, body) per `### Suppression: …` block, in the documented shape."""
     blocks, current, buf = [], None, []
     for line in text.splitlines():
-        m = re.match(r"^#{2,4}\s*(?:Suppression|Supresi[oó]n)\s*:?\s*(.*)$", line, re.IGNORECASE)
+        # The colon and a non-empty identifier are both required. `## Suppressions`
+        # — the section heading the skill's own output box implies — matched, and
+        # the trailing "s" became a block titled `s` with every field missing, so
+        # a clean report failed with two FAILs the model could not fix by adding
+        # information. Only by deleting the section, which no message suggested.
+        m = re.match(r"^#{2,4}\s*(?:Suppression|Supresi[oó]n)\s*:\s*(\S.*)$", line, re.IGNORECASE)
         if m:
             if current is not None:
                 blocks.append((current, "\n".join(buf)))
@@ -121,12 +142,15 @@ def _suppressions(text):
     return blocks
 
 
-def _field(body, name):
-    """The value of `| Field | Value |` row `name`, or "" when absent/empty."""
-    m = re.search(rf"^\s*\|\s*{re.escape(name)}\s*\|\s*(.*?)\s*\|", body,
-                  re.IGNORECASE | re.MULTILINE)
-    val = (m.group(1) if m else "").strip()
-    return "" if val in ("", "-", "—", "N/A", "TBD", "[", "]") or val.startswith("[") else val
+def _field(body, names):
+    """The value of a `| Field | Value |` row, under any of its names."""
+    for name in ((names,) if isinstance(names, str) else names):
+        m = re.search(rf"^\s*\|\s*{name}\s*\|\s*(.*?)\s*\|", body,
+                      re.IGNORECASE | re.MULTILINE)
+        val = (m.group(1) if m else "").strip()
+        if val and val not in ("-", "—", "N/A", "TBD") and not val.startswith("["):
+            return val
+    return ""
 
 
 def main():
@@ -180,9 +204,28 @@ def main():
         ok("F-SAST-COVERAGE", f"all {len(CATEGORIES)} catalogued categories carry a verdict")
 
     # A finding has to say where. Reviewing a fix means going to the line.
+    # A `⚠️` on a Critical or High category is not a warning, it is a finding
+    # filed under a marker that exempts it from everything: no location owed, no
+    # BLOCKED owed, no suppression owed. The catalog is explicit — Critical and
+    # High are FAIL, always blocking, never suppressible — and *What can NEVER be
+    # a WARNING* names "a confirmed security vulnerability (any severity ≥
+    # Medium)". It was the cheapest bypass in either script, and the skill's own
+    # output box puts ✅/❌/⚠️ on the same line, which is an invitation.
+    downgraded = [r for r, ls in lines.items()
+                  if _verdict_of(ls) == "warn" and CATEGORIES[r][1] in ("Critical", "High")]
+    if downgraded:
+        fail("F-SAST-SEVERITY", "filed as a warning what the catalog fixes as "
+             + ", ".join(f"{r} ({CATEGORIES[r][1]})" for r in sorted(downgraded))
+             + ". Critical and High block, always, and are never suppressible — a marker does not "
+               "change a severity the catalog assigns")
+    else:
+        ok("F-SAST-SEVERITY", "no Critical or High category filed under a warning marker")
+
     located, unlocated = [], []
     for rule, ls in lines.items():
-        if _verdict_of(ls) == "found":
+        # A downgraded Critical/High counts as found for everything below, so it
+        # still owes a location, a BLOCKED verdict and a suppression.
+        if _verdict_of(ls) == "found" or rule in downgraded:
             (located if any(LOCATION.search(l) for l in ls) else unlocated).append(rule)
     if unlocated:
         fail("F-SAST-LOCATION", "finding with no file:line, so the fix cannot be reviewed "
@@ -196,10 +239,19 @@ def main():
     # a complete report can still contradict itself, and it is the contradiction
     # that matters: a Critical listed above a PASSED verdict advances the phase.
     blocking = sorted(r for r in located if CATEGORIES[r][1] in ("Critical", "High"))
-    says_blocked = re.search(r"\bBLOCKED\b|\bBLOQUEAD", text, re.IGNORECASE)
-    says_passed = re.search(r"^\s*(?:Result|Resultado)\s*:?\s*PASSED", text,
+    # Anchored to the stated RESULT, both of them. `says_blocked` used to scan
+    # the whole document, so the skill's own template header
+    # (`— [PASSED | BLOCKED]`, copied verbatim) or a Spanish "no bloqueado"
+    # satisfied it — and the row then told the reader the contradiction had been
+    # checked, which is worse than not checking it.
+    says_blocked = re.search(r"^\s*(?:Result|Resultado)\s*:?\s*\**\s*(?:BLOCKED|BLOQUEAD\w*)",
+                             text, re.IGNORECASE | re.MULTILINE)
+    says_passed = re.search(r"^\s*(?:Result|Resultado)\s*:?\s*\**\s*PASSED", text,
                             re.IGNORECASE | re.MULTILINE)
-    if blocking and not says_blocked:
+    if blocking and says_passed:
+        fail("F-SAST-VERDICT", f"{len(blocking)} Critical/High finding(s) "
+                               f"({', '.join(blocking)}) above a stated result of PASSED")
+    elif blocking and not says_blocked:
         fail("F-SAST-VERDICT", f"{len(blocking)} Critical/High finding(s) "
                                f"({', '.join(blocking)}) and the report does not say BLOCKED")
     elif blocking:
@@ -211,8 +263,12 @@ def main():
     sups = _suppressions(text)
     med_found = sorted(r for r in located if CATEGORIES[r][1] == "Medium")
     sup_text = " ".join(t + " " + b for t, b in sups)
+    # `not fixed`, `will be fixed`, `no corregido` all used to clear the rule:
+    # the search had no negation and no tense. A Medium is resolved by a
+    # suppression or by a past-tense statement with nothing negating it.
     unresolved = [r for r in med_found if r not in sup_text and not re.search(
-        rf"{r}[^\n]*\b(fixed|corregid|resuelt|remediat)", text, re.IGNORECASE)]
+        rf"{r}[^\n]*\b(?<!not )(?<!be )(?:fixed|corregido|resuelto|remediado)\b(?![^\n]*\b(?:pending|pendiente|todo)\b)",
+        text, re.IGNORECASE)]
     if unresolved:
         fail("F-SAST-MEDIUM", "Medium finding neither fixed nor suppressed: "
                               + ", ".join(unresolved))
@@ -222,11 +278,23 @@ def main():
     # F-SAST-18: a suppression carries its fields, or it is a shrug in a table.
     incomplete = []
     for title, body in sups:
-        missing_f = [f for f in SUPPRESSION_FIELDS if not _field(body, f)]
-        if ACCEPTED_RISK.search(_field(body, "Disposition")) and not _field(body, "Compensating control"):
+        missing_f = [f[0] for f in SUPPRESSION_FIELDS if not _field(body, f)]
+        if ACCEPTED_RISK.search(_field(body, SUPPRESSION_FIELDS[2])) and not _field(body, COMPENSATING):
             missing_f.append("Compensating control")
         if missing_f:
             incomplete.append(f"{title} (missing {', '.join(missing_f)})")
+    # §4.1: Critical and High are not suppressible. Nothing enforced it, so a
+    # hardcoded secret could be filed as a false positive with all seven fields
+    # and the script would solemnly validate the paperwork.
+    unsuppressible = sorted({r for r in CATEGORIES
+                             if CATEGORIES[r][1] in ("Critical", "High")
+                             and re.search(rf"{r}\b", sup_text)})
+    if unsuppressible:
+        fail("F-SAST-SUPPRESS", "suppression filed for a severity the catalog says cannot be "
+             "suppressed: " + ", ".join(unsuppressible) + ". Critical and High get fixed")
+    else:
+        ok("F-SAST-SUPPRESS", "no Critical or High finding is filed as suppressed")
+
     if not sups:
         ok("F-SAST-18", "no suppressions to check")
     elif incomplete:
@@ -237,12 +305,31 @@ def main():
     # F-SAST-19: six months, and the clock is read from the document.
     expired, undated = [], []
     for title, body in sups:
-        review = _field(body, "Review by")
+        review = _field(body, SUPPRESSION_FIELDS[6])
+        # The catalog's rule is about age, and `Date` was read for emptiness and
+        # never parsed: a suppression dated "hace tiempo" with a review date in
+        # 2027 passed both rules while being years old.
+        wrote = DATE.search(_field(body, SUPPRESSION_FIELDS[4]))
+        if wrote:
+            try:
+                made = datetime.date(int(wrote.group(1)), int(wrote.group(2)), int(wrote.group(3)))
+                if (today - made).days > 190:
+                    expired.append(f"{title} (written {made.isoformat()}, over six months ago)")
+                    continue
+            except ValueError:
+                undated.append(f"{title} (impossible Date)")
+                continue
         m = DATE.search(review)
         if not m:
             undated.append(title)
             continue
-        due = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        try:
+            due = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            # `2026-02-30` used to raise here: a traceback, exit 1, no rule ID to
+            # loop on, and an exit code outside this file's documented contract.
+            undated.append(f"{title} (impossible review date {m.group(0)})")
+            continue
         if due < today:
             expired.append(f"{title} (due {due.isoformat()})")
         elif (due - today).days > 190:
