@@ -129,7 +129,7 @@ what it is doing and the current phase, it stops and reports.
     plan.instructions.md              Phase: technical planning and specs
     code.instructions.md              Phase: implementation
     verify.instructions.md            Phase: verification
-    closeout.instructions.md           Phase: commit, PR and the closeout itself
+    closeout.instructions.md          Phase: commit, PR and the closeout itself
     discovery.instructions.md         Tier: ideation and product definition
     state.instructions.md             The state schema (always loaded)
     validation-rules.instructions.md  The central catalog of validation rules

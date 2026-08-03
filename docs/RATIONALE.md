@@ -354,6 +354,20 @@ committed.
 delete both files, and that is fine: the guarantee is not that the history is indestructible, it is
 that destroying it takes a deliberate act rather than one impatient `rm`.
 
+**It also records the gates, and that is not a second feature.** Post-write validation asks for
+evidence on the gates the transitions that just landed declare — so a write that declares *no*
+transition owed nothing, and `jq '.gates.tests = true'` reached the disk unasked. The pre-write path
+does not catch it either: it owes evidence on what a write *newly* claims, and by the time it runs
+the forged `true` is already the prior. So the journal also carries the gates as they stood the last
+time a verdict blessed them, and what changed since that line is what gets asked. Not "every gate
+currently true" — re-checking an old claim on every write means editing the PRD two phases later
+brings the pipeline down, and a gate that fires on legal work is how a team learns to route around
+gates.
+
+Why in the journal rather than beside it: removing it has to cost something. Deleting the journal
+makes post-write validation **stricter**, not weaker — with nothing recorded, every entry counts as
+having just landed and every gate its edges declare is owed again.
+
 ---
 
 ## 16. A gate is an attestation, and they are not all the same strength
@@ -517,6 +531,30 @@ Resuming gives `commit` and `pr` back false. A gate already true is never re-ask
 — the pull request may have been closed, the branch may have moved. Two instant questions, one to
 git and one to the forge, against a closeout that would otherwise be satisfied by evidence earned
 before the wait.
+
+**And a reviewer sending you back is the same event.** `CLOSEOUT→VERIFY` first gave up `verify`
+alone, which left the ticket walking forward again still holding `commit` and `pr` — the two gates
+that say the work shipped — after changing the code they were earned on. It gives up all three now,
+and QUICK-FIX's `CLOSEOUT→CODE` gives up `tests`, `sast`, `commit` and `pr`. Stepping back from a
+review and pausing to wait for one end in the same place, which is the only way it makes sense: the
+question a gate answers is about the work as it stands, not as it stood.
+
+**A resumed ticket comes back asking.** Reaching IDLE clears `autonomy`, and a resume cannot set it —
+that field is chosen in CLASSIFY with the user looking at the box, and it is the one field whose
+whole purpose is to resist a model granting itself permission, so it does not get a second entrance
+through an edge the model can compose. A ticket picked back up after two days therefore runs
+`assisted` until it is reclassified. That is a real cost, stated rather than hidden: you lose the
+"stop asking me" setting across a pause. It is the safe direction to be wrong in, and the edges
+walked before the pause keep their `autonomy: minimal` stamp, so the record still says which arrows
+nobody watched.
+
+**Pausing means working on something else, so a pause is not the last thing that happened.** The
+first implementation looked at the entry immediately before the resume, which held only if you
+paused and came straight back — the case a pause is *for* is the other one. It searches backwards
+now for the last pause that has not been resumed, pairing each resume already in the history with
+the pause it consumed. Two consequences worth stating: one pause cannot be resumed twice (otherwise
+`resume` re-enters a phase whose ticket closed months ago, carrying whatever gates the write cares
+to declare), and another ticket's pause is not your ticket's way back in.
 
 **Why the ceiling counts two numbers.** `PRD loops` is the running total and nobody resets it: six
 months on, "this document cost five rounds" is worth being able to read. The ceiling measures

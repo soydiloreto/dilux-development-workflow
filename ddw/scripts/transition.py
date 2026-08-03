@@ -89,7 +89,7 @@ def _now_iso():
 
 
 def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
-                     autonomy=None, edge_clears=()):
+                     autonomy=None, edge_clears=(), ticket=None):
     """The complete state for the next step. Read-only over old_state (deep copy)."""
     new_state = json.loads(json.dumps(old_state))  # deep copy
     from_phase = old_state.get("phase", "IDLE")
@@ -108,6 +108,14 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
             new_state["tier"] = tier
         if autonomy is not None:
             new_state["autonomy"] = autonomy
+        # The ticket a gate is earned for. `--write` lands the state on disk with
+        # nothing after it, so without a flag the only way to name the ticket was
+        # a separate hand-written edit — and until it happened the gates were
+        # claimed against a null ticket, which is the name every receipt is
+        # resolved through. The hook now refuses that state; this is how the
+        # sanctioned helper satisfies it.
+        if ticket is not None:
+            new_state["ticket"] = ticket
         merged = dict(new_state.get("gates") or {})
         # What the graph says this edge gives up. Going back a phase takes away
         # what that phase granted: the work from here on has to be earned again
@@ -141,6 +149,13 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
     run_tier = old_state.get("tier") or new_state.get("tier")
     if run_tier:
         entry["tier"] = run_tier
+    # And the ticket, for the same reason: the entry is what answers "what
+    # happened to which ticket", and the session boot reads it to work out which
+    # sub-tickets of a split still have no closeout. The header's ticket is wiped
+    # by the closeout, so an unstamped entry is unattributable forever after.
+    run_ticket = new_state.get("ticket") or old_state.get("ticket")
+    if run_ticket:
+        entry["ticket"] = run_ticket
     # And the mode the edge was taken under, stamped on the edge itself, when it
     # was taken without anyone being asked. A history that reads identically for
     # a run somebody watched and one that had nobody to watch it is a record that
@@ -164,6 +179,10 @@ def main():
                          "tests and sast: the fix has to re-earn them.")
     ap.add_argument("--tier", choices=_TIERS, default=None,
                     help="Tier of the work (enum). The only metadata the FSM needs to route the graph.")
+    ap.add_argument("--ticket", default=None,
+                    help="The ticket this run belongs to. Set it on the edge that classifies the "
+                         "request; a gate cannot be claimed without one, because the ticket is "
+                         "how every receipt finds its document.")
     ap.add_argument("--autonomy", choices=("assisted", "minimal"), default=None,
                     help="How much of the run waits for the user. Set in CLASSIFY, with the user "
                          "looking at the box; the hook refuses a change anywhere else. Absent "
@@ -185,8 +204,8 @@ def main():
     if args.sets:
         print(
             "ddw-transition: --set was removed (free text through shell args broke the "
-            "quoting). Use --tier <TIER> for the tier; fill in ticket/title/tracker in "
-            "the SAME Write where you paste the helper's output.",
+            "quoting). Use --tier <TIER> for the tier and --ticket <ID> for the ticket; "
+            "fill in title/tracker in the SAME Write where you paste the helper's output.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -199,7 +218,8 @@ def main():
     _cfg = _edges.get("%s->%s" % (old_state.get("phase", "IDLE"), args.to)) or {}
     _clears = _cfg.get("clears", []) if isinstance(_cfg, dict) else []
     new_state = build_next_state(old_state, args.to, args.action, args.gate, args.tier,
-                                 args.clear_gates, autonomy=args.autonomy, edge_clears=_clears)
+                                 args.clear_gates, autonomy=args.autonomy, edge_clears=_clears,
+                                 ticket=args.ticket)
 
     # A gate that rests on evidence is asked for it here too — the same function
     # the hook calls, never a second copy. This helper used to hold the only

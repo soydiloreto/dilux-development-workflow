@@ -324,7 +324,7 @@ MUTATIONS = [
     # but the one its repair invents.
     ("`resume` stops requiring that a pause happened",
      edit("ddw/scripts/validate-transition.py",
-          "    paused_at = _paused_at(history, upto)",
+          "    paused_at = _paused_at(history, upto, entry.get(\"ticket\"))",
           "    paused_at = entry.get('to')  # noqa")),
     ("`resume` stops requiring the phase it was paused at",
      edit("ddw/scripts/validate-transition.py",
@@ -604,11 +604,11 @@ MUTATIONS = [
           "        reason = None")),
     ("the shell can still set a gate that owes evidence",
      edit("ddw/scripts/validate-transition.py",
-          "            reason = gate_evidence_missing(os.path.dirname(os.path.abspath(state_path)),\n"
-          "                                           disk_state, owed)\n"
-          "            if reason:\n"
-          "                raise Block(reason)",
-          "            pass")),
+          "        reason = gate_evidence_missing(os.path.dirname(os.path.abspath(state_path)),\n"
+          "                                       disk_state, sorted(set(owed)))\n"
+          "        if reason:\n"
+          "            raise Block(reason)",
+          "        pass")),
     ("the receipt stops naming the PRD's current bytes, and attests to a rewrite",
      edit("ddw/scripts/validate-transition.py",
           'marker = os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))',
@@ -712,6 +712,11 @@ MUTATIONS = [
     # The ceiling was a number in four documents and a comparison in none of
     # them, so one of the three stops that hold under `minimal` was unreachable.
     # ── Going back, and what going back costs ────────────────────────────────
+    ("the status line goes back to calling the phase by the name it lost",
+     edit("ddw/orchestrator.md", "🏁 {TIER} · Closing out [5/5]", "🚀 {TIER} · Releasing [5/5]")),
+    ("an upgraded state is accused of being forged instead of being explained",
+     edit("ddw/scripts/validate-transition.py",
+          "        if renamed:", "        if False:")),
     ("a backward transition may keep the gates it is supposed to give up",
      edit("ddw/scripts/validate-transition.py",
           "        still_held = [g for g in cleared if gates.get(g) is True]",
@@ -725,8 +730,8 @@ MUTATIONS = [
           "                if False:")),
     ("a pause at CLOSEOUT stops needing the work committed and the PR open",
      edit("ddw/scripts/validate-transition.py",
-          '                paid = all(gates_before.get(g) is True for g in ("commit", "pr"))',
-          "                paid = True")),
+          '                paid = (all(gates_before.get(g) is True for g in ("commit", "pr"))',
+          "                paid = (True or all(gates_before.get(g) is True for g in ('commit', 'pr'))")),
     ("resuming at CLOSEOUT keeps the commit and the PR earned before the wait",
      edit("ddw/scripts/validate-transition.py",
           '            if dst == "CLOSEOUT":\n                stale = [g for g in ("commit", "pr") if gates.get(g) is True]',
@@ -1073,6 +1078,120 @@ MUTATIONS = [
      edit("install.sh",
           'echo "The pipeline starts on its own. See the \\"try:\\" line above for how to call it."',
           'echo "The pipeline starts on its own. Commands: /ddw-status, /ddw-help."')),
+
+    # ── The ticket a gate is earned for ──────────────────────────────────────
+    ("clearing the ticket opens the six receipt gates again",
+     edit("ddw/scripts/validate-transition.py",
+          "    if claimed:\n        raise Block(", "    if False:\n        raise Block(")),
+    ("the rule stops knowing which gates rest on a receipt",
+     edit("ddw/scripts/validate-transition.py",
+          'RECEIPT_GATES = ("define", "spec", "threat", "tests", "sast", "verify")',
+          "RECEIPT_GATES = ()")),
+    ("the invariant is written and never called",
+     edit("ddw/scripts/validate-transition.py",
+          "    _check_gates_have_a_ticket(new_state)\n", "")),
+    ("the helper cannot name the ticket it is earning gates for",
+     edit("ddw/scripts/transition.py",
+          "        if ticket is not None:\n            new_state[\"ticket\"] = ticket",
+          "        if False:\n            new_state[\"ticket\"] = ticket")),
+    ("history entries go back to being unattributable",
+     edit("ddw/scripts/transition.py",
+          '    if run_ticket:\n        entry["ticket"] = run_ticket',
+          '    if False:\n        entry["ticket"] = run_ticket')),
+
+    # ── The gate turned on with no transition to declare it ──────────────────
+    ("a gate flipped on disk stops being compared to the last blessed snapshot",
+     edit("ddw/scripts/validate-transition.py",
+          "    if snapshot is not None:\n        owed.extend(_gates_newly_claimed({\"gates\": snapshot}, disk_state))",
+          "    if False:\n        owed.extend(_gates_newly_claimed({\"gates\": snapshot}, disk_state))")),
+    ("the snapshot is never recorded, so there is nothing to compare against",
+     edit("ddw/scripts/validate-transition.py",
+          "    if read_gates_snapshot(state_path) != held:",
+          "    if False:")),
+    ("snapshot lines are counted as transitions, sliding the index that finds what landed",
+     edit("ddw/scripts/validate-transition.py",
+          '    return [e for e in _journal_lines(state_path)\n'
+          '            if isinstance(e, dict) and "from" in e and "to" in e]',
+          "    return _journal_lines(state_path)")),
+    ("post mode judges the autonomy change against the first edge of the replay again",
+     edit("ddw/scripts/validate-transition.py",
+          '    touches_classify = any(e.get("from") == CLASSIFY or e.get("to") == CLASSIFY\n'
+          "                           for e in appended if isinstance(e, dict))",
+          '    touches_classify = bool(appended) and appended[0].get("from") == CLASSIFY')),
+
+    # ── Pause, work on something else, come back ─────────────────────────────
+    ("a pause only resumes if it was the very last thing that happened",
+     edit("ddw/scripts/validate-transition.py",
+          "    prior = [e for e in history[:upto] if isinstance(e, dict)]",
+          "    prior = [e for e in history[:upto] if isinstance(e, dict)]\n"
+          "    return prior[-1].get('from') if prior and _is_pause(prior[-1]) else None")),
+    ("one pause can be resumed over and over",
+     edit("ddw/scripts/validate-transition.py",
+          "        if pending_resumes:\n            pending_resumes -= 1",
+          "        if False:\n            pending_resumes -= 1")),
+    ("another ticket's pause becomes this ticket's way back in",
+     edit("ddw/scripts/validate-transition.py",
+          '        if any(e.get("ticket") for e in prior):\n            prior = [e for e in prior if e.get("ticket") == ticket]',
+          '        if False:\n            prior = [e for e in prior if e.get("ticket") == ticket]')),
+
+    # ── The notice about pull requests waiting on a reviewer ─────────────────
+    ("the pending-PR notice goes back to crashing on a shape it did not expect",
+     edit("ddw/scripts/session-boot.py",
+          "    prs = [p for p in prs if isinstance(p, dict)]\n", "")),
+    ("a list gh did not return is rendered as pull requests anyway",
+     edit("ddw/scripts/session-boot.py",
+          "    if not isinstance(prs, list):", "    if False:")),
+    ("pull requests are dropped without a word again",
+     edit("ddw/scripts/session-boot.py", "    if len(prs) > SHOWN:", "    if False:")),
+    ("every way gh can fail is reported as a timeout again",
+     edit("ddw/scripts/session-boot.py",
+          "    except subprocess.TimeoutExpired:\n        return [CANNOT + f\"the forge did not answer in {timeout}s.\"]\n"
+          "    except Exception as exc:\n",
+          "    except Exception as exc:\n")),
+    ("git failing to read the remotes becomes silence again",
+     edit("ddw/scripts/session-boot.py",
+          '        if os.path.isdir(os.path.join(repo, ".git")):\n            return [CANNOT + "git could not read this repo\'s remotes."]',
+          "        if False:\n            return [CANNOT]")),
+    ("the notice about waiting pull requests disappears from the boot",
+     edit("ddw/scripts/session-boot.py",
+          "            lines += awaiting_review(repo)", "            pass")),
+    ("the notice goes back to calling the forge on every boot, quiet or not",
+     edit("ddw/scripts/session-boot.py",
+          "        if started and not args.quiet:", "        if True:")),
+
+    # ── What the audit found still alive ─────────────────────────────────────
+    # Each of these is a mutation the list did not have, on code the checks do
+    # cover — which is the quieter half of a coverage figure: not a rule nobody
+    # tests, but a way of breaking it nobody had written down.
+    ("QUICK-FIX's step back from CLOSEOUT keeps everything it is supposed to give up",
+     edit("ddw/rules/transition-graph.json",
+          '      "CLOSEOUT->CODE": {\n        "gates": [],\n        "clears": [\n'
+          '          "tests",\n          "sast",\n          "commit",\n          "pr"\n        ]\n      }',
+          '      "CLOSEOUT->CODE": {\n        "gates": [],\n        "clears": []\n      }')),
+    ("a pause is matched by bare prefix again, so `pause-the-build` is a pause",
+     edit("ddw/scripts/validate-transition.py",
+          '    return action.strip().lower().split(":", 1)[0].strip() in ("pause", "paused")',
+          '    return action.strip().lower().startswith("pause")')),
+    ("the clears rule runs against the replay's synthetic prior and bricks the repo",
+     edit("ddw/scripts/validate-transition.py",
+          "        still_held = [g for g in cleared if gates.get(g) is True] if check_gates else []",
+          "        still_held = [g for g in cleared if gates.get(g) is True]")),
+    ("the pause exception is judged against the replay's synthetic prior too",
+     edit("ddw/scripts/validate-transition.py",
+          '                paid = (all(gates_before.get(g) is True for g in ("commit", "pr"))\n'
+          "                        if check_gates else True)",
+          '                paid = all(gates_before.get(g) is True for g in ("commit", "pr"))')),
+
+    # ── The two loop counters ────────────────────────────────────────────────
+    ("the PRD template stops emitting the counter the ceiling reads",
+     edit("skills/ddw-create-prd/SKILL.md",
+          "| Loops since last human decision | 0 |\n", "")),
+    ("the spec template stops emitting it too",
+     edit("skills/ddw-create-spec/SKILL.md",
+          "| Loops since last human decision | 0 |\n", "")),
+    ("the two counters may disagree in the direction that loops forever",
+     edit("ddw/scripts/validate_prd.py",
+          "    if since is not None and since > total_loops:", "    if False:")),
 
     # ── The payload ──────────────────────────────────────────────────────────
     ("a skill disappears", delete("skills/ddw-commit")),

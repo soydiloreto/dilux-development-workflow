@@ -60,7 +60,9 @@ fix-brief** and mark the `define` gate:
 3. Produce the PRD from the standard template (below).
 4. The filename is derived from the ticket: `prd-{ticket}.md` (e.g. `prd-FEAT-001.md`).
 5. Run `ddw-validate-prd` automatically.
-6. If there are FAILs → fix them and increment `PRD loops`.
+6. If there are FAILs → fix them and increment **both** `PRD loops` and `Loops since last
+   human decision`. The first is the running total and nobody ever resets it; the second is what
+   the ceiling measures, and it goes back to 0 only when a human decides something.
 7. Present it to the user for approval.
 
 ### Update mode (existing PRD)
@@ -68,7 +70,9 @@ fix-brief** and mark the `define` gate:
 1. Read the existing PRD in full.
 2. Identify which sections need changes.
 3. Update in place — preserve whatever does not change.
-4. Increment `PRD loops` in the header.
+4. Increment `PRD loops` in the header — and `Loops since last human decision` too, unless this
+   update is applying an answer a human just gave, in which case that one resets to 0 and their
+   answer is recorded in the PRD.
 5. Run `ddw-validate-prd` automatically.
 6. Present the diff to the user for approval.
 
@@ -83,6 +87,7 @@ fix-brief** and mark the `define` gate:
 | Tracker | [tracker ticket or "none"] |
 | Date | [timestamp] |
 | PRD loops | 0 |
+| Loops since last human decision | 0 |
 
 ## Context and Problem
 [Describe the problem being solved]
@@ -145,7 +150,7 @@ fix-brief** and mark the `define` gate:
 │  Functional requirements: [N]                            │
 │  Non-functional requirements: [N]                        │
 │  Acceptance criteria: [N]                                │
-│  PRD loops: [N]                                          │
+│  PRD loops: [N] (since last human decision: [N])         │
 │                                                          │
 │  Next: review the PRD and confirm to move on             │
 └─────────────────────────────────────────────────────────┘

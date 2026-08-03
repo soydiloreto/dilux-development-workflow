@@ -102,7 +102,7 @@ Then resolve, out loud:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  CLOSEOUT — Integration                                   │
+│  CLOSEOUT — Integration                                  │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
 │  Branch: [branch]                                        │
@@ -162,7 +162,7 @@ Present the final summary:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  CLOSEOUT — Closeout                                      │
+│  CLOSEOUT — Closeout                                     │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
 │  Ticket: [ticket] — [title]                              │

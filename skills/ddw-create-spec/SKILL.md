@@ -44,7 +44,9 @@ changes too small to deserve one, and it has no PLAN phase at all.
 3. Identify new requirements not yet covered.
 4. Append new blocks at the end with sequential numbering.
 5. Preserve completed blocks — never modify them.
-6. Increment `Spec loops` in the header.
+6. Increment `Spec loops` in the header — and `Loops since last human decision` too, unless this
+   round is applying an answer a human just gave, in which case that one resets to 0 and their
+   answer is recorded in the spec.
 
 ## Spec Template (FEATURE) — canonical
 
@@ -58,6 +60,7 @@ changes too small to deserve one, and it has no PLAN phase at all.
 | Tier | FEATURE |
 | Date | [timestamp] |
 | Spec loops | 0 |
+| Loops since last human decision | 0 |
 
 ## Summary
 [The technical approach in 3–5 lines: what gets built and how.]
@@ -123,6 +126,7 @@ changes too small to deserve one, and it has no PLAN phase at all.
 | RCA | docs/ddw/specs/rca-{ticket}.md [FIX only] |
 | Date | [timestamp] |
 | Spec loops | 0 |
+| Loops since last human decision | 0 |
 
 ## Problem
 [What is failing, and how it manifests.]
@@ -173,7 +177,7 @@ changes too small to deserve one, and it has no PLAN phase at all.
 │  Blocks: [N] (N new)                                     │
 │  Tasks: [N]                                              │
 │  Checkboxes: [N]                                         │
-│  Spec loops: [N]                                         │
+│  Spec loops: [N] (since last human decision: [N])        │
 │                                                          │
 │  Next: review and confirm to move on                     │
 └─────────────────────────────────────────────────────────┘

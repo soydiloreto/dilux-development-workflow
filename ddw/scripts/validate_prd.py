@@ -248,6 +248,14 @@ def main():
     total_loops = _loop_count(text, "PRD loops")
     since = _loops_since_human(text)
     loops = total_loops if since is None else since
+    if since is not None and since > total_loops:
+        # The running total counts every round; the second number counts a subset
+        # of them. A "since" above the total means one of the two was not being
+        # kept — and the one the ceiling reads is the one that would then let the
+        # document loop forever, which is the failure this ceiling exists to stop.
+        fail("F-PRD-LOOP", f"the header says {since} loop(s) since the last human decision but only "
+             f"{total_loops} in total. The total counts every round and is never reset, so it "
+             "cannot be the smaller of the two: one of the counters was not incremented.")
     if loops >= LOOP_CEILING:
         fail("F-PRD-LOOP", f"this artifact has been through {loops} corrective loops "
                        f"(the ceiling is {LOOP_CEILING}). Three rounds of correcting a document "

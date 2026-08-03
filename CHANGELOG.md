@@ -19,6 +19,102 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.17.0] — Unreleased
+
+Everything 0.15.0 added, audited by driving it instead of reading it. Four of the
+holes below made the release's own headline feature unusable; the rest were ways
+around gates that no check had a shape for.
+
+### Fixed
+
+- **Choosing an autonomy mode bricked the session.** Post mode replays the whole
+  run as one batch against a synthetic IDLE prior, and the autonomy check asked
+  whether `appended[0]` came from CLASSIFY — which, in that batch, it never does.
+  So every ticket that picked a mode and walked past DEFINE was refused by the
+  post hook, on every tool call, forever. The field the feature exists for made
+  the pipeline unusable and nothing drove it end to end. Any edge touching
+  CLASSIFY now satisfies it; on the pre path, where a write carries one edge,
+  that is the same question it always asked.
+- **Pausing worked only if you never worked on anything else.** `_paused_at`
+  read the entry immediately before the resume, assuming the pause was the last
+  thing that ever happened — the one thing a pause is for **not** being. Pause A,
+  run B end to end, come back for A, and the resume was refused as having no
+  paused ticket. It now searches backwards for the last **unresumed** pause, and
+  pairs each resume already in the history with the pause it consumed, so one
+  pause cannot be resumed twice. Another ticket's pause is not your way back in.
+- **`ticket: null` opened all six receipt gates at once.** Every receipt resolves
+  its document through the ticket, and "no document on disk" reads as "no claim
+  to check" — so clearing one field, one `jq` away, satisfied `define`, `spec`,
+  `threat`, `tests`, `sast` and `verify` together. A state claiming a receipt
+  gate must now name the ticket it earned it for, and naming it is the way out.
+- **A gate could be turned on without declaring a transition.** Post mode owed
+  evidence only for the gates the landed **edges** declared, so `jq '.gates.tests
+  = true'` — which appends no history entry — owed nothing; and the pre path did
+  not catch it either, because by then the forged `true` was already the prior
+  and nothing was newly claimed. The journal now carries a snapshot of the gates
+  as post mode last blessed them, and what changed since it is asked for its
+  evidence. It lives inside the journal so that removing it costs the transitions
+  too — and a journal that comes back empty makes post mode stricter, not weaker.
+- **The step back from CLOSEOUT kept the commit and the PR.** `CLOSEOUT→VERIFY`
+  gave up `verify` and nothing else, so a ticket sent back by a reviewer walked
+  forward again still holding `commit` and `pr` — the two gates that say the work
+  shipped. It now gives up all three, and QUICK-FIX's `CLOSEOUT→CODE` gives up
+  `tests`, `sast`, `commit` and `pr`.
+- **The counter the ceiling reads was one no template wrote.** `Loops since last
+  human decision` was in the rules, in the validators and in nothing that emits a
+  document, so every PRD and spec fell back to the running total — the exact
+  distinction 0.15.0 introduced, present everywhere except where it counts. Both
+  templates emit it, the skills say when it resets, and a `since` above the total
+  is refused: it counts a subset of the rounds the total counts, so it cannot be
+  the larger of the two.
+- **The pending-PR notice could take the session boot down with it.** A shape
+  from `gh` that was not a list of objects crashed on `pr.get`, and the boot's
+  phase line — the one line that has to survive — went with it. It also called
+  the forge on quiet runs and in repos that had never run DDW, reported every
+  failure as a timeout including the ones that were not, dropped the ninth and
+  later pull requests in silence, and answered a broken `git` with the same
+  silence as "you have no open PRs".
+- **The helper could not name a ticket.** With `--write` there is no later Write
+  to fill it in, so the sanctioned path produced exactly the state the rule above
+  now refuses. `transition.py --ticket` sets it, and stamps it on the history
+  entry — the closeout wipes the header's ticket, so an unstamped entry is
+  unattributable from then on.
+
+### Added
+
+- **`transition.py --ticket <ID>`**, and the helper stamps the ticket on the
+  history entry alongside the tier.
+- **One check walks a whole ticket the way a user walks it** — classify, define,
+  plan, code, pause, an unrelated ticket start to finish, resume, a corrective
+  loop, closeout — through `transition.py --write` and then the post hook after
+  every step. Three of the defects above were invisible to every check that
+  drives a function or builds a state to reach it, and visible in the first
+  minute of walking the thing. 8 checks and 30 mutations in total: 462 checks,
+  255 mutations.
+
+- **Eleven mutations that had been reported killed were not.** Three were
+  regressions this release caused and hid: the new ticket rule refused the
+  suite's negative fixtures *before* the rule under test could, so deleting
+  append-only, deleting timestamp validation, or uncapping transitions-per-write
+  left the suite green — a fixture refused for the wrong reason proves nothing.
+  The other eight were checks that tested the function instead of the path: the
+  pending-PR notice was driven directly and never through the boot, so deleting
+  the line that calls it was invisible; QUICK-FIX's own way back from CLOSEOUT
+  had no check at all; and the pause exception was never replayed by post mode,
+  which is the one place it can brick a repo.
+
+### Known
+
+- **A pause gives up `minimal`.** Reaching IDLE clears `autonomy` and a resume
+  cannot set it — that field is chosen in CLASSIFY, with the user watching, and
+  it does not get a second entrance through an edge the model can compose. So a
+  ticket picked back up after two days runs `assisted` until it is reclassified.
+  The safe direction, and a real cost; `docs/RATIONALE.md` decision 17 says so.
+  The edges walked before the pause keep their `autonomy: minimal` stamp, so the
+  history still says which arrows nobody watched.
+
+---
+
 ## [0.16.0] — Unreleased
 
 ### Changed — BREAKING

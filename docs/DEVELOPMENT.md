@@ -223,7 +223,7 @@ A tier is **declarative**: the FSM validator indexes by tier generically (`_effe
 5. The skill producing the DEFINE artifact (`skills/ddw-create-prd`), if it uses an artifact other
    than the PRD.
 
-**Three ways to reach IDLE.** A **closeout** ships the work and owes the edge's gates —
+**Three ways to reach IDLE.** A **closeout** finishes the work and hands it over and owes the edge's gates —
 `CLOSEOUT → IDLE` requires `commit` and `pr`, so a ticket cannot be marked done without them.
 **Abandoning** and **pausing** owe nothing, because the work is not going to ship, but they must be
 declared: the history entry's `action` starts with `abandon` or `pause` (matched on the first word —

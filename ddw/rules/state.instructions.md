@@ -69,7 +69,7 @@ They look identical in the `phase` field and owe completely different things:
 
 | | What it means | Gates owed | Declared as |
 |---|---|---|---|
-| **Closeout** | The work ships | The edge's gates — no `commit` and `pr`, no close | any `action` |
+| **Closeout** | The work is finished and handed over | The edge's gates — no `commit` and `pr`, no close | any `action` |
 | **Abandon** | The work will never ship | none | `action: "abandon: <reason>"` |
 | **Pause** | Set aside, to be resumed | none | `action: "pause: <reason>"` |
 

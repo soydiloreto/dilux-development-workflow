@@ -57,7 +57,7 @@ assertion that broke is a fact.
   task. Report it; do not fix it.
 - **Never modify the spec or the PRD.** If the block is impossible or contradictory as written,
   that is a report, not something you resolve on your own.
-- **Never commit.** Not `git commit`, not `git push`, not branches. Releasing is another phase's
+- **Never commit.** Not `git commit`, not `git push`, not branches. Closing out is another phase's
   job.
 - **Never touch `.ddw-state.json`.** The pipeline's state belongs to the orchestrator.
 - **Do not decide what the spec left open.** If something is genuinely ambiguous, implement the

@@ -165,25 +165,47 @@ def _is_resume(entry):
     return action.strip().lower().split(":", 1)[0].strip() == "resume"
 
 
-def _paused_at(history, upto):
-    """The phase the last pause left, or None if the ticket was not paused.
+def _paused_at(history, upto, ticket=None):
+    """The phase the last UNRESUMED pause left, or None if there is none.
 
-    Looks at the entry immediately before this run: pausing is the last thing
-    that happened to the previous ticket, and the phase it paused FROM is the
-    only phase a resume may re-enter.
+    It used to read `history[-1]` alone — the entry immediately before the
+    resume — which assumed the pause was the last thing that ever happened. That
+    is the one thing a pause is for NOT being: you set a ticket aside precisely
+    because you are going to work on something else. Pause A, run B end to end,
+    come back for A, and the entry before the resume is B's closeout, so the
+    resume was refused as having no paused ticket — the feature failed at exactly
+    the workflow it was built for.
+
+    So: search backwards, skipping the tickets that came and went in between, and
+    pair each resume already in the history with the pause it consumed. A pause
+    that was resumed once cannot be resumed again — otherwise `resume` re-enters
+    a phase whose ticket is long closed, carrying whatever gates it likes.
     """
     prior = [e for e in history[:upto] if isinstance(e, dict)]
-    if not prior:
-        return None
-    last = prior[-1]
-    if last.get("to") != IDLE or not _is_walkaway(last):
-        return None
-    action = last.get("action", "")
-    if not isinstance(action, str):
-        return None
-    if action.strip().lower().split(":", 1)[0].strip() not in ("pause", "paused"):
-        return None                       # abandoned, not paused: no way back
-    return last.get("from")
+    if ticket:
+        # Only this ticket's own pauses. Without it, resuming A could be paired
+        # with B's pause and land in B's phase, carrying whatever gates the write
+        # cares to declare.
+        #
+        # The fallback is for histories written before entries carried a ticket,
+        # and it is conditioned on the history actually being one of those — not
+        # on "I found none of mine". Falling back whenever the filter came up
+        # empty meant a run whose entries all name someone else took the
+        # unfiltered path, which is precisely the case it must not take.
+        if any(e.get("ticket") for e in prior):
+            prior = [e for e in prior if e.get("ticket") == ticket]
+    pending_resumes = 0
+    for entry in reversed(prior):
+        if _is_resume(entry):
+            pending_resumes += 1
+            continue
+        if entry.get("to") != IDLE or not _is_pause(entry):
+            continue
+        if pending_resumes:
+            pending_resumes -= 1           # this pause was already picked back up
+            continue
+        return entry.get("from")
+    return None
 
 
 def _resume_allowed(entry, history, upto):
@@ -196,7 +218,7 @@ def _resume_allowed(entry, history, upto):
     the exact hole every other check here exists to close.
     """
     dst = entry.get("to")
-    paused_at = _paused_at(history, upto)
+    paused_at = _paused_at(history, upto, entry.get("ticket"))
     if paused_at is None:
         raise Block(
             "this history has no paused ticket to resume: the entry before it does not declare "
@@ -247,6 +269,26 @@ def _walkaway_blocked(graph, phase):
     return phase in set(graph.get("no_walkaway", []))
 
 
+# Phases this method has had, and what they are called now. A state written by an
+# older DDW is not a forgery, and telling its owner they "probably wrote it with
+# Bash/jq/sed" is both wrong and accusatory — it sends them to fix a state they
+# never touched, with the one explanation that cannot be true.
+RENAMED_PHASES = {"RELEASE": "CLOSEOUT"}
+
+
+def _renamed_phase_in(state):
+    """The old phase name this state still carries, or None."""
+    names = {state.get("phase")}
+    for entry in (state.get("history") or []):
+        if isinstance(entry, dict):
+            names.add(entry.get("from"))
+            names.add(entry.get("to"))
+    for old, new in RENAMED_PHASES.items():
+        if old in names:
+            return old, new
+    return None
+
+
 def _check_entry_shape(entry):
     if not isinstance(entry, dict) or "from" not in entry or "to" not in entry:
         raise Block("history entry with no from/to")
@@ -284,6 +326,37 @@ def _check_idle_invariant(new_state):
             f"at IDLE `autonomy` must be null (it is {new_state.get('autonomy')!r}). It is chosen "
             "when a request is classified and it ends with the ticket — otherwise the next one "
             "inherits a decision to stop asking that nobody made for it."
+        )
+
+
+# The six gates whose evidence is a receipt naming an artifact, and the artifact's
+# path is derived from the ticket. `commit` and `pr` ask git and the forge instead,
+# so they do not need one.
+RECEIPT_GATES = ("define", "spec", "threat", "tests", "sast", "verify")
+
+
+def _check_gates_have_a_ticket(new_state):
+    """A claimed receipt gate has to name the ticket it was earned for.
+
+    Every receipt gate resolves its artifact through the ticket —
+    `docs/ddw/prd/prd-<ticket>.md` and its siblings. With `ticket` null there is
+    no path to resolve, so each of those checks found no artifact and read that
+    as "no claim to check": clearing the ticket opened all six at once, and it
+    was one `jq` away. The absent-artifact hatch is for a state that claims
+    nothing; a state that claims six gates is exactly what it is not for.
+    """
+    ticket = new_state.get("ticket")
+    if ticket:
+        return
+    gates = new_state.get("gates") or {}
+    if not isinstance(gates, dict):
+        return
+    claimed = sorted(g for g in RECEIPT_GATES if gates.get(g) is True)
+    if claimed:
+        raise Block(
+            "`ticket` is null but these gates are claimed: %s. A gate is earned for a ticket — "
+            "its receipt names that ticket's document. Restore the ticket, or drop the gates and "
+            "earn them again under the one this run is actually about." % ", ".join(claimed)
         )
 
 
@@ -325,9 +398,17 @@ def _check_autonomy(old_state, new_state, appended):
     # all passed.
     in_classify = old_state.get("phase") == CLASSIFY
     entering_classify = new_state.get("phase") == CLASSIFY
-    leaving_classify = bool(appended) and appended[0].get("from") == CLASSIFY
+    # ANY appended edge touching CLASSIFY, not just the first one. On the pre
+    # path a write carries a single edge, so first-or-any is the same question —
+    # but post mode replays the whole run as one batch against a synthetic IDLE
+    # prior, and there `appended[0]` is IDLE→CLASSIFY while the change being
+    # judged happened on it. Every real ticket that chose a mode and walked past
+    # DEFINE was refused by the post hook from then on: the field the feature
+    # exists for made the pipeline unusable, and no check drove it end to end.
+    touches_classify = any(e.get("from") == CLASSIFY or e.get("to") == CLASSIFY
+                           for e in appended if isinstance(e, dict))
     reaching_idle = new_state.get("phase", IDLE) == IDLE
-    if in_classify or entering_classify or leaving_classify or reaching_idle:
+    if in_classify or entering_classify or touches_classify or reaching_idle:
         return
     raise Block(
         f"`autonomy` changed {old_auto!r}→{raw_new!r} outside CLASSIFY. How much of this run "
@@ -488,6 +569,7 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     _check_ticket_continuity(old_state, new_state)
     _check_entry_ticket(old_state, new_state, appended)
     _check_idle_invariant(new_state)
+    _check_gates_have_a_ticket(new_state)
 
     old_phase = old_state.get("phase", IDLE)
     new_phase = new_state.get("phase", IDLE)
@@ -630,7 +712,13 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
                 # An abandon is still refused here, which is what the skeleton
                 # key was about. And both gates are read from the state BEFORE
                 # this write, so the same write cannot grant them and spend them.
-                paid = all(gates_before.get(g) is True for g in ("commit", "pr"))
+                # `check_gates` for the same reason as `clears` above: post mode
+                # replays from a synthetic prior whose gates are {}, so `paid`
+                # read false for EVERY legitimate pause and condemned it — the
+                # feature that exists so you can walk away for two days locked
+                # the directory for exactly those two days.
+                paid = (all(gates_before.get(g) is True for g in ("commit", "pr"))
+                        if check_gates else True)
                 if not (_is_pause(entry) and paid):
                     missing = [g for g in ("commit", "pr") if gates_before.get(g) is not True]
                     detail = ("an abandon" if not _is_pause(entry)
@@ -676,7 +764,15 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
         cleared = edge_cfg.get("clears", [])
         if not isinstance(cleared, list):
             raise Block(f"malformed graph: the `clears` of {key!r} is not a list")
-        still_held = [g for g in cleared if gates.get(g) is True]
+        # Only against the state this write is actually producing — never against
+        # a replay. `gates` in post mode is the CURRENT snapshot, not the one
+        # that edge was taken under, so the moment a backward step's gate was
+        # re-earned the replay saw the old edge holding it and condemned the
+        # whole run. The post matcher fires on every Bash, Edit and Write, and
+        # history is append-only: the repository was bricked, permanently, by
+        # completing the corrective loop the pipeline documents. Measured through
+        # the sanctioned helper, with nothing hand-written.
+        still_held = [g for g in cleared if gates.get(g) is True] if check_gates else []
         if still_held:
             raise Block(
                 f"{key} goes back a phase, so it must give up what that phase granted: "
@@ -1162,7 +1258,10 @@ def journal_path(state_path):
     return os.path.join(os.path.dirname(os.path.abspath(state_path)), ".ddw-journal.jsonl")
 
 
-def _journal_entries(state_path):
+def _journal_lines(state_path):
+    """Every well-formed object in the journal, transitions and gate snapshots
+    alike. The two are told apart by shape and never by position.
+    """
     out = []
     try:
         with open(journal_path(state_path), encoding="utf-8") as fh:
@@ -1178,30 +1277,89 @@ def _journal_entries(state_path):
     return out
 
 
+def _journal_entries(state_path):
+    """The transitions the journal recorded, in order.
+
+    A transition is an object naming where it came from and where it went. The
+    gate snapshots share the file and are filtered out here — `known` indexes
+    into the state's history, so a snapshot line counted as a transition would
+    slide that index and hide the entry that just landed.
+    """
+    return [e for e in _journal_lines(state_path)
+            if isinstance(e, dict) and "from" in e and "to" in e]
+
+
+def read_gates_snapshot(state_path):
+    """The gates as they stood the last time post mode blessed them, or None.
+
+    The journal records TRANSITIONS, and that is the hole this closes: a write
+    that appends no history entry — `jq '.gates.tests = true'` — landed with
+    nothing for the replay to owe evidence against, because the only gates post
+    mode asked about were the ones the landed EDGES declared, and no edge landed.
+    The pre path does not catch it either: it owes evidence on what a write newly
+    claims, and by the time it runs the forged `true` is already the prior.
+
+    A snapshot, not a re-check of everything true. Re-checking every gate on
+    every write means editing the PRD two phases later brings the pipeline down
+    (see `_gates_newly_claimed`); this asks only what changed since the last
+    blessing, which is the same question asked where the answer is known.
+
+    It lives in the journal rather than beside it so that removing it costs the
+    transitions too — and a journal that comes back empty makes post mode
+    STRICTER, not weaker: with nothing recorded, every entry counts as landed and
+    every gate its edges declare is owed again.
+
+    None means "unknown", never "empty": a repo that upgrades mid-run has no
+    snapshot yet, and reading that as `{}` would call every gate it already
+    earned newly claimed and refuse the next write.
+    """
+    snaps = [e.get("gates") for e in _journal_lines(state_path)
+             if isinstance(e, dict) and e.get("record") == "gates"]
+    for gates in reversed(snaps):
+        if isinstance(gates, dict):
+            return gates
+    return None
+
+
+def _journal_append(state_path, lines):
+    """Best effort by design: a journal that cannot be written must not block a
+    legal pipeline, it only costs the extra guarantee.
+    """
+    if not lines:
+        return
+    try:
+        with open(journal_path(state_path), "a", encoding="utf-8") as fh:
+            for line in lines:
+                fh.write(json.dumps(line, sort_keys=True) + "\n")
+    except (OSError, TypeError, ValueError):
+        pass
+
+
 def record_journal(state_path):
-    """Append whatever the state's history has that the journal does not.
+    """Append whatever the state's history has that the journal does not, plus
+    the gates that history left it in.
 
     Called from post mode — after the write landed, so the journal records what
-    IS rather than what was about to be. Best effort by design: a journal that
-    cannot be written must not block a legal pipeline, it only costs the extra
-    guarantee below.
+    IS rather than what was about to be.
     """
     try:
         if not os.path.exists(state_path):
             return
         with open(state_path, encoding="utf-8") as fh:
-            history = (json.load(fh) or {}).get("history") or []
+            state = json.load(fh) or {}
+        history = state.get("history") or []
     except (OSError, ValueError, AttributeError):
         return
     known = len(_journal_entries(state_path))
-    if len(history) <= known:
-        return
-    try:
-        with open(journal_path(state_path), "a", encoding="utf-8") as fh:
-            for entry in history[known:]:
-                fh.write(json.dumps(entry, sort_keys=True) + "\n")
-    except OSError:
-        pass
+    lines = [e for e in history[known:]]
+    gates = state.get("gates") or {}
+    if not isinstance(gates, dict):
+        gates = {}
+    held = {g: True for g, v in gates.items() if v is True}
+    if read_gates_snapshot(state_path) != held:
+        lines.append({"record": "gates", "gates": held,
+                      "ticket": state.get("ticket"), "phase": state.get("phase", IDLE)})
+    _journal_append(state_path, lines)
 
 
 def _check_state_not_erased(state_path):
@@ -1495,20 +1653,29 @@ def decide_post(state_path, graph_path):
     # write tool. What is new here is exactly what the journal has not recorded
     # yet — the journal is written below, after the verdict — so this asks about
     # the edge that just landed and never re-litigates the ones before it.
+    owed = []
     if scope != "none":
         known = len(_journal_entries(state_path))
         landed = [e for e in history[known:] if isinstance(e, dict)]
-        if landed:
-            edges = _effective_edges(graph, tier)
-            owed = []
-            for entry in landed:
-                cfg = edges.get("%s->%s" % (entry.get("from"), entry.get("to")))
-                if isinstance(cfg, dict):
-                    owed.extend(cfg.get("gates") or [])
-            reason = gate_evidence_missing(os.path.dirname(os.path.abspath(state_path)),
-                                           disk_state, owed)
-            if reason:
-                raise Block(reason)
+        edges = _effective_edges(graph, tier)
+        for entry in landed:
+            cfg = edges.get("%s->%s" % (entry.get("from"), entry.get("to")))
+            if isinstance(cfg, dict):
+                owed.extend(cfg.get("gates") or [])
+
+    # And the gates this write turned on WITHOUT declaring a transition, which is
+    # the case the edges above cannot see: a `jq`/`sed` that flips `tests` to true
+    # appends no history, so it owed nothing, and the pre path then reads that
+    # `true` as the prior and finds nothing newly claimed either. Asked here
+    # against the last blessed snapshot, and only about what changed since it.
+    snapshot = read_gates_snapshot(state_path)
+    if snapshot is not None:
+        owed.extend(_gates_newly_claimed({"gates": snapshot}, disk_state))
+    if owed:
+        reason = gate_evidence_missing(os.path.dirname(os.path.abspath(state_path)),
+                                       disk_state, sorted(set(owed)))
+        if reason:
+            raise Block(reason)
 
     # Only a state that just passed gets recorded. Journalling before the verdict
     # would enshrine the forgery it is meant to survive.
@@ -1630,6 +1797,27 @@ def _run_post(args):
     try:
         reason = decide_post(args.state, args.graph)
     except Block as exc:
+        # Read the state again, only to explain the refusal better. A state
+        # written by an older DDW is not a forgery and its owner should not be
+        # told they wrote it with `sed`.
+        try:
+            with open(args.state, encoding="utf-8") as _fh:
+                _disk = json.load(_fh)
+        except Exception:
+            _disk = None
+        renamed = _renamed_phase_in(_disk) if isinstance(_disk, dict) else None
+        if renamed:
+            old_name, new_name = renamed
+            print(
+                f"DDW: this .ddw-state.json was written by an older DDW — it names the `{old_name}` "
+                f"phase, which is now `{new_name}`. Nothing is wrong with your work and nothing was "
+                "forged: the phase was renamed because it never released anything (it commits, "
+                "opens the pull request and closes the ticket out).\n"
+                f"Rename it in the state and in every history entry — `{old_name}` → `{new_name}` — "
+                "and carry on. The artifacts, the branch and the pull request are untouched.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         print(
             "DDW FSM found an ILLEGAL .ddw-state.json on disk: "
             f"{exc}. You probably wrote it with Bash/jq/sed (which bypass the "

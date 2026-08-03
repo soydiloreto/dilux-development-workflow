@@ -49,7 +49,7 @@ wins.
 📐 FEATURE · Planning spec [2/5] | PROJ-108: Product catalog
 💻 FEATURE · Implementing [3/5] · Block 2/4 | PROJ-108: Product catalog
 🔎 FIX · Verifying [4/5] | PROJ-55: /users endpoint returns 500
-🚀 FIX · Releasing [5/5] | FIX-001: Fix typo in email validation
+🏁 FIX · Closing out [5/5] | FIX-001: Fix typo in email validation
 ⚡ QUICK-FIX · Implementing | FIX-002: Typo in log message
 📝 DISCOVERY · Exploring concept | DISC-001: Product marketplace
 📝 DISCOVERY · Formalizing PRDs (2/4) | DISC-001: Product marketplace
@@ -365,7 +365,7 @@ any other section.
   `.ddw/rules/branches.instructions.md`, `.ddw/rules/tracker.instructions.md`
 - **Skills:** `/ddw-commit`, `/ddw-create-pr`, `/ddw-self-check`, `/ddw-status`
 - **Blocked:** new code. Modifying the PRD. Modifying specs. Tests.
-- **Status line:** `🚀 {TIER} · Releasing [5/5] | {ticket}: {title}`
+- **Status line:** `🏁 {TIER} · Closing out [5/5] | {ticket}: {title}`
 - **Mandatory sequence (every step is a blocking gate):** CHANGELOG → `/ddw-commit` (gate `commit`)
   → `/ddw-create-pr` (gate `pr`, MANDATORY) → tracker update (a mandatory step, but not a gate: it depends on an external system and the graph carries no `tracker` edge condition) → closeout.
 - **Exit:** ALL CLOSEOUT gates present + user confirms (not under `minimal` — see § Autonomy) closeout → reset state to IDLE. Resetting to
@@ -425,14 +425,18 @@ Status line: `⚡ QUICK-FIX · {action} | {ticket}: {title}` (no 5-phase numberi
    of the array — never prepend, reorder or mutate previous entries. **Atomic — `transition.py`
    helper (primary) or a full `Write` (fallback):** `phase`, the corresponding `gate` and the
    `history` entry all go in **a single write**. Primary path: run
-   `.ddw/scripts/transition.py --to <PHASE> --action "<reason>" [--gate <g>...] [--tier <TIER>]`
-   (once per transition) and copy its stdout into a `Write` of the state. `--tier` (an enum) is the
-   only metadata the helper sets; `ticket`/`title`/etc. you fill in the SAME `Write`. Fallback:
+   `.ddw/scripts/transition.py --to <PHASE> --action "<reason>" [--gate <g>...] [--tier <TIER>]
+   [--ticket <ID>]` (once per transition) and copy its stdout into a `Write` of the state. `--tier`
+   (an enum) and `--ticket` are the metadata the helper sets — **set the ticket on the edge that
+   classifies the request**, because a gate cannot be claimed without one: the ticket is how every
+   receipt finds its document. `title`/`tracker` you fill in the SAME `Write`. Fallback:
    compose the full-file `Write` by hand (header + history together). **NEVER** transition the state
    with `Edit` (it cannot touch the header at the top and append to history at the end in one
    operation) or with `Bash/jq/sed/echo` (those writes bypass PreToolUse). `Edit` is only valid for
-   in-phase updates that do NOT change `phase`. **Strict shape:** `{timestamp, from, to, action}` —
-   no `note`/`tier`/`ticket`; `from`/`to`/`action` are required even on resets or abandons to IDLE.
+   in-phase updates that do NOT change `phase`. **Shape:** `{timestamp, from, to, action, ticket,
+   tier}` — `from`/`to`/`action` are required even on resets or abandons to IDLE, and `ticket`/`tier`
+   are what make the entry attributable after a closeout wipes them from the header (the helper
+   stamps both; see `.ddw/rules/state.instructions.md`). No other keys.
    (The `validate-state-transition.sh` hook rejects prepends, truncation and phase changes without
    an entry; `validate-state-postwrite.sh` (PostToolUse) revalidates the state on disk and blocks
    illegal transitions written by any path, including Bash — but get it right the first time with

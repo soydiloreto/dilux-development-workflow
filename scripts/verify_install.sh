@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-452}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-462}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -517,7 +517,7 @@ TR="$R/.ddw/scripts/transition.py"; G="$R/.ddw/rules/transition-graph.json"
 
 python3 "$TR" --to DEFINE --action x --graph "$G" >/dev/null 2>&1 \
   && bad "IDLE->DEFINE should be rejected" || ok "rejects IDLE->DEFINE (not in graph)"
-python3 "$TR" --to CLASSIFY --action req --graph "$G" > "$R/.ddw-state.json" 2>/dev/null \
+python3 "$TR" --to CLASSIFY --action req --ticket T-1 --graph "$G" > "$R/.ddw-state.json" 2>/dev/null \
   && ok "accepts IDLE->CLASSIFY" || bad "IDLE->CLASSIFY failed"
 python3 "$TR" --to DEFINE --action c --tier FEATURE --graph "$G" > "$R/s" 2>/dev/null \
   && { cp "$R/s" "$R/.ddw-state.json"; ok "accepts CLASSIFY->DEFINE with a tier"; } || bad "CLASSIFY->DEFINE failed"
@@ -529,7 +529,7 @@ python3 "$TR" --to PLAN --action p --gate define --graph "$G" >/dev/null 2>&1 \
 # to a fresh CLASSIFY each time: the tier is set on the edge leaving CLASSIFY.
 for TIER in QUICK-FIX FIX FEATURE DISCOVERY; do
   DEST=DEFINE; [ "$TIER" = "DISCOVERY" ] && DEST=DISCOVERY
-  python3 "$TR" --to CLASSIFY --action req --graph "$G" > "$R/.ddw-state.json" 2>/dev/null
+  python3 "$TR" --to CLASSIFY --action req --ticket T-1 --graph "$G" > "$R/.ddw-state.json" 2>/dev/null
   if python3 "$TR" --to "$DEST" --action c --tier "$TIER" --graph "$G" >/dev/null 2>&1; then
     ok "tier $TIER: CLASSIFY->$DEST accepted"
   else
@@ -537,7 +537,7 @@ for TIER in QUICK-FIX FIX FEATURE DISCOVERY; do
   fi
 done
 # And the graph must actually enforce each tier's shape, not just accept the tier.
-python3 "$TR" --to CLASSIFY --action req --graph "$G" > "$R/.ddw-state.json" 2>/dev/null
+python3 "$TR" --to CLASSIFY --action req --ticket T-1 --graph "$G" > "$R/.ddw-state.json" 2>/dev/null
 python3 "$TR" --to DEFINE --action c --tier QUICK-FIX --graph "$G" > "$R/s" 2>/dev/null && cp "$R/s" "$R/.ddw-state.json"
 python3 "$TR" --to PLAN --action x --graph "$G" >/dev/null 2>&1 \
   && bad "QUICK-FIX should have no PLAN phase" || ok "QUICK-FIX: PLAN correctly unreachable"
@@ -566,7 +566,7 @@ bash "$SELF/install.sh" "$CLOSE" --target claude >/dev/null 2>&1
 export CLAUDE_PROJECT_DIR="$CLOSE"
 TRC="$CLOSE/.ddw/scripts/transition.py"
 step() { python3 "$TRC" "$@" --graph "$G" > "$CLOSE/s" 2>/dev/null && cp "$CLOSE/s" "$CLOSE/.ddw-state.json"; }
-python3 "$TRC" --to CLASSIFY --action r --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
+python3 "$TRC" --to CLASSIFY --action r --ticket T-1 --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
 step --to DEFINE --action c --tier FEATURE
 step --to PLAN   --action p --gate define
 step --to CODE   --action x --gate spec --gate threat
@@ -585,7 +585,7 @@ python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
   && ok "closeout accepted with commit+pr" || bad "closeout rejected even with both gates"
 # Abandoning mid-flight stays free — a wrong classification must not trap you —
 # but it has to be DECLARED, so it never gets confused with a closeout.
-python3 "$TRC" --to CLASSIFY --action r --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
+python3 "$TRC" --to CLASSIFY --action r --ticket T-1 --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
 step --to DEFINE --action c --tier FEATURE
 step --to PLAN --action p --gate define
 python3 "$TRC" --to IDLE --action "abandon: wrong classification" --graph "$G" >/dev/null 2>&1 \
@@ -593,14 +593,14 @@ python3 "$TRC" --to IDLE --action "abandon: wrong classification" --graph "$G" >
 python3 "$TRC" --to IDLE --action "discarded" --graph "$G" >/dev/null 2>&1 \
   && bad "reached IDLE off-graph without declaring the abandon" || ok "an undeclared exit to IDLE is refused"
 # The tier built for exploring ideas has to let you drop one that did not hold up.
-python3 "$TRC" --to CLASSIFY --action r --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
+python3 "$TRC" --to CLASSIFY --action r --ticket T-1 --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
 step --to DISCOVERY --action d --tier DISCOVERY
 python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
   && bad "DISCOVERY closed without commit+pr" || ok "DISCOVERY closeout still needs commit+pr"
 python3 "$TRC" --to IDLE --action "abandon: the idea does not hold up" --graph "$G" >/dev/null 2>&1 \
   && ok "DISCOVERY: a discarded idea can be abandoned" || bad "DISCOVERY traps you in the pipeline"
 # And the closeout fallback must not let a corrective loop reuse stale gates.
-python3 "$TRC" --to CLASSIFY --action r --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
+python3 "$TRC" --to CLASSIFY --action r --ticket T-1 --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
 step --to DEFINE --action c --tier FEATURE
 step --to PLAN   --action p --gate define
 step --to CODE   --action x --gate spec --gate threat
@@ -729,8 +729,8 @@ IDLE_STATE='{"phase":"IDLE","tier":null,"gates":{},"history":[]}'
 # state file, so PLAN forbidding source was a line in a prompt and nothing
 # outside the model checked it. Both phases are exercised: a guard that refuses
 # everything is as broken as one that refuses nothing.
-IN_PLAN='{"phase":"PLAN","tier":"FEATURE","gates":{"define":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"PLAN"}]}'
-IN_CODE='{"phase":"CODE","tier":"FEATURE","gates":{"define":true,"spec":true,"threat":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CODE"}]}'
+IN_PLAN='{"ticket":"T-1","phase":"PLAN","tier":"FEATURE","gates":{"define":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"PLAN"}]}'
+IN_CODE='{"ticket":"T-1","phase":"CODE","tier":"FEATURE","gates":{"define":true,"spec":true,"threat":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CODE"}]}'
 
 check_adapter() {  # $1 = label, $2 = hook dir, $3 = envelope style, $4 = hook filename
   local label="$1" dir="$ALL/$2" style="$3" hook="${4:-pre-tool-use.sh}"
@@ -793,7 +793,7 @@ gate_pre() {  # $1 = dialect, stdin = event; echoes the exit code
     >/dev/null 2>&1; echo $?
 }
 
-WHOLE_RUN='{"tier":"FEATURE","phase":"CLOSEOUT","gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-27T10:00:01Z","from":"CLASSIFY","to":"DEFINE","action":"a"},{"timestamp":"2026-07-27T10:00:02Z","from":"DEFINE","to":"PLAN","action":"a"},{"timestamp":"2026-07-27T10:00:03Z","from":"PLAN","to":"CODE","action":"a"},{"timestamp":"2026-07-27T10:00:04Z","from":"CODE","to":"VERIFY","action":"a"},{"timestamp":"2026-07-27T10:00:05Z","from":"VERIFY","to":"CLOSEOUT","action":"a"}]}'
+WHOLE_RUN='{"tier":"FEATURE","phase":"CLOSEOUT","ticket":"T-1","gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-27T10:00:01Z","from":"CLASSIFY","to":"DEFINE","action":"a"},{"timestamp":"2026-07-27T10:00:02Z","from":"DEFINE","to":"PLAN","action":"a"},{"timestamp":"2026-07-27T10:00:03Z","from":"PLAN","to":"CODE","action":"a"},{"timestamp":"2026-07-27T10:00:04Z","from":"CODE","to":"VERIFY","action":"a"},{"timestamp":"2026-07-27T10:00:05Z","from":"VERIFY","to":"CLOSEOUT","action":"a"}]}'
 
 printf '%s' "$IDLE_STATE" > "$GST"
 ddw_event snake "$WHOLE_RUN"
@@ -1472,6 +1472,24 @@ assert not blocked(idle, resumed), "resuming a ticket paused at CLOSEOUT is refu
 kept = dict(resumed, gates=dict(resumed["gates"], commit=True, pr=True))
 assert blocked(idle, kept), \
     "resuming brings `commit` and `pr` back true — the closeout is then satisfied by evidence from before the wait"
+
+# And the same pause, replayed by POST mode, which is where this rule is most
+# dangerous. Post replays the whole run against a synthetic IDLE prior whose
+# gates are empty, so a `paid` check that reads that prior finds nothing paid and
+# refuses — on every tool call, forever, over a pause that was legal when it was
+# made. Scoping is what makes the rule survive its own replay, and it can only be
+# seen by replaying: driven through the real script, on disk.
+import subprocess, tempfile
+paused_disk = out("pause: waiting on review")
+work = tempfile.mkdtemp()
+state = os.path.join(work, ".ddw-state.json")
+json.dump(paused_disk, open(state, "w", encoding="utf-8"))
+r = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/validate-transition.py"),
+                    "--mode", "post", "--state", state,
+                    "--graph", os.path.join(src, "ddw/rules/transition-graph.json")],
+                   capture_output=True, text=True)
+assert r.returncode == 0, \
+    "post mode refuses a legal pause at CLOSEOUT, which bricks the repo: " + (r.stdout + r.stderr)[:220]
 PYPAUSE
 
 # ── The pr gate asks the forge, and had no check of any kind ─────────────────
@@ -1561,6 +1579,152 @@ PYPRST
   && ok "and claiming the pr gate is refused through the gate table, not only by the function" \
   || bad "the pr gate is in the code and the table that consults it does not name it"
 
+# ── The notice about pull requests waiting on a reviewer ─────────────────────
+#
+# It prints on every session start, to every user, and it is the one place DDW
+# speaks about something it cannot see from disk. Every failure of `gh` has to
+# arrive as a sentence saying which failure it was: an empty answer and an
+# unanswerable question are different things, and printing nothing for both is
+# how a tool teaches people it has nothing to say.
+python3 - "$SELF" "$PRR" "$PRT/bin" <<'PYAWAIT' && ok "the pending-PR notice reports every way gh can fail, survives a shape it did not expect, and never truncates in silence" || bad "the pending-PR notice crashes the boot, lies about why it could not look, or drops PRs without saying so"
+import importlib.util, os, subprocess, sys
+src, repo, binpath = sys.argv[1:4]
+spec = importlib.util.spec_from_file_location("sb", os.path.join(src, "ddw/scripts/session-boot.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+
+def ask(out="[]", rc="0", err="", path=None):
+    # `path` REPLACES the search path rather than prefixing it — the point of the
+    # last case is a machine with no gh at all, and prefixing leaves the real one
+    # findable, so the check passed by talking to the actual forge.
+    env = dict(os.environ,
+               PATH=(binpath + os.pathsep + os.environ["PATH"]) if path is None else path,
+               GH_STUB_OUT=out, GH_STUB_RC=rc, GH_STUB_ERR=err)
+    old = os.environ.copy()
+    os.environ.clear(); os.environ.update(env)
+    try:
+        return m.awaiting_review(repo, timeout=5)
+    finally:
+        os.environ.clear(); os.environ.update(old)
+
+
+CANNOT = "could not check your open pull requests"
+# The repo has a remote by now (the pr-gate checks added one), so it asks.
+assert ask("[]") == [], "an empty answer should be silence, not a line"
+one = ask('[{"number":4,"headRefName":"feat/x","reviewDecision":"CHANGES_REQUESTED"}]')
+assert any("#4" in l for l in one), "an open pull request was not reported"
+assert any("changes requested" in l for l in one), "a review asking for changes was not called out"
+# Every failure mode says which one it was.
+for rc, err in (("1", "gh auth login"), ("1", "error connecting to api.github.com"),
+                ("4", "API rate limit exceeded")):
+    said = ask("", rc, err)
+    assert said and CANNOT in said[0] and err.split()[0] in said[0], \
+        f"gh failing with {err!r} was reported as {said!r}"
+# A timeout is its own sentence. Every other failure used to be reported as one,
+# which asserts a fact about the network that nobody established.
+slow = os.path.join(repo, "slowbin"); os.makedirs(slow, exist_ok=True)
+open(os.path.join(slow, "gh"), "w").write("#!/bin/sh\nsleep 5\n")
+os.chmod(os.path.join(slow, "gh"), 0o755)
+old = os.environ.copy()
+os.environ["PATH"] = slow + os.pathsep + os.environ["PATH"]
+try:
+    said = m.awaiting_review(repo, timeout=1)
+finally:
+    os.environ.clear(); os.environ.update(old)
+assert said and "did not answer in 1s" in said[0], f"a timeout reported: {said!r}"
+# A shape nobody expected must not take the boot down with it: the phase line is
+# the one thing that has to survive, and `pr.get` on a string raises.
+for weird in ('{"not": "a list"}', '["just a string"]', 'null'):
+    said = ask(weird)
+    assert isinstance(said, list), f"gh returning {weird} crashed the notice"
+    assert not any("#None" in l for l in said), f"gh returning {weird} was rendered as a PR"
+# And it never truncates in silence: the ones it drops are the oldest, which are
+# the forgotten reviews this notice exists to surface.
+many = "[" + ",".join('{"number":%d,"headRefName":"b%d"}' % (i, i) for i in range(1, 13)) + "]"
+said = ask(many)
+assert any("12 open pull request" in l for l in said), "the count is not the count of what gh returned"
+assert any("and 4 more" in l for l in said), "four pull requests were dropped without a word"
+# `gh` missing at all is its own sentence, not a timeout. A path with git on it
+# and nothing else: strip git too and the honest answer is about git, not gh.
+import shutil
+onlygit = os.path.join(repo, "onlygit"); os.makedirs(onlygit, exist_ok=True)
+link = os.path.join(onlygit, "git")
+if not os.path.exists(link):
+    os.symlink(shutil.which("git"), link)
+said = ask(path=onlygit)
+assert said and "not installed" in said[0], f"a missing gh reported: {said!r}"
+# And git failing where a repo plainly is one is its own sentence too, never
+# silence — silence there is indistinguishable from "you have no open PRs".
+said = ask(path=os.path.join(repo, "no-such-bin"))
+assert said and "git could not read" in said[0], f"a broken git reported: {said!r}"
+PYAWAIT
+
+# Through the BOOT, not through the function — the checks above call
+# `awaiting_review` directly, so deleting the line that calls it was invisible to
+# every one of them. And the boot is where the cost lives: a network round trip
+# on every session start, in every repo DDW is installed in.
+python3 - "$SELF" "$PRT" <<'PYBOOT' && ok "the boot prints what is waiting for review, and asks the forge only when it is going to say something" || bad "the notice never reaches the boot, or the boot calls the forge on quiet runs and in repos that have never run DDW"
+import json, os, subprocess, sys
+src, work = sys.argv[1], sys.argv[2]
+binp = os.path.join(work, "boot-bin"); os.makedirs(binp, exist_ok=True)
+calls = os.path.join(work, "gh-calls")
+# A stub that RECORDS being run: "did it ask?" is the question, and it cannot be
+# answered by looking at the output of a call that may not have happened.
+open(os.path.join(binp, "gh"), "w").write(
+    '#!/bin/sh\necho call >> "$GH_CALLS"\n[ -n "$GH_SLEEP" ] && sleep "$GH_SLEEP"\n'
+    'printf "%s" "${GH_STUB_OUT:-[]}"\nexit 0\n')
+os.chmod(os.path.join(binp, "gh"), 0o755)
+repo = os.path.join(work, "bootrepo")
+os.makedirs(repo, exist_ok=True)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["git", "-C", repo, "remote", "add", "origin",
+                "https://github.com/example/example.git"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+boot = os.path.join(repo, ".ddw", "scripts", "session-boot.py")
+
+
+def run(out="[]", quiet=False, sleep="", state=True):
+    open(os.path.join(work, "gh-calls"), "w").close()
+    live = os.path.join(repo, ".ddw-state.json")
+    if state and not os.path.exists(live):
+        json.dump({"tier": None, "phase": "IDLE", "ticket": None, "gates": {}, "history": []},
+                  open(live, "w"))
+    if not state and os.path.exists(live):
+        os.remove(live)
+    env = dict(os.environ, PATH=binp + os.pathsep + os.environ["PATH"],
+               GH_CALLS=calls, GH_STUB_OUT=out, GH_SLEEP=sleep)
+    cmd = [sys.executable, boot, "--repo", repo, "--session-id", "s"]
+    if quiet:
+        cmd.append("--quiet")
+    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    asked = len(open(calls).read().split())
+    return r.stdout, asked
+
+
+out, asked = run('[{"number":9,"headRefName":"feat/z","reviewDecision":"CHANGES_REQUESTED"}]')
+assert asked == 1, "the boot never asked the forge"
+assert "#9" in out and "changes requested" in out, \
+    "the boot asked and said nothing about the answer:\n" + out[-400:]
+# A quiet run prints nothing, so paying for a round trip it will discard is pure
+# cost — and it is a cost the user cannot see to complain about.
+_, asked = run(quiet=True)
+assert asked == 0, "a --quiet boot still called the forge"
+# And under a plugin — no `.ddw/` in the repo, no state file — DDW has never run
+# here and there is nothing of yours to be waiting on. `started` is what says so.
+plain = os.path.join(work, "plainrepo"); os.makedirs(plain, exist_ok=True)
+subprocess.run(["git", "-C", plain, "init", "-q"], check=True)
+subprocess.run(["git", "-C", plain, "remote", "add", "origin",
+                "https://github.com/example/example.git"], check=True)
+open(calls, "w").close()
+subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/session-boot.py"),
+                "--repo", plain, "--session-id", "s"], capture_output=True, text=True,
+               env=dict(os.environ, PATH=binp + os.pathsep + os.environ["PATH"],
+                        GH_CALLS=calls, GH_STUB_OUT="[]", GH_SLEEP=""))
+assert len(open(calls).read().split()) == 0, \
+    "the boot called the forge in a repo where DDW has never run"
+PYBOOT
+
 # The corrective loop's ceiling, which was a number in four documents and a
 # comparison in none of them. `PRD loops` and `Spec loops` were incremented by
 # the skills and measured against nothing, so one of the three stops that are
@@ -1578,6 +1742,114 @@ VLOUT="$(python3 "$SELF/ddw/scripts/validate_prd.py" "$VP/docs/ddw/prd/prd-loope
 case "$VLOUT" in
   *"❌ F-PRD-LOOP"*) ok "a PRD past its corrective-loop ceiling is refused — the counter is compared, not just kept" ;;
   *) bad "the loop ceiling is a number nothing measures against, and minimal has one fewer stop" ;;
+esac
+
+# The second counter is what the ceiling actually reads, and for a while NO
+# template emitted it — so every document fell back to the running total and the
+# distinction Pablo asked for existed only in the rules file. A field the method
+# never writes is a field the validator can only guess at.
+python3 - "$SELF" <<'PYSINCE' && ok "the templates emit both counters, and a since-count above the running total is refused" || bad "the ceiling reads a field no template writes, or the two counters can disagree in the direction that loops forever"
+import os, re, subprocess, sys, tempfile
+src = sys.argv[1]
+ROW = r"^\|\s*Loops since (?:the )?last human decision\s*\|"
+# EVERY table that carries the running total carries the second counter too. A
+# skill with two copies of its template (one in the protocol, one in the example)
+# had the row in one of them, and "it is in the file somewhere" is not what the
+# validator reads — it reads the header of the document that gets written.
+for skill, total in (("ddw-create-prd", r"^\|\s*PRD loops\s*\|"),
+                     ("ddw-create-spec", r"^\|\s*Spec loops\s*\|")):
+    t = open(os.path.join(src, "skills", skill, "SKILL.md"), encoding="utf-8").read()
+    totals = len(re.findall(total, t, re.M | re.I))
+    sinces = len(re.findall(ROW, t, re.M | re.I))
+    assert totals and sinces == totals, \
+        f"{skill} emits the running total {totals} time(s) and the counter the ceiling reads {sinces}"
+# Both counters kept, and the impossible pair refused: `since` counts a subset of
+# the rounds the total counts, so it cannot be the larger of the two — and the
+# one the ceiling reads is the one that would then let the document loop forever.
+HEADER = ("# PRD\n\n| Field | Value |\n|-------|-------|\n| Ticket | T-1 |\n"
+          "| PRD loops | %d |\n| Loops since last human decision | %d |\n")
+
+
+def loop_row(total, since):
+    path = os.path.join(tempfile.mkdtemp(), "prd-T-1.md")
+    open(path, "w", encoding="utf-8").write(HEADER % (total, since))
+    out = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/validate_prd.py"), path,
+                          "--tier", "FEATURE"], capture_output=True, text=True).stdout
+    return [l for l in out.splitlines() if "F-PRD-LOOP" in l]
+
+
+skew = loop_row(1, 2)
+assert any("❌" in l for l in skew), \
+    "a since-count above the running total was accepted: %r" % (skew,)
+# …and the everyday pair, where the total is the larger one, still passes: this
+# has to catch the impossible combination, not one loop into the budget.
+fine = loop_row(2, 1)
+assert fine and not any("❌" in l for l in fine), \
+    "a document one loop into its budget was refused: %r" % (fine,)
+PYSINCE
+
+# A phase that was renamed has to be renamed in the PROSE too, and the search for
+# it is not the word — it is the stem. `RELEASE` → `CLOSEOUT` left `Releasing` in
+# the orchestrator's status line, the string the agent prints on every single
+# response while in that phase, because `\brelease\b` does not match `Releasing`.
+# It also left it in an agent file the rename never opened. Both passed every
+# check, the linter and the whole mutation run.
+python3 - "$SELF" <<'PYRENAMED' && ok "no phase carries its old name in the method, the skills or the agents — stem, not word" || bad "a renamed phase is still called by its old name where a user reads it — see above"
+import os, re, sys
+src = sys.argv[1]
+vt = open(os.path.join(src, "ddw/scripts/validate-transition.py"), encoding="utf-8").read()
+pairs = re.findall(r'"(\w+)":\s*"(\w+)"', re.search(r"RENAMED_PHASES = \{([^}]*)\}", vt).group(1))
+assert pairs, "RENAMED_PHASES is empty — this check has nothing to look for"
+
+# The other meaning of the same stem, each one deliberate and each one named.
+ALLOWED = (
+    "unreleased",                 # Keep a Changelog's own heading
+    "deploy / release",           # the gitmoji table: a deploy is not this phase
+    "for one release",            # prose about a version of DDW
+    "`release`)",                 # a git BRANCH called release, in a list of them
+)
+bad = []
+for root, dirs, files in os.walk(src):
+    dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", "docs", "scripts", ".github")]
+    rel_root = os.path.relpath(root, src)
+    if not (rel_root.startswith("ddw") or rel_root.startswith("agents")
+            or rel_root.startswith("skills") or rel_root.startswith("adapters")):
+        continue
+    for name in files:
+        if not name.endswith((".md", ".py", ".sh", ".js", ".json")):
+            continue
+        path = os.path.join(root, name)
+        for n, line in enumerate(open(path, encoding="utf-8", errors="replace"), 1):
+            low = line.lower()
+            for old, new in pairs:
+                stem = old.lower()[:-1] if old.lower().endswith("e") else old.lower()
+                if stem not in low:
+                    continue
+                if new.lower() in low:          # names both: this is the migration notice
+                    continue
+                if any(a in low for a in ALLOWED):
+                    continue
+                bad.append(f"{os.path.relpath(path, src)}:{n}: {line.strip()[:88]}")
+if bad:
+    print("these still call a renamed phase by its old name:")
+    for b in bad:
+        print("   " + b)
+assert not bad, f"{len(bad)} line(s) still name a renamed phase"
+PYRENAMED
+
+# A state written by an older DDW is not a forgery. When a phase is renamed, the
+# state that still names the old one fails the graph lookup — and the refusal for
+# that says "you probably wrote it with Bash/jq/sed", which is both wrong and
+# accusatory: it sends someone to fix a state they never touched, with the one
+# explanation that cannot be true.
+OLDP="$WORK/old-phase"; mkdir -p "$OLDP"; git -C "$OLDP" init -q .
+printf '%s' '{"tier":"FEATURE","phase":"RELEASE","ticket":"T-1","title":null,"tracker":null,"gates":{"verify":true},"block":null,"discovery":null,"history":[{"timestamp":"2026-01-01T00:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-01-01T00:05:00Z","from":"VERIFY","to":"RELEASE","action":"f","tier":"FEATURE","ticket":"T-1"}]}' > "$OLDP/.ddw-state.json"
+OLDOUT="$(python3 "$SELF/ddw/scripts/validate-transition.py" --mode post --state "$OLDP/.ddw-state.json" \
+         --graph "$SELF/ddw/rules/transition-graph.json" 2>&1 || true)"
+case "$OLDOUT" in
+  *"written by an older DDW"*RELEASE*CLOSEOUT*)
+    ok "a state naming a renamed phase is told so, not accused of being forged" ;;
+  *) bad "an upgraded user is told they wrote their own state with sed — the one explanation that cannot be true" ;;
 esac
 
 # ── Going back, and what going back costs ────────────────────────────────────
@@ -1637,7 +1909,234 @@ pln = st("PLAN", {"define": True}, 6)
 assert blocked(pln, step(pln, "DEFINE", pln["gates"])), "PLAN->DEFINE kept `define`"
 # … and allow the same step once they are given up.
 assert not blocked(pln, step(pln, "DEFINE", {})), "a correct step back is refused"
+
+
+# QUICK-FIX has its own way back, and it had no check at all: that tier skips
+# PLAN and VERIFY, so a review sends it from CLOSEOUT straight to CODE, giving up
+# `tests`, `sast`, `commit` and `pr` — the two that say it shipped included.
+def qf(phase, gates, entries, action="review: back"):
+    hist = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t, "action": "x",
+             "tier": "QUICK-FIX", "ticket": "Q-1"} for i, (f, t) in enumerate(entries)]
+    return {"tier": "QUICK-FIX", "phase": phase, "ticket": "Q-1", "title": None, "tracker": None,
+            "autonomy": None, "gates": dict(gates), "block": None, "discovery": None,
+            "history": hist}
+
+
+QF_PATH = [("IDLE", "CLASSIFY"), ("CLASSIFY", "CODE"), ("CODE", "CLOSEOUT")]
+QF_HELD = {"tests": True, "sast": True, "commit": True, "pr": True}
+qrel = qf("CLOSEOUT", QF_HELD, QF_PATH)
+
+
+def qstep(gates):
+    new = qf("CODE", gates, QF_PATH)
+    new["history"] = qrel["history"] + [{"timestamp": "2026-01-01T01:00:00Z", "from": "CLOSEOUT",
+                                         "to": "CODE", "action": "review: back",
+                                         "tier": "QUICK-FIX", "ticket": "Q-1"}]
+    return new
+
+
+assert blocked(qrel, qstep(QF_HELD)), "QUICK-FIX's CLOSEOUT->CODE kept everything it grants"
+assert blocked(qrel, qstep({"commit": True})), "it kept the commit that says the work shipped"
+assert not blocked(qrel, qstep({})), "the correct QUICK-FIX step back is refused"
 PYBACK
+
+# ── The ticket a gate is earned for ───────────────────────────────────────────
+#
+# Every receipt gate resolves its document through the ticket, and the absent-
+# document case reads as "no claim to check". So `ticket: null` opened all six at
+# once, one `jq` away, and nothing anywhere said otherwise.
+python3 - "$SELF" <<'PYTICK' && ok "a receipt gate cannot be claimed with a null ticket, and naming the ticket is the way back" || bad "clearing the ticket still opens the six receipt gates — the emptiest state claims the most"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json")))
+H = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t, "action": "x",
+      "tier": "FEATURE", "ticket": "T-1"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE")])]
+
+
+def st(ticket, gates):
+    return {"tier": "FEATURE", "phase": "DEFINE", "ticket": ticket, "title": None,
+            "tracker": None, "autonomy": None, "gates": dict(gates), "block": None,
+            "discovery": None, "history": list(H)}
+
+
+def blocked(old, new):
+    try:
+        m.validate(old, new, g, max_appended=1)
+        return False
+    except m.Block:
+        return True
+
+
+named = st("T-1", {})
+for gate in ("define", "spec", "threat", "tests", "sast", "verify"):
+    assert blocked(named, st(None, {gate: True})), "%s was claimed against a null ticket" % gate
+# Not a brick: a repo already in that state gets out by naming the ticket, which
+# is what the refusal tells it to do. If this ever fails, the message lies.
+stuck = st(None, {"define": True})
+assert not blocked(stuck, st("T-1", {"define": True})), "the way out of the refusal is refused too"
+# And the gates that ask git and the forge are not receipt gates: they resolve
+# nothing through the ticket, so they are not this rule's business.
+assert not blocked(named, st(None, {})), "an empty state with no ticket was refused"
+PYTICK
+
+# ── A gate turned on without declaring a transition ───────────────────────────
+#
+# Post mode owed evidence only for the gates the LANDED EDGES declared, so a
+# write that appends no history entry — `jq '.gates.tests = true'` — owed
+# nothing. The pre path does not catch it either: by the time it runs, the forged
+# `true` is already the prior, so nothing is newly claimed. Driven through the
+# real hook, on disk, which is where that write lands.
+python3 - "$SELF" <<'PYSNAP' && ok "a gate flipped on disk with no transition is caught against the last blessed snapshot" || bad "jq can turn on any gate without writing a transition — post mode has nothing to compare it to"
+import json, os, subprocess, sys, tempfile, hashlib
+src = sys.argv[1]
+vt = os.path.join(src, "ddw/scripts/validate-transition.py")
+graph = os.path.join(src, "ddw/rules/transition-graph.json")
+repo = tempfile.mkdtemp()
+os.makedirs(os.path.join(repo, "docs/ddw/prd"))
+os.makedirs(os.path.join(repo, ".ddw-sessions"))
+state = os.path.join(repo, ".ddw-state.json")
+prd = os.path.join(repo, "docs/ddw/prd/prd-T-1.md")
+open(prd, "w", encoding="utf-8").write("# PRD\n")
+H = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t, "action": "x",
+      "tier": "FEATURE", "ticket": "T-1"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE")])]
+
+
+def write(**over):
+    d = {"tier": "FEATURE", "phase": "DEFINE", "ticket": "T-1", "title": None, "tracker": None,
+         "autonomy": "minimal", "gates": {}, "block": None, "discovery": None, "history": H}
+    d.update(over)
+    json.dump(d, open(state, "w", encoding="utf-8"))
+
+
+def post():
+    return subprocess.run([sys.executable, vt, "--mode", "post", "--state", state,
+                           "--graph", graph], capture_output=True, text=True).returncode
+
+
+# A real run that chose a mode. It replays as ONE batch against a synthetic IDLE
+# prior, so the autonomy check saw `appended[0]` coming from IDLE rather than the
+# CLASSIFY edge that set it — and refused every ticket that used the feature,
+# on every tool call after DEFINE. Nothing drove it end to end.
+write()
+assert post() == 0, "post mode refuses a legitimate run that chose an autonomy mode"
+write(gates={"define": True})
+assert post() == 2, "a gate turned on with no transition and no receipt was accepted"
+digest = hashlib.sha256(open(prd, encoding="utf-8").read().encode("utf-8")).hexdigest()[:12]
+open(os.path.join(repo, ".ddw-sessions", "prd-validated-%s" % digest), "w").write("prd-T-1.md")
+assert post() == 0, "the same claim with its receipt on disk was refused"
+# The snapshot shares the journal so that removing it costs the transitions too —
+# and a journal that comes back empty makes post mode stricter, never weaker.
+lines = [json.loads(l) for l in open(os.path.join(repo, ".ddw-journal.jsonl"), encoding="utf-8")
+         if l.strip()]
+assert [e for e in lines if e.get("record") == "gates"], "no gate snapshot was ever recorded"
+assert len([e for e in lines if "from" in e]) == len(H), \
+    "snapshot lines are counted as transitions, which slides the index that finds what just landed"
+PYSNAP
+
+# ── Pause, work on something else, come back ─────────────────────────────────
+#
+# `_paused_at` read the entry immediately before the resume, which assumed the
+# pause was the last thing that ever happened — the one thing a pause is for NOT
+# being. Pause A, run B, come back for A, and the resume was refused as having no
+# paused ticket: the feature failed at exactly the workflow it exists for.
+python3 - "$SELF" <<'PYRESUME' && ok "a ticket paused before other work resumes, and a pause already picked up cannot be used twice" || bad "pausing only works if you never work on anything else — or one pause resumes forever"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json")))
+N = [0]
+
+
+def e(f, t, action, ticket="T-1", tier="FEATURE"):
+    N[0] += 1
+    return {"timestamp": "2026-01-01T00:%02d:00Z" % N[0], "from": f, "to": t,
+            "action": action, "tier": tier, "ticket": ticket}
+
+
+RUN = [e("IDLE", "CLASSIFY", "classify"), e("CLASSIFY", "DEFINE", "d"),
+       e("DEFINE", "PLAN", "p"), e("PLAN", "CODE", "c"),
+       e("CODE", "IDLE", "pause: waiting on product")]
+OTHER = [e("IDLE", "CLASSIFY", "classify", "T-2", "QUICK-FIX"),
+         e("CLASSIFY", "IDLE", "abandon: not worth it", "T-2", "QUICK-FIX")]
+
+
+def idle(history, ticket=None):
+    return {"tier": None, "phase": "IDLE", "ticket": ticket, "title": None, "tracker": None,
+            "autonomy": None, "gates": {}, "block": None, "discovery": None,
+            "history": list(history)}
+
+
+def resumed(history, dst="CODE"):
+    entry = e("IDLE", dst, "resume: back to it")
+    return dict(idle(history, "T-1"), tier="FEATURE", phase=dst,
+                gates={"define": True, "spec": True, "threat": True},
+                history=list(history) + [entry]), entry
+
+
+def blocked(old, new):
+    try:
+        m.validate(old, new, g, max_appended=1)
+        return False
+    except m.Block:
+        return True
+
+
+after_other = RUN + OTHER
+new, _ = resumed(after_other)
+assert not blocked(idle(after_other, "T-1"), new), \
+    "a ticket paused before an unrelated ticket ran could not be resumed"
+# The pause is consumed: resuming the same one twice would re-enter a phase whose
+# ticket is long since closed, carrying whatever gates the write cares to declare.
+used = new["history"] + [e("CODE", "IDLE", "closeout", "T-1")]
+again, _ = resumed(used)
+assert blocked(idle(used, "T-1"), again), "one pause resumed twice"
+# Still anchored to the phase it paused at.
+elsewhere, _ = resumed(after_other, "VERIFY")
+assert blocked(idle(after_other, "T-1"), elsewhere), "a resume landed where the ticket never paused"
+# And another ticket's pause is not this ticket's way back in. The destination
+# has to be a phase only a resume can reach: IDLE->CLASSIFY is an ordinary edge,
+# so a "resume" landing there proves nothing about resuming.
+theirs = [e("IDLE", "CLASSIFY", "classify", "T-9"), e("CLASSIFY", "DEFINE", "d", "T-9"),
+          e("DEFINE", "PLAN", "p", "T-9"), e("PLAN", "CODE", "c", "T-9"),
+          e("CODE", "IDLE", "pause: theirs", "T-9")]
+mine, _ = resumed(theirs, "CODE")
+assert blocked(idle(theirs, "T-1"), mine), "one ticket resumed on another ticket's pause"
+# The word has to be the marker, not a prefix of it. Bare `startswith` once let
+# "abandonware cleanup" read as an abandon; the same shape here would make
+# "pause-the-build until Friday" a pause you can resume out of.
+NOT_A_PAUSE = RUN[:4] + [e("CODE", "IDLE", "pause-the-build until Friday")]
+back, _ = resumed(NOT_A_PAUSE)
+assert blocked(idle(NOT_A_PAUSE, "T-1"), back), \
+    "an action that merely starts with the word pause was read as a pause"
+PYRESUME
+
+# ── The helper can name the ticket it is earning gates for ───────────────────
+#
+# With `--write` there is no later Write to fill it in, so the state landed with
+# `ticket: null` while claiming gates — the shape the hook now refuses. A rule
+# the sanctioned path cannot satisfy is a rule that gets routed around.
+python3 - "$SELF" <<'PYTKFLAG' && ok "transition.py --ticket names the ticket in the header and stamps it on the entry" || bad "the helper cannot name a ticket, so its own output is a state the hook refuses"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+tr = os.path.join(src, "ddw/scripts/transition.py")
+graph = os.path.join(src, "ddw/rules/transition-graph.json")
+repo = tempfile.mkdtemp()
+state = os.path.join(repo, ".ddw-state.json")
+r = subprocess.run([sys.executable, tr, "--to", "CLASSIFY", "--action", "classify",
+                    "--tier", "FEATURE", "--ticket", "FEAT-007", "--state", state,
+                    "--graph", graph, "--write"], capture_output=True, text=True)
+assert r.returncode == 0, r.stderr
+d = json.load(open(state, encoding="utf-8"))
+assert d["ticket"] == "FEAT-007", "the header does not carry the ticket"
+# The entry too: the closeout wipes the header's ticket, so an unstamped entry is
+# unattributable forever after — and the boot reads it to find open sub-tickets.
+assert d["history"][-1].get("ticket") == "FEAT-007", "the history entry is unattributable"
+PYTKFLAG
 
 # ── autonomy: the field that decides whether a human is in the loop ──────────
 #
@@ -3441,7 +3940,7 @@ def rc(disk, new):
                            "--graph", graph, "--repo", repo],
                           input=ev, capture_output=True, text=True).returncode
 
-mid = {"tier": "FEATURE", "phase": "DEFINE", "gates": {"define": True},
+mid = {"tier": "FEATURE", "phase": "DEFINE", "ticket": "T-1", "gates": {"define": True},
        "history": [h("IDLE", "CLASSIFY"), h("CLASSIFY", "DEFINE", "FEATURE")]}
 
 # A write that appends no history entry can still change the tier, and that was
@@ -3462,11 +3961,12 @@ for poison in ("", [], 0, False):
 idle = {"tier": None, "phase": "IDLE", "gates": {},
         "history": [h("IDLE", "CLASSIFY"), h("CLASSIFY", "IDLE")]}
 plant = dict(idle)
+plant["ticket"] = "T-1"
 plant["tier"] = "FEATURE"
 plant["gates"] = {"define": True, "spec": True, "threat": True,
                   "tests": True, "sast": True, "verify": True}
 assert rc(idle, plant) == 2, "a tier and six gates were planted onto an idle state"
-only_gates = dict(idle); only_gates["gates"] = {"spec": True}
+only_gates = dict(idle, ticket="T-1"); only_gates["gates"] = {"spec": True}
 assert rc(idle, only_gates) == 2, "gates were planted onto an idle state"
 
 # ...and none of that may cost the legal moves.
@@ -3973,7 +4473,7 @@ PYEOF
 # is the only thing that catches a state written with sed or jq.
 section "The hooks nothing used to execute"
 
-FORGED_STATE='{"tier":"FEATURE","phase":"CLOSEOUT","gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true,"commit":true,"pr":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLOSEOUT","action":"forged with sed","tier":"FEATURE"}]}'
+FORGED_STATE='{"tier":"FEATURE","phase":"CLOSEOUT","ticket":"T-1","gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true,"commit":true,"pr":true},"history":[{"timestamp":"2026-07-27T10:00:00Z","from":"IDLE","to":"CLOSEOUT","action":"forged with sed","tier":"FEATURE"}]}'
 
 # $3 = "report" when this tool's post hook cannot refuse, only speak. Copilot is
 # the one: GitHub documents postToolUse as unable to deny, and a non-zero exit
@@ -4197,7 +4697,8 @@ def rc(disk, new):
 # A virgin repo. No ticket has ever existed, so there is nothing to resume — and
 # this used to close a FEATURE in a single write.
 virgin = {"tier": None, "phase": "IDLE", "gates": {}, "history": []}
-forged = {"tier": "FEATURE", "phase": "CLOSEOUT", "gates": {"commit": True, "pr": True},
+forged = {"tier": "FEATURE", "phase": "CLOSEOUT", "ticket": "EVIL-1",
+          "gates": {"commit": True, "pr": True},
           "history": [h("IDLE", "CLOSEOUT", "resume: EVIL-1")]}
 assert rc(virgin, forged) == 2, "a resume with no pause behind it walked the whole pipeline"
 
@@ -4205,17 +4706,17 @@ paused = [h("IDLE", "CLASSIFY", tier=None), h("CLASSIFY", "DEFINE"), h("DEFINE",
           h("PLAN", "IDLE", "pause: waiting on product")]
 idle = {"tier": None, "phase": "IDLE", "gates": {}, "history": paused}
 
-good = {"tier": "FEATURE", "phase": "PLAN", "gates": {"define": True},
+good = {"tier": "FEATURE", "phase": "PLAN", "ticket": "FEAT-001", "gates": {"define": True},
         "history": paused + [h("IDLE", "PLAN", "resume: FEAT-001")]}
 assert rc(idle, good) == 0, "a legitimate resume was refused"
 
-elsewhere = {"tier": "FEATURE", "phase": "CODE", "gates": {"define": True},
+elsewhere = {"tier": "FEATURE", "phase": "CODE", "ticket": "FEAT-001", "gates": {"define": True},
              "history": paused + [h("IDLE", "CODE", "resume: FEAT-001")]}
 assert rc(idle, elsewhere) == 2, "a resume landed in a phase the ticket was never paused at"
 
 dropped = paused[:-1] + [h("PLAN", "IDLE", "abandon: not worth it")]
 assert rc({"tier": None, "phase": "IDLE", "gates": {}, "history": dropped},
-          {"tier": "FEATURE", "phase": "PLAN", "gates": {"define": True},
+          {"tier": "FEATURE", "phase": "PLAN", "ticket": "FEAT-001", "gates": {"define": True},
            "history": dropped + [h("IDLE", "PLAN", "resume: FEAT-001")]}) == 2, \
     "an abandoned ticket was resumed — abandoning is supposed to be final"
 PYEOF
@@ -4229,7 +4730,7 @@ state = os.path.join(repo, ".ddw-state.json")
 # The hatch exists so a ticket closed before edges carried their tier is not
 # called illegal. Returning early skipped append-only and the IDLE invariant too,
 # so this shape — mid-phase, every gate set, one entry — walked straight through.
-json.dump({"tier": None, "phase": "CODE",
+json.dump({"tier": None, "phase": "CODE", "ticket": "FEAT-001",
            "gates": {k: True for k in ("define", "spec", "threat", "tests", "sast", "verify")},
            "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "CLOSEOUT",
                         "to": "IDLE", "action": "x"}]}, open(state, "w"))
@@ -4349,7 +4850,7 @@ def rc(disk, new):
                            "--graph", graph, "--repo", repo],
                           input=ev, capture_output=True, text=True).returncode
 
-base = {"tier": "FEATURE", "phase": "PLAN", "gates": {"define": True},
+base = {"tier": "FEATURE", "phase": "PLAN", "ticket": "T-1", "gates": {"define": True},
         "history": [h("IDLE", "CLASSIFY", tier=None), h("CLASSIFY", "DEFINE"),
                     h("DEFINE", "PLAN")]}
 rewritten = json.loads(json.dumps(base))
@@ -4497,7 +4998,7 @@ rstep() { python3 "$RUN/.ddw/scripts/transition.py" "$@" --state "$RST" --graph 
             > "$RUN/.s" 2>/dev/null && mv "$RUN/.s" "$RST"; }
 rpost() { python3 "$RUN/.ddw/scripts/hook-gate.py" --mode post --state "$RST" --graph "$RG" \
             --repo "$RUN" </dev/null >/dev/null 2>&1; }
-python3 "$RUN/.ddw/scripts/transition.py" --to CLASSIFY --action start --state "$RST" \
+python3 "$RUN/.ddw/scripts/transition.py" --to CLASSIFY --action start --ticket T-1 --state "$RST" \
         --graph "$RG" > "$RST" 2>/dev/null
 rstep --to DEFINE  --action classify --tier FEATURE
 rstep --to PLAN    --action define   --gate define
@@ -4735,7 +5236,7 @@ bash "$SELF/install.sh" "$LOOP" --target claude >/dev/null 2>&1
 TRL="$LOOP/.ddw/scripts/transition.py"
 lstep() { python3 "$TRL" "$@" --state "$LOOP/.ddw-state.json" --graph "$G" > "$LOOP/s" 2>/dev/null \
           && cp "$LOOP/s" "$LOOP/.ddw-state.json"; }
-python3 "$TRL" --to CLASSIFY --action r --state "$LOOP/.ddw-state.json" --graph "$G" > "$LOOP/.ddw-state.json"
+python3 "$TRL" --to CLASSIFY --action r --ticket T-1 --state "$LOOP/.ddw-state.json" --graph "$G" > "$LOOP/.ddw-state.json"
 lstep --to DEFINE --action c --tier FEATURE
 lstep --to PLAN   --action p --gate define
 lstep --to CODE   --action x --gate spec --gate threat
@@ -4784,6 +5285,93 @@ git -C "$QF" add -A && git -C "$QF" commit -qm "brief + one line of code"
 qf_write >/dev/null 2>&1 \
   && ok "QUICK-FIX budget counts code, not the phase's own committed artifacts" \
   || bad "QUICK-FIX blocked by its own fix-brief (docs/ddw/ must not count)"
+
+# ── One ticket, walked the way a user walks it ───────────────────────────────
+#
+# Every check above drives a function or a hook with a state built to reach it.
+# This one runs the SANCTIONED PATH end to end — `transition.py --write` for each
+# step, then the post hook after each one, exactly as a session does — and it is
+# how three defects surfaced that nothing else could see: choosing an autonomy
+# mode made the post hook refuse every later call (the replay's first edge comes
+# from IDLE, so the CLASSIFY exemption never matched); the helper had no way to
+# name a ticket, so its own output claimed gates against a null one; and pausing
+# to work on something else could not be resumed. Each rule passed on its own.
+section "A whole ticket, through the helper and both hooks"
+E2E="$WORK/e2e"; mkdir -p "$E2E"
+git -C "$E2E" init -q .
+bash "$SELF/install.sh" "$E2E" --target claude >/dev/null 2>&1
+python3 - "$E2E" <<'PYE2E' && ok "a full ticket — classify, define, plan, code, pause, another ticket, resume, corrective loop, closeout — walks the sanctioned path with both hooks green" || bad "the pipeline cannot be walked end to end through its own helper: see which step, above"
+import hashlib, json, os, subprocess, sys
+repo = sys.argv[1]
+tr = os.path.join(repo, ".ddw", "scripts", "transition.py")
+vt = os.path.join(repo, ".ddw", "scripts", "validate-transition.py")
+graph = os.path.join(repo, ".ddw", "rules", "transition-graph.json")
+state = os.path.join(repo, ".ddw-state.json")
+for sub in ("docs/ddw/prd", "docs/ddw/specs", "docs/ddw/security", "docs/ddw/reports",
+            ".ddw-sessions"):
+    os.makedirs(os.path.join(repo, sub), exist_ok=True)
+
+
+def receipt(prefix, rel):
+    """What a PASSED validation leaves behind, written the way the validators
+    write it — content-hashed, naming the file it was earned for."""
+    path = os.path.join(repo, rel)
+    open(path, "w", encoding="utf-8").write("# %s\n" % rel)
+    digest = hashlib.sha256(open(path, encoding="utf-8").read().encode("utf-8")).hexdigest()[:12]
+    open(os.path.join(repo, ".ddw-sessions", "%s-validated-%s" % (prefix, digest)),
+         "w").write(os.path.basename(path))
+
+
+def step(label, *args):
+    r = subprocess.run([sys.executable, tr, "--state", state, "--graph", graph, "--write", *args],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, "%s refused by the helper: %s" % (label, (r.stderr or "").strip()[:200])
+    p = subprocess.run([sys.executable, vt, "--mode", "post", "--state", state, "--graph", graph],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, "%s refused by the post hook: %s" % (label, (p.stdout + p.stderr).strip()[:220])
+
+
+receipt("prd", "docs/ddw/prd/prd-T-1.md")
+receipt("spec", "docs/ddw/specs/spec-T-1.md")
+receipt("threat", "docs/ddw/security/threat-T-1.md")
+step("classify", "--to", "CLASSIFY", "--action", "classify: a feature",
+     "--tier", "FEATURE", "--ticket", "T-1", "--autonomy", "minimal")
+step("define", "--to", "DEFINE", "--action", "write the PRD")
+step("plan", "--to", "PLAN", "--action", "plan it", "--gate", "define")
+step("code", "--to", "CODE", "--action", "implement", "--gate", "spec", "--gate", "threat")
+# Set aside, run something else start to finish, come back.
+step("pause", "--to", "IDLE", "--action", "pause: waiting on product")
+step("other ticket", "--to", "CLASSIFY", "--action", "classify: unrelated",
+     "--tier", "QUICK-FIX", "--ticket", "T-2")
+step("drop it", "--to", "IDLE", "--action", "abandon: not worth it")
+step("resume", "--to", "CODE", "--action", "resume: back to T-1", "--tier", "FEATURE",
+     "--ticket", "T-1", "--gate", "define", "--gate", "spec", "--gate", "threat")
+receipt("tests", "docs/ddw/reports/tests-T-1.md")
+receipt("sast", "docs/ddw/security/sast-T-1.md")
+step("verify", "--to", "VERIFY", "--action", "verify it", "--gate", "tests", "--gate", "sast")
+# The corrective loop: back to CODE, giving up what VERIFY granted, then forward
+# again re-earning it. The pipeline's own documented recovery path.
+step("corrective loop", "--to", "CODE", "--action", "fix what verification found")
+step("re-verify", "--to", "VERIFY", "--action", "verify again", "--gate", "tests", "--gate", "sast")
+receipt("verify", "docs/ddw/reports/verify-T-1.md")
+step("closeout", "--to", "CLOSEOUT", "--action", "close it out", "--gate", "verify")
+d = json.load(open(state, encoding="utf-8"))
+assert d["ticket"] == "T-1" and d["phase"] == "CLOSEOUT", d
+assert all(e.get("ticket") for e in d["history"]), "an entry came out unattributable"
+# The mode is stamped on the edges taken under it, which is the only place it can
+# live: the header resets when the ticket closes.
+walked = [e for e in d["history"][:5] if e.get("autonomy") == "minimal"]
+assert len(walked) == 5, "the run under `minimal` reads identically to one somebody watched"
+# And a pause deliberately does NOT carry it across. Reaching IDLE clears the
+# field, and a resume cannot set it — the one field whose whole purpose is to
+# resist a model granting itself permission does not get a second entrance.
+# Resuming after days therefore asks again, which is the safe direction to be
+# wrong in. Pinned here so it stays a decision rather than an accident.
+assert d["autonomy"] is None, \
+    "a resumed ticket carried `minimal` back in without anyone choosing it: %r" % d["autonomy"]
+assert not any(e.get("autonomy") for e in d["history"][7:]), \
+    "edges after the resume claim a mode the resume could not have set"
+PYE2E
 
 # ── Did the whole suite actually run? ─────────────────────────────────────────
 # The single highest-leverage line in this file. Everything above can be made to

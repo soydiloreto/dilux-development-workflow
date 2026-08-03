@@ -55,7 +55,7 @@ PHASES = [
     ("PLAN",     "The how, and what\ncould go wrong", "docs/ddw/specs/\n+ threat model"),
     ("CODE",     "Implement,\nblock by block",      "code + tests"),
     ("VERIFY",   "Have someone\nelse review it",     "docs/ddw/reports/"),
-    ("CLOSEOUT",  "Close out and\nleave a trail",     "commit + PR"),
+    ("CLOSEOUT", "Close out and\nleave a trail",     "commit + PR"),
 ]
 GATES = [                      # condition to LEAVE each phase
     "you confirm the\nclassification",

@@ -87,7 +87,7 @@ Present to the user:
 │  Files modified:                                         │
 │    - [file list]                                         │
 │                                                          │
-│  Do you approve moving to the closeout phase?             │
+│  Do you approve moving to the closeout phase?            │
 └─────────────────────────────────────────────────────────┘
 ```
 

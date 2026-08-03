@@ -174,40 +174,68 @@ def awaiting_review(repo, timeout=5):
     why: an empty answer and an unanswerable question are different things, and
     printing nothing for both is how a tool teaches people it has nothing to say.
     """
+    CANNOT = "🔕 DDW: could not check your open pull requests — "
+    SHOWN = 8
     try:
         remote = subprocess.run(["git", "-C", repo, "remote"], capture_output=True,
                                 text=True, timeout=timeout)
     except Exception:
+        remote = None
+    if remote is None or remote.returncode != 0:
+        # "git failed" and "there is no remote" are different answers, and only
+        # one of them is silence. A directory that is not a repository at all is
+        # not a failure worth a line — DDW is simply not the thing to say it.
+        if os.path.isdir(os.path.join(repo, ".git")):
+            return [CANNOT + "git could not read this repo's remotes."]
         return []
-    if remote.returncode != 0 or not remote.stdout.strip():
+    if not remote.stdout.strip():
         return []                      # no remote: no pull requests to have, and no noise
     try:
         out = subprocess.run(["gh", "pr", "list", "--author", "@me", "--state", "open",
+                              # Explicit, because gh's default page size is its
+                              # business and not ours. The count below is what
+                              # the user acts on, so it has to be a count of the
+                              # same thing every time.
+                              "--limit", "30",
                               "--json", "number,title,headRefName,reviewDecision,updatedAt"],
                              cwd=repo, capture_output=True, text=True, timeout=timeout,
                              stdin=subprocess.DEVNULL)
     except FileNotFoundError:
-        return ["🔕 DDW: could not check your open pull requests — `gh` is not installed."]
-    except Exception:
-        return ["🔕 DDW: could not check your open pull requests — the forge did not answer in "
-                f"{timeout}s."]
+        return [CANNOT + "`gh` is not installed."]
+    except subprocess.TimeoutExpired:
+        return [CANNOT + f"the forge did not answer in {timeout}s."]
+    except Exception as exc:
+        # Anything else — a locale that cannot decode gh's output, a permission
+        # error on the executable — used to be reported as a timeout, which is a
+        # statement about the network that nobody established.
+        return [CANNOT + f"{type(exc).__name__} while running gh."]
     if out.returncode != 0:
         why = (out.stderr or "").strip().splitlines()
         detail = why[0][:120] if why else f"gh exited {out.returncode}"
-        return [f"🔕 DDW: could not check your open pull requests — {detail}"]
+        return [CANNOT + detail]
     try:
         prs = json.loads(out.stdout or "[]")
     except ValueError:
-        return ["🔕 DDW: could not check your open pull requests — gh returned something "
-                "unparseable."]
+        return [CANNOT + "gh returned something unparseable."]
+    # Shape-checked, not trusted. `gh` returning an object, or a list of strings,
+    # crashed the boot on `pr.get` — and a session boot that raises takes the
+    # phase announcement down with it, which is the one line that must survive.
+    if not isinstance(prs, list):
+        return [CANNOT + "gh returned something that is not a list of pull requests."]
+    prs = [p for p in prs if isinstance(p, dict)]
     if not prs:
         return []
     lines = [f"🔎 DDW: {len(prs)} open pull request(s) of yours in this repo:"]
-    for pr in prs[:8]:
-        decision = (pr.get("reviewDecision") or "").upper()
+    for pr in prs[:SHOWN]:
+        decision = str(pr.get("reviewDecision") or "").upper()
         note = {"CHANGES_REQUESTED": "  ← changes requested",
                 "APPROVED": "  ← approved, ready to merge"}.get(decision, "")
         lines.append(f"   #{pr.get('number')} {str(pr.get('headRefName'))[:44]}{note}")
+    if len(prs) > SHOWN:
+        # Never a silent truncation: a list that stops without saying so reads as
+        # the whole list, and the ones it dropped are the oldest — the ones most
+        # likely to be the forgotten review this exists to surface.
+        lines.append(f"   … and {len(prs) - SHOWN} more (showing the first {SHOWN}).")
     lines.append("   A ticket paused at CLOSEOUT resumes there; what a reviewer asks for is a step "
                  "back, and each step back gives up the gates that phase granted.")
     return lines
@@ -420,7 +448,13 @@ def main():
             "   worktree: git worktree add ../<repo>-<TICKET> -b feat/<TICKET>",
         ]
     if phase == "IDLE":
-        lines += awaiting_review(repo)
+        # `started` and `--quiet` both gate the network call, not just its
+        # output. Without them the boot reached out to the forge in a repo that
+        # has never run DDW, and again on a quiet run whose whole point is to
+        # print nothing — paying a round trip on every session start for a line
+        # that was going to be discarded.
+        if started and not args.quiet:
+            lines += awaiting_review(repo)
         pending = pending_subtickets(repo)
         if pending:
             listed = ", ".join(t for _, t in pending)

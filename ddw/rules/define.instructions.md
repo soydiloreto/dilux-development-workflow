@@ -135,8 +135,8 @@ encapsulates the template, naming, file location, `PRD loops` handling and outpu
    - Present the questions to the user.
    - Wait for answers.
    - Re-invoke the skill via the Skill tool with `skill="ddw-create-prd"` in update mode to fold the
-     answers into the PRD (do NOT write inline; the skill increments `PRD loops` and re-runs
-     `ddw-validate-prd`).
+     answers into the PRD (do NOT write inline; the skill increments `PRD loops`, resets `Loops
+     since last human decision` to 0 — the user just decided — and re-runs `ddw-validate-prd`).
    - Repeat until PASSED.
 8. **Scope control** (see the section below).
 9. Present the PRD **and its validation report** (name the report file and
