@@ -797,6 +797,9 @@ MUTATIONS = [
      edit("scripts/check_commits.py",
           '            skipped.append(f"{sha[:9]} {name}")',
           "            pass")),
+    ("the pull request's own merge commit is held to the attribution rule again",
+     edit("scripts/check_commits.py", '"log", "--no-merges",', '"log",')),
+
     ("a range git cannot read reports success instead of saying it did not run",
      edit("scripts/check_commits.py",
           '        print(f"check_commits: cannot read {args.since}..HEAD — the check did NOT run\\n"\n'

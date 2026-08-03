@@ -67,7 +67,21 @@ def main():
     args = ap.parse_args()
     root = os.path.abspath(args.repo)
 
-    out = subprocess.run(["git", "-C", root, "log", f"--format=%H%x1f%an%x1f%ae%x1f%B{SEP}",
+    # `--no-merges`, and the reason is not tidiness.
+    #
+    # On a pull request the checkout is `refs/pull/N/merge`: a commit GitHub
+    # fabricates to test the merge, authored by GitHub, carrying no trailer, and
+    # never landing in anybody's history. The first pull request this repository
+    # ever opened failed the attribution rule on it — a rule about disclosing who
+    # helped write something, applied to a commit nobody wrote.
+    #
+    # The cost, stated rather than discovered later: a conflict resolution
+    # written inside a merge commit is real authored work and this does not hold
+    # it to the rule. That is the smaller error. Failing every pull request over
+    # a commit GitHub invented is the larger one, and it fails in the direction
+    # where people learn to ignore the check.
+    out = subprocess.run(["git", "-C", root, "log", "--no-merges",
+                          f"--format=%H%x1f%an%x1f%ae%x1f%B{SEP}",
                           f"{args.since}..HEAD"], capture_output=True, text=True)
     if out.returncode != 0:
         # Saying so is the point: a range that cannot be read is not a range

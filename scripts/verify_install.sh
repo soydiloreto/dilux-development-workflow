@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-438}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-439}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -2264,6 +2264,24 @@ git -C "$CM" commit -q -m "✨ a person's change, disclosing nothing"
 python3 "$SELF/scripts/check_commits.py" --repo "$CM" --since "$CM_BASE" >/dev/null 2>&1 \
   && bad "one bot commit in the range excuses the humans in it too" \
   || ok "and a person in the same range is still held to the rule"
+git -C "$CM" reset -q --hard HEAD~2
+
+# The commit a pull request is actually tested on is one GitHub fabricates —
+# `refs/pull/N/merge`, authored by GitHub, carrying no trailer, never landing in
+# anyone's history. Held to the rule, it fails every pull request forever, over a
+# commit nobody wrote. Found the first time this check ever ran on a real one.
+git -C "$CM" checkout -q -b cm-branch
+echo merged > "$CM/b.txt"; git -C "$CM" add -A
+git -C "$CM" commit -q -F - <<'CMEOF'
+✨ work on the branch
+
+AI-assisted: yes
+CMEOF
+git -C "$CM" checkout -q main
+git -C "$CM" merge -q --no-ff cm-branch -m "Merge cm-branch into main" >/dev/null 2>&1
+python3 "$SELF/scripts/check_commits.py" --repo "$CM" --since "$CM_BASE" >/dev/null 2>&1 \
+  && ok "the merge commit a pull request is tested on is not held to a rule about authorship" \
+  || bad "every pull request fails on GitHub's own merge commit — a rule applied to a commit nobody wrote"
 git -C "$CM" reset -q --hard HEAD~2
 
 # A checker nothing invokes is a file, not a gate. The pull request is the only
