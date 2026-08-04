@@ -62,7 +62,13 @@ def _default_state():
 
     cur = os.getcwd()
     while True:
-        if os.path.isdir(os.path.join(cur, ".ddw")) or os.path.isdir(os.path.join(cur, ".git")):
+        # `.git` EXISTS, rather than `.git` is a directory. In a worktree it is a
+        # file holding a gitdir pointer, and `isdir` walked straight past it: a
+        # sibling worktree (the layout the boot itself tells you to create) could
+        # not resolve a root at all, and a worktree nested inside another repo
+        # resolved to the ENCLOSING one — the ticket's state landing in a
+        # different checkout than the ticket.
+        if os.path.isdir(os.path.join(cur, ".ddw")) or os.path.exists(os.path.join(cur, ".git")):
             return os.path.join(cur, ".ddw-state.json")
         parent = os.path.dirname(cur)
         if parent == cur:

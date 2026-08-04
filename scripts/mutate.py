@@ -68,7 +68,7 @@ def edit(rel, old, new, last=False):
         return None
     # What this mutation needs to still be true of the tree, cheap enough to ask
     # about without running anything. See `--check-anchors`.
-    apply.probe = ("text", rel, old)
+    apply.probe = ("text", rel, old, new, last)
     return apply
 
 
@@ -1024,7 +1024,7 @@ MUTATIONS = [
           'PLUGIN_ROOT="${DDW_PLUGIN_ROOT:-${CURSOR_PLUGIN_ROOT:-}}"', 'PLUGIN_ROOT=""')),
     ("a plugin boot goes back to naming an orchestrator the repo does not have",
      edit("adapters/codex/hooks/session-start.sh",
-          ' --format text --method "$DDW"', ' --format text')),
+          ' --format nested --method "$DDW"', ' --format nested')),
 
     # ── Reads judged as writes ───────────────────────────────────────────────
     ("every tool is judged as a write again, so the agent cannot read",
@@ -1189,7 +1189,7 @@ MUTATIONS = [
           "    except Exception as exc:\n")),
     ("git failing to read the remotes becomes silence again",
      edit("ddw/scripts/session-boot.py",
-          '        if os.path.isdir(os.path.join(repo, ".git")):\n            return [CANNOT + "git could not read this repo\'s remotes."]',
+          '        if os.path.exists(os.path.join(repo, ".git")):\n            return [CANNOT + "git could not read this repo\'s remotes."]',
           "        if False:\n            return [CANNOT]")),
     ("the notice about waiting pull requests disappears from the boot",
      edit("ddw/scripts/session-boot.py",
@@ -1346,8 +1346,12 @@ MUTATIONS = [
           "    unmentioned = [a for a in acs", "    unmentioned = [] or [a for a in []")),
 
     # ── The validator's own internals ───────────────────────────────────────
-    ("the session id stops being sanitised, and it is used to build a path",
-     edit("ddw/scripts/session-boot.py", "def safe_id(", "def safe_id_UNUSED(\n    pass\n\n\ndef safe_id(")),
+    # There was a second "the session id is not sanitised" entry here. It
+    # injected `def safe_id_UNUSED(` with no body, so the file stopped parsing:
+    # every check died on the import, the run recorded a kill, and the defect it
+    # named was never in the tree. The class is covered by the entry above, which
+    # removes the sanitising and leaves the file compiling. `--check-anchors` now
+    # refuses this shape outright, which is how both of them were found.
     ("walking away is matched by bare prefix again",
      edit("ddw/scripts/validate-transition.py",
           '    first = action.strip().lower().split(":", 1)[0].strip()\n'
@@ -1480,6 +1484,42 @@ MUTATIONS = [
      edit("ddw/scripts/session-boot.py",
           '    session_id = safe_id(args.session_id) if args.session_id else ""',
           '    session_id = safe_id(args.session_id or f"pid-{os.getpid()}")')),
+    ("CLASSIFY loses the branch for a repo that has no context file at all",
+     edit("ddw/rules/classify.instructions.md",
+          "3. **If `AGENTS.md` does not exist at all**", "3. **If AGENTS.md is somewhere else**")),
+    ("the codex compaction nudge goes back to an envelope codex does not read",
+     edit("adapters/codex/hooks/pre-compact.sh",
+          "  --format nested --event PreCompact", "  --format text --event PreCompact")),
+    ("the root walk asks whether .git is a directory again, so a worktree has no root",
+     edit("ddw/scripts/transition.py",
+          'or os.path.exists(os.path.join(cur, ".git")):',
+          'or os.path.isdir(os.path.join(cur, ".git")):')),
+    ("a validator crashes on the counterpart document it finds by itself",
+     edit("ddw/scripts/validate_spec.py",
+          "            prd_text = open(prd_path, encoding=\"utf-8\").read()\n        except (OSError, UnicodeDecodeError):",
+          "            prd_text = open(prd_path, encoding=\"utf-8\").read()\n        except OSError:")),
+    ("the method linter answers a file it cannot decode with a stack",
+     edit("scripts/lint_method.py",
+          "    except (OSError, UnicodeDecodeError) as exc:\n        fail(path, \"could not be read as UTF-8",
+          "    except OSError as exc:\n        fail(path, \"could not be read as UTF-8")),
+    ("the uninstaller trusts the shape of the settings file it un-merges from",
+     edit("scripts/uninstall_repo.py",
+          "        if not isinstance(dst.get(key), dict):\n            continue\n", "")),
+    ("the uninstaller rewrites a hooks event that is not a list, one character per element",
+     edit("scripts/uninstall_repo.py",
+          "            if not isinstance(dst[key][event], list):\n                continue\n", "")),
+    ("the uninstaller rewrites a context file it could not decode",
+     edit("scripts/uninstall_repo.py",
+          "        except (OSError, UnicodeDecodeError):", "        except OSError:")),
+    ("the installer merges into a settings.json of any shape and crashes on the odd ones",
+     edit("scripts/install_target.py",
+          "                if not isinstance(dst, dict):", "                if False:")),
+    ("the installer trusts that a settings event holds a list",
+     edit("scripts/install_target.py",
+          "                if not isinstance(cur, list):", "                if False:")),
+    ("the installer reads a context file it cannot decode and rewrites it anyway",
+     edit("scripts/install_target.py",
+          "        except (OSError, UnicodeDecodeError) as exc:", "        except OSError as exc:")),
     ("deleting the journal turns the receipt-witness check off again",
      edit("ddw/scripts/validate-transition.py",
           "        return set() if started else None", "        return None")),
@@ -1639,7 +1679,7 @@ def check_anchors():
         if probe is None:
             stale.append((i, label, "carries no probe — this constructor cannot be checked cheaply"))
             continue
-        kind, rel, needle = probe
+        kind, rel, needle = probe[0], probe[1], probe[2]
         path = os.path.join(ROOT, rel)
         if not os.path.exists(path):
             stale.append((i, label, f"{rel} does not exist"))
@@ -1649,6 +1689,26 @@ def check_anchors():
                 cache[rel] = open(path, encoding="utf-8").read()
             if needle not in cache[rel]:
                 stale.append((i, label, f"the anchor is gone from {rel}"))
+                continue
+            # …and the mutated file still has to be the same LANGUAGE. A
+            # "mutation" that leaves Python unparseable does not inject the
+            # defect it names — every check dies on the import, the run records
+            # a kill, and the fault it claimed to measure was never in the tree.
+            # One of these shipped, and it read as covered for as long as it
+            # existed. Compiled in memory: the answer is a parse, not a copy.
+            if rel.endswith(".py"):
+                text, new, last = cache[rel], probe[3], probe[4]
+                if last:
+                    head, _, tail = text.rpartition(needle)
+                    mutated = head + new + tail
+                else:
+                    mutated = text.replace(needle, new, 1)
+                try:
+                    compile(mutated, rel, "exec")
+                except SyntaxError as exc:
+                    stale.append((i, label, "leaves %s unparseable (%s at line %s), so it measures "
+                                            "the file not compiling, not the defect it names"
+                                            % (rel, exc.msg, exc.lineno)))
     if stale:
         print(f"check-anchors: {len(stale)} of {len(MUTATIONS)} mutations no longer apply.\n"
               "A mutation that cannot be injected proves nothing, and the list is the "

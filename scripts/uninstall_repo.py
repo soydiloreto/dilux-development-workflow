@@ -120,8 +120,11 @@ def main():
     mpath = os.path.join(repo, MANIFEST)
     if os.path.exists(mpath):
         try:
-            manifest = json.load(open(mpath, encoding="utf-8"))
-        except (OSError, ValueError):
+            with open(mpath, encoding="utf-8") as fh:
+                manifest = json.load(fh)
+        except (OSError, ValueError, RecursionError):
+            # RecursionError is neither of the other two, and a manifest nested
+            # deep enough to raise it is a file that arrives with a clone.
             manifest = {}
         # A manifest arrives with the clone and may be anything. A list where a
         # mapping was expected raised on `.items()` and the uninstaller could not
@@ -202,15 +205,33 @@ def main():
         dst_path = os.path.join(repo, sm["to"])
         if not os.path.exists(dst_path):
             continue
+        # The user's file, in whatever shape it arrives. A list, a string, a
+        # `hooks` that is not a mapping, a nesting deep enough for the parser to
+        # give up: every one of those came out as an AttributeError or a
+        # TypeError from the loop below, and this is the script you reach for
+        # when DDW is in a state you do not want — a traceback here means the
+        # repo cannot be uninstalled at all. Nothing of DDW's is in a file shaped
+        # like that, so there is nothing here to remove.
         try:
-            dst = json.load(open(dst_path, encoding="utf-8"))
-        except ValueError:
+            with open(dst_path, encoding="utf-8") as fh:
+                dst = json.load(fh)
+        except (OSError, ValueError, RecursionError):
+            continue
+        if not isinstance(dst, dict):
             continue
         key = sm["merge_key"]
+        if not isinstance(dst.get(key), dict):
+            continue
         mine = {event: {json.dumps(b, sort_keys=True) for b in blocks}
                 for event, blocks in ours.get(key, {}).items()}
         changed = False
         for event in list(dst.get(key, {})):
+            # A `PreToolUse` that is a string is not a list of blocks, and
+            # iterating it removed nothing while rewriting the user's file as
+            # one character per element — an uninstall that exits 0, says
+            # "Done." and corrupts the settings it was asked to clean.
+            if not isinstance(dst[key][event], list):
+                continue
             keep = [b for b in dst[key][event]
                     if json.dumps(b, sort_keys=True) not in mine.get(event, ())]
             if len(keep) != len(dst[key][event]):
@@ -243,7 +264,15 @@ def main():
         path = os.path.join(repo, name)
         if not os.path.exists(path):
             continue
-        text = open(path, encoding="utf-8").read()
+        try:
+            text = open(path, encoding="utf-8").read()
+        except (OSError, UnicodeDecodeError):
+            # Not decodable, therefore not rewritable: replacing the bytes we
+            # could not read is how a user loses the file we were only supposed
+            # to take one block out of. If the marker is in there, it stays, and
+            # the summary below is what says so.
+            kept.append(name + " (not UTF-8: the DDW block, if any, was left in place)")
+            continue
         out, found = strip_block(text, BEGIN, END)
         if not found:
             continue

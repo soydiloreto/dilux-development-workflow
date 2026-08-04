@@ -74,13 +74,19 @@ there is a lookup that silently finds nothing:
 | `## What NOT to do in this project` | `ddw-arch-auditor` |
 | `## Domain glossary` | DEFINE, PLAN |
 
-`AGENTS.md` is copied from DDW's template **once**, when the installer finds none. Two situations
-leave it without these, and both are ordinary:
+`AGENTS.md` is copied from DDW's template **once**, when the installer finds none. Three situations
+leave it without these, and all three are ordinary:
 
 - **The repo already had its own `AGENTS.md`.** The template is never applied — correctly, it is
   their file — so none of these headings exist and nobody was told.
 - **A later version of DDW added one.** The template grew; the installed file did not, because
   nothing outside the `BEGIN DDW` block is managed.
+- **There is no `AGENTS.md` at all**, which is the ordinary state of a **plugin** install: the
+  installer never ran, so nothing was copied. Report the FILE, not each heading in turn — a list of
+  six missing headings for a file that does not exist reads as six problems instead of one — and
+  point at CLASSIFY Step 1, which offers to create it with the project's own content. Never write
+  DDW's own material into it: under a plugin the repo is meant to come away with nothing of DDW's
+  in it.
 
 So report a missing heading like any other gap, with **the heading and one line saying what reads
 it**. Propose the heading, empty, and nothing else: what goes underneath is the user's to write, and

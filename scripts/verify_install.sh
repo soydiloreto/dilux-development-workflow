@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-501}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-503}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -2740,6 +2740,20 @@ assert not unnamed, \
     "nothing" % ", ".join(unnamed)
 PYTEMPLATE
 
+# A plugin install writes NOTHING into the repo, so it leaves no AGENTS.md — and
+# AGENTS.md is where the stack is read from. CLASSIFY had two branches, both
+# assuming the file exists, so the third case (the ordinary one under a plugin)
+# fell into "fill in the Stack section of AGENTS.md and we start over", naming a
+# file that is not there. The way out has to be written down where the model
+# rereads it, and it has to say what must NOT go in: under a plugin the repo
+# comes away with nothing of DDW's in it.
+CLSF="$SELF/ddw/rules/classify.instructions.md"
+grep -q "does not exist at all" "$CLSF" \
+  && grep -q "no activation block, no phase references, no template boilerplate" "$CLSF" \
+  && grep -q "no \`AGENTS.md\` is created either" -i "$SELF/docs/INSTALL.md" \
+  && ok "the rules cover a repo with no context file at all — the ordinary state of a plugin install" \
+  || bad "CLASSIFY sends a plugin user to fill in a file that does not exist, and no document names the third case"
+
 # The DEFINE rules used to say create-prd "automatically runs" validate-prd —
 # an instruction to load both at once, which read to the user as validating
 # from memory. The sequence has to be stated where the model rereads it.
@@ -2755,6 +2769,40 @@ python3 "$SELF/ddw/scripts/transition.py" --to CLASSIFY --action "probe" \
 [ "$(python3 -c "import json; print(json.load(open('$TW/.ddw-state.json'))['phase'])" 2>/dev/null)" = "CLASSIFY" ] \
   && ok "transition.py --write lands the state itself, atomically — no redirect, no truncation" \
   || bad "--write did not write the state; the shell-redirect footgun is the only path again"
+
+# A worktree is a repository whose `.git` is a FILE, and the root walk asked
+# whether it was a directory. The layout the boot itself recommends — `git
+# worktree add ../<repo>-<TICKET>` — could not resolve a root at all, and a
+# worktree nested inside another checkout resolved to the ENCLOSING repo, so the
+# ticket's state landed beside somebody else's.
+python3 - "$SELF" <<'PYWORKTREE' && ok "a git worktree resolves to its own root, so the ticket's state lands in the checkout the ticket is in" || bad "the state file lands in the enclosing repository, or the helper cannot find a root at all — in the layout DDW itself recommends"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp()
+main = os.path.join(work, "main")
+os.makedirs(main)
+env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+run = lambda *a, **kw: subprocess.run(list(a), capture_output=True, text=True, env=env, **kw)
+run("git", "-C", main, "init", "-q")
+for k, v in (("user.email", "ddw@test"), ("user.name", "ddw"), ("commit.gpgsign", "false")):
+    run("git", "-C", main, "config", k, v)
+open(os.path.join(main, "README.md"), "w", encoding="utf-8").write("x\n")
+run("git", "-C", main, "add", "-A")
+run("git", "-C", main, "commit", "-qm", "base")
+sibling = os.path.join(work, "main-T-1")
+r = run("git", "-C", main, "worktree", "add", "-q", sibling, "-b", "feat/T-1")
+assert os.path.isfile(os.path.join(sibling, ".git")), \
+    "this git does not make .git a file in a worktree, so the case cannot be exercised: " + r.stderr[:150]
+helper = os.path.join(src, "ddw/scripts/transition.py")
+graph = os.path.join(src, "ddw/rules/transition-graph.json")
+r = run(sys.executable, helper, "--to", "CLASSIFY", "--action", "start", "--graph", graph,
+        "--write", cwd=sibling)
+assert r.returncode == 0, "the helper could not resolve a root inside a worktree: " + (r.stdout + r.stderr)[:200]
+assert os.path.exists(os.path.join(sibling, ".ddw-state.json")), \
+    "the worktree's own root was skipped"
+assert not os.path.exists(os.path.join(main, ".ddw-state.json")), \
+    "the state landed in the main checkout, not in the worktree the work is in"
+PYWORKTREE
 
 python3 - > "$EVENT" <<'PYFIX'
 import json
@@ -4029,15 +4077,34 @@ rows = [[c.strip() for c in ln.strip().strip("|").split("|")]
 header = next((r for r in rows if r and r[0] == "Tool"), None)
 assert header, "acceptance.md has no record table"
 first = next(i for i, h in enumerate(header) if h.startswith("1."))
-last = max(i for i, h in enumerate(header) if re.match(r"^[1-5]\.", h))
+# EVERY numbered column, not the first five. The ritual grew a sixth check and
+# this bound stayed at `[1-5]`, so the row the README summarises was read one
+# column short: the record said five ✅ and one —, the guard called that
+# complete, and the README's "all five" agreed with a count nobody was taking
+# any more. A range hardcoded next to the thing it measures ages the moment the
+# thing grows.
+numbered = [i for i, h in enumerate(header) if re.match(r"^\d+\.", h)]
+last = max(numbered)
 row = next((r for r in rows if r[0] == "Claude Code" and r[1] == "drop-in"), None)
 assert row, "no Claude Code drop-in row in the record"
 verdicts = row[first:last + 1]
-complete = all("✅" in v for v in verdicts)
-claims = "all five acceptance checks pass" in readme
-assert complete == claims, (
-    f"the record has {sum('✅' in v for v in verdicts)}/{len(verdicts)} for Claude drop-in "
-    f"and the README {'claims' if claims else 'does not claim'} all five")
+passed = sum("✅" in v for v in verdicts)
+complete = passed == len(verdicts)
+# The claim has to name the number the record holds, whatever that number is.
+WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"}
+claims_all = "all %s acceptance checks pass" % WORDS.get(len(verdicts), len(verdicts)) in readme
+assert complete == claims_all, (
+    f"the record has {passed}/{len(verdicts)} for Claude drop-in and the README "
+    f"{'claims' if claims_all else 'does not claim'} all {WORDS.get(len(verdicts))}")
+if not complete:
+    claimed = re.search(r"\*\*(\w+) of the (\w+) acceptance checks pass", readme)
+    assert claimed, (
+        f"{passed} of {len(verdicts)} acceptance checks pass for Claude drop-in and the README "
+        "does not say so in those words — a status section that rounds up is the one place a "
+        "reader cannot check for themselves")
+    assert WORDS.get(passed) == claimed.group(1) and WORDS.get(len(verdicts)) == claimed.group(2), \
+        (f"the README says {claimed.group(1)} of {claimed.group(2)} and the record says "
+         f"{WORDS.get(passed)} of {WORDS.get(len(verdicts))}")
 PYCLAUDE
 
 # A step that dies at its first command never ran, and a step that only runs on
@@ -4709,9 +4776,9 @@ PYEOF
 # reference, not from a guess about the shape of someone else's product.
 section "Compaction cannot quietly end the pipeline"
 
-python3 - "$SELF" <<'PYCOMPACT' && ok "every adapter answers its tool's compaction event" || bad "a tool compacts and DDW says nothing — see above"
-import json, os, sys
-root = sys.argv[1]
+python3 - "$SELF" "$ALL" <<'PYCOMPACT' && ok "every adapter answers its tool's compaction event, in the envelope that tool reads" || bad "a tool compacts and DDW says nothing — see above"
+import json, os, subprocess, sys
+root, target = sys.argv[1], sys.argv[2]
 # tool -> (wiring file, event key). Sources, in order:
 #   claude   docs.claude.com/en/docs/claude-code/hooks
 #   codex    developers.openai.com/codex/hooks
@@ -4730,6 +4797,41 @@ for tool, (rel, event) in sorted(WIRING.items()):
     assert event in blob["hooks"], f"{tool}: {rel} does not wire {event}"
     assert "pre-compact.sh" in json.dumps(blob["hooks"][event]), \
         f"{tool}: {event} is wired to something other than the compaction hook"
+
+# Which EVENT each tool wires was checked here and which ENVELOPE it answers in
+# was not — and the envelope is where the silence lives: a nudge in the wrong
+# shape is computed, formatted and dropped, and the pipeline simply never starts
+# after a compaction. Codex passed `--format text` while two documents said it
+# reads `hookSpecificOutput.additionalContext`, and nothing could see the
+# disagreement because one side is prose and the other is a shell argument.
+ENVELOPE = {
+    "claude":  lambda out: not out.lstrip().startswith("{"),
+    "codex":   lambda out: "additionalContext" in json.loads(out).get("hookSpecificOutput", {}),
+    "cursor":  lambda out: "additional_context" in json.loads(out),
+    "gemini":  lambda out: "additionalContext" in json.loads(out).get("hookSpecificOutput", {}),
+    "copilot": lambda out: "additionalContext" in json.loads(out),
+}
+HOOK = {
+    "claude":  ".claude/hooks/pre-compact.sh",
+    "codex":   ".codex/hooks/ddw/pre-compact.sh",
+    "cursor":  ".cursor/hooks/ddw/pre-compact.sh",
+    "gemini":  ".gemini/hooks/ddw/pre-compact.sh",
+    "copilot": ".github/hooks/ddw/pre-compact.sh",
+}
+for tool, hook_rel in sorted(HOOK.items()):
+    hook = os.path.join(target, hook_rel)
+    if not os.path.exists(hook):
+        raise AssertionError(f"{tool}: no compaction hook was installed at {hook_rel}")
+    r = subprocess.run(["bash", hook], input="{}", capture_output=True, text=True,
+                       cwd=target, env=dict(os.environ, CLAUDE_PROJECT_DIR=target))
+    out = r.stdout.strip()
+    assert out, f"{tool}: the compaction hook said nothing at all"
+    try:
+        shaped = ENVELOPE[tool](out)
+    except ValueError:
+        shaped = False
+    assert shaped, (f"{tool}: the compaction nudge came out in an envelope this tool does not "
+                    f"read, so it is dropped in silence: {out[:160]}")
 
 # OpenCode has no hook file: the plugin subscribes to the event by type, and its
 # stdout never reaches the model, so the reminder has to ride a user message.
@@ -6268,16 +6370,18 @@ PYCLOSEWIPE
 # the installer runs half-way. Each of these crashed on input a real repo can
 # hold.
 python3 - "$SELF" <<'PYCRASH' && ok "the boot, the installer, the uninstaller and the six validators refuse odd input instead of crashing on it" || bad "an entry point answers with a traceback: a half-install, a session that starts blind, or a validator that exits 1 where its contract says 3"
-import glob, json, os, subprocess, sys, tempfile
+import glob, json, os, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 
 
-def repo_with_ddw(context=None):
+def repo_with_ddw(context=None, install=True):
     repo = os.path.join(tempfile.mkdtemp(), "repo")
     os.makedirs(repo)
     subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
     if context is not None:
         open(os.path.join(repo, "AGENTS.md"), "w", encoding="utf-8").write(context)
+    if not install:
+        return repo, None      # the caller is about to make the install itself the subject
     r = subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
                        capture_output=True, text=True)
     return repo, r
@@ -6290,6 +6394,40 @@ repo, r = repo_with_ddw("# Notes\n\nWe use a BEGIN DDW block; see the docs.\n")
 assert r.returncode == 0 and "Traceback" not in r.stderr, \
     "the installer crashed on a context file that mentions the marker in prose:\n" + r.stderr[-300:]
 assert os.path.isdir(os.path.join(repo, ".ddw")), "the install did not finish"
+
+# 1b. The settings file DDW merges into is the user's, and it arrives in shapes
+#     the merge was not written for: a mapping where the tool's own schema says
+#     list, a null, a string, a top-level array. Every one of them reached
+#     `cur.append(blk)` and came back an AttributeError mid-install — `.claude/`
+#     and `.ddw/` on disk, no manifest, no hooks wired, and a traceback as the
+#     entire user-facing report. And the same for a context file that is not
+#     UTF-8, which is what a Spanish AGENTS.md saved as cp1252 is.
+for shape in ('{"hooks":{"PreToolUse":{"matcher":"Edit","hooks":[]}}}', '{"hooks":null}',
+              '{"hooks":"x"}', '{"hooks":{"PreToolUse":null}}', '[]', '"x"', '5', 'null'):
+    repo, _ = repo_with_ddw(install=False)
+    os.makedirs(os.path.join(repo, ".claude"), exist_ok=True)
+    open(os.path.join(repo, ".claude", "settings.json"), "w", encoding="utf-8").write(shape)
+    r = subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+                       capture_output=True, text=True)
+    said = r.stdout + r.stderr
+    assert "Traceback" not in said, \
+        "a settings.json shaped %s crashed the installer:\n%s" % (shape[:28], said[-300:])
+    assert os.path.exists(os.path.join(repo, ".ddw-installed.json")), \
+        "the install stopped before the manifest on a settings.json shaped %s — the drift " \
+        "detector is off in a repo that looks installed" % shape[:28]
+    assert "ddw-settings.json" in said, \
+        "a settings.json DDW could not merge into was passed over in silence: %s" % said[-200:]
+
+repo, _ = repo_with_ddw(install=False)
+open(os.path.join(repo, "AGENTS.md"), "wb").write("# Reglas\n\nfunci\xf3n\n".encode("cp1252"))
+r = subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+                   capture_output=True, text=True)
+said = r.stdout + r.stderr
+assert "Traceback" not in said, "a context file that is not UTF-8 crashed the installer:\n" + said[-300:]
+assert os.path.exists(os.path.join(repo, ".ddw-installed.json")), \
+    "the install stopped before the manifest on a context file it could not read"
+assert open(os.path.join(repo, "AGENTS.md"), "rb").read() == "# Reglas\n\nfunci\xf3n\n".encode("cp1252"), \
+    "the installer rewrote a file it could not decode, so the user's bytes are gone"
 
 # 2. A state so deeply nested that the parser gives up. The boot has a designed
 #    answer for a state it cannot read, and it was reaching the user as exit 1
@@ -6327,6 +6465,45 @@ r = subprocess.run(["bash", os.path.join(src, "uninstall.sh"), repo, "--yes"],
 assert r.returncode == 0 and "Traceback" not in r.stderr, \
     "the uninstaller could not run against a manifest it did not expect:\n" + r.stderr[-300:]
 
+# 3b. …and every other shape the same file can arrive in, plus the settings file
+#     it un-merges from. One of these did not crash — it exited 0, printed
+#     "Done." and rewrote `"PreToolUse": "oops"` as one list element per
+#     CHARACTER. A tool that corrupts what it was asked to clean and reports
+#     success is worse than one that refuses.
+POISON = [
+    (".claude/settings.json", "[1,2]"),
+    (".claude/settings.json", '"x"'),
+    (".claude/settings.json", '{"hooks":"x"}'),
+    (".claude/settings.json", '{"hooks":{"PreToolUse":"oops"}}'),
+    (".ddw-installed.json", "[" * 100000 + "]" * 100000),
+]
+for rel, payload in POISON:
+    repo, _ = repo_with_ddw()
+    target = os.path.join(repo, rel)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    open(target, "w", encoding="utf-8").write(payload)
+    r = subprocess.run(["bash", os.path.join(src, "uninstall.sh"), repo, "--yes"],
+                       capture_output=True, text=True)
+    said = r.stdout + r.stderr
+    assert r.returncode == 0 and "Traceback" not in said, \
+        "the uninstaller crashed on %s = %s:\n%s" % (rel, payload[:24], said[-300:])
+    assert not os.path.isdir(os.path.join(repo, ".ddw")), \
+        "the uninstall stopped at %s = %s and left the method behind" % (rel, payload[:24])
+    if rel.endswith("settings.json") and os.path.exists(target):
+        after = open(target, encoding="utf-8").read()
+        assert after.strip() == payload.strip(), \
+            "the uninstaller rewrote a settings file it could not read as hooks:\n" + after[:200]
+
+repo, _ = repo_with_ddw()
+odd = "# Notas\n\nfunci\xf3n\n".encode("cp1252")
+open(os.path.join(repo, "CLAUDE.md"), "wb").write(odd)
+r = subprocess.run(["bash", os.path.join(src, "uninstall.sh"), repo, "--yes"],
+                   capture_output=True, text=True)
+assert r.returncode == 0 and "Traceback" not in (r.stdout + r.stderr), \
+    "a context file that is not UTF-8 stopped the uninstall:\n" + (r.stdout + r.stderr)[-300:]
+assert open(os.path.join(repo, "CLAUDE.md"), "rb").read() == odd, \
+    "the uninstaller rewrote a context file it could not decode"
+
 # 4. A document that is not UTF-8. The validators' own contract says exit 3 for
 #    "cannot read"; all six exited 1 with a stack.
 d = tempfile.mkdtemp()
@@ -6338,6 +6515,49 @@ for v in sorted(glob.glob(os.path.join(src, "ddw/scripts/validate_*.py"))):
     assert r.returncode == 3 and "Traceback" not in r.stderr, \
         "%s exited %d on a non-UTF-8 document; its own contract says 3" % (
             os.path.basename(v), r.returncode)
+
+# 4b. …and the COMPANION artifact, which is the one a Spanish PRD saved as
+#     cp1252 actually is. The primary document is the one a user passes; the
+#     counterpart is the one the validator finds by itself, with no flag
+#     involved — and those four reads kept a bare `except OSError`, so the
+#     everyday case exited 1 with a stack from a validator whose contract has an
+#     exit code for exactly this.
+repo, _ = repo_with_ddw()
+for sub, stem in (("prd", "prd"), ("specs", "spec")):
+    os.makedirs(os.path.join(repo, "docs", "ddw", sub), exist_ok=True)
+open(os.path.join(repo, "docs/ddw/prd/prd-T-1.md"), "wb").write(
+    "# PRD T-1\n\n- FR-01: la funci\xf3n\n".encode("cp1252"))
+open(os.path.join(repo, "docs/ddw/specs/spec-T-1.md"), "w", encoding="utf-8").write(
+    "# Spec T-1\n\n| Field | Value |\n|---|---|\n| Ticket | T-1 |\n\n## Block 1 — algo\n")
+for v, doc in (("validate_spec.py", "docs/ddw/specs/spec-T-1.md"),
+               ("validate_verify.py", "docs/ddw/reports/verify-T-1.md"),
+               ("validate_threat.py", "docs/ddw/security/threat-T-1.md")):
+    target = os.path.join(repo, doc)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    if not os.path.exists(target):
+        open(target, "w", encoding="utf-8").write(
+            "# %s\n\n| Field | Value |\n|---|---|\n| Ticket | T-1 |\n" % os.path.basename(doc))
+    r = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts", v), target,
+                        "--tier", "FEATURE"], capture_output=True, text=True, cwd=repo)
+    assert "Traceback" not in r.stderr, \
+        "%s crashed on a counterpart document that is not UTF-8:\n%s" % (v, r.stderr[-300:])
+    assert r.returncode in (0, 2, 3), \
+        "%s exited %d on a counterpart it could not read — 0 passes, 2 fails, 3 cannot read, and " \
+        "1 is the code nothing here is allowed to answer with" % (v, r.returncode)
+
+# 4c. The method linter is on the same list. One rule file in the wrong encoding
+#     took it down with a stack and exit 1 — the exit code that means "a claim
+#     did not check out", from a run where no claim was ever read.
+probe = os.path.join(tempfile.mkdtemp(), "method")
+shutil.copytree(src, probe, symlinks=True,
+                ignore=shutil.ignore_patterns(".git", "__pycache__"))
+open(os.path.join(probe, "ddw/rules/odd-encoding.instructions.md"), "wb").write(b"texto\xf3\n")
+r = subprocess.run([sys.executable, os.path.join(probe, "scripts/lint_method.py")],
+                   capture_output=True, text=True, cwd=probe)
+assert "Traceback" not in r.stderr, \
+    "lint_method.py answered a file it could not decode with a stack:\n" + r.stderr[-300:]
+assert "could not be read as UTF-8" in (r.stdout + r.stderr), \
+    "lint_method.py passed over a file it could not read in silence"
 PYCRASH
 
 # ── One write cannot skip the phase that classifies the work ────────────────
@@ -6426,7 +6646,7 @@ PYUPGRADE
 # going red, because weakening a CHECK does not make the suite fail. Read as
 # source, which is the only place the question can be asked.
 python3 - "$SELF" <<'PYMETA' && ok "the suite's own guards against measuring nothing are still in place, and --cover still refuses a job that cannot fail" || bad "a check that measures nothing, or a coverage number that counts a job which never runs"
-import os, re, subprocess, sys, tempfile
+import os, re, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 suite = open(os.path.join(src, "scripts/verify_install.sh"), encoding="utf-8").read()
 
@@ -6449,6 +6669,27 @@ assert len(derived) == 6 and len(set(derived)) == 6, \
 for name in derived:
     assert os.path.isdir(os.path.join(src, "skills", name)), \
         "the derivation named %r, which is not a skill" % name
+
+# A mutation that leaves the file unparseable measures the file not compiling.
+# Every check dies on the import, the run records a kill, and the defect the
+# entry names was never in the tree — so it reads as covered for as long as it
+# exists. One shipped, and lived through two audits. Driven by handing
+# --check-anchors a copy carrying exactly that shape.
+probe = os.path.join(tempfile.mkdtemp(), "method")
+shutil.copytree(src, probe, symlinks=True,
+                ignore=shutil.ignore_patterns(".git", "__pycache__"))
+mut = os.path.join(probe, "scripts/mutate.py")
+text = open(mut, encoding="utf-8").read()
+anchor = "MUTATIONS = [\n"
+assert anchor in text, "the mutation list no longer starts where this check looks"
+text = text.replace(anchor, anchor + '    ("a mutation that only stops the file parsing",\n'
+                                     '     edit("ddw/scripts/session-boot.py", "def safe_id(",\n'
+                                     '          "def safe_id_UNUSED(\\n    pass\\n\\n\\ndef safe_id(")),\n', 1)
+open(mut, "w", encoding="utf-8").write(text)
+r = subprocess.run([sys.executable, mut, "--check-anchors"], capture_output=True, text=True)
+assert r.returncode != 0 and "unparseable" in r.stdout, \
+    "--check-anchors accepted a mutation that leaves the file it edits unable to parse: " + \
+    (r.stdout + r.stderr)[-200:]
 
 # --cover has to refuse a workflow whose mutation job cannot fail, and one that
 # injects the same mutation twice. Driven against doctored copies of the real

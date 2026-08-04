@@ -251,7 +251,7 @@ def main():
     if prd_path:
         try:
             prd_text = open(prd_path, encoding="utf-8").read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             prd_text = ""
 
     if is_fix:

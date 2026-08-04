@@ -143,10 +143,12 @@ that ran at three in the morning is a record that lies by omission.
 
 ## Status
 
-- **Claude Code** — exercised end to end, and **all five acceptance checks pass against the live
-  tool** (2.1.220, 2026-08-02; the record is in `scripts/acceptance.md`). Told to write source with
-  no approved spec, the write is refused by the hook rather than declined by the model. That session
-  found four defects, none of which the suite could have reached.
+- **Claude Code** — exercised end to end, and **five of the six acceptance checks pass against the
+  live tool** (2.1.220, 2026-08-02; the record is in `scripts/acceptance.md`). The sixth is minimal
+  mode, which has not been driven against the live tool in either install shape — the record says
+  so with a dash, and this line says so too. Told to write source with no approved spec, the write
+  is refused by the hook rather than declined by the model. That session found four defects, none
+  of which the suite could have reached.
 - **OpenCode** — the first four, against the live tool (1.18.9, 2026-07-29). That session is also
   where two defects were found, which is the argument for doing this by hand.
 - **Copilot CLI** — three of the first four (1.0.75, 2026-07-29). The fourth is **detected and not

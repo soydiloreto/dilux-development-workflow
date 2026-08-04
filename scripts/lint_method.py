@@ -30,6 +30,24 @@ def fail(where, msg):
     FINDINGS.append((where, msg))
 
 
+def read(path):
+    """A method file, as text — or "" with a finding when it is not decodable.
+
+    Every check below reads prose with strict UTF-8, and a single file saved in
+    the wrong encoding took the whole linter down with a UnicodeDecodeError and
+    exit 1 — the exit code that means "a claim did not check out", from a run
+    where no claim was ever read. The linter is allowed to say a file is
+    unreadable; it is not allowed to answer with a stack.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        fail(path, "could not be read as UTF-8 (%s), so nothing in it was checked"
+                   % exc.__class__.__name__)
+        return ""
+
+
 def rel(root, path):
     return os.path.relpath(path, root)
 
@@ -77,7 +95,7 @@ def check_gate_names(root, graph):
     scan = (glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)
             + glob.glob(os.path.join(root, "adapters/**/*.md"), recursive=True))
     for path in sorted(scan):
-        text = open(path, encoding="utf-8").read()
+        text = read(path)
         for m in re.finditer(r"gates\.([A-Za-z_]+)", text):
             name = m.group(1)
             if name not in gates:
@@ -94,7 +112,7 @@ def check_rule_ids(root):
     a catalogued rule nobody cites is a rule that never runs.
     """
     catalog_path = os.path.join(root, "ddw/rules/validation-rules.instructions.md")
-    catalog_text = open(catalog_path, encoding="utf-8").read()
+    catalog_text = read(catalog_path)
     pattern = re.compile(r"\b([FW]-[A-Z]+-[A-Z0-9]{2,})\b")
     defined = set(pattern.findall(catalog_text))
     if not defined:
@@ -105,7 +123,7 @@ def check_rule_ids(root):
     for path in sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)):
         if os.path.samefile(path, catalog_path):
             continue
-        text = open(path, encoding="utf-8").read()
+        text = read(path)
         for m in pattern.finditer(text):
             cited.setdefault(m.group(1), []).append(
                 f"{rel(root, path)}:{text[:m.start()].count(chr(10)) + 1}")
@@ -151,7 +169,7 @@ def check_paths(root):
     where the next phase will not look for it.
     """
     for path in method_prose(root):
-        text = open(path, encoding="utf-8").read()
+        text = read(path)
         for m in re.finditer(r"docs/(?!ddw/|adr/)([a-z]+)/[A-Za-z0-9{}_./-]+\.[a-z]+", text):
             line = text[:m.start()].count("\n") + 1
             fail(f"{rel(root, path)}:{line}",
@@ -174,7 +192,7 @@ def check_skill_and_agent_refs(root):
     agents = {os.path.basename(f)[:-3] for f in glob.glob(os.path.join(root, "agents/*.md"))}
 
     for path in method_prose(root):
-        text = open(path, encoding="utf-8").read()
+        text = read(path)
         for m in re.finditer(r"""Skill\(skill=["']([^"']+)["']\)""", text):
             if _is_placeholder(m.group(1)):
                 continue
@@ -220,7 +238,7 @@ def check_counts(root):
     for path in sorted(scan):
         if not os.path.exists(path):
             continue
-        text = open(path, encoding="utf-8").read()
+        text = read(path)
         for noun, actual in (("skills", n_skills), ("agents", n_agents),
                              ("rule files", n_rules)):
             # Only counts stated as TOTALS. "the three agents that audit" is a
@@ -284,7 +302,7 @@ def check_history_stamp(root):
         # on the very file that documents the answer.
         if os.path.basename(path) == "state.instructions.md":
             continue
-        text = open(path, encoding="utf-8").read()
+        text = read(path)
         lines = text.splitlines()
         for i, line in enumerate(lines, 1):
             # Matched on the exact phrasing this file happened to use, once —
@@ -324,7 +342,7 @@ def check_internal_links(root):
         if not os.path.exists(path):
             continue
         base = os.path.dirname(path)
-        text = open(path, encoding="utf-8").read()
+        text = read(path)
         for m in re.finditer(r"\]\(([^)#\s]+)(?:#[^)\s]*)?\)", text):
             target = m.group(1)
             if target.startswith(("http://", "https://", "mailto:", "//")):
@@ -350,14 +368,19 @@ def check_context_reaches_agents(root):
     worked without a stack.
     """
     for recipe_path in sorted(glob.glob(os.path.join(root, "adapters/*/adapter.json"))):
-        recipe = json.load(open(recipe_path, encoding="utf-8"))
+        try:
+            with open(recipe_path, encoding="utf-8") as fh:
+                recipe = json.load(fh)
+        except (OSError, ValueError, RecursionError) as exc:
+            fail(rel(root, recipe_path), "is not readable JSON (%s)" % exc.__class__.__name__)
+            continue
         ctx = recipe.get("context_file")
         if not ctx or ctx == "AGENTS.md":
             continue                      # the block is inside AGENTS.md already
         adapter_dir = os.path.dirname(recipe_path)
         snippet = (os.path.join(adapter_dir, recipe["snippet"]) if "snippet" in recipe
                    else os.path.join(root, "ddw", "activation.snippet.md"))
-        body = open(snippet, encoding="utf-8").read() if os.path.exists(snippet) else ""
+        body = read(snippet) if os.path.exists(snippet) else ""
         if "AGENTS.md" not in body:
             fail(rel(root, snippet),
                  f"{recipe.get('id', '?')} reads {ctx}, not AGENTS.md, and its activation block "
@@ -384,13 +407,13 @@ def check_context_headings(root):
         fail("skills/ddw-context-check/SKILL.md",
              "does not exist, so nothing reports a context file missing what the method reads")
         return
-    known = open(skill, encoding="utf-8").read()
+    known = read(skill)
 
     cited = {}
     for path in sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)):
         if os.path.samefile(path, skill):
             continue
-        text = open(path, encoding="utf-8").read()
+        text = read(path)
         for i, line in enumerate(text.splitlines(), 1):
             if "AGENTS.md" not in line:
                 continue
@@ -419,7 +442,7 @@ def check_rationale(root):
     if not os.path.exists(path):
         fail("docs/RATIONALE.md", "does not exist, and README.md links to it")
         return
-    text = open(path, encoding="utf-8").read()
+    text = read(path)
 
     entries = re.split(r"^## ", text, flags=re.M)[1:]
     numbered = [e for e in entries if re.match(r"\d+\.", e)]
@@ -445,7 +468,7 @@ def check_rule_ranges(root):
     is not being asked for.
     """
     catalog = os.path.join(root, "ddw/rules/validation-rules.instructions.md")
-    text = open(catalog, encoding="utf-8").read()
+    text = read(catalog)
     last = {}
     for m in re.finditer(r"^\|\s*([FW]-[A-Z]+)-(\d+)\s*\|", text, re.M):
         family, num = m.group(1), int(m.group(2))
@@ -453,7 +476,7 @@ def check_rule_ranges(root):
 
     targets = sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True))
     for path in targets:
-        body = open(path, encoding="utf-8").read()
+        body = read(path)
         # Only ranges that START at 01. Those are the ones claiming "every rule
         # in this section"; a range from 04 to 11 names a group on purpose —
         # per-block completeness, say — and is not asserting it is the whole
@@ -481,7 +504,7 @@ def check_commit_granularity(root):
     same bargain `scripts/mutate.py` makes.
     """
     code = os.path.join(root, "ddw/rules/code.instructions.md")
-    text = open(code, encoding="utf-8").read()
+    text = read(code)
 
     # 1. The block loop has to actually commit.
     start = text.find("### Block-by-block implementation")
@@ -498,7 +521,7 @@ def check_commit_granularity(root):
     # 2. Nothing anywhere may assert the opposite.
     targets = sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True))
     for path in targets:
-        body = open(path, encoding="utf-8").read()
+        body = read(path)
         for pat in _ANTI_PER_BLOCK:
             for m in re.finditer(pat, body, re.I):
                 fail(f"{rel(root, path)}:{body[:m.start()].count(chr(10)) + 1}",
@@ -510,7 +533,7 @@ def check_phase_names(root, graph):
     """A phase named in a router must be a phase the graph knows."""
     phases = known_phases(graph) | {"DISCOVERY"}
     orch = os.path.join(root, "ddw/orchestrator.md")
-    text = open(orch, encoding="utf-8").read()
+    text = read(orch)
     for m in re.finditer(r"^## Router: Phase `([A-Z-]+)`", text, re.M):
         if m.group(1) not in phases:
             line = text[:m.start()].count("\n") + 1
@@ -536,10 +559,61 @@ _SUBTICKET_ASSIGN = re.compile(r"`ticket`\s*(?:->|→|:?=)\s*`?\{TICKET\}[a-z]",
 _OPENS_NEW_RUN = re.compile(r"IDLE\s*(?:->|→)\s*CLASSIFY")
 
 
+def check_compaction_envelopes(root):
+    """The compaction table names an envelope per tool; the hook passes a flag.
+
+    Two documents said Codex reads `hookSpecificOutput.additionalContext` while
+    its own hook passed `--format text`, and getting this wrong is SILENT: the
+    nudge is computed, formatted and dropped, and the pipeline simply never
+    starts after a compaction. Nothing could see it because the table is prose,
+    the flag is a shell argument, and no check read both.
+
+    The envelope, in the words the table uses, and the flag that produces it:
+    """
+    ENVELOPE = {
+        "hookSpecificOutput.additionalContext": "nested",
+        "additional_context": "cursor",
+        "additionalContext": "json",
+        "stdout": "text",
+    }
+    doc = os.path.join(root, "docs/DEVELOPMENT.md")
+    text = read(doc)
+    rows = re.findall(r"^\|\s*([A-Za-z][\w \.]*?)\s*\|\s*`?([\w\.]+)`?\s*\|\s*(.+?)\s*\|\s*$",
+                      text, re.MULTILINE)
+    table = {}
+    for tool, event, channel in rows:
+        for phrase, fmt in ENVELOPE.items():          # longest phrase first
+            if phrase in channel:
+                table[tool.strip().lower()] = (event, fmt)
+                break
+    if len(table) < 4:
+        fail(rel(root, doc), "the compaction table could not be read: the envelopes each tool "
+                             "needs are documented nowhere else, and nothing else checks them")
+        return
+    for hook in sorted(glob.glob(os.path.join(root, "adapters/*/*/pre-compact.sh"))):
+        tool_dir = hook.split(os.sep)[-3]
+        body = read(hook)
+        m_fmt = re.search(r"--format\s+(\w+)", body)
+        m_ev = re.search(r"--event\s+(\w+)", body)
+        named = [k for k in table if k.startswith(tool_dir)]
+        if not named or not m_fmt:
+            continue
+        want_event, want_fmt = table[named[0]]
+        if m_fmt.group(1) != want_fmt:
+            fail(rel(root, hook),
+                 "passes --format %s while the compaction table says %s reads %s. One of the two "
+                 "is wrong and the failure is silent: the nudge is formatted and dropped."
+                 % (m_fmt.group(1), named[0], want_fmt))
+        if m_ev and m_ev.group(1) != want_event:
+            fail(rel(root, hook),
+                 "passes --event %s while the table says %s calls it %s"
+                 % (m_ev.group(1), named[0], want_event))
+
+
 def check_ticket_retarget(root):
     """No rule may ORDER what the state machine refuses."""
     for path in sorted(glob.glob(os.path.join(root, "ddw/rules/*.md"))):
-        for i, line in enumerate(open(path, encoding="utf-8"), 1):
+        for i, line in enumerate(read(path).splitlines(), 1):
             if line.lstrip().startswith(">"):
                 continue                     # quoted: the warning naming the mistake
             if _SUBTICKET_ASSIGN.search(line) and not _OPENS_NEW_RUN.search(line):
@@ -569,6 +643,7 @@ def main():
     check_rule_ranges(root)
     check_commit_granularity(root)
     check_phase_names(root, graph)
+    check_compaction_envelopes(root)
     check_ticket_retarget(root)
 
     if not FINDINGS:

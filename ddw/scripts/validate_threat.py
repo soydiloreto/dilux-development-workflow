@@ -273,7 +273,7 @@ def main():
     if spec_path:
         try:
             spec_text = open(spec_path, encoding="utf-8").read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             spec_text = ""
     if not spec_text:
         fail("F-TM-06", "the spec could not be read, so the model was NOT checked against the "

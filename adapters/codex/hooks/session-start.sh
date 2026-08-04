@@ -23,4 +23,4 @@ try: print(json.load(sys.stdin).get('session_id') or '')
 except Exception: print('')" 2>/dev/null || true)"
 [ -n "$SID" ] || SID="codex-$$"
 
-exec python3 "$BOOT" --repo "$REPO" --session-id "$SID" --format text --method "$DDW"
+exec python3 "$BOOT" --repo "$REPO" --session-id "$SID" --format nested --method "$DDW"

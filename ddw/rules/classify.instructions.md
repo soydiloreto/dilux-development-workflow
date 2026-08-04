@@ -20,7 +20,22 @@ different things.
 
 1. **Read the "Stack" section of `AGENTS.md`.**
 2. **If it is complete** → use it and skip to Step 2. There is nothing else to do.
-3. **If it is empty or still has unfilled placeholders:**
+3. **If `AGENTS.md` does not exist at all** — which is the ordinary state of a **plugin** install,
+   where nothing was ever written into the repo — say so and offer to create it:
+
+   ```
+   This repo has no AGENTS.md. DDW reads the stack from there, and under a plugin install
+   nothing has written one. Shall I create it with the headings the method reads —
+   Stack, Commands, Conventions, Testing — filled in from what I can detect here?
+   ```
+
+   With the user's confirmation, create it with **the project's own content and nothing of DDW's**:
+   no activation block, no phase references, no template boilerplate. `AGENTS.md` is the project's
+   file whether or not DDW is what asked for it, and a plugin that leaves DDW content in a repo is
+   the thing the plugin install exists to avoid. Then continue at point 3 below with what you wrote.
+
+   If the user declines, **STOP** — the same stop as an empty stack. You cannot plan blind.
+4. **If it is empty or still has unfilled placeholders:**
    - **If the repo has configuration files** (`package.json`, `pyproject.toml`, `go.mod`,
      `build.gradle`, `Gemfile`, etc.): scan them, detect language, framework, test runner, linter,
      ORM/DB and package manager, and **hand the user the finished text to paste into `AGENTS.md`**:

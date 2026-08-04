@@ -128,7 +128,7 @@ def main():
     if prd_path:
         try:
             prd_text = open(prd_path, encoding="utf-8").read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             prd_text = ""
     if not prd_text:
         fail("F-VER-01", "the PRD could not be read, so AC coverage was NOT checked. "
@@ -152,7 +152,7 @@ def main():
     if spec_path:
         try:
             spec_text = open(spec_path, encoding="utf-8").read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             spec_text = ""
     if not spec_text:
         fail("F-VER-02/06", "the spec could not be read, so block and test coverage were NOT "

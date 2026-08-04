@@ -523,26 +523,62 @@ def main():
     if sm:
         src = json.load(open(os.path.join(adapter_dir, sm["from"]), encoding="utf-8"))
         dst_path = os.path.join(args.target, sm["to"])
+
+        def _sidecar(reason):
+            """The file is the user's, and it is not one we can merge into.
+
+            The same answer the unparseable case already had, for every other way
+            a settings file can be shaped unexpectedly: `{"hooks": null}`,
+            `{"hooks": {"PreToolUse": {…}}}` (a mapping where the tool's own
+            schema says list), a top-level array. Each of those reached
+            `cur.append(blk)` and came out as an AttributeError mid-install —
+            with `.claude/` and `.ddw/` already on disk, no manifest written, and
+            no hooks wired. A half-install that says "Traceback" is the one
+            outcome an installer owes the user a sentence for instead.
+            """
+            side = os.path.join(os.path.dirname(dst_path), "ddw-settings.json")
+            os.makedirs(os.path.dirname(side), exist_ok=True)
+            with open(side, "w", encoding="utf-8") as fh:
+                json.dump(src, fh, indent=2)
+            print(f"  ! {sm['to']} {reason}; wrote ddw-settings.json alongside it. Merge its "
+                  "hooks into your file by hand, or move yours aside and re-run — DDW's hooks "
+                  "are NOT wired until you do.")
+
         dst = {}
         if os.path.exists(dst_path):
             try:
-                dst = json.load(open(dst_path, encoding="utf-8"))
-            except ValueError:
-                side = os.path.join(os.path.dirname(dst_path), "ddw-settings.json")
-                json.dump(src, open(side, "w", encoding="utf-8"), indent=2)
-                print(f"  ! {sm['to']} is not valid JSON; wrote ddw-settings.json alongside it")
+                with open(dst_path, encoding="utf-8") as fh:
+                    dst = json.load(fh)
+            except (OSError, ValueError, RecursionError) as exc:
+                _sidecar("could not be read (%s)" % exc.__class__.__name__)
                 dst = None
+            else:
+                if not isinstance(dst, dict):
+                    _sidecar("holds a %s where an object was expected" % type(dst).__name__)
+                    dst = None
         if dst is not None:
             for k, v in (sm.get("base") or {}).items():
                 dst.setdefault(k, v)
             key = sm["merge_key"]
             dst.setdefault(key, {})
+            if not isinstance(dst.get(key), dict):
+                _sidecar("has a `%s` that is a %s, not an object" % (key, type(dst[key]).__name__))
+                dst = None
+        if dst is not None:
             for event, blocks in src[key].items():
                 cur = dst[key].setdefault(event, [])
+                if not isinstance(cur, list):
+                    # One event of theirs is shaped differently. Refusing the
+                    # whole file over it would be worse than saying which one.
+                    _sidecar("has a `%s.%s` that is a %s, not a list"
+                             % (key, event, type(cur).__name__))
+                    dst = None
+                    break
                 seen = [json.dumps(b, sort_keys=True) for b in cur]
                 for blk in blocks:
                     if json.dumps(blk, sort_keys=True) not in seen:
                         cur.append(blk)
+        if dst is not None:
             os.makedirs(os.path.dirname(dst_path), exist_ok=True)
             with open(dst_path, "w", encoding="utf-8") as fh:
                 json.dump(dst, fh, indent=2, ensure_ascii=False)
@@ -570,7 +606,19 @@ def main():
     for snippet_path, ctx_name in blocks:
         ctx = os.path.join(args.target, ctx_name)
         snippet = open(snippet_path, encoding="utf-8").read()
-        existing = open(ctx, encoding="utf-8").read() if os.path.exists(ctx) else ""
+        try:
+            existing = open(ctx, encoding="utf-8").read() if os.path.exists(ctx) else ""
+        except (OSError, UnicodeDecodeError) as exc:
+            # A context file DDW cannot read is a context file DDW must not
+            # rewrite: appending to it would mean writing back whatever the
+            # replacement characters decoded to, and losing the user's bytes. A
+            # Spanish AGENTS.md saved as cp1252 crashed here mid-install, hooks
+            # already wired and no manifest written — so the drift detector was
+            # off for good in a repo that looked installed.
+            print(f"  ! {ctx_name:<22} could not be read as UTF-8 ({exc.__class__.__name__}); "
+                  "left untouched. Add the activation block by hand, or save it as UTF-8 and "
+                  "re-run the installer.")
+            continue
         # The MARKER, not the words. A context file that merely mentions
         # "BEGIN DDW" in prose — a README explaining the block, which is exactly
         # what a project documenting its own setup writes — took this branch and

@@ -272,7 +272,9 @@ def awaiting_review(repo, timeout=5):
         # "git failed" and "there is no remote" are different answers, and only
         # one of them is silence. A directory that is not a repository at all is
         # not a failure worth a line — DDW is simply not the thing to say it.
-        if os.path.isdir(os.path.join(repo, ".git")):
+        # `exists`, not `isdir`: in a worktree `.git` is a file, and a worktree
+        # is a repository whose git failures are worth the same line.
+        if os.path.exists(os.path.join(repo, ".git")):
             return [CANNOT + "git could not read this repo's remotes."]
         return []
     if not remote.stdout.strip():

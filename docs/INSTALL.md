@@ -53,6 +53,12 @@ five minutes and you get no state file and no edited `.gitignore`.
 **The repo always wins.** Every hook looks for `.ddw/` in the project first and the plugin second, so
 a repo that wants its own version just has one.
 
+**No `AGENTS.md` is created either**, and that file is where DDW reads your stack. Under a drop-in
+install the installer copies a template when it finds none; under a plugin nothing is copied,
+because nothing is written to your repo at all. The first CLASSIFY offers to create it, from what it
+can detect in the repo and with none of DDW's own content in it — or you write it yourself first.
+Either way the file is yours: DDW never puts its blocks, phases or boilerplate in it under a plugin.
+
 ---
 
 ## Or into your repository
