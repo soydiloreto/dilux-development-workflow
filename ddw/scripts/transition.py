@@ -439,12 +439,21 @@ def main():
                 "The tier is missing: pass --tier <" + "|".join(_TIERS) + "> (it is set on the "
                 "CLASSIFY→DEFINE/DISCOVERY transition)."
             )
+        elif str(exc).startswith("gate "):
+            # The validator's own message already names the gate, the validator
+            # that earns it and the command that claims it. Appending "check the
+            # graph" here sent the reader to a file with nothing wrong in it —
+            # the graph is right, the evidence is missing.
+            hint = ""
         else:
             hint = (
                 "Transitions are one per edge; check the graph in "
                 ".ddw/rules/transition-graph.json."
             )
-        print(f"ddw-transition: illegal transition, nothing emitted: {exc} {hint}", file=sys.stderr)
+        # A space between two sentences and no full stop read as one sentence
+        # that ran on: "…is not true Transitions are one per edge".
+        joined = f"{exc} {hint}".strip() if hint else str(exc)
+        print(f"ddw-transition: illegal transition, nothing emitted: {joined}", file=sys.stderr)
         sys.exit(2)
 
     _emit(args, new_state, seen=old_text)

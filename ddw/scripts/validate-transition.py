@@ -674,7 +674,10 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     if first_from != old_phase:
         raise Block(
             f"the first transition starts at {first_from} but the previous state "
-            f"is at {old_phase}"
+            f"is at {old_phase}. History is appended to what is ON DISK: re-read "
+            ".ddw-state.json and append from the phase it actually holds. If the run really "
+            f"is at {first_from}, the edge that got there has to be written and validated "
+            "first — one write, one transition."
         )
 
     # Phase head: the last transition must end at new.phase.
@@ -717,7 +720,11 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
         # it illegal now. `skip_edges` is that window, and it is only ever
         # non-zero in post mode's replay.
         if src == dst:
-            raise Block(f"a transition must go somewhere: {key}")
+            raise Block(
+                f"a transition must go somewhere: {key}. An in-phase change — claiming a gate, "
+                "filling in the title — carries NO history entry: write the new state without "
+                "appending one, or use `.ddw/scripts/transition.py --claim <gate>`, which builds "
+                "exactly that write.")
         if src == IDLE and dst != CLASSIFY and _is_resume(entry):
             # Coming back to a ticket that was paused. It owes no gates — pausing
             # owed none either, and the gates it had earned come back with it.
@@ -804,7 +811,18 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
             available.update(gates)
             for gate in gates_required:
                 if available.get(gate) is not True:
-                    raise Block(f"gate {gate!r} required for {key} is not true")
+                    # The MOVE, not only the fact. This is the most-read
+                    # refusal in the product, and it named a state of the world
+                    # ("is not true") with nothing about how to make it true —
+                    # so the model's next act was to edit the state by hand,
+                    # which the hook then refused for a different reason.
+                    earn = _EARNED_BY.get(gate)
+                    how = (" Earn it first: run %s over the document that phase writes, then "
+                           "`.ddw/scripts/transition.py --claim %s` (one run, no phase change), "
+                           "and take this edge after that." % (earn, gate)) if earn else (
+                          " `commit` is git's answer and `pr` is the forge's: commit the work, or "
+                          "open the pull request, and this edge stops asking.")
+                    raise Block(f"gate {gate!r} required for {key} is not true.{how}")
 
         # Going back takes away what going forward granted, and the rule lives
         # HERE — in the function the hook calls — not in the helper.
@@ -1470,6 +1488,13 @@ def _sast_receipt_missing(root, state):
     return _receipt_missing(root, state, "sast", "sast", "security", ("sast",),
                             "validate_sast.py", "SAST report")
 
+
+# Which validator earns which gate. The refusal above names it, because "gate
+# 'spec' is not true" tells a reader what is wrong and not one thing about what
+# to do — and the thing to do is never "edit the state".
+_EARNED_BY = {"define": "`.ddw/scripts/validate_prd.py`", "spec": "`.ddw/scripts/validate_spec.py`",
+              "threat": "`.ddw/scripts/validate_threat.py`", "tests": "`.ddw/scripts/validate_tests.py`",
+              "sast": "`.ddw/scripts/validate_sast.py`", "verify": "`.ddw/scripts/validate_verify.py`"}
 
 GATE_EVIDENCE = {"define": _prd_receipt_missing, "spec": _spec_receipt_missing,
                  "threat": _threat_receipt_missing, "verify": _verify_receipt_missing,

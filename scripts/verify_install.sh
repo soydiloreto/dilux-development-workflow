@@ -23,7 +23,7 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-503}   # bump this when you add or remove a check, on purpose
+EXPECT_CHECKS=${EXPECT_CHECKS:-506}   # bump this when you add or remove a check, on purpose
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -1538,6 +1538,60 @@ for wrong in (["T-1"], {"id": "T-1"}, 5, True, ""):
     assert rc(wrong) == 2, f"a ticket of type {type(wrong).__name__} was accepted: {wrong!r}"
 PYTICKET
 
+# A refusal that states the fact and not the move is where a model starts
+# improvising, and what it improvises is editing the state by hand — which the
+# hook then refuses for a second reason, in a message just as final. These three
+# are the ones a real run hits most, and each has to name the command that
+# resolves it.
+python3 - "$SELF" <<'PYSAYSHOW' && ok "the refusals a run actually hits name the move, not only the fact" || bad "a refusal states what is wrong and nothing about what to do — which is where hand-editing the state starts"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("vt3", os.path.join(src, "ddw/scripts/validate-transition.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json")))
+
+
+def refusal(old, new):
+    try:
+        m.validate(old, new, g, max_appended=1)
+    except m.Block as exc:
+        return str(exc)
+    raise AssertionError("this write was accepted, so it refuses nothing to read")
+
+
+def st(phase, hist, gates=None, tier="FEATURE", ticket="T-1"):
+    return {"tier": tier, "phase": phase, "ticket": ticket, "title": None, "tracker": None,
+            "autonomy": None, "gates": dict(gates or {}), "block": None, "discovery": None,
+            "history": list(hist)}
+
+
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+      "tier": "FEATURE", "ticket": "T-1"}]
+
+# A gate that is not paid: the message has to name the validator that earns it
+# and the command that claims it.
+said = refusal(st("DEFINE", H), st("PLAN", H + [{"timestamp": "2026-01-01T00:02:00Z",
+                                                 "from": "DEFINE", "to": "PLAN", "action": "c",
+                                                 "tier": "FEATURE", "ticket": "T-1"}]))
+assert "validate_prd.py" in said and "--claim define" in said, \
+    "the gate refusal names neither the validator that earns it nor the claim: " + said[:200]
+
+# A write that appends an entry going nowhere: the move is an in-phase write.
+same = refusal(st("DEFINE", H), st("DEFINE", H + [{"timestamp": "2026-01-01T00:02:00Z",
+                                                   "from": "DEFINE", "to": "DEFINE", "action": "c",
+                                                   "tier": "FEATURE", "ticket": "T-1"}]))
+assert "no history entry" in same.lower() or "--claim" in same, \
+    "a self-edge says only that it goes nowhere: " + same[:200]
+
+# History appended from a phase the disk is not at: re-read and append from there.
+apart = refusal(st("DEFINE", H), st("CODE", H + [{"timestamp": "2026-01-01T00:02:00Z",
+                                                  "from": "PLAN", "to": "CODE", "action": "c",
+                                                  "tier": "FEATURE", "ticket": "T-1"}]))
+assert "re-read" in apart.lower() and ".ddw-state.json" in apart, \
+    "the mismatch names the two phases and no way back: " + apart[:200]
+PYSAYSHOW
+
 # A pause at CLOSEOUT is allowed once the work is committed and the pull request
 # is open — you are waiting on a person, not dodging a gate. An abandon there is
 # still refused, which is what the rule was written for: relabel the exit and
@@ -2739,6 +2793,60 @@ assert not unnamed, \
     "the template's %s name no FR, so a PRD copied from it reads as criteria validating " \
     "nothing" % ", ".join(unnamed)
 PYTEMPLATE
+
+# The other two documents a phase writes had no canonical shape at all, so three
+# plausible renderings of a complete run were refused for their LAYOUT: a
+# coverage table whose rows are labelled `Line`, a lint result under its own
+# heading, `sad-path` with the hyphen English actually uses, a failure named by
+# test rather than by `path::test`. Each one read to the user as "your report is
+# incomplete" about a report that was not. Both skills now carry the shape, and
+# the shape is run through the validator that reads it.
+python3 - "$SELF" <<'PYSHAPES' && ok "the test report and the verification verdict DDW ships as templates pass the validators that read them" || bad "the document a phase is told to write is refused by the gate it is written for"
+import os, re, subprocess, sys, tempfile
+src = sys.argv[1]
+
+
+def template(rel, after):
+    text = open(os.path.join(src, rel), encoding="utf-8").read()
+    at = text.index(after)
+    m = re.search(r"```markdown\n(.*?)```", text[at:], re.S)
+    assert m, "%s no longer carries a markdown template under %r" % (rel, after[:40])
+    return m.group(1).replace("{ticket}", "T-1")
+
+
+d = tempfile.mkdtemp()
+for sub in ("prd", "specs", "reports"):
+    os.makedirs(os.path.join(d, "docs/ddw", sub))
+open(os.path.join(d, "docs/ddw/prd/prd-T-1.md"), "w", encoding="utf-8").write(
+    "# PRD T-1\n\n## Functional Requirements\n- FR-01: el formulario publico\n"
+    "- FR-02: la persistencia\n\n## Acceptance Criteria\n"
+    "- AC-01 (FR-01): WHEN el usuario abre la pagina, THE sistema SHALL mostrar el formulario.\n"
+    "- AC-02 (FR-01): IF falta un campo, THEN THE sistema SHALL devolver 400.\n"
+    "- AC-03 (FR-02): WHEN el email es invalido, THE sistema SHALL devolver 422.\n")
+open(os.path.join(d, "docs/ddw/specs/spec-T-1.md"), "w", encoding="utf-8").write(
+    "# Spec T-1\n\n| Field | Value |\n|---|---|\n| Ticket | T-1 |\n\n"
+    "## Block 1 — Formulario publico\n\n**Required tests**\n"
+    "- [ ] test_form_visible — validates AC-01\n"
+    "- [ ] test_campo_faltante_devuelve_400 — validates AC-02\n"
+    "- [ ] test_email_invalido_devuelve_422 — validates AC-03\n")
+
+for skill, after, validator, doc in (
+        ("skills/ddw-test/SKILL.md", "### The report, in the shape the validator reads",
+         "validate_tests.py", "docs/ddw/reports/tests-T-1.md"),
+        ("skills/ddw-verify-module/SKILL.md", "### The verdict document, in the shape the validator reads",
+         "validate_verify.py", "docs/ddw/reports/verify-T-1.md")):
+    path = os.path.join(d, doc)
+    open(path, "w", encoding="utf-8").write(template(skill, after))
+    r = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts", validator), path,
+                        "--tier", "FEATURE"], capture_output=True, text=True, cwd=d)
+    # The rule ROWS, which start with the marker. The footer that tells the user
+    # to paste every "✅ / ⚠️ / ❌" contains all three symbols and is on every
+    # run: matched anywhere in the line, this check could never pass.
+    refused = [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+    assert r.returncode == 0 and not refused, (
+        "%s refuses the template %s tells the model to write:\n%s"
+        % (validator, os.path.basename(os.path.dirname(skill)), "\n".join(refused[:4]) or r.stderr[-200:]))
+PYSHAPES
 
 # A plugin install writes NOTHING into the repo, so it leaves no AGENTS.md — and
 # AGENTS.md is where the stack is read from. CLASSIFY had two branches, both
@@ -4218,8 +4326,20 @@ grep -q "@.ddw/orchestrator.md" "$GEM/GEMINI.md" \
   && ok "and Gemini reaches the orchestrator without depending on nested imports" \
   || bad "Gemini's orchestrator import moved behind a second hop that its docs never promised"
 
-UPG="$WORK/upgrade"; mkdir -p "$UPG"; git -C "$UPG" init -q .
-bash "$SELF/install.sh" "$UPG" --target claude >/dev/null 2>&1
+# Its own directory. `$WORK/upgrade` is also where the earlier section left a
+# repo with DDW installed and a user-edited skill in it, so the "first install"
+# below was this fixture's THIRD — and every assertion about what a first run
+# says was being made about an update.
+UPG="$WORK/upgrade-messages"; mkdir -p "$UPG"; git -C "$UPG" init -q .
+FIRST="$(bash "$SELF/install.sh" "$UPG" --target claude 2>&1)"
+# Both directions. Only one was asserted, so an installer that called EVERY run
+# an update — a one-character edit away — passed the suite: the re-run below
+# said "updating:" because every run did.
+case "$FIRST" in
+  *"updating:"*) bad "a first install into a virgin repo reports itself as an update" ;;
+  *"installing into"*) ok "a first install says it is installing, in a repo that had nothing" ;;
+  *) bad "a first install says neither that it is installing nor that it is updating" ;;
+esac
 
 # NOTE: capture, then grep. Piping the installer straight into `grep -q` closes
 # the pipe on the first match, the installer dies of SIGPIPE, and `pipefail`
@@ -6493,6 +6613,26 @@ for rel, payload in POISON:
         after = open(target, encoding="utf-8").read()
         assert after.strip() == payload.strip(), \
             "the uninstaller rewrote a settings file it could not read as hooks:\n" + after[:200]
+
+# The corruption needs DDW's own blocks to still be there: the un-merge only
+# writes the file back when it removed something, so a settings.json whose every
+# event is odd is left alone and proves nothing. One event of the user's shaped
+# differently, next to the event DDW installed into, is the real shape.
+repo, _ = repo_with_ddw()
+spath = os.path.join(repo, ".claude", "settings.json")
+settings = json.load(open(spath, encoding="utf-8"))
+assert settings.get("hooks", {}).get("PreToolUse"), "the install wired no PreToolUse to remove"
+settings["hooks"]["SessionEnd"] = "mine, and not a list"
+json.dump(settings, open(spath, "w", encoding="utf-8"), indent=2)
+r = subprocess.run(["bash", os.path.join(src, "uninstall.sh"), repo, "--yes"],
+                   capture_output=True, text=True)
+assert "Traceback" not in (r.stdout + r.stderr), \
+    "an event of the user's that is not a list crashed the uninstall:\n" + (r.stdout + r.stderr)[-300:]
+if os.path.exists(spath):
+    after = json.load(open(spath, encoding="utf-8"))
+    assert after.get("hooks", {}).get("SessionEnd") == "mine, and not a list", \
+        ("the uninstaller rewrote an event it could not read as hooks, one list element per "
+         "character: %r" % (after.get("hooks", {}).get("SessionEnd"),))
 
 repo, _ = repo_with_ddw()
 odd = "# Notas\n\nfunci\xf3n\n".encode("cp1252")

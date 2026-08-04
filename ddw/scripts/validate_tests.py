@@ -160,7 +160,12 @@ def main():
     fsec = re.search(r"^#{1,4}\s*(?:Fail\w*|Fallas?|Fallidos?)\b(.*?)(?=^#{1,4}\s|\Z)",
                      text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
     scope = fsec.group(1) if fsec else ""
-    named = re.findall(r"^\s*[-*|]\s*(?:❌\s*)?`?([\w./:\[\]-]+::[\w.\[\]-]+|[\w./-]+\.\w+::?[\w.\[\]-]*)",
+    # A pytest-style `path::name`, a file with a test after it, or the bare test
+    # NAME — which is what most runners print and what a person writes down.
+    # Requiring the fully qualified form refused a report that named every
+    # failure the fix loop needs, for punctuation the runner never produced.
+    named = re.findall(r"^\s*[-*|]\s*(?:❌\s*)?`?([\w./:\[\]-]+::[\w.\[\]-]+|[\w./-]+\.\w+::?[\w.\[\]-]*"
+                       r"|(?:test|it|should|spec)[_A-Z][\w.\[\]-]*|[\w.\[\]-]+_(?:test|spec)\b)",
                        scope, re.MULTILINE)
     if failed is None:
         pass                                          # already reported by F-TEST-02
@@ -176,9 +181,13 @@ def main():
     # F-TEST-04 / F-TEST-05: three coverage numbers, against a floor the report
     # quotes rather than invents. The floor belongs to the project — AGENTS.md or
     # the spec — and a report that picks its own passes itself.
-    line = _number(text, "Line coverage", "Cobertura de l[ií]neas", "Lines")
-    branch = _number(text, "Branch coverage", "Cobertura de ramas", "Branches")
-    func = _number(text, "Function coverage", "Cobertura de funciones", "Functions")
+    # `Line` and `Lines` both, because a report whose coverage is a two-column
+    # table writes the metric name alone: `| Line | 100% |` is the shape every
+    # coverage tool prints and the shape a first draft copies. Rejecting it read
+    # as "coverage missing", which is not what was wrong with the document.
+    line = _number(text, "Line coverage", "Cobertura de l[ií]neas", "Lines", "Line")
+    branch = _number(text, "Branch coverage", "Cobertura de ramas", "Branches", "Branch")
+    func = _number(text, "Function coverage", "Cobertura de funciones", "Functions", "Function")
     have = [(n, v) for n, v in (("line", line), ("branch", branch), ("function", func))]
     absent = [n for n, v in have if v is None]
     if absent:
@@ -232,6 +241,15 @@ def main():
         ok("F-TEST-06", "nothing skipped")
 
     lint = _field(text, "Lint", "Linter", "Type check", "Typecheck")
+    if not lint:
+        # …or under its own heading, which is how a report with sections is
+        # written: `## Lint` and the result on the line below. `_field` wants
+        # `Lint:` on ONE line, so a perfectly complete report was warned at for
+        # its layout — and W-TEST-01 sends the reader looking for a result that
+        # is already there, three lines up.
+        m = re.search(r"^#{1,6}\s*(?:Lint|Linter|Type[- ]?check\w*)\s*$\n+(.+?)$",
+                      text, re.IGNORECASE | re.MULTILINE)
+        lint = m.group(1).strip() if m else ""
     if not lint:
         warn("W-TEST-01", "no lint or type-check result reported; VERIFY will ask for it (F-VER-05)")
 

@@ -33,7 +33,10 @@ import ddw_receipt  # noqa: E402 — same directory, resolved above
 
 MINIMUM = 80        # line, branch and function coverage — testing.instructions.md
 FAILING = re.compile(r"\b(fail|failed|falla|fallo|fallido|error|❌)\b", re.IGNORECASE)
-SAD_PATH = re.compile(r"\b(sad path|camino triste|invalid|inv[aá]lid|negative test|"
+# `sad-path` as well as `sad path`: the hyphenated adjective is the ordinary
+# English spelling in front of a noun ("sad-path tests"), and a rule that reads
+# one and not the other refuses the report for a punctuation mark.
+SAD_PATH = re.compile(r"\b(sad[ -]path|camino triste|invalid|inv[aá]lid|negative test|"
                       r"entrada inv[aá]lida|edge case|caso borde)\b", re.IGNORECASE)
 
 

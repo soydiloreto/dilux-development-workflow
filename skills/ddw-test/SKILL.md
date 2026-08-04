@@ -75,6 +75,47 @@ Runs the project's tests. Generates missing tests where needed. A blocking gate.
 > floor the project set rather than one the report chose. The numbers stay yours. What they can no
 > longer be is absent.
 
+### The report, in the shape the validator reads
+
+Everything above was prose, and a report has to be parsed. Three plausible renderings of the same
+run were refused for their layout rather than their content — a coverage table whose rows are
+labelled `Line`, a lint result under its own heading, a hyphenated `sad-path`. The parser accepts
+all three now, and this is the shape it was written for:
+
+```markdown
+# Test run {ticket}
+
+| Field | Value |
+|---|---|
+| Runner | pytest 8.2.0 |
+| Command | `pytest -q --cov=app --cov-report=term` |
+| Total | 42 |
+| Passed | 42 |
+| Failed | 0 |
+| Skipped | 0 |
+| Line coverage | 91% |
+| Branch coverage | 84% |
+| Function coverage | 88% |
+| Coverage floor | 80% (AGENTS.md, "Testing") |
+| Lint | `ruff check .` — clean, 0 findings |
+
+## Failures
+(none)
+
+## Skips
+(none)
+```
+
+When the run is red, every failure goes under that `## Failures` heading, one per line, **by test
+name** — `test_email_invalido_devuelve_422 — expected 422, got 500 (app/routes/public.py:41)`. That
+is the list the fix loop works from, and a count with no names is refused by F-TEST-03. A red run
+does not earn the gate either way (F-TEST-08): the report is complete, the suite is not green, and
+those are two different sentences.
+
+Counts that add up, a command someone else can run, every failure by test ID, every skip with a
+reason, and the floor quoted from the project rather than chosen here. A report missing any of those
+is refused by a rule that names it.
+
 > This skill is a **runner**, not an artifact validator: it reports pass/fail. Test *quality*
 > (coverage thresholds, AC traceability, sad paths) is evaluated in the VERIFY phase by
 > `ddw-verify-module`, against §5 of the rule catalog. A green suite here does not mean the tests

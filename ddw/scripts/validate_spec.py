@@ -54,7 +54,7 @@ INPUT_SURFACE = re.compile(r"\b(input|entrada|form|formulario|request body|paylo
                            r"params|query string|upload|campo del usuario)\b", re.IGNORECASE)
 SAD_PATH = re.compile(r"\b(invalid|inv[aá]lid[oa]|error|fail|falla|fallo|missing|faltante|"
                       r"reject|rechaz|duplicate|duplicad|unauthor|no autorizado|forbidden|"
-                      r"prohibido|timeout|conflict|conflicto|sad path|camino triste|"
+                      r"prohibido|timeout|conflict|conflicto|sad[ -]path|camino triste|"
                       r"400|401|403|404|409|422|429|500)\b", re.IGNORECASE)
 REGRESSION = re.compile(r"\bregression|regresi[oó]n\b", re.IGNORECASE)
 ROLLBACK = re.compile(r"\brollback|revert|reversa|reverse migration|migraci[oó]n inversa\b",
