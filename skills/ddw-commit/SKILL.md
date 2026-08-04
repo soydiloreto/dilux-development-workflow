@@ -27,9 +27,17 @@ Creates a commit following Gitmoji + Conventional Commits, with mandatory AI att
      by them.
    - **Clean, in any other phase** → this phase produced nothing to commit. Say so and stop.
 3. Check there are no files carrying secrets (.env, credentials).
-4. Check the gates **this phase's commit depends on**: in CODE, `tests` and `sast` must both be
-   `true`. DEFINE, PLAN and DISCOVERY commit documentation and depend on no gate — at the moment
-   they commit, the gate they are about to earn is not set yet, so demanding it would deadlock.
+4. Check the gates **this phase's commit depends on**, and note that CODE commits twice for
+   different reasons:
+   - **A block commit in CODE** — code plus its tests, as each block passes its reviews and its
+     tests, which is what `.ddw/rules/commits.instructions.md` mandates — depends on **that
+     block's** reviews and tests, not on the phase gates. `tests` and `sast` are earned over the
+     whole phase and are still false while the blocks are being committed one at a time; demanding
+     them here forbade the very commit the rules require.
+   - **The phase's closing commit in CODE**, the one taken before leaving for VERIFY, is where
+     `tests` and `sast` must both be `true`.
+   - DEFINE, PLAN and DISCOVERY commit documentation and depend on no gate — at the moment they
+     commit, the gate they are about to earn is not set yet, so demanding it would deadlock.
 5. Analyze the changes to classify the type and scope.
 6. Write the commit message with a gitmoji (see `.ddw/rules/commits.instructions.md` for the
    reference table):

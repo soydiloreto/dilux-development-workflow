@@ -21,6 +21,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 # Headers as ddw-create-prd emits them (English headers, prose in any language).
 SECTIONS = [
     ("Context and Problem", ("context and problem", "contexto")),
@@ -64,6 +67,17 @@ def _items(text, prefix):
     if current:
         out.append(current)
     return out
+
+
+def _after_id(item_id, text):
+    """The requirement itself, with its identifier removed.
+
+    `_items` keeps the whole bullet so a rule can quote it back to the reader.
+    Any rule that then asks a question ABOUT THE CONTENT has to ask it of the
+    content — `NFR-01` carries digits, `FR-03` carries digits, and a rule looking
+    for a number found the label every time.
+    """
+    return re.sub(r"^\s*[-*]\s+\**" + re.escape(item_id) + r"\**\s*[:.(]?", "", text, count=1)
 
 
 def _repo_relative(path):
@@ -132,7 +146,7 @@ def main():
     args = ap.parse_args()
     try:
         text = open(args.prd, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_prd: cannot read {args.prd}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -198,8 +212,13 @@ def main():
         else:
             ok("F-PRD-01", "every FR is validated by at least one AC")
 
-        # F-PRD-03: a number in every NFR.
-        unmetered = [i for i, t in nfrs if not re.search(r"\d", t)]
+        # F-PRD-03: a number in every NFR — in the REQUIREMENT, not in its label.
+        # `_items` returns the whole bullet, `NFR-01` included, so asking whether
+        # the text contains a digit was asking whether the identifier does. It
+        # always does. The rule was catalogued, implemented, printed a green row
+        # on every run, and could not fail on any document: "the load should be
+        # fast" passed as a measured requirement.
+        unmetered = [i for i, t in nfrs if not re.search(r"\d", _after_id(i, t))]
         if unmetered:
             fail("F-PRD-03", f"NFR with no quantitative value: {', '.join(unmetered)}")
         else:
@@ -242,8 +261,10 @@ def main():
         if not _section_body(text, ("risks", "riesgos")):
             warn("W-PRD-05", "Risks and Mitigations missing or empty")
 
-        rows.append("  👁  F-PRD-02 (binary ACs) and F-PRD-07 (undeclared cross-references) are")
+        rows.append("  👁  F-PRD-02 (binary ACs), F-PRD-07 (undeclared cross-references),")
+        rows.append("      W-PRD-01 (FR with no rationale) and W-PRD-03 (passive voice) are")
         rows.append("      MANUAL: judge them and say so explicitly in your report.")
+        rows.append("      A rule the script names and never prints is one nobody judges.")
 
     total_loops = _loop_count(text, "PRD loops")
     since = _loops_since_human(text)
@@ -297,15 +318,9 @@ def main():
         # The receipt is what makes "validated" a fact instead of a claim: it
         # is bound to THIS content, and the define gate demands it. Edit the
         # PRD after validating and the hash no longer matches — validate again.
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        prd_abs = os.path.abspath(args.prd)
-        idx = prd_abs.rfind(os.sep + "docs" + os.sep)
-        root = prd_abs[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"prd-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(prd_abs) + "\n")
-        print(f"Receipt: .ddw-sessions/prd-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.prd, "prd", text))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

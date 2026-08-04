@@ -290,10 +290,11 @@ anyone to watch it.
 2. **Build that write with the helper**, do not hand-assemble it:
 
    ```bash
-   .ddw/scripts/transition.py --to DEFINE --tier <TIER> --action "<why this tier>"
+   .ddw/scripts/transition.py --to DEFINE --tier <TIER> --ticket <ID> --action "<why this tier>"
    ```
 
    It prints the complete next state and self-validates against the graph first, so an illegal
    transition fails here rather than being refused by the hook afterwards. Paste its output in a
-   single write, filling in `ticket`, `title` and `tracker` in that same write — the helper does not
-   set them, because free text through shell arguments is how quoting bugs get in.
+   single write, filling in `title` and `tracker` in that same write — the helper takes the
+   ticket as `--ticket` because an ID is not free text, and leaves those two to the write
+   because free text through shell arguments is how quoting bugs get in.

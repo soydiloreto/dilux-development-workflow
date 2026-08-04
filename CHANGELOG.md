@@ -19,6 +19,94 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.18.0] — Unreleased
+
+A pre-merge audit: twelve specialists, each given a subsystem and told to run it
+rather than read it, each followed by a skeptic told to refute what it found. 45
+defects survived that. The three worst were not in the pipeline's logic — they
+were in the pipeline's belief that it was enforcing anything.
+
+### Fixed
+
+- **In CODE, the agent could rewrite the rules that stop it.** The guard against
+  writing DDW's own files lived inside the phase rule, and that rule returns
+  early for CODE and CLOSEOUT — so it covered exactly the phases where nothing
+  can be written anyway and stood down in the one where the work happens.
+  Measured end to end on a real install: rewrite `transition-graph.json` to add
+  an edge, rewrite `validate-transition.py`, replace the tool's hook with
+  `exit 0`, or simply `Write` a receipt into `.ddw-sessions/` and open six gates
+  with a touch — and close a FEATURE that never claimed `tests`, `sast`,
+  `verify`, `commit` or `pr`, with both hooks green. The method, the receipts,
+  the journal, the manifest and each tool's wiring are now unwritable in **every**
+  phase, and `.ddw-state.json`, `.ddw-paused/` and `docs/` stay writable.
+- **A whole FEATURE could reach CLOSEOUT with no artifacts at all.** No PRD, no
+  spec, no threat model, no test report, no SAST report, no verdict — six gates
+  true, nothing on disk. `_receipt_missing` returned "nothing to check" when the
+  document was absent, and that sentence is false at every call site: the
+  function is reached only for a gate being **claimed**. A missing document is a
+  refusal now, and so is one that cannot be read as UTF-8.
+- **A receipt could be written by hand.** The tool path is closed above; a shell
+  is not (decision 11). So the six validators now record, in the append-only
+  journal, that they wrote each receipt — and the gate asks for both. Forging
+  takes two coordinated writes instead of one, and the second one lands in a
+  record that outlives deleting the state.
+- **The install manifest named files that were not there** — 22 of 28 entries
+  used the source layout instead of the repo's, and nothing at runtime had ever
+  read it back. It is repo-relative now, which is what makes the two fixes above
+  precise, and what lets the session boot report an install whose enforcement no
+  longer matches what was installed.
+- **`transition.py --write` overwrote a corrupt state with a fresh IDLE**,
+  destroying the history — in precisely the situation the orchestrator says to
+  stop and report. It reads the state the way the hook does now, and refuses
+  where the hook refuses.
+- **Installing a second tool destroyed that tool's pre-existing hooks.** The
+  upgrade test asked the whole manifest instead of this tool's part of it, so a
+  target that had never been installed was treated as an upgrade, and files DDW
+  never wrote were replaced with no backup, no warning and exit 0.
+- **The sanctioned helper could not close a ticket in any tier.** `CLOSEOUT→IDLE`
+  wants `commit` and `pr`; reaching IDLE wipes the gates, so `--gate` there was
+  silently discarded and the refusal blamed a missing `--tier`, a flag that edge
+  ignores. `transition.py --claim <gate>` earns a gate in the phase that owns it,
+  and the refusal now says so.
+- **A skip counted as a pass.** Two plugin manifests had therefore never been
+  validated against the real schema in CI. Skips are counted apart, a run with
+  one does not go green, and CI installs the CLI those checks need.
+- **CI's steps could be deleted while every required check stayed green** — the
+  required contexts are job names, not the steps inside them. The suite now
+  asserts the content of both workflows, and the release workflow, which nothing
+  had ever checked existed.
+- **`F-PRD-03` was structurally incapable of failing.** It asked whether a
+  non-functional requirement contained a number, and read the whole bullet —
+  `NFR-01` contains digits. It printed a green row on every run since it was
+  written; "the load should be fast" passed as a measured requirement.
+- **`/ddw-self-check` reported two inconsistencies on every correct install of
+  all six tools** — one `grep` handed three filenames exits 2 for the missing
+  operand even after a match, and one `ls` over six globs fails when any is
+  empty, which five of six always are. A diagnostic that cries wolf on a healthy
+  repo is what people learn to ignore before the real one.
+- **Uninstall left every generated slash command behind** (most of an OpenCode
+  install), deleted the manifest its own `--force` advice needs, and left behind
+  an empty `.gitignore` the installer had created.
+- Eight catalogued rules across four validators had never been exercised by a
+  document that violates them; the linter never read `skills/` or `agents/` — the
+  two directories that name skills and agents most; four SAST rule IDs shown to
+  users were in no catalog; the loop counters, the QUICK-FIX way back from
+  CLOSEOUT, the pause-vs-prefix match and the tier chain's direction had no
+  mutation. Plus eleven documentation claims that were false about the code.
+
+### Added
+
+- **`transition.py --claim <gate>`** — marking a gate in the phase that earns it,
+  with the same evidence the hook demands and no history entry.
+- **Enforcement-drift reporting at session start**: every file the installer
+  recorded, hashed against the manifest, so a change made through a shell is
+  told to the next session instead of never being noticed.
+- 48 checks and 58 mutations: **479 checks, 318 mutations**. Among them, one
+  check per skill's load-bearing claim — ten of the seventeen could have their
+  entire body replaced with "TODO." and the suite stayed green.
+
+---
+
 ## [0.17.0] — Unreleased
 
 Everything 0.15.0 added, audited by driving it instead of reading it. Four of the

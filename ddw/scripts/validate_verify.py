@@ -28,6 +28,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 MINIMUM = 80        # line, branch and function coverage — testing.instructions.md
 FAILING = re.compile(r"\b(fail|failed|falla|fallo|fallido|error|❌)\b", re.IGNORECASE)
 SAD_PATH = re.compile(r"\b(sad path|camino triste|invalid|inv[aá]lid|negative test|"
@@ -98,7 +101,7 @@ def main():
 
     try:
         text = open(args.report, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_verify: cannot read {args.report}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -228,15 +231,9 @@ def main():
         pass
 
     if fails == 0:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        abs_ = os.path.abspath(args.report)
-        idx = abs_.rfind(os.sep + "docs" + os.sep)
-        root = abs_[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"verify-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(abs_) + "\n")
-        print(f"Receipt: .ddw-sessions/verify-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.report, "verify", text))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

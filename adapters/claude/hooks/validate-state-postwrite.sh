@@ -20,7 +20,10 @@ ddw_guard   # FIRST: under `set -u` the lines below would abort the hook before
 # and missing from four.
 DDW="$(ddw_method)" || exit 0
 
-# Without python3 there is nothing to validate with. Explicit fail-open (exit 0).
+# Without python3 there is nothing to validate with, so this fails CLOSED (exit 2):
+# a write DDW cannot judge is not a write it can allow. The comment used to say
+# the opposite of the four lines under it, which is the worst kind of wrong —
+# a reader checking whether the guard is safe reads the sentence, not the code.
 command -v python3 >/dev/null 2>&1 || {
   echo "DDW cannot enforce anything without python3 on PATH. Refusing the write." >&2
   exit 2

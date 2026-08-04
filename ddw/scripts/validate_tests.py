@@ -29,6 +29,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 # `| Runner | pytest |`, `Runner: pytest`, `**Runner:** pytest` — the shape the
 # model reaches for varies and the field is what matters.
 def _field(text, *names):
@@ -72,7 +75,7 @@ def main():
 
     try:
         text = open(args.report, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_tests: cannot read {args.report}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -257,15 +260,9 @@ def main():
         pass
 
     if fails == 0:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        abs_p = os.path.abspath(args.report)
-        idx = abs_p.rfind(os.sep + "docs" + os.sep)
-        root = abs_p[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"tests-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(abs_p) + "\n")
-        print(f"Receipt: .ddw-sessions/tests-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.report, "tests", text))
 
     print("Show the user this table IN FULL — every rule ID, every ✅ / ⚠️ / ❌ — "
           "and the Report line above it.\n"

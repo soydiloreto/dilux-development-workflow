@@ -17,7 +17,13 @@ not conditional on the project's conventions: it is how this pipeline works.
 The test must be **seen to fail** before the implementation exists. A test that passes before you
 write anything is asserting something that was already true — it documents the status quo, not the
 change. The implementer records that failure (which tests, which assertion) in its report, and
-`ddw-module-verifier` fails the block if the evidence is missing.
+`ddw-module-verifier`, spawned per block **in CODE**, fails the block if the evidence is missing.
+
+**Where this is enforced, and where it is not.** In FEATURE and FIX the evidence is checked per
+block by that agent. QUICK-FIX has no block structure and no VERIFY phase, so nothing mechanical
+checks it there: the rule holds, and what holds it is the implementer's report and the reader of
+it. Said here rather than implied, because a rule that says "every tier, no exceptions" and is
+checked in two of the three is a rule whose scope the reader has to guess.
 
 What "the test" means depends on the tier:
 

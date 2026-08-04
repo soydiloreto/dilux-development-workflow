@@ -335,6 +335,22 @@ def _check_idle_invariant(new_state):
 RECEIPT_GATES = ("define", "spec", "threat", "tests", "sast", "verify")
 
 
+def _check_ticket_shape(new_state):
+    """`ticket` is a string, or null at IDLE. It was the only header field with
+    no shape check while `tier`, `autonomy`, `gates` and `history` all have one —
+    so a ticket of the wrong STRING was refused and a ticket of the wrong TYPE
+    was accepted, after which every isinstance guard downstream carried weight it
+    was not written to carry."""
+    ticket = new_state.get("ticket")
+    if ticket is None:
+        return
+    if not isinstance(ticket, str) or not ticket.strip():
+        raise Block(
+            f"`ticket` must be a non-empty string or null, got {ticket!r}. Everything the run "
+            "records is attributed through it, and a receipt resolves its document by it."
+        )
+
+
 def _check_gates_have_a_ticket(new_state):
     """A claimed receipt gate has to name the ticket it was earned for.
 
@@ -579,7 +595,7 @@ def _check_entry_ticket(old_state, new_state, appended):
 
 
 def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
-             gates_scope="all"):
+             gates_scope="all", skip_edges=0):
     old_h, new_h = _check_append_only(old_state, new_state)
     appended = new_h[len(old_h):]
 
@@ -590,6 +606,7 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     _check_ticket_continuity(old_state, new_state)
     _check_entry_ticket(old_state, new_state, appended)
     _check_idle_invariant(new_state)
+    _check_ticket_shape(new_state)
     _check_gates_have_a_ticket(new_state)
 
     old_phase = old_state.get("phase", IDLE)
@@ -645,9 +662,16 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
             )
 
     # Connection to the previous state (with IDLE↔CLASSIFY leniency).
+    # The appended run has to start where the state actually is. There used to be
+    # a hatch for `IDLE → (a run beginning at CLASSIFY)`, and it let ONE write
+    # skip CLASSIFY entirely: a state at IDLE, a history whose first appended
+    # entry says it came from CLASSIFY, and the write lands in DEFINE having
+    # never been classified — carrying whatever `autonomy` it liked, since
+    # `_check_autonomy` allows the field on any edge touching CLASSIFY. A
+    # leniency about where a run STARTS cannot also be a leniency about what it
+    # skipped.
     first_from = appended[0]["from"]
-    if first_from != old_phase and not (old_phase == IDLE and first_from == CLASSIFY) \
-            and not (old_phase == IDLE and first_from == IDLE):
+    if first_from != old_phase:
         raise Block(
             f"the first transition starts at {first_from} but the previous state "
             f"is at {old_phase}"
@@ -688,6 +712,10 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
         # ticket that already closed, whose gates the closeout itself erased.
         check_gates = gates_scope == "all" or (
             gates_scope == "last" and idx == len(appended) - 1)
+        # An edge the journal already blessed was legal when it landed, and a
+        # graph that changed afterwards — an upgrade mid-ticket — does not make
+        # it illegal now. `skip_edges` is that window, and it is only ever
+        # non-zero in post mode's replay.
         if src == dst:
             raise Block(f"a transition must go somewhere: {key}")
         if src == IDLE and dst != CLASSIFY and _is_resume(entry):
@@ -752,7 +780,7 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
                         "closeout that owes its gates."
                     )
             continue
-        if key not in edges:
+        if key not in edges and idx >= skip_edges:
             hint = ""
             if dst == IDLE and not _walkaway_blocked(graph, src):
                 hint = (
@@ -760,7 +788,12 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
                     '"abandon: <reason>" (dropped for good) or "pause: <reason>" (set aside).'
                 )
             raise Block(f"transition {key} is not in the graph for tier {tier!r}.{hint}")
-        edge_cfg = edges[key]
+        edge_cfg = edges.get(key)
+        if edge_cfg is None:
+            # Inside the blessed window and no longer in the graph: the edge was
+            # legal when it landed and the graph moved under it. Nothing left to
+            # check about a step already taken.
+            continue
         if not isinstance(edge_cfg, dict):
             raise Block(f"malformed graph: the value of {key!r} is not an object")
         gates_required = edge_cfg.get("gates", [])
@@ -872,6 +905,99 @@ def _outside_repo(target, root):
     """
     rel = os.path.relpath(target, root)
     return rel == os.pardir or rel.startswith(os.pardir + os.sep)
+
+
+# DDW's own enforcement, which no phase may write. Not a matter of what a phase
+# is for — a matter of what the pipeline IS.
+#
+#   .ddw/             the method: the graph, the rules, the validator, the gate
+#   .ddw-sessions/    the receipts six of the eight gates read
+#   .ddw-journal.jsonl the append-only record the erase check compares against
+#
+# `.ddw-state.json` and `.ddw-paused/` are deliberately NOT here: writing the
+# state is how the pipeline advances, and that write is what every other rule in
+# this file judges.
+PROTECTED_PREFIXES = (".ddw/", ".ddw-sessions/")
+# The files that WIRE the gates to each tool. DDW merges one key into these
+# rather than owning them — your own settings live in the same file — so they
+# carry no manifest hash, and without naming them here the whole protection was
+# one `Write` away from being switched off at the source: delete DDW's `hooks`
+# key from `.claude/settings.json` and nothing runs again.
+#
+# A closed set, because these are DDW's own adapters (`adapters/*/adapter.json`,
+# `settings_merge.to`) rather than a guess about your project.
+PROTECTED_FILES = frozenset({
+    ".ddw-journal.jsonl",
+    ".claude/settings.json", ".codex/hooks.json",
+    ".cursor/hooks.json", ".gemini/settings.json",
+})
+INSTALL_MANIFEST = ".ddw-installed.json"
+
+
+def _manifest_paths(root):
+    """Every file the installer put in this repo, from `.ddw-installed.json`.
+
+    The manifest was written at install time, listed each file with its sha256,
+    and nothing at runtime had ever opened it. It is the only thing that knows
+    which of `.claude/hooks/*.sh` is DDW's gate and which is the user's own hook,
+    so it is what makes the refusal below precise instead of a blanket ban on a
+    directory the user also lives in.
+    """
+    out = set()
+    try:
+        with open(os.path.join(root, INSTALL_MANIFEST), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return out
+    if not isinstance(data, dict):
+        return out
+    for key in data:
+        # "claude:.claude/hooks/enforce.sh" — the tool, then the path.
+        rel = key.split(":", 1)[1] if ":" in key else key
+        if isinstance(rel, str) and rel:
+            out.add(rel.replace(os.sep, "/"))
+    return out
+
+
+def enforcement_write_denied(target, root):
+    """A write to the machinery that does the enforcing. Refused in EVERY phase.
+
+    This existed only inside `source_write_denied`, which returns early for CODE
+    and CLOSEOUT — so the protection covered exactly the phases where the agent
+    cannot write anything anyway, and stood down in the one where it works. In
+    CODE the agent could rewrite `.ddw/rules/transition-graph.json` to add an
+    edge, rewrite `validate-transition.py` itself, replace the tool's hook script
+    with `exit 0`, or simply write its own receipt into `.ddw-sessions/` and open
+    all six receipt gates with a touch. Measured, end to end, on a real install:
+    a FEATURE closed having never claimed tests, sast, verify, commit or pr, with
+    both hooks green.
+
+    What this does NOT reach is the shell (`docs/RATIONALE.md` decision 11): a
+    `printf > .ddw/...` is not a tool call with a path in it. That is why the
+    manifest also carries a hash, and why the boot reports drift — prevention
+    where a path is visible, detection where it is not. Said plainly rather than
+    implied, because a guard whose scope is unstated gets read as total.
+    """
+    if _outside_repo(target, root):
+        return None
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
+    what = None
+    if rel == INSTALL_MANIFEST:
+        what = "the record of what DDW installed"
+    elif any(rel.startswith(p) for p in PROTECTED_PREFIXES):
+        what = "part of DDW itself"
+    elif rel in PROTECTED_FILES:
+        what = "what wires DDW's gates into this tool"
+    elif rel in _manifest_paths(root):
+        what = "a file DDW installed, and the wiring that makes the gates run"
+    if what is None:
+        return None
+    return (
+        f"`{rel}` is {what}, and no phase writes it. A pipeline that can edit the rules that "
+        "stop it is not enforcing anything — this is the one refusal that holds in CODE too. "
+        "To change how DDW is installed here, run `install.sh` (or `uninstall`) yourself, "
+        "outside the ticket; to change your own settings in that file, do it between tickets."
+    )
 
 
 def source_write_denied(target, root, phase):
@@ -986,7 +1112,13 @@ def quickfix_scope_denied(target, root, state):
     if rel.startswith("docs/"):
         return None                                  # artifacts, not the code being changed
 
-    probe = "/" + rel
+    # Lowercased on both sides. The patterns are written lowercase and the list
+    # calls itself deliberately wide, but `fnmatch` is case-sensitive on Linux —
+    # so `app/Http/Middleware/`, `src/API/`, `db/Migrations/` and `.SQL` walked
+    # straight past a guard whose whole design is to stop them. The convention
+    # that capitalises directories is the norm in several ecosystems, which is
+    # to say the guard was widest exactly where it was least likely to bite.
+    probe = "/" + rel.lower()
     for pattern in QUICKFIX_SENSITIVE:
         if fnmatch.fnmatch(probe, pattern):
             return (f"`{rel}` is security-sensitive, and QUICK-FIX is the lane that skips both "
@@ -1017,10 +1149,80 @@ def quickfix_scope_denied(target, root, state):
 # the model backs the claim — and it needs the repository, so it lives out here
 # where the root is known.
 #
-# Five gates have an answer. `tests`, `sast` and `pr` are claims the machine
-# sequences and records but cannot confirm, and that asymmetry is a decision
-# rather than an unfinished job: docs/RATIONALE.md decision 16 says which are
-# which and why.
+# All eight gates have an answer, and they are not the same answer — which is the
+# distinction this comment used to get wrong. It said five, and named `tests`,
+# `sast` and `pr` as claims nothing could confirm, sixty lines above the handlers
+# that confirm them.
+#
+#   six of them  resolve a content-hashed receipt over the document the phase
+#                produced, so what is attested is that the DOCUMENT is complete —
+#                never that the work it describes was done. DDW does not run your
+#                suite and does not scan your code.
+#   `commit`     asks git.
+#   `pr`         asks the forge, through `gh`.
+#
+# That split is a decision rather than an unfinished job, and `docs/RATIONALE.md`
+# decision 16 has the table.
+
+
+def _receipt_witnesses(state_path_root):
+    """The receipts the journal records a validator as having written.
+
+    Returns None when there is no journal AND no run — "unknown", never "empty".
+    Without a journal there is nothing to have recorded anything, and refusing on
+    that basis would refuse a repo where DDW has simply never run.
+
+    A repo whose STATE already holds transitions is not that repo. There, a
+    missing journal is a journal that was removed, and `rm .ddw-journal.jsonl`
+    was the whole bypass: with the witness unknown, a receipt written by hand
+    opened its gate, in one command, on a run that was already under way. The
+    docstring of `read_gates_snapshot` promises that removing the journal makes
+    post mode STRICTER; this is that promise reaching the receipts. The cost is
+    re-running the validators that earned them, which is the same cost the
+    upgrade path already pays, and the refusal says so.
+
+    Where there IS a journal, the answer is the set, even when it is empty. A
+    repo upgrading mid-run therefore has to re-run its validators, and the
+    refusal says so; that is a minute of work, and the alternative is a hatch
+    that stays open forever because somebody might once have needed it.
+    """
+    if not os.path.exists(journal_path(os.path.join(state_path_root, ".ddw-state.json"))):
+        try:
+            with open(os.path.join(state_path_root, ".ddw-state.json"), encoding="utf-8") as fh:
+                started = bool((json.load(fh) or {}).get("history"))
+        except (OSError, ValueError, AttributeError):
+            return None
+        return set() if started else None
+    entries = _journal_lines(os.path.join(state_path_root, ".ddw-state.json"))
+    names = {e.get("name") for e in entries
+             if isinstance(e, dict) and e.get("record") == "receipt"}
+    names.discard(None)
+    return names
+
+
+def _receipt_unwitnessed(root, marker_name):
+    """A receipt on disk that no validator is recorded as having written.
+
+    The pre-write hook refuses a Write to `.ddw-sessions/`, in every phase. A
+    shell is not a tool call with a path in it, so `printf > .ddw-sessions/
+    prd-validated-abc123` still reaches the disk — and a receipt is just a file,
+    indistinguishable from an earned one by looking at it. What distinguishes
+    them is that an earned one was written by `validate_*.py`, which now says so
+    in the journal.
+
+    This does not make forgery impossible: the same shell can write both files.
+    It makes it two coordinated writes instead of one, and leaves the second in a
+    record that outlives deleting the state. `docs/RATIONALE.md` decision 11 is
+    the honest version of what a local guard can and cannot promise.
+    """
+    witnessed = _receipt_witnesses(root)
+    if witnessed is None or marker_name in witnessed:
+        return None
+    return ("`.ddw-sessions/%s` is on disk and no validator is recorded as having written it. "
+            "A receipt is written by `validate_*.py` when it PASSES, and writing one by hand "
+            "attests to a validation that did not happen. Run the validator for this document. "
+            "(If DDW was upgraded mid-ticket, receipts earned before the upgrade carry no record "
+            "either — re-running the validator is the whole fix.)" % marker_name)
 
 
 def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact):
@@ -1030,22 +1232,39 @@ def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact
     attesting to a document that has since been rewritten — which is the same
     claim-without-evidence in a file, and harder to notice.
 
-    No artifact on disk means no claim to check: synthetic runs (the suite's)
-    and tiers whose phase artifact is something else are not what this is about.
+    **A missing artifact is a refusal, not a pass.** It used to return None here
+    — "no artifact on disk means no claim to check" — and that sentence is false
+    at every call site: this function is reached ONLY for gates being claimed
+    (`decide_pre` passes `_gates_newly_claimed`, `decide_post` passes what the
+    landed edges require, `transition.py` passes `--gate`). The claim has already
+    been made by the time we look. Measured on a real install: a FEATURE walked
+    IDLE→CLOSEOUT with **no PRD, no spec, no threat model, no test report, no
+    SAST report and no verdict**, six gates true, both hooks green, nothing on
+    disk at all. Six of the eight gates were decoration whenever the document
+    simply did not exist — which is the easiest state in the world to be in.
+
+    Unreadable is a refusal too, for the same reason: one stray non-UTF-8 byte in
+    the document turned the refusal into a pass.
+
     This is the table decision 16 promised — adding a gate is a row here plus a
     validator that writes the receipt, not new machinery.
     """
     ticket = state.get("ticket")
     if not ticket:
         return None
+    tried = ["docs/ddw/%s/%s-%s.md" % (subdir, stem, ticket) for stem in stems]
     path = None
-    for stem in stems:
+    for stem, rel in zip(stems, tried):
         cand = os.path.join(root, "docs", "ddw", subdir, "%s-%s.md" % (stem, ticket))
-        if os.path.exists(cand):
+        if os.path.isfile(cand):
             path = cand
             break
     if path is None:
-        return None
+        where = tried[0] if len(tried) == 1 else " or ".join("`%s`" % t for t in tried)
+        return ("the %s gate is being claimed for ticket %s and there is no %s to claim it for. "
+                "Expected %s. Write it, then run `python3 .ddw/scripts/%s <file> --tier <tier>` — "
+                "a PASSED run writes the receipt this gate reads."
+                % (gate, ticket, artifact, where if len(tried) > 1 else "`%s`" % where, script))
     try:
         # TEXT mode, exactly as every validator reads it before hashing. Reading
         # the raw bytes here and text there disagrees on one thing and only one:
@@ -1057,8 +1276,14 @@ def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-    except (OSError, UnicodeDecodeError):
-        return None
+    except (OSError, UnicodeDecodeError) as exc:
+        # Also a refusal. A document nothing can read is a document no receipt
+        # can name, and returning None here meant one stray non-UTF-8 byte
+        # converted the gate from enforced to decorative.
+        return ("the %s gate needs to read %s and could not (%s). A receipt names the bytes of a "
+                "document; a document that cannot be decoded as UTF-8 has none this can check. "
+                "Fix the file's encoding and validate it again."
+                % (gate, os.path.relpath(path, root), type(exc).__name__))
     marker = os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))
     if os.path.exists(marker):
         # And it has to be a receipt for THIS artifact. The digest is of the
@@ -1073,7 +1298,8 @@ def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact
         except OSError:
             named = ""
         if not named or named == os.path.basename(path):
-            return None
+            unwitnessed = _receipt_unwitnessed(root, os.path.basename(marker))
+            return unwitnessed if unwitnessed else None
     rel = os.path.relpath(path, root)
     # No "DDW: " here. Every caller prefixes this reason with its own wording —
     # `DDW blocked this write:`, `ddw-transition:`, `DDW:` — and a prefix baked
@@ -1089,7 +1315,19 @@ def _prd_receipt_missing(root, state):
     """The define gate. The receipt file is `prd-validated-…` and not
     `define-validated-…` because it shipped first: renaming it would invalidate
     every receipt already on disk in every repository running DDW."""
-    return _receipt_missing(root, state, "define", "prd", "prd", ("prd",),
+    # Three names, because DEFINE produces three documents depending on the tier
+    # and the gate has to look for the one that phase actually writes:
+    #   FEATURE  docs/ddw/prd/prd-<ticket>.md    the PRD
+    #   QUICK-FIX docs/ddw/prd/fix-<ticket>.md   the four-section fix brief
+    #   FIX      docs/ddw/specs/rca-<ticket>.md  the root cause analysis
+    # It looked only for `prd-`, which was invisible while a missing document
+    # counted as no claim — and became a wall the moment that stopped being true:
+    # neither QUICK-FIX nor FIX could leave DEFINE at all. Measured on a clean
+    # install, following the skills' own instructions to the letter.
+    if (state.get("tier") or "") == "FIX":
+        return _receipt_missing(root, state, "define", "prd", "specs", ("rca",),
+                                "validate_prd.py", "root cause analysis")
+    return _receipt_missing(root, state, "define", "prd", "prd", ("prd", "fix"),
                             "validate_prd.py", "PRD")
 
 
@@ -1305,9 +1543,25 @@ def _journal_entries(state_path):
     gate snapshots share the file and are filtered out here — `known` indexes
     into the state's history, so a snapshot line counted as a transition would
     slide that index and hide the entry that just landed.
+
+    DISTINCT transitions, and that is the same rule for the same reason. A line
+    written twice — two hooks racing on a filesystem with no flock, a journal
+    restored from a backup — slid that index exactly as a snapshot line did:
+    `history[known:]` came back empty, so post mode owed evidence for nothing on
+    the write that had just landed. Read as a count of transitions it also made
+    the state look SHORTER than the record and bricked the repo. One filter, so
+    the two readings cannot disagree.
     """
-    return [e for e in _journal_lines(state_path)
-            if isinstance(e, dict) and "from" in e and "to" in e]
+    entries, out = [e for e in _journal_lines(state_path)
+                    if isinstance(e, dict) and "from" in e and "to" in e], []
+    for entry in entries:
+        # Not just consecutive duplicates: the race interleaves them
+        # (classify, define, classify, define), which a neighbours-only fold
+        # walks straight past.
+        if any(_same_entry(prev, entry) for prev in out):
+            continue
+        out.append(entry)
+    return out
 
 
 def read_gates_snapshot(state_path):
@@ -1342,6 +1596,22 @@ def read_gates_snapshot(state_path):
     return None
 
 
+def _lock(fh):
+    """An exclusive lock on the journal, where the platform has one.
+
+    Advisory and best-effort: on a filesystem or OS without flock this is a
+    no-op, and the content comparison in `_check_state_not_erased` is what
+    survives that. Both exist because ONE of them is not enough — the lock stops
+    the duplicate being written, the comparison stops a duplicate that was
+    written anyway from reading as a deletion.
+    """
+    try:
+        import fcntl
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+    except Exception:
+        pass
+
+
 def _journal_append(state_path, lines):
     """Best effort by design: a journal that cannot be written must not block a
     legal pipeline, it only costs the extra guarantee.
@@ -1350,6 +1620,7 @@ def _journal_append(state_path, lines):
         return
     try:
         with open(journal_path(state_path), "a", encoding="utf-8") as fh:
+            _lock(fh)
             for line in lines:
                 fh.write(json.dumps(line, sort_keys=True) + "\n")
     except (OSError, TypeError, ValueError):
@@ -1371,16 +1642,53 @@ def record_journal(state_path):
         history = state.get("history") or []
     except (OSError, ValueError, AttributeError):
         return
-    known = len(_journal_entries(state_path))
-    lines = [e for e in history[known:]]
+    # Read-what-is-there and append-what-is-missing under ONE lock. They used to
+    # be two unsynchronised steps, and two hooks in that window both read the
+    # same `known` and both appended the same entry — after which
+    # `_check_state_not_erased` saw more journal lines than history entries and
+    # refused every write in the repo, forever, blaming the state file. Measured
+    # at five repos in twelve, from parallel tool calls in ONE session: the model
+    # is encouraged to batch independent calls, and the post matcher fires on all
+    # of them.
     gates = state.get("gates") or {}
     if not isinstance(gates, dict):
         gates = {}
     held = {g: True for g, v in gates.items() if v is True}
-    if read_gates_snapshot(state_path) != held:
-        lines.append({"record": "gates", "gates": held,
-                      "ticket": state.get("ticket"), "phase": state.get("phase", IDLE)})
-    _journal_append(state_path, lines)
+    try:
+        with open(journal_path(state_path), "a+", encoding="utf-8") as fh:
+            _lock(fh)
+            fh.seek(0)
+            recorded = []
+            for line in fh:
+                line = line.strip()
+                if line:
+                    try:
+                        recorded.append(json.loads(line))
+                    except ValueError:
+                        continue
+            known = len([e for e in recorded
+                         if isinstance(e, dict) and "from" in e and "to" in e])
+            snaps = [e.get("gates") for e in recorded
+                     if isinstance(e, dict) and e.get("record") == "gates"]
+            last = next((g for g in reversed(snaps) if isinstance(g, dict)), None)
+            lines = list(history[known:])
+            if last != held:
+                lines.append({"record": "gates", "gates": held,
+                              "ticket": state.get("ticket"),
+                              "phase": state.get("phase", IDLE)})
+            for line in lines:
+                fh.write(json.dumps(line, sort_keys=True) + "\n")
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def _same_entry(a, b):
+    """Two records of the same transition. Compared on what identifies it — where
+    it went, why, and when — rather than on the whole object, so a field added by
+    a later version does not make an old line look like a different one."""
+    if not (isinstance(a, dict) and isinstance(b, dict)):
+        return False
+    return all(a.get(k) == b.get(k) for k in ("timestamp", "from", "to", "action"))
 
 
 def _check_state_not_erased(state_path):
@@ -1405,11 +1713,20 @@ def _check_state_not_erased(state_path):
             history = (json.load(fh) or {}).get("history") or []
     except (OSError, ValueError, AttributeError):
         return                       # unreadable is the other check's business
-    if len(history) < len(recorded):
+    # `recorded` is already DISTINCT transitions — `_journal_entries` folds a line
+    # written twice, wherever in the file it landed. The comparison used to be
+    # against raw lines, which reads a journal line written TWICE as a history
+    # entry deleted once, and two hooks racing to append is how that happened.
+    # The lock stops the duplicate being written; the fold stops one that was
+    # written anyway from bricking the repo with a message pointing at the wrong
+    # file.
+    seen = recorded
+    if len(history) < len(seen):
         raise Block(
-            f".ddw-state.json holds {len(history)} history entries but {len(recorded)} were "
-            "recorded for this repo. History is append-only: a shorter one means entries were "
-            "dropped, not that the run got simpler. Restore the state and tell the user."
+            f".ddw-state.json holds {len(history)} history entries but {len(seen)} distinct "
+            "transitions were recorded for this repo. History is append-only: a shorter one "
+            "means entries were dropped, not that the run got simpler. Restore the state and "
+            "tell the user."
         )
 
 
@@ -1498,6 +1815,12 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
             continue
         if not writing:
             continue                      # a read cannot violate a write rule
+        # Asked FIRST, and separately from the phase rule, because it does not
+        # depend on the phase: DDW's own machinery is not writable from inside
+        # the pipeline, in CODE and CLOSEOUT as much as anywhere else.
+        reason = enforcement_write_denied(target, root)
+        if reason:
+            return reason
         reason = source_write_denied(target, root, phase)
         if reason:
             return reason
@@ -1522,8 +1845,24 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
         # judged right here, was allowed: exit 2 through the helper, exit 0
         # through the hook. A guarantee with a polite way around it is a
         # promise, which is the distinction this whole repository is about.
-        reason = gate_evidence_missing(root, new_state,
-                                       _gates_newly_claimed(old_state, new_state))
+        # Newly claimed, PLUS what the edge being taken requires. The closing
+        # edge is the case that made the difference matter: `CLOSEOUT->IDLE`
+        # demands `commit` and `pr`, and the write that takes it claims nothing
+        # — the gates were turned on earlier and are being SPENT here. So the two
+        # gates that ask the world outside the repo were asked only on the write
+        # that turned them on, and never on the write that cashed them. Between
+        # those two writes the commit can be amended away and the pull request
+        # closed, and the closeout would still pass.
+        owed = list(_gates_newly_claimed(old_state, new_state))
+        _oh, _nh = (old_state.get("history") or []), (new_state.get("history") or [])
+        if len(_nh) > len(_oh):
+            _edges = _effective_edges(graph,
+                                      new_state.get("tier") or old_state.get("tier"))
+            _cfg = _edges.get("%s->%s" % (old_state.get("phase", IDLE),
+                                          new_state.get("phase", IDLE)))
+            if isinstance(_cfg, dict):
+                owed.extend(_cfg.get("gates") or [])
+        reason = gate_evidence_missing(root, new_state, sorted(set(owed)))
         if reason:
             return reason
     return None
@@ -1663,26 +2002,50 @@ def decide_post(state_path, graph_path):
     # then on. So on a closed run this checks the PATH, which is what a Bash/jq
     # forgery fakes; the gates were already enforced pre-write, when they existed.
     scope = "none" if (run and run[-1].get("to") == IDLE) else "last"
+    # …and the graph is consulted only for the edges the journal has NOT yet
+    # blessed. An edge validated when it landed does not become illegal because
+    # the graph changed afterwards — but that is exactly what happened on an
+    # upgrade mid-ticket: the new graph was applied to the whole run, an edge
+    # that was legal under the old one was condemned, and post mode then refused
+    # every tool call with no way back that any message named.
+    blessed = len(_journal_entries(state_path))
     # gates_scope="last" and no cap: this replays a whole run that was already
     # validated edge by edge. Checking every edge against today's gate snapshot
     # does not re-check history, it invents a verdict — and it rejected the
     # corrective loop, the pipeline's own documented recovery path.
-    validate(prior, disk_state, graph, gates_scope=scope, max_appended=None)
+    validate(prior, disk_state, graph, gates_scope=scope, max_appended=None,
+             skip_edges=max(0, blessed - start))
 
     # The same question the pre path asks, for the writes it never sees: a
     # `jq`/`sed`/heredoc that sets a gate reaches the disk without passing a
     # write tool. What is new here is exactly what the journal has not recorded
     # yet — the journal is written below, after the verdict — so this asks about
     # the edge that just landed and never re-litigates the ones before it.
+    # Asked on the closing edge too. `scope == "none"` was gating this arm as
+    # well, and the closing write is the one write that clears the gates — so a
+    # forged run refused at CLOSEOUT was blessed in full by one more shell write
+    # to IDLE, and every outstanding finding went with it. What the hatch exists
+    # for is not re-litigating a CLOSED ticket's gates against an empty snapshot;
+    # the edges that have not been journalled yet are a different question, and
+    # `commit` and `pr` — the two the closing edge spends — can still be asked of
+    # git and the forge after the header is wiped.
     owed = []
-    if scope != "none":
-        known = len(_journal_entries(state_path))
-        landed = [e for e in history[known:] if isinstance(e, dict)]
-        edges = _effective_edges(graph, tier)
-        for entry in landed:
-            cfg = edges.get("%s->%s" % (entry.get("from"), entry.get("to")))
-            if isinstance(cfg, dict):
-                owed.extend(cfg.get("gates") or [])
+    known = len(_journal_entries(state_path))
+    landed = [e for e in history[known:] if isinstance(e, dict)]
+    edges = _effective_edges(graph, tier)
+    for entry in landed:
+        cfg = edges.get("%s->%s" % (entry.get("from"), entry.get("to")))
+        if isinstance(cfg, dict):
+            owed.extend(cfg.get("gates") or [])
+    # The header's ticket is null at IDLE by definition, and a receipt resolves
+    # its document by the ticket. The entries carry it — that is what stamping
+    # them was for — so the run being closed is still identifiable after the
+    # write that erased its name.
+    if owed and not disk_state.get("ticket"):
+        run_ticket = next((e.get("ticket") for e in reversed(landed) if e.get("ticket")), None)
+        if run_ticket:
+            disk_state = {**disk_state, "ticket": run_ticket,
+                          "tier": disk_state.get("tier") or tier}
 
     # And the gates this write turned on WITHOUT declaring a transition, which is
     # the case the edges above cannot see: a `jq`/`sed` that flips `tests` to true

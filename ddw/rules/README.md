@@ -144,6 +144,12 @@ what it is doing and the current phase, it stops and reports.
     validate-transition.py            The FSM: what a transition may do, and the source guard
     hook-gate.py                      The one entry point every tool's hook calls
     session-boot.py                   Materialises the state, warns about concurrent sessions
+    validate_prd.py                   Writes the receipt the `define` gate asks for
+    validate_spec.py                  Writes the receipt the `spec` gate asks for
+    validate_threat.py                Writes the receipt the `threat` gate asks for
+    validate_tests.py                 Writes the receipt the `tests` gate asks for
+    validate_sast.py                  Writes the receipt the `sast` gate asks for
+    validate_verify.py                Writes the receipt the `verify` gate asks for
 
 .claude/                     ← THE WIRING (one of these per tool)
   settings.json                     Which hooks run and when

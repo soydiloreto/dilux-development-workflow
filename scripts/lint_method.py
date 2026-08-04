@@ -95,7 +95,7 @@ def check_rule_ids(root):
     """
     catalog_path = os.path.join(root, "ddw/rules/validation-rules.instructions.md")
     catalog_text = open(catalog_path, encoding="utf-8").read()
-    pattern = re.compile(r"\b([FW]-[A-Z]+-\d{2,})\b")
+    pattern = re.compile(r"\b([FW]-[A-Z]+-[A-Z0-9]{2,})\b")
     defined = set(pattern.findall(catalog_text))
     if not defined:
         fail(rel(root, catalog_path), "no rule IDs found — the catalog looks empty")
@@ -129,6 +129,20 @@ def check_rule_ids(root):
              "that no phase cites — nothing routes to them, so they never run")
 
 
+def method_prose(root):
+    """Every file of the method a reader or a model is instructed BY.
+
+    `ddw/**` alone was the scan set, which left out `skills/*/SKILL.md` and
+    `agents/*.md` — the two places that name skills and subagents most, and
+    therefore the two most able to name one that does not exist. A linter that
+    checks the documents least likely to be wrong is a linter with a green light
+    and no beam.
+    """
+    return (sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True))
+            + sorted(glob.glob(os.path.join(root, "skills/*/SKILL.md")))
+            + sorted(glob.glob(os.path.join(root, "agents/*.md"))))
+
+
 def check_paths(root):
     """A `docs/ddw/...` path in one file must match the rest.
 
@@ -136,7 +150,7 @@ def check_paths(root):
     derived paths, so nothing breaks loudly — the model just writes the artifact
     where the next phase will not look for it.
     """
-    for path in sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)):
+    for path in method_prose(root):
         text = open(path, encoding="utf-8").read()
         for m in re.finditer(r"docs/(?!ddw/|adr/)([a-z]+)/[A-Za-z0-9{}_./-]+\.[a-z]+", text):
             line = text[:m.start()].count("\n") + 1
@@ -159,7 +173,7 @@ def check_skill_and_agent_refs(root):
               if os.path.isdir(d)}
     agents = {os.path.basename(f)[:-3] for f in glob.glob(os.path.join(root, "agents/*.md"))}
 
-    for path in sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)):
+    for path in method_prose(root):
         text = open(path, encoding="utf-8").read()
         for m in re.finditer(r"""Skill\(skill=["']([^"']+)["']\)""", text):
             if _is_placeholder(m.group(1)):

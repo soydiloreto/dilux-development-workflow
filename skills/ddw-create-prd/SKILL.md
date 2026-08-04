@@ -104,9 +104,14 @@ fix-brief** and mark the `define` gate:
 
 ## Acceptance Criteria
 *(EARS — see `.ddw/rules/validation-rules.instructions.md` §1 for the five patterns)*
-- AC-01: WHEN [trigger], THE [system] SHALL [response].
-- AC-02: IF [failure or misuse], THEN THE [system] SHALL [response].
-- AC-03: ...
+
+**Every AC names the FR it validates, in parentheses.** `F-PRD-01` looks for the FR's own
+identifier inside the criterion, so an AC that validates FR-01 without naming it reads as an FR
+nothing validates — and the template used to produce exactly that, which failed the first PRD of
+every new install.
+- AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].
+- AC-02 (FR-01): IF [failure or misuse], THEN THE [system] SHALL [response].
+- AC-03 (FR-02): ...
 
 ## Out of Scope
 [What is explicitly NOT included]

@@ -29,6 +29,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 # A block opens with `## Block N — name`; a fix-plan's unit is a numbered step
 # under `## Solution — steps`. Both are what the create-spec templates emit.
 BLOCK_HEAD = re.compile(r"^##\s+Block\s+(\d+)\s*[—\-:]?\s*(.*)$", re.MULTILINE)
@@ -208,7 +211,7 @@ def main():
     args = ap.parse_args()
     try:
         text = open(args.spec, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_spec: cannot read {args.spec}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -367,7 +370,21 @@ def main():
         # W-SPEC-01 is PRD→spec traceability, and a fix-plan answers to an RCA
         # rather than to FRs. Warning about it there is noise the reader learns
         # to skip, which is how a real warning goes unread.
-        if not is_fix and not re.search(r"\bFR-\d+\b", body):
+        # …and not when the coverage table already says which FR this block
+        # carries. F-SPEC-01 reads that table and reports every FR covered; this
+        # warning read only the block's own body, so one run printed "all 3 FR
+        # are referenced by a block" and "block referencing no FR" about the same
+        # block, three lines apart. A validator that contradicts itself in one
+        # output teaches the reader to skip both rows.
+        #
+        # Matched on the block NUMBER, which is what a coverage row can be
+        # expected to carry: the label also holds the block's name, and the row
+        # says `Block 3`, never `Block 3 (the retry queue)`.
+        num = re.match(r"Block (\d+)", label or "")
+        covered_here = num and re.search(
+            r"^\s*\|\s*FR-\d+\s*\|[^|\n]*\bBlock\s*%s\b" % num.group(1),
+            text, re.MULTILINE)
+        if not is_fix and not re.search(r"\bFR-\d+\b", body) and not covered_here:
             no_fr.append(label)
         if len(files) > 5 or len(body.split()) > 500:
             oversized.append(f"{label} ({len(files)} files, {len(body.split())} words)")
@@ -471,15 +488,9 @@ def main():
         report_path = None
 
     if fails == 0:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        spec_abs = os.path.abspath(args.spec)
-        idx = spec_abs.rfind(os.sep + "docs" + os.sep)
-        root = spec_abs[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"spec-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(spec_abs) + "\n")
-        print(f"Receipt: .ddw-sessions/spec-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.spec, "spec", text))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

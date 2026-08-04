@@ -63,10 +63,14 @@ label_of() {  # read the human label out of a recipe
 # a version behind while the method in .ddw/ moves on.
 INSTALLED="$(python3 - "$TARGET" <<'PY' 2>/dev/null || true
 import json, os, sys
-path = os.path.join(sys.argv[1], ".ddw-installed.json")
-try:
-    keys = json.load(open(path, encoding="utf-8")).keys()
-except (OSError, ValueError, AttributeError):
+keys = None
+for rel in (".ddw-installed.json", os.path.join(".ddw", ".installed.json")):
+    try:
+        keys = json.load(open(os.path.join(sys.argv[1], rel), encoding="utf-8")).keys()
+        break
+    except (OSError, ValueError, AttributeError):
+        continue
+if keys is None:
     sys.exit(0)
 seen = sorted({k.split(":", 1)[0] for k in keys if ":" in k})
 print(" ".join(seen))
@@ -206,8 +210,7 @@ done
 # ── 4. .gitignore ─────────────────────────────────────────────────────────────
 echo
 GITIGNORE="$TARGET/.gitignore"
-touch "$GITIGNORE"
-if grep -qF "# BEGIN DDW" "$GITIGNORE"; then
+if [ -f "$GITIGNORE" ] && grep -qF "# BEGIN DDW" "$GITIGNORE"; then
   echo "  ✓ .gitignore             already has the DDW block"
 else
   { [ -s "$GITIGNORE" ] && printf '\n'

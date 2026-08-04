@@ -79,13 +79,19 @@ runs knowing nothing about your project.
 
 DDW does not read `AGENTS.md` as one blob. Specific phases look up specific headings:
 
-| Heading | Who reads it | What breaks without it |
-|---|---|---|
-| `## Stack` | CLASSIFY, CODE, `ddw-test`, `ddw-security-sast`, `ddw-threat-modeling`, `ddw-create-prd`, `ddw-create-adr`, `ddw-sec-auditor` | The pipeline does not know your language, test runner or linter. It guesses, or runs nothing |
-| `## Architecture conventions` | PLAN, CODE, `ddw-validate-arch`, `ddw-arch-auditor` | The architecture audit has no standard to audit against, so it passes |
-| `## Code conventions` | `ddw-arch-auditor` | Same, one level down |
-| `## What NOT to do in this project` | `ddw-arch-auditor` | Your hard-won "never do X here" is unknown, and X gets done |
-| `## Domain glossary` | DEFINE, PLAN | The PRD and the spec invent names for things you already named |
+Two of them are cited by name in the method's own instructions, so a phase goes looking for them.
+The other three are read by whoever is doing the work — they are in the template, and
+`/ddw-context-check` reports them missing, but no phase resolves them. The distinction is here
+rather than implied, because a table that lists five and enforces two teaches you to expect more
+than you get.
+
+| Heading | Who reads it | Looked up by name? | What breaks without it |
+|---|---|---|---|
+| `## Stack` | CLASSIFY, CODE, `ddw-test`, `ddw-security-sast`, `ddw-threat-modeling`, `ddw-create-prd`, `ddw-create-adr`, `ddw-sec-auditor` | **yes** | The pipeline does not know your language, test runner or linter. It guesses, or runs nothing |
+| `## Architecture conventions` | PLAN, CODE, `ddw-validate-arch`, `ddw-arch-auditor` | **yes** | The architecture audit has no standard to audit against, so it passes |
+| `## Code conventions` | whoever is reviewing | no | Same, one level down — but nothing goes looking for it |
+| `## What NOT to do in this project` | whoever is reviewing (`/ddw-context-check` lists it) | no | Your hard-won "never do X here" is unknown, and X gets done |
+| `## Domain glossary` | whoever is writing the PRD or the spec | no | The PRD and the spec invent names for things you already named |
 
 **A missing heading fails quietly.** The lookup finds nothing and the phase carries on. Nothing goes
 red. That is the whole hazard of this file, and it is why the installer and `/ddw-context-check` both

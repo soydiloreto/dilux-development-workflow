@@ -85,7 +85,13 @@ def resolve(key, self_dir):
     if not rel:
         return key
     kind, _, name = rel.partition("/")
-    if kind not in ("skills", "agents") or not name:
+    # `commands` is the third dialect and was the one left out: every generated
+    # slash command stayed behind, and on OpenCode — whose whole surface is
+    # commands plus one plugin file — that is most of the install. Manifests
+    # written from this version on are already repo-relative, so `kind` is a
+    # dotted directory and this translation is skipped; the branch remains for
+    # the manifests older installs left on disk.
+    if kind not in ("skills", "agents", "commands") or not name:
         return rel
     recipe_path = os.path.join(self_dir, "adapters", target, "adapter.json")
     try:
@@ -108,14 +114,20 @@ def main():
     repo = os.path.abspath(args.repo)
     act = not args.plan
 
-    removed, kept, blocks = [], [], []
+    removed, kept, blocks, outside = [], [], [], []
 
     manifest = {}
     mpath = os.path.join(repo, MANIFEST)
     if os.path.exists(mpath):
         try:
             manifest = json.load(open(mpath, encoding="utf-8"))
-        except ValueError:
+        except (OSError, ValueError):
+            manifest = {}
+        # A manifest arrives with the clone and may be anything. A list where a
+        # mapping was expected raised on `.items()` and the uninstaller could not
+        # run at all — on a repo whose whole problem is that DDW is in a state
+        # nobody wants.
+        if not isinstance(manifest, dict):
             manifest = {}
 
     if not manifest:
@@ -127,6 +139,27 @@ def main():
     for key, recorded in sorted(manifest.items()):
         rel = resolve(key, os.path.abspath(args.self))
         path = os.path.join(repo, rel)
+        # The manifest is COMMITTED, so it arrives with the clone — from whoever
+        # wrote it. A key of `../../.ssh` or `/etc` names a path outside this
+        # repository, and the loop below removes what the key names. Nothing
+        # DDW installs is outside the repo, so anything that resolves outside it
+        # is refused and reported rather than acted on.
+        #
+        # Inside the repo is not enough. `claude:.` resolves to the repository
+        # ITSELF, which passed the containment check and was then handed to
+        # `shutil.rmtree` — the working tree, `.git` and every file the user has
+        # ever written, removed by an uninstaller, from a file that arrives with
+        # the clone. `.git` is the same defect one directory down. DDW installs
+        # neither, so neither is DDW's to remove.
+        real = os.path.realpath(path)
+        repo_real = os.path.realpath(repo)
+        git_dir = os.path.join(repo_real, ".git")
+        if (real == repo_real
+                or os.path.commonpath([real, repo_real]) != repo_real
+                or real == git_dir
+                or real.startswith(git_dir + os.sep)):
+            outside.append(rel)
+            continue
         if not os.path.exists(path):
             continue
         if fingerprint(path) != recorded and not args.force:
@@ -238,12 +271,28 @@ def main():
         text = open(gi, encoding="utf-8").read()
         out, found = strip_block(text, GI_BEGIN, GI_END)
         if found:
-            blocks.append(".gitignore")
-            if act:
-                open(gi, "w", encoding="utf-8").write(out)
+            # The same rule the context files already follow: a file that held
+            # nothing but DDW's block is removed rather than left as an empty
+            # husk. Installing into a repo with no .gitignore used to create one
+            # and uninstalling used to leave it behind, so the repo ended up
+            # carrying a file it never had and nobody wrote.
+            if not out.strip():
+                removed.append(".gitignore")
+                if act:
+                    os.remove(gi)
+            else:
+                blocks.append(".gitignore")
+                if act:
+                    open(gi, "w", encoding="utf-8").write(out)
 
     # 5. The manifest last: until now it was the record of what to remove.
-    if os.path.exists(mpath):
+    #
+    # …and NOT AT ALL when files were kept. The manifest is the only thing that
+    # can tell DDW's hook from yours, so deleting it while the run is still
+    # printing "re-run with --force to remove them" makes that advice
+    # unactionable: the second run has nothing left to identify them by, prints
+    # "no .ddw-installed.json here", and the files stay forever. Measured.
+    if os.path.exists(mpath) and not kept:
         if act:
             os.remove(mpath)
         removed.append(MANIFEST)
@@ -267,11 +316,20 @@ def main():
         print(f"\n  {v} the DDW block from {len(blocks)} file(s), leaving the rest:")
         for b in sorted(blocks):
             print(f"      {b}")
+    if outside:
+        print(f"\n  ⚠ REFUSED {len(outside)} manifest entr(ies): a path outside this repo, the")
+        print("    repository root itself, or something under .git. DDW installs none of the")
+        print("    three, so this manifest was not written by an install here. Nothing was")
+        print("    removed for them:")
+        for o in sorted(outside):
+            print(f"      {o}")
     if kept:
         print(f"\n  ⚠ Kept {len(kept)} file(s) that no longer match what DDW installed —")
         print("    you edited them, so they are yours now. Re-run with --force to remove them:")
         for k in sorted(kept):
             print(f"      {k}")
+        print(f"    ({MANIFEST} was kept too — it is what identifies those files. "
+              "The --force run removes both.)")
     print("\n  docs/ was not touched. The PRDs, specs and reports are the record of what")
     print("  was decided; uninstalling the tool is not a reason to lose them.")
 

@@ -49,7 +49,14 @@ jobs:
         with:
           node-version: "20"
       - name: Install what the suite asserts it needs
-        run: python3 -m pip install --quiet pyyaml
+        run: |
+          python3 -m pip install --quiet pyyaml
+          # The Claude CLI validates the plugin manifests against the real
+          # schema. Without it those two checks used to SKIP, and a skip was
+          # summed into "N/N passed" — so the manifests had never once been
+          # validated in CI. A skip now fails the run, which means this install
+          # is load-bearing rather than a convenience.
+          npm install -g @anthropic-ai/claude-code
       - name: rsync (absent from the macOS runner image)
         if: runner.os == 'macOS'
         run: command -v rsync >/dev/null || brew install rsync

@@ -421,8 +421,14 @@ attempting `DEFINE→PLAN` or `CODE→VERIFY` with this tier will be blocked.
 
 Scope safeguard: the shared gate blocks writes to sensitive paths, or an
 accumulated diff over 10 LOC, while `tier=="QUICK-FIX"`. To escalate: abandon the ticket (to IDLE
-with `action: "abandon: …"`) and reclassify from CLASSIFY as a FIX. There is no edge back from CODE
-to DEFINE — a bigger fix is a different ticket, with its own branch and its own RCA.
+with `action: "abandon: …"`) and reclassify from CLASSIFY as a FIX — a bigger fix is a different
+ticket, with its own branch and its own RCA.
+
+`CODE→DEFINE` exists in this tier, and it is **not** that escape hatch: it is for rewriting the
+brief when the fix turns out to be something else than what the brief describes, and it gives up
+`define`, which then has to be earned again against the brief as it now is. Escalating is still a
+new ticket. (This paragraph said the edge did not exist while the graph carried it and the helper
+took it — a contradiction the model resolves by believing whichever it read last.)
 
 Status line: `⚡ QUICK-FIX · {action} | {ticket}: {title}` (no 5-phase numbering).
 

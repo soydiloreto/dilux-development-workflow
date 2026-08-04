@@ -226,17 +226,17 @@ says nothing about the other.
 > reporting that something outside the model refused the call. A refusal without it is the model
 > being well behaved, which is the thing this framework exists to stop depending on.
 
-> **Check 4 also exercises something the four checks do not name.** Shown a forged state, the model
+> **Check 4 also exercises something the six checks do not name.** Shown a forged state, the model
 > reported it and stopped — it had the last good state in context and did not put it back. That is
 > the orchestrator's "corrupt state → STOP and report, do not self-repair" rule holding at the one
 > moment it matters, and it is worth confirming while you are there.
 
 ## What to record
 
-For each tool: version, date, and which of the four passed. If one fails, the
+For each tool: version, date, and which of the six passed. If one fails, the
 finding belongs in `adapters/<tool>/` and in a new mutation in `scripts/mutate.py`
 — the mutation is what stops it coming back.
 
-Until all four pass against a live tool, that adapter is **verified at the
+Until all six pass against a live tool, that adapter is **verified at the
 boundary, unverified in the wild**, and the README says so by name. That wording
 is a promise about what is actually known, and it stays until someone does this.

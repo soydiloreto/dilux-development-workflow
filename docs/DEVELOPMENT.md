@@ -11,12 +11,12 @@ DDW separates **the method** from **the wiring**:
 
 **Plugin mode.** `.claude-plugin/plugin.json` declares the packaging,
 `.claude-plugin/marketplace.json` is what makes it installable at all, and
-`adapters/claude/plugin-hooks.json` carries the same six hooks resolved from the
+`adapters/claude/plugin-hooks.json` carries the same five hooks resolved from the
 plugin root rather than the project.
 
 Every hook resolves the method through `ddw_method` in `adapters/claude/hooks/lib/guard.sh`:
 **the repo's `.ddw/` first, the plugin second.** That sentence used to be here
-and was false — two of the six hooks did it, the other four looked only in the
+and was false — two of the five hooks did it, the other three looked only in the
 repo, and `session-start.sh` was one of them. Installed as a plugin, DDW loaded
 its skills and its agents and enforced nothing, which is the failure
 `scripts/acceptance.md` opens by naming. It read as working because the drop-in

@@ -386,7 +386,14 @@ def main():
     # Whether DDW had ever been installed here, decided before this run
     # starts adding to it. It is what separates an upgrade from a first
     # install, and therefore DDW's own older file from one of the user's.
-    had_manifest = bool(manifest)
+    # …for THIS tool. Asked of the whole manifest, installing a second tool into
+    # a repo that already had DDW answered "upgrade" for a target that had never
+    # been installed — so `ours_if_unknown` fired on files DDW had never written,
+    # and the user's own `.codex/hooks/session-start.sh`, `enforce.sh`,
+    # `pre-compact.sh` (exactly the names a user of that agent already has) were
+    # overwritten with no backup, no warning and exit 0. The installer's central
+    # promise is that it never overwrites a file it did not put there.
+    had_manifest = any(isinstance(k, str) and k.startswith(args.id + ":") for k in manifest)
     print(f"  ── wiring: {recipe.get('label', args.id)}")
 
     # 1. Skills — ONE source (skills), copied into this tool's own location.
@@ -394,7 +401,7 @@ def main():
         src = os.path.join(args.self, "skills")
         dst = os.path.join(args.target, recipe["skills"]["dir"])
         landed = copy_tree_no_clobber(src, dst, recipe["skills"]["dir"], collisions,
-                                      manifest, f"{args.id}:skills")
+                                      manifest, f"{args.id}:{recipe['skills']['dir']}")
         # Report what LANDED, not what was on offer: printing the source count on
         # a run that skipped one is how a half-installed method looks complete.
         print(f"  ✓ {recipe['skills']['dir']:<22} {landed} skills")
@@ -420,7 +427,7 @@ def main():
                 rendered = toml_agent(fm, body)
             else:
                 rendered = "---\n" + "\n".join(yaml_block(fm)) + "\n---\n" + body
-            rel = f"{args.id}:agents/{out_name}"
+            rel = f"{args.id}:{spec['dir']}/{out_name}"
             if os.path.exists(out_path):
                 current = open(out_path, encoding="utf-8").read()
                 if current == rendered:
@@ -467,7 +474,7 @@ def main():
             rendered = "---\n" + "\n".join(yaml_block(fm)) + "\n---\n" + body.rstrip() + "\n"
             out_name = cmd.get("filename", "{name}.md").replace("{name}", name)
             out_path = os.path.join(dst_dir, out_name)
-            rel = f"{args.id}:commands/{out_name}"
+            rel = f"{args.id}:{cmd['dir']}/{out_name}"
             if os.path.exists(out_path):
                 current = open(out_path, encoding="utf-8").read()
                 if current == rendered:
@@ -564,7 +571,12 @@ def main():
         ctx = os.path.join(args.target, ctx_name)
         snippet = open(snippet_path, encoding="utf-8").read()
         existing = open(ctx, encoding="utf-8").read() if os.path.exists(ctx) else ""
-        if "BEGIN DDW" in existing:
+        # The MARKER, not the words. A context file that merely mentions
+        # "BEGIN DDW" in prose — a README explaining the block, which is exactly
+        # what a project documenting its own setup writes — took this branch and
+        # then raised ValueError on the `index` below, mid-install, leaving the
+        # repo half-wired.
+        if "<!-- BEGIN DDW" in existing:
             # Upgrade it in place. Finding the block and leaving it was silent
             # data rot: the block is what loads the orchestrator, so a version
             # that changes it — a new import, a different entry point — would

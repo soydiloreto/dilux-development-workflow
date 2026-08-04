@@ -588,6 +588,56 @@ state the hook exists to refuse.
 
 ---
 
+## 18. The pipeline does not get to edit the pipeline
+
+**The decision.** DDW's own machinery is unwritable from inside a ticket, in every phase: the method
+(`.ddw/`), the receipts (`.ddw-sessions/`), the journal, the install manifest, and each tool's hook
+scripts and the settings key that wires them. `.ddw-state.json`, `.ddw-paused/` and `docs/` stay
+writable — writing the state is how the pipeline advances, and every other rule here judges that
+write.
+
+**Why it needed saying at all.** The guard existed, and it was inside the rule about which phases may
+write source. That rule returns early for CODE and CLOSEOUT, so the protection covered exactly the
+phases where the agent cannot write anything anyway and stood down in the one where it works.
+Measured end to end on a real install: in CODE, add an edge to the transition graph, then take it —
+a FEATURE closed having never claimed `tests`, `sast`, `verify`, `commit` or `pr`, with both hooks
+green and 462 checks passing. Or skip the graph entirely and write your own receipt into
+`.ddw-sessions/`, which opens six gates with one `Write`.
+
+**What it does not reach, said plainly.** A shell. `printf > .ddw/rules/transition-graph.json` is not
+a tool call with a path in it, and decision 11 is the older, honest version of this limit. Two things
+follow from that rather than one apology: the six validators record in the journal that they wrote
+each receipt, so a receipt nobody's validator wrote is refused; and the session boot hashes every
+file the installer recorded and reports the ones that no longer match. Prevention where a path is
+visible, detection where it is not. Neither is a promise that a determined user cannot get around
+their own tools — that promise cannot be made by anything running on the same machine.
+
+**The cost.** While a ticket is open you cannot ask the agent to edit your `.claude/settings.json`,
+because that file is what wires the gates in. Install, uninstall and settings changes happen between
+tickets, by you. And an upgrade mid-ticket has to re-run its validators, because receipts earned
+before the upgrade carry no record: a minute of work, and the alternative is a compatibility hatch
+that stays open forever.
+
+---
+
+## 19. A gate claimed for a document that is not there
+
+**The decision.** Claiming a receipt gate for a document that does not exist is refused, and so is
+claiming one for a document that cannot be read as UTF-8. Both used to pass.
+
+**Why it was wrong, precisely.** The code said "no artifact on disk means no claim to check", and
+that sentence is false at every place it is reached: the evidence table is consulted **only** for
+gates being claimed — the pre path passes what a write newly claims, the post path passes what the
+landed edges require, the helper passes `--gate`. By the time the question is asked, the claim has
+been made. So the easiest state in the world to be in — no document — was the one that satisfied six
+of the eight gates. A FEATURE walked `IDLE→CLOSEOUT` producing nothing at all.
+
+**The cost.** Synthetic runs have to produce their artifacts, which is why this repository's own
+suite grew a helper that writes the document and the receipt together. That is the right cost: a
+fixture that claims a gate it did not earn is a fixture testing the forgery rather than the rule.
+
+---
+
 ## Disagreeing
 
 If one of these is wrong, the useful form of the argument is: which entry, what does it cost that is
