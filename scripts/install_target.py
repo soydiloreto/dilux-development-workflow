@@ -345,6 +345,29 @@ def claim(rel, src_path, dst_path, manifest, collisions, label, ours_if_unknown=
     return False
 
 
+def _names_installed_file(block, manifest, tool):
+    """Does this settings block run a file the manifest says DDW installed?
+
+    The question both the installer and the uninstaller need, and neither had:
+    "is this block ours?" was answered by comparing it against what the CURRENT
+    version ships, so a block wired by an older one belonged to nobody. It was
+    left behind on upgrade and left behind on uninstall, still naming a script
+    that had been removed.
+
+    The manifest is the record of what DDW put on disk, so a block naming one of
+    those paths is DDW's. A block of the user's that happens to sit in the same
+    file names a script of theirs, which is not in the manifest.
+    """
+    text = json.dumps(block, sort_keys=True)
+    for k in manifest:
+        if not isinstance(k, str) or not k.startswith(tool + ":"):
+            continue
+        rel = k.split(":", 1)[1]
+        if rel and rel in text:
+            return True
+    return False
+
+
 def copy_tree_no_clobber(src, dst, label, collisions, manifest, key):
     """Copy each entry of src into dst, upgrading DDW's own files and never
     touching one the user has made theirs."""
@@ -428,7 +451,25 @@ def main():
     # `pre-compact.sh` (exactly the names a user of that agent already has) were
     # overwritten with no backup, no warning and exit 0. The installer's central
     # promise is that it never overwrites a file it did not put there.
-    had_manifest = any(isinstance(k, str) and k.startswith(args.id + ":") for k in manifest)
+    #
+    # And it is asked about the WIRING, not about the tool. `ours_if_unknown`
+    # exists for one situation and one only: manifests written before the wiring
+    # went through `claim()`, which recorded skills and agents and nothing else,
+    # so on the first upgrade every hook looked like a file of the user's. That
+    # is a manifest with entries for this tool and NONE of them wiring. Asked as
+    # "has this tool ever been installed", it stayed true forever — so the day a
+    # new version starts shipping a file at a path the user already has one at,
+    # the upgrade overwrote it with no backup, no ⚠ and exit 0. Measured: a
+    # `.claude/hooks/audit.sh` of the user's, replaced by DDW's on the second
+    # run. A file DDW never recorded is the user's, on every run after the
+    # first as much as on it.
+    wiring_dirs = [w["to"].rstrip("/") + "/" for w in recipe.get("wiring", [])]
+    recorded_wiring = any(
+        isinstance(k, str) and k.startswith(args.id + ":")
+        and any(k.split(":", 1)[1].startswith(d) for d in wiring_dirs)
+        for k in manifest)
+    had_manifest = (any(isinstance(k, str) and k.startswith(args.id + ":") for k in manifest)
+                    and not recorded_wiring)
     print(f"  ── wiring: {recipe.get('label', args.id)}")
 
     # 1. Skills — ONE source (skills), copied into this tool's own location.
@@ -609,6 +650,22 @@ def main():
                              % (key, event, type(cur).__name__))
                     dst = None
                     break
+                # A block DDW wired once and no longer ships is DDW's to take
+                # out. The merge was add-only in both directions: rename a hook
+                # script between versions and the upgrade left the old block
+                # wired beside the new one — two hooks, one of them pointing at
+                # a script that is about to stop existing — and the uninstall
+                # after it took out only what the CURRENT adapter defines, so
+                # the repo came away configured to run a command that had just
+                # been deleted. A block is DDW's when it names a file this
+                # manifest records as DDW's; anything else is the user's and is
+                # left exactly where it is.
+                shipped = [json.dumps(b, sort_keys=True) for b in blocks]
+                stale = [b for b in cur
+                         if json.dumps(b, sort_keys=True) not in shipped
+                         and _names_installed_file(b, manifest, args.id)]
+                for b in stale:
+                    cur.remove(b)
                 seen = [json.dumps(b, sort_keys=True) for b in cur]
                 for blk in blocks:
                     if json.dumps(blk, sort_keys=True) not in seen:

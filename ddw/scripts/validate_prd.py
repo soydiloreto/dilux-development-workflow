@@ -47,6 +47,43 @@ UNWANTED = re.compile(r"\bIF\b.+?\bTHEN\b.+?\bSHALL\b", re.IGNORECASE | re.DOTAL
 REQ_ID = re.compile(r"\b(FR|NFR|AC)-(\d+)\b")
 
 
+def _unfilled(value):
+    """Is this still the template's placeholder rather than an answer?
+
+    `[like this]` and `{like this}` both, because this repository ships both:
+    the PRD template writes `[Title]` and the fix-brief writes `{one descriptive
+    line}`. What is left once the placeholders are removed is what somebody
+    actually wrote — `docs/api.md:41 — {describe it}` keeps its path and counts.
+    """
+    v = (value or "").strip().strip("*_`")
+    if not v:
+        return True
+    return not re.search(r"[0-9A-Za-zÀ-ÿ]", re.sub(r"\[[^\[\]]*\]|\{[^{}]*\}", "", v))
+
+
+def _after_label(text, label):
+    """What the document says after `label:`, or "" if the label is absent.
+
+    Not anchored to the start of a line. A fix-brief is four labelled facts and
+    nothing says they must be four bullets — "bug: none. change: everything.
+    regression test: none. risk: none." is one line and four answers, and
+    demanding a line each refused it for its layout, which is the refusal this
+    repository keeps having to take back out.
+
+    The answer ends where the next label begins, so one label's answer is never
+    read as the next one's.
+    """
+    m = re.search(r"\b%s\s*\**\s*:" % re.escape(label), text, re.IGNORECASE)
+    if not m:
+        return ""
+    rest = text[m.end():]
+    stops = [rest.find("\n")] + [
+        mm.start() for other in FIX_BRIEF_SECTIONS if other != label
+        for mm in [re.search(r"\b%s\s*\**\s*:" % re.escape(other), rest, re.IGNORECASE)] if mm]
+    stops = [i for i in stops if i >= 0]
+    return (rest[:min(stops)] if stops else rest).strip()
+
+
 def _items(text, prefix):
     """Bullet items carrying an ID of the given prefix, as (id, full_text)."""
     out = []
@@ -168,10 +205,21 @@ def main():
     if args.tier == "QUICK-FIX":
         low = text.lower()
         missing = [s for s in FIX_BRIEF_SECTIONS if s not in low]
+        # …and each of them has to SAY something. The four labels were the whole
+        # test, so the fix-brief exactly as `ddw-create-prd` ships it — `**Bug**:
+        # {one descriptive line}`, `**Change**: {file}:{line}` — passed and wrote
+        # the receipt. Copy the template, run the validator, and the one gate
+        # QUICK-FIX has before CODE was paid for a document that describes no
+        # bug, names no file and promises no test. Measured, receipt and all.
+        unwritten = [s for s in FIX_BRIEF_SECTIONS
+                     if s not in missing and _unfilled(_after_label(text, s))]
         if missing:
             fail("QUICK-FIX", f"fix-brief incomplete, missing: {', '.join(missing)}")
+        elif unwritten:
+            fail("QUICK-FIX", "fix-brief still carrying the template's placeholder in: "
+                              + ", ".join(unwritten))
         else:
-            ok("QUICK-FIX", "the four fix-brief sections are present")
+            ok("QUICK-FIX", "the four fix-brief sections are present and filled in")
     else:
         frs = _items(text, "FR")
         nfrs = _items(text, "NFR")

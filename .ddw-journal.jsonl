@@ -1,0 +1,14 @@
+{"file": "threat-T-2.md", "name": "threat-validated-3c5fd39237c5", "record": "receipt", "tier": "FEATURE"}
+{"file": "threat-T-3.md", "name": "threat-validated-cd3d0f01b56c", "record": "receipt", "tier": "FEATURE"}
+{"file": "threat-T-4.md", "name": "threat-validated-99b123608ef8", "record": "receipt", "tier": "FEATURE"}
+{"file": "threat-T-5.md", "name": "threat-validated-fef775204448", "record": "receipt", "tier": "FEATURE"}
+{"file": "threat-T-4.md", "name": "threat-validated-99b123608ef8", "record": "receipt", "tier": "FEATURE"}
+{"asof": "2026-08-05", "file": "sast-T-1.md", "name": "sast-validated-704cfd7c9c62", "record": "receipt", "tier": "FEATURE"}
+{"file": "prd-T-1.md", "name": "prd-validated-54b065dff227", "record": "receipt", "tier": "QUICK-FIX"}
+{"file": "prd-T-1.md", "name": "prd-validated-54b065dff227", "record": "receipt", "tier": "QUICK-FIX"}
+{"file": "prd-T-9.md", "name": "prd-validated-c955cb7f64f9", "record": "receipt", "tier": "QUICK-FIX"}
+{"file": "prd-T-8.md", "name": "prd-validated-758e5a9454ad", "record": "receipt", "tier": "QUICK-FIX"}
+{"file": "prd-T-7-filled.md", "name": "prd-validated-e98702502c09", "record": "receipt", "tier": "FEATURE"}
+{"file": "prd-T-6.md", "name": "prd-validated-66af649604ab", "record": "receipt", "tier": "FEATURE"}
+{"file": "one-line.md", "name": "prd-validated-6d18bc9cf8f8", "record": "receipt", "tier": "QUICK-FIX"}
+{"file": "prd-T-8.md", "name": "prd-validated-758e5a9454ad", "record": "receipt", "tier": "QUICK-FIX"}

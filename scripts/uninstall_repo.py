@@ -55,6 +55,25 @@ def fingerprint(path):
     return h.hexdigest()
 
 
+def _names_installed_file(block, manifest, tool):
+    """Does this settings block run a file the manifest says DDW installed?
+
+    One definition, and the installer holds the same one — it has to prune the
+    same blocks on an upgrade that this removes on the way out. Kept as a copy
+    rather than an import because this script is what you reach for when DDW is
+    in a state you do not want, and it must not depend on the other one being
+    present or importable.
+    """
+    text = json.dumps(block, sort_keys=True)
+    for k in manifest:
+        if not isinstance(k, str) or not k.startswith(tool + ":"):
+            continue
+        rel = k.split(":", 1)[1]
+        if rel and rel in text:
+            return True
+    return False
+
+
 def strip_block(text, begin, end):
     """Remove one marked block, leaving everything around it exactly as it was."""
     start = text.find(begin)
@@ -232,8 +251,18 @@ def main():
             # "Done." and corrupts the settings it was asked to clean.
             if not isinstance(dst[key][event], list):
                 continue
+            # …or one an OLDER version wired. Byte-for-byte against what this
+            # version ships answers "is this block ours?" only for the version
+            # doing the asking: rename a hook script between releases and the
+            # block from before belongs to nobody, so it survived the uninstall
+            # while the script it names was deleted — a repo that cannot be left
+            # cleanly, failing on a command not found at every write, with DDW
+            # gone and nothing left to explain it. The manifest is the record of
+            # what DDW installed, and a block naming one of those files is DDW's
+            # whichever version wired it.
             keep = [b for b in dst[key][event]
-                    if json.dumps(b, sort_keys=True) not in mine.get(event, ())]
+                    if json.dumps(b, sort_keys=True) not in mine.get(event, ())
+                    and not _names_installed_file(b, manifest, target)]
             if len(keep) != len(dst[key][event]):
                 changed = True
             if keep:

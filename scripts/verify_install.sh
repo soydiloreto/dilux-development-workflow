@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=533
+EXPECT_CHECKS=536
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=405
+EXPECT_MUTATIONS=415
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -3092,6 +3092,59 @@ assert not unnamed, \
     "nothing" % ", ".join(unnamed)
 PYTEMPLATE
 
+# The same question asked of the whole document rather than one rule, in both
+# directions — and both directions were wrong. A PRD written exactly as the
+# template teaches was refused (`## Out of Scope` in prose against a rule that
+# demands explicit items; an `AC-03 (FR-02): ...` whose ellipsis matches no EARS
+# pattern), and the QUICK-FIX fix-brief was accepted with nothing written in it
+# at all: the four labels were the whole test, so `**Bug**: {one descriptive
+# line}` passed and wrote the receipt for the one gate that tier has before
+# CODE.
+python3 - "$SELF" <<'PYPRDSHAPE' && ok "a PRD and a fix-brief written the way ddw-create-prd teaches pass, and the same documents unwritten are refused" || bad "the PRD template is refused by its own gate, or an unfilled fix-brief earns the QUICK-FIX define gate"
+import os, re, subprocess, sys, tempfile
+src = sys.argv[1]
+skill = open(os.path.join(src, "skills/ddw-create-prd/SKILL.md"), encoding="utf-8").read()
+fenced = [m.group(1) for m in re.finditer(r"```markdown\n(.*?)```", skill, re.S)]
+assert len(fenced) >= 2, "ddw-create-prd no longer carries both templates"
+brief, prd = fenced[0], fenced[1]
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
+
+
+def run(body, tier, name):
+    path = os.path.join(d, name)
+    open(path, "w", encoding="utf-8").write(body.replace("{ticket}", "T-1"))
+    r = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/validate_prd.py"),
+                        path, "--tier", tier], capture_output=True, text=True, cwd=d)
+    return r, [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+
+
+# Filled the way anybody fills a template: every bracketed slot answered, the
+# words the template itself supplies (WHEN … SHALL, the section names) kept.
+filled = re.sub(r"\[[^\[\]]*\]", "the public form within 300 ms", prd)
+r, refused = run(filled, "FEATURE", "prd-T-1.md")
+assert r.returncode == 0 and not refused, (
+    "validate_prd refuses a PRD written exactly as its own template teaches:\n" + "\n".join(refused))
+
+r, refused = run(prd, "FEATURE", "prd-T-2.md")
+assert r.returncode != 0, "the PRD template passes unfilled — the placeholders are the document"
+
+# The fix-brief, which is the whole of DEFINE under QUICK-FIX.
+sessions = os.path.join(d, ".ddw-sessions")
+before = set(os.listdir(sessions)) if os.path.isdir(sessions) else set()
+r, refused = run(brief, "QUICK-FIX", "prd-T-3.md")
+assert r.returncode != 0 and any("QUICK-FIX" in ln for ln in refused), (
+    "the fix-brief passed with every field still `{like this}`: " + r.stdout[:300])
+after = set(os.listdir(sessions)) if os.path.isdir(sessions) else set()
+assert after == before, \
+    "a receipt was written for a fix-brief that was refused: %s" % sorted(after - before)
+
+filled_brief = re.sub(r"\{[^{}]*\}", "src/config/loader.ts:41 keeps the trailing newline",
+                      brief).replace("[Title]", "the loader")
+r, refused = run(filled_brief, "QUICK-FIX", "prd-T-4.md")
+assert r.returncode == 0 and not refused, (
+    "a fix-brief filled in as the template teaches is refused:\n" + "\n".join(refused))
+PYPRDSHAPE
+
 # The other two documents a phase writes had no canonical shape at all, so three
 # plausible renderings of a complete run were refused for their LAYOUT: a
 # coverage table whose rows are labelled `Line`, a lint result under its own
@@ -3182,6 +3235,93 @@ assert r.returncode == 0 and not refused, (
     "validate_spec refuses the fix-plan ddw-create-spec tells the model to write:\n"
     + ("\n".join(refused[:4]) or r.stderr[-200:]))
 PYFIXPLAN
+
+# The threat gate was decorative for anyone who did what the skill says. The
+# canonical threat model — every field a bracketed placeholder — passed all
+# seven rules and wrote the receipt that opens PLAN→CODE: six STRIDE labels with
+# `[analysis]` after each counted as full coverage, `**Accepted by:** [who]`
+# counted as an approval, `[PII / credentials / financial / public]` counted as
+# a classification AND as the PII that then had to be encrypted, which the
+# `[control]` columns paid for. Change `path/to/file.py` to a real file and the
+# document passed. Every other validator here drops bracketed placeholders on
+# purpose; this one, the only one nobody had ever audited, had no such notion.
+python3 - "$SELF" <<'PYTHREAT' && ok "an unfilled threat model is refused, the worked one passes, and the encryption rule reads what the document actually says" || bad "a threat model copied from the template and never written earns the gate that stands between PLAN and CODE"
+import os, re, subprocess, sys, tempfile
+src = sys.argv[1]
+skill = open(os.path.join(src, "skills/ddw-threat-modeling/SKILL.md"), encoding="utf-8").read()
+
+
+def template(after, ticket):
+    at = skill.index(after)
+    m = re.search(r"```markdown\n(.*?)```", skill[at:], re.S)
+    assert m, "ddw-threat-modeling no longer carries a template under %r" % after[:40]
+    return m.group(1).replace("{ticket}", ticket)
+
+
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
+os.makedirs(os.path.join(d, "docs/ddw/security"))
+os.makedirs(os.path.join(d, "docs/ddw/specs"))
+SPEC = ("# Spec T-1\n\n| Field | Value |\n|---|---|\n| Ticket | T-1 |\n\n"
+        "## Block 1 — Password login\n- `src/auth/login.ts` — validates credentials\n"
+        "- POST /api/login\nCovers FR-01.\n")
+spec = os.path.join(d, "docs/ddw/specs/spec-T-1.md")
+open(spec, "w", encoding="utf-8").write(SPEC)
+
+
+def run(body, name="T-1"):
+    path = os.path.join(d, "docs/ddw/security/threat-%s.md" % name)
+    open(path, "w", encoding="utf-8").write(body)
+    r = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/validate_threat.py"),
+                        path, "--tier", "FEATURE", "--spec", spec],
+                       capture_output=True, text=True, cwd=d)
+    return r, [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+
+
+# 1. The skeleton, with only the component renamed to a file the spec names —
+#    the one edit that used to be enough.
+skeleton = template("### Threat model template — canonical", "T-1").replace("path/to/file.py", "src/auth/login.ts")
+r, refused = run(skeleton)
+assert r.returncode != 0, "the unfilled threat model passed and earned its receipt"
+for rule in ("F-TM-01", "F-TM-02", "F-TM-04", "F-TM-05"):
+    assert any(rule in ln for ln in refused), \
+        "%s accepted the template's placeholders: %s" % (rule, "\n".join(refused))
+assert not os.path.exists(os.path.join(d, ".ddw-sessions")) or not [
+    f for f in os.listdir(os.path.join(d, ".ddw-sessions")) if f.startswith("threat-")], \
+    "a receipt was written for a document that was refused"
+
+# 2. …and the worked one, which is what the skill now carries, passes whole.
+worked = template("### The threat model, in the shape the validator reads", "T-1")
+r, refused = run(worked)
+assert r.returncode == 0 and not refused, (
+    "validate_threat refuses the threat model ddw-threat-modeling tells the model to write:\n"
+    + ("\n".join(refused[:4]) or r.stderr[-200:]))
+
+# 3. The encryption rule read two sections only, so a model declaring its
+#    controls under `## Encryption` — the obvious heading — was told it had
+#    none. And it matched the words anywhere, so a sentence DENYING the control
+#    satisfied the rule it contradicts.
+plain = worked.replace("| Data | Class | At rest | In transit |\n|---|---|---|---|", "| Data | Class |\n|---|---|")
+plain = re.sub(r"^\| (password|session token|email) \| ([^|]+) \|.*$",
+               lambda m: "| %s | %s |" % (m.group(1), m.group(2).strip()), plain, flags=re.M)
+r, refused = run(plain + "\n## Encryption\nEverything above is encrypted at rest and travels over TLS.\n", "T-2")
+assert r.returncode == 0, \
+    "a model that states its encryption under its own heading is refused for having none: " + \
+    "\n".join(refused)
+r, refused = run(plain + "\n## Encryption\nWe do not encrypt at rest, and nothing uses TLS.\n", "T-3")
+assert any("F-TM-07" in ln for ln in refused), \
+    "a sentence denying the control satisfied the rule that demands it"
+
+# 4. A category answered for by a word inside somebody else's sentence. `dos\b`
+#    carried no boundary in front of it, so "parametros ligados" credited the
+#    model with a denial-of-service analysis it does not contain — and the
+#    label, not a word anywhere in the line, is what names a category.
+dropped = re.sub(r"^- \*\*Denial of Service:.*$", "- **Tampering (continued):** parametros ligados.",
+                 worked, flags=re.M)
+r, refused = run(dropped, "T-4")
+assert any("F-TM-01" in ln and "Denial of Service" in ln for ln in refused), \
+    ("a model with no denial-of-service analysis passed because another line ends in `dos`: "
+     + "\n".join(refused))
+PYTHREAT
 
 # A plugin install writes NOTHING into the repo, so it leaves no AGENTS.md — and
 # AGENTS.md is where the stack is read from. CLASSIFY had two branches, both
@@ -4640,6 +4780,86 @@ bash "$SELF/install.sh" "$UN" --target claude >/dev/null 2>&1
 [ -d "$UN/.ddw" ] && [ -f "$UN/CLAUDE.md" ] && grep -q "MY OWN HOOK" "$UN/.claude/settings.json" \
   && ok "and installing again afterwards works, still without touching what is yours" \
   || bad "a repo cannot be reinstalled cleanly after an uninstall"
+
+# What a SECOND version does, which nothing here had ever driven: the same repo,
+# upgraded by a DDW that ships something the first one did not. Two defects
+# lived in that gap, and the second one leaves a repo nobody can leave.
+python3 - "$SELF" <<'PYSECONDVERSION' && ok "an upgrade leaves a file of yours alone at a path DDW starts shipping, rewires a renamed hook instead of stacking it, and the uninstall after it leaves nothing pointing at a deleted script" || bad "a second version of DDW overwrites a file of yours, or leaves the repo wired to a hook script that no longer exists"
+import json, os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+# A copy of DDW to play the part of the NEXT release: the shipped tree is what
+# every other check reads, and this one has to change what is shipped.
+nxt = os.path.join(work, "ddw-next")
+shutil.copytree(src, nxt, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+
+
+def install(repo, root=src):
+    return subprocess.run(["bash", os.path.join(root, "install.sh"), repo, "--target", "claude"],
+                          capture_output=True, text=True)
+
+
+def blocks(repo, event="PreToolUse"):
+    path = os.path.join(repo, ".claude", "settings.json")
+    if not os.path.exists(path):
+        return None
+    return (json.load(open(path, encoding="utf-8")).get("hooks") or {}).get(event) or []
+
+
+# 1. A file of yours at a path this version does not ship and the next one does.
+repo = os.path.join(work, "yours")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+install(repo)
+mine = os.path.join(repo, ".claude", "hooks", "audit.sh")
+open(mine, "w", encoding="utf-8").write("MY OWN AUDIT HOOK\n")
+open(os.path.join(nxt, "adapters", "claude", "hooks", "audit.sh"), "w",
+     encoding="utf-8").write("#!/usr/bin/env bash\n# DDW's own audit hook\n")
+r = install(repo, nxt)
+assert "MY OWN AUDIT HOOK" in open(mine, encoding="utf-8").read(), (
+    "the upgrade overwrote a file the user had at a path the new version starts shipping — "
+    "`ours_if_unknown` asked whether the TOOL had been installed, and the answer stays yes "
+    "forever:\n" + r.stdout[-300:])
+assert "audit.sh" in r.stdout, "the file was kept and the run never said so: " + r.stdout[-300:]
+os.remove(os.path.join(nxt, "adapters", "claude", "hooks", "audit.sh"))
+
+# 2. A hook script the next version renames. The block naming the old one is
+#    DDW's, whichever version wired it — so the upgrade takes it out instead of
+#    stacking a second one beside it.
+repo = os.path.join(work, "renamed")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+install(repo)
+before = len(blocks(repo))
+assert before >= 2, "the fixture repo has no PreToolUse blocks to renumber"
+settings = os.path.join(nxt, "adapters", "claude", "settings.json")
+text = open(settings, encoding="utf-8").read().replace("enforce.sh", "housekeeping.sh")
+with open(settings, "w", encoding="utf-8") as fh:
+    fh.write(text)
+shutil.move(os.path.join(nxt, "adapters", "claude", "hooks", "enforce.sh"),
+            os.path.join(nxt, "adapters", "claude", "hooks", "housekeeping.sh"))
+r = install(repo, nxt)
+after = blocks(repo)
+assert len(after) == before, (
+    "the upgrade stacked the renamed hook beside the old one (%d → %d): the repo now runs a "
+    "block naming a script the next uninstall deletes" % (before, len(after)))
+assert not any("enforce.sh" in json.dumps(b) for b in after), \
+    "the block naming the script this version no longer ships is still wired: " + json.dumps(after)[:200]
+
+# 3. …and the uninstall after that upgrade leaves nothing behind. Byte-for-byte
+#    against what the CURRENT version ships answers "is this block ours?" only
+#    for the version asking, so a block from before survived while the script it
+#    names was deleted — every write failing on a command not found, with DDW
+#    gone and nothing left to explain it.
+subprocess.run(["bash", os.path.join(nxt, "uninstall.sh"), repo, "--yes"],
+               capture_output=True, text=True)
+left = blocks(repo)
+assert not left, (
+    "the uninstall left %d hook block(s) behind: %s" % (len(left or []), json.dumps(left)[:200]))
+for name in ("enforce.sh", "housekeeping.sh"):
+    assert not os.path.exists(os.path.join(repo, ".claude", "hooks", name)), \
+        "%s survived the uninstall" % name
+PYSECONDVERSION
 
 # ── Stale bases and branches that land nowhere ────────────────────────────────
 #
@@ -7653,6 +7873,28 @@ assert r.returncode != 0 and "more than once" in r.stdout, \
 _mspec = importlib.util.spec_from_file_location("ddw_mut", os.path.join(src, "scripts/mutate.py"))
 _mut = importlib.util.module_from_spec(_mspec); _mspec.loader.exec_module(_mut)
 _past_end = "%d/%d" % (len(_mut.MUTATIONS) + 1, len(_mut.MUTATIONS) + 1)
+
+# A shard has to FIT in its timeout, and that is arithmetic nobody was doing.
+# One fault is one full run of the suite, so the slice count is what keeps a
+# shard under the ceiling — and both sides of it grew. Three consecutive runs
+# of the mutation job died at exactly 45:00 and reported "cancelled", which is
+# the shape this repository already named as not an answer: the coverage number
+# CI publishes was unobtainable, on the pull request that carried the growth,
+# and every check on the branch was green. The budget below is measured, not
+# guessed: a suite run costs about ninety seconds on a GitHub runner, and two
+# minutes is that with room. A shard also pays for one unmutated baseline.
+import math
+import yaml
+_wf = yaml.safe_load(open(os.path.join(src, ".github/workflows/mutations.yml"), encoding="utf-8"))
+_job = _wf["jobs"]["mutations"]
+_shards = len(_job["strategy"]["matrix"]["shard"])
+_ceiling = int(_job["timeout-minutes"])
+_per_shard = math.ceil(len(_mut.MUTATIONS) / _shards) + 1
+assert _per_shard * 2 < _ceiling, (
+    "a shard runs %d suite runs (%d faults over %d shards, plus the baseline), which is about "
+    "%d minutes against a timeout of %d. It will be killed and reported as cancelled. Add "
+    "shards — never fewer faults." % (_per_shard, len(_mut.MUTATIONS), _shards,
+                                      _per_shard * 2, _ceiling))
 for argv in (["--only", "999999"], ["--only"], ["--shard", _past_end]):
     r = subprocess.run([sys.executable, os.path.join(src, "scripts/mutate.py"), *argv],
                        capture_output=True, text=True)

@@ -153,6 +153,78 @@ mitigates, stays with you** — say so explicitly under the pasted output.
 [DoS vectors, or why they are out of scope here.]
 ```
 
+### The threat model, in the shape the validator reads
+
+The template above is a skeleton, and a skeleton **fails**: every bracketed field is a placeholder,
+and `validate_threat.py` refuses a document that still carries them. That refusal is the point — a
+copied template with the component name changed used to pass all seven rules and write the receipt
+that opens PLAN→CODE, which made the `threat` gate decorative for anyone who did what this skill
+says. This is the same document with the analysis actually in it, and it is what the suite runs
+through the validator.
+
+```markdown
+# Threat model {ticket}: Password login
+
+| Field | Value |
+|-------|-------|
+| Ticket | {ticket} |
+| Spec | docs/ddw/specs/spec-{ticket}.md |
+| Tier | FEATURE |
+| Date | 2026-08-05 |
+
+## Components
+| Component | Source in the spec |
+|---|---|
+| `src/auth/login.ts` | Block 1 |
+
+## Trust boundaries
+- Browser → API: `POST /api/login` carries the password over the public internet.
+- API → database: the credential lookup crosses into the private subnet.
+
+## STRIDE analysis
+### `src/auth/login.ts`
+- **Spoofing:** credential stuffing against a public endpoint; mitigated by per-IP and per-account
+  rate limits (R-01).
+- **Tampering:** the session token is signed; an altered token fails verification and is rejected.
+- **Repudiation:** every login attempt is logged with its outcome, source IP and timestamp.
+- **Information Disclosure:** the failure message is identical for unknown user and wrong password,
+  so the endpoint does not confirm which accounts exist.
+- **Denial of Service:** bcrypt is deliberately slow, so unbounded attempts are a CPU exhaustion
+  vector; the same rate limit caps it (R-02).
+- **Elevation of Privilege:** the token carries no role claim, so a stolen session cannot be
+  upgraded by editing it.
+
+## Data classification
+| Data | Class | At rest | In transit |
+|---|---|---|---|
+| password | credentials | bcrypt, cost 12; the plaintext is never stored | TLS 1.3 |
+| session token | credentials | hashed in the sessions table | TLS 1.3, cookie flagged Secure |
+| email | PII | AES-256 at the column level | TLS 1.3 |
+
+## Risks and mitigations
+| ID | Risk | STRIDE | Likelihood | Impact | Mitigation |
+|---|---|---|---|---|---|
+| R-01 | credential stuffing | S | H | H | 5 attempts per account per minute, then a lockout |
+| R-02 | CPU exhaustion via bcrypt | D | M | M | the same limiter, applied before the hash runs |
+| R-03 | session token stolen from a shared machine | I | L | H | accepted, see below |
+
+## Accepted risks
+### R-03
+- **Accepted by:** Pablo Di Loreto, product owner
+- **Justification:** a shared-machine session is out of the threat model for the beta, which is
+  invite-only and internal.
+- **Review conditions:** revisited before the public launch, or immediately if the beta opens to
+  external users.
+
+## Supply chain
+`bcrypt` and `jsonwebtoken` are the only new dependencies; both are pinned by digest and scanned by
+the SAST step.
+
+## Availability
+The rate limiter above is the DoS control. The service is behind the platform's edge limits as well,
+so a volumetric attack does not reach this code.
+```
+
 ## Output Format
 
 ```

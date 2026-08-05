@@ -111,10 +111,10 @@ nothing validates — and the template used to produce exactly that, which faile
 every new install.
 - AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].
 - AC-02 (FR-01): IF [failure or misuse], THEN THE [system] SHALL [response].
-- AC-03 (FR-02): ...
+- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].
 
 ## Out of Scope
-[What is explicitly NOT included]
+- [what is explicitly NOT included, one item per line]
 
 ## Risks and Mitigations
 [Identified risks and how to mitigate them]
