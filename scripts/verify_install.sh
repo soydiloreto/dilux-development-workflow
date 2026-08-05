@@ -7896,8 +7896,23 @@ assert _per_shard * 2 < _ceiling, (
     "shards — never fewer faults." % (_per_shard, len(_mut.MUTATIONS), _shards,
                                       _per_shard * 2, _ceiling))
 for argv in (["--only", "999999"], ["--only"], ["--shard", _past_end]):
-    r = subprocess.run([sys.executable, os.path.join(src, "scripts/mutate.py"), *argv],
-                       capture_output=True, text=True)
+    # With a timeout, and it is load-bearing. Each of these is supposed to be
+    # refused in milliseconds, from the arguments alone. Take the guard away and
+    # the run reaches its baseline, the baseline runs the whole suite, the suite
+    # reaches this line and starts the same run again: a recursion with no
+    # bottom. The check that was meant to catch the missing guard never got to
+    # assert anything, the job sat until the runner killed it at its ceiling,
+    # and a killed job reports as cancelled — the shape this repository already
+    # named as not an answer, arriving this time through its own instrument.
+    # Measured: shard 17 of 24, 1h15m, on the commit that reshaped the shards.
+    try:
+        r = subprocess.run([sys.executable, os.path.join(src, "scripts/mutate.py"), *argv],
+                           capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(
+            "%s did not answer in three minutes. A selection that names nothing is refused from "
+            "the arguments; anything that reaches the baseline from here runs the suite, which "
+            "runs this again. A hung measurement is not a measurement." % " ".join(argv))
     assert r.returncode != 0, \
         "%s injected nothing and reported success — 0/0 is not a measurement" % " ".join(argv)
 PYMETA
