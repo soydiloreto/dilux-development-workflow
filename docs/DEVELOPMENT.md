@@ -354,7 +354,23 @@ CI runs both on pull requests, which is where the range exists.
 full run of the suite per injected fault. In one process that does not finish
 inside any timeout worth setting, and a job killed at its timeout reports
 *cancelled*, which is not an answer to the question it was asked. So it runs in
-ten slices, `mutate.py --shard I/10`, one job each.
+twenty-four slices, `mutate.py --shard I/24`, one job each.
+
+**The slice count lives in three places and only two of them are checked.** The
+matrix and the `--shard I/N` argument are tied together by `mutate.py --cover`,
+and `verify_install.sh` does the arithmetic that keeps a slice under the job's
+timeout — a faults-per-shard figure that grew past the ceiling once, killing
+three runs at exactly 45:00 while every check on the branch stayed green. The
+third place is `main`'s branch protection, which lists the required checks BY
+NAME: rename the shards and the required contexts never appear again, so the
+pull request is blocked forever with everything passing. Nothing in this
+repository can read that list — it is GitHub's, not the tree's. **Re-sharding is
+two commits and one API call**, and the call is the one nobody remembers:
+
+```bash
+gh api -X PATCH repos/<owner>/<repo>/branches/main/protection/required_status_checks \
+  --input contexts.json   # the four suites, every shard by its new name, and both coverage jobs
+```
 
 Splitting a measurement is how a measurement goes quietly missing: drop a matrix
 entry and every remaining job is still green while the faults in that slice are
