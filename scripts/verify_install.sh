@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=532
+EXPECT_CHECKS=533
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=404
+EXPECT_MUTATIONS=405
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -8208,6 +8208,58 @@ assert write_to(os.path.join(repo, "src", "app.ts")) == 2, \
 assert write_to(os.path.join(work, "ddw-recovery-state.json")) == 0, \
     "the out-of-repo recovery path the refusal prescribes is now refused as well"
 PYSYMSEAL
+
+# …and the same question with the REPOSITORY reached through a symlink, which is
+# not exotic: `/var` is `/private/var` on every macOS, so a checkout under the
+# system temporary directory is behind one by default. The name-based seal
+# anchored its comparison on a resolved root and judged the path as written, so
+# every path written through the unresolved spelling read as "outside the
+# repository" for its whole length and nothing under it was sealed at all. It
+# held on Linux and not on macOS — same source, same commit, and the suite could
+# not see the difference because it never built the shape.
+python3 - "$SELF" <<'PYSYMROOT' && ok "the seal still holds when the repository itself is reached through a symlink, which is the ordinary case on macOS" || bad "a repo behind a symlinked path leaves DDW's own graph and gate writable from inside a ticket"
+import json, os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+real = tempfile.mkdtemp(dir=os.environ["WORK"])
+work = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "link")
+os.symlink(real, work)                    # every path below is written through it
+repo, outside = os.path.join(work, "repo"), os.path.join(work, "elsewhere")
+os.makedirs(repo)
+os.makedirs(outside)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+shutil.move(os.path.join(repo, ".ddw"), os.path.join(outside, "ddw"))
+os.symlink(os.path.join(outside, "ddw"), os.path.join(repo, ".ddw"))
+
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+      "tier": "FEATURE", "ticket": "T-1"}]
+state = os.path.join(repo, ".ddw-state.json")
+open(state, "w", encoding="utf-8").write(json.dumps(
+    {"tier": "FEATURE", "phase": "DEFINE", "ticket": "T-1", "gates": {}, "history": H}))
+ddw = os.path.join(repo, ".ddw")
+
+
+def write_to(path):
+    event = json.dumps({"tool_name": "Write", "tool_input": {"file_path": path, "content": "x"}})
+    return subprocess.run([sys.executable, os.path.join(ddw, "scripts", "hook-gate.py"),
+                           "--mode", "pre", "--state", state, "--repo", repo,
+                           "--graph", os.path.join(ddw, "rules", "transition-graph.json")],
+                          input=event, capture_output=True, text=True).returncode
+
+
+for rel in (".ddw/rules/transition-graph.json", ".ddw/scripts/hook-gate.py",
+            ".ddw-sessions/forged", ".ddw-installed.json"):
+    assert write_to(os.path.join(repo, rel)) == 2, \
+        ("`%s` is writable when the repo is reached through a symlink: the seal compared a path "
+         "written one way against a root resolved another, and everything under it read as "
+         "outside the repository" % rel)
+assert write_to(os.path.join(repo, "src", "app.ts")) == 2, \
+    "the control write is no longer refused, so the assertions above prove nothing"
+assert write_to(os.path.join(work, "ddw-recovery-state.json")) == 0, \
+    "the out-of-repo recovery path the refusal prescribes is refused under a symlinked root"
+PYSYMROOT
 
 # ── A gate is earned in the phase that does its work ─────────────────────────
 #

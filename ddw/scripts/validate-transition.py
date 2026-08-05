@@ -1039,10 +1039,35 @@ def lexical_in_repo(path, root):
     So both readings are judged: the resolved one catches a guarded file reached
     under another name, and this one catches another file reached under a
     guarded name. Neither subsumes the other.
+
+    One thing IS resolved here, and only one: the repository root itself. `root`
+    arrives already resolved, and a root can perfectly well be written through a
+    symlink of its own — `/var` is `/private/var` on every macOS, which is where
+    a temporary checkout lives, and a repo behind a symlinked path is ordinary
+    anywhere. Compared as written, such a path sits "outside the repository" for
+    the whole of its length, so every sealed name under it went unjudged and
+    this reading protected nothing on that platform. Measured: the seal held on
+    Linux and not on macOS, in CI, from the same source.
+
+    The prefix that resolves TO the root is replaced by the root; the components
+    below it stay exactly as written, because those are the names this reading
+    exists to judge.
     """
     if not os.path.isabs(path):
         path = os.path.join(root, path)
-    return os.path.normpath(path)
+    path = os.path.normpath(path)
+    if path == root or path.startswith(root + os.sep):
+        return path
+    parts = path.split(os.sep)
+    for i in range(len(parts), 0, -1):
+        prefix = os.sep.join(parts[:i]) or os.sep
+        try:
+            if os.path.realpath(prefix) == root:
+                rest = parts[i:]
+                return os.path.join(root, *rest) if rest else root
+        except OSError:
+            continue                      # unreadable ancestor: keep it as written
+    return path
 
 
 def _outside_repo(target, root):
