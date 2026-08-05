@@ -259,6 +259,41 @@ def load_manifest(repo):
     return {}
 
 
+METHOD_DIR = ".ddw"
+
+
+def record_method(repo, manifest):
+    """Fingerprint the method tree into the manifest, file by file.
+
+    A clean install wrote 28 entries and not one of them was under `.ddw/` — so
+    the drift check, which is the whole detection half of "prevention where a
+    path is visible, detection where it is not", could not see a shell rewriting
+    `transition-graph.json`, `validate-transition.py` or `hook-gate.py`.
+    Measured: tampering with all three reported nothing, while the same byte in
+    `.claude/hooks/enforce.sh` reported CHANGED. The graph is the file that
+    decides which gates exist; it was the least watched thing in the repository.
+
+    Three separate comments — `session-boot.py`, `validate-transition.py`,
+    `verify_install.sh` — named exactly this shell vector as the one the manifest
+    covers. It did not.
+
+    Recorded per FILE rather than as one directory hash: importing the validator
+    creates `.ddw/scripts/__pycache__`, and a directory fingerprint would take
+    that in and report drift on every install that had ever run. The `method:`
+    prefix keeps these apart from a tool's wiring, and `enforcement_drift`
+    already splits any `prefix:path` key, so nothing downstream changes.
+    """
+    root = os.path.join(repo, METHOD_DIR)
+    if not os.path.isdir(root):
+        return
+    for base, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+        for name in sorted(files):
+            path = os.path.join(base, name)
+            rel = os.path.relpath(path, repo).replace(os.sep, "/")
+            manifest["method:" + rel] = _fingerprint(path)
+
+
 def save_manifest(repo, manifest):
     try:
         with open(os.path.join(repo, MANIFEST), "w", encoding="utf-8") as fh:
@@ -656,6 +691,7 @@ def main():
                 fh.write(snippet)
             print(f"  ✓ {ctx_name:<22} activation block appended")
 
+    record_method(args.target, manifest)
     save_manifest(args.target, manifest)
 
     if collisions:

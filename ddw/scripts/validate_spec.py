@@ -205,7 +205,7 @@ def _loops_since_human(text):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("spec")
-    ap.add_argument("--tier", default="FEATURE")
+    ap.add_argument("--tier", default="FEATURE", choices=ddw_receipt.TIERS)
     ap.add_argument("--prd", default=None,
                     help="the PRD to check coverage against; found from the spec if omitted")
     args = ap.parse_args()
@@ -490,7 +490,7 @@ def main():
     if fails == 0:
         # One writer for all six receipts, so the rule cannot drift six ways —
         # and so that writing one is RECORDED in the journal the gate reads.
-        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.spec, "spec", text))
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.spec, "spec", text, args.tier))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

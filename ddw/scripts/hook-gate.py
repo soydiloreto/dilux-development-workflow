@@ -328,6 +328,15 @@ def main():
     ap.add_argument("--graph", required=True)
     ap.add_argument("--repo", default=None,
                     help="repo root; relative paths in the event resolve against it")
+    # Where the method itself lives, which under a plugin install is NOT inside
+    # the repo — and every guard on DDW's own files was written as "is this path
+    # under the repo root?". So the graph, this file and the validator were all
+    # writable, and the plugin root is shared, so one write disarmed DDW in every
+    # repository using it. The hooks already resolve this path to find the gate;
+    # passing it costs nothing and is the only thing that knows where the method
+    # is when it is not in the repo.
+    ap.add_argument("--method", default=None,
+                    help="the method root (.ddw, or the plugin's copy); no phase writes inside it")
     args = ap.parse_args()
 
     _VALIDATOR = vt = _load_validator()
@@ -384,7 +393,7 @@ def main():
 
     try:
         reason = vt.decide_pre(args.state, args.graph, tool_name, tool_input, paths,
-                               repo=args.repo, raw_tool=raw_name)
+                               repo=args.repo, raw_tool=raw_name, method=args.method)
     except vt.Block as exc:
         deny(args.dialect, f"DDW FSM blocked the write to the state: {exc}")
     if reason:

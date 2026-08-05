@@ -25,8 +25,21 @@ ddw_guard() {
 #
 # Returns non-zero when neither location has the method, so a caller can bow out
 # rather than build paths under an empty prefix.
+# Chosen by the GATE being there, not by the directory being there. Picking it
+# by directory made `mkdir .ddw` — one command, no privileges, no content —
+# resolve the method to an empty folder; every hook then hit its
+# `[ -f "$DDW/scripts/hook-gate.py" ] || exit 0` and bowed out, two lines below
+# a python3 branch that deliberately fails CLOSED. Measured: a write refused
+# with exit 2 was allowed with exit 0 after that one command, on both the pre
+# and post hooks. Under a plugin install the fallback it skipped is the only
+# copy there is, so an empty directory disabled enforcement for the repo.
+#
+# The comment above is the reason this shape was reachable at all: a repo `.ddw`
+# is treated as a deliberate customisation, so the input that disarms DDW is the
+# input the design invites. `adapters/codex/hooks/pre-tool-use.sh` already asked
+# the question this way.
 ddw_method() {
-  if [ -d "${CLAUDE_PROJECT_DIR:-}/.ddw" ]; then
+  if [ -f "${CLAUDE_PROJECT_DIR:-}/.ddw/scripts/hook-gate.py" ]; then
     printf '%s' "${CLAUDE_PROJECT_DIR}/.ddw"
     return 0
   fi

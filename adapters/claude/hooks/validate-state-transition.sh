@@ -33,4 +33,5 @@ command -v python3 >/dev/null 2>&1 || {
 exec python3 "$DDW/scripts/hook-gate.py" --mode pre \
   --state "${CLAUDE_PROJECT_DIR}/.ddw-state.json" \
   --graph "$DDW/rules/transition-graph.json" \
-  --repo "${CLAUDE_PROJECT_DIR}"
+  --repo "${CLAUDE_PROJECT_DIR}" \
+  --method "$DDW"

@@ -479,17 +479,42 @@ def _check_tier(old_state, new_state, appended):
             "attempt to disable the check."
         )
     old_tier = old_state.get("tier")
-    new_tier = raw_new if raw_new is not None else old_tier
-    if not old_tier or old_tier == new_tier:
-        return
-    # Only CLASSIFY assigns a tier, so the only legal change is the one that
-    # leaves CLASSIFY — or a reset to IDLE, which clears it.
     # Being IN classify counts, not only leaving it. The check looked at the
     # first appended edge, so an in-phase correction while still in CLASSIFY was
     # refused with "the tier changed outside CLASSIFY" — while in CLASSIFY.
     in_classify = old_state.get("phase") == CLASSIFY
     leaving_classify = bool(appended) and appended[0].get("from") == CLASSIFY
     reaching_idle = new_state.get("phase", IDLE) == IDLE
+    # The third hole, and it is the one the check above was written for without
+    # covering: `null` reads as "unchanged" everywhere it is consulted, exactly
+    # like the `""` and `0` refused a few lines up — but it arrives as the value
+    # a caller is ALLOWED to send to mean "leave it alone", so it was let
+    # through. Being let through, it LANDS: the next write finds no old tier and
+    # `not old_tier` returns before anything is compared. FEATURE → null →
+    # QUICK-FIX, two writes, both exit 0, neither saying anything, and the
+    # ticket now walks a graph with no PLAN and no VERIFY. Only IDLE clears a
+    # tier — `_check_idle_invariant` requires it to be null there — and CLASSIFY
+    # may still change it outright, so neither of those is what this refuses.
+    if old_tier and raw_new is None and not reaching_idle and not in_classify:
+        raise Block(
+            f"this write drops `tier` (it is {old_tier!r} on disk) while the ticket is still at "
+            f"{old_state.get('phase', IDLE)}. A null tier reads as 'unchanged' everywhere it is "
+            "consulted, so landing it here lets the NEXT write set any tier it likes without "
+            "this check having anything to compare against. Keep the tier as it is; to change "
+            'it, walk away from this ticket (action "abandon: …") and reclassify.'
+        )
+    # The other half of the same two-write move — planting any tier onto a state
+    # that records none — is deliberately NOT refused here. A tier legitimately
+    # reappears from nothing on more than one edge: entering CLASSIFY, and
+    # resuming a paused ticket out of IDLE, where the tier is restored rather
+    # than assigned. Refusing it by shape breaks both. What closes the exploit
+    # is the check above: the tier-less state is now unreachable through a
+    # write, so nothing arrives at this line by dropping one.
+    new_tier = raw_new if raw_new is not None else old_tier
+    if not old_tier or old_tier == new_tier:
+        return
+    # Only CLASSIFY assigns a tier, so the only legal change is the one that
+    # leaves CLASSIFY — or a reset to IDLE, which clears it.
     if in_classify or leaving_classify or reaching_idle:
         return
     raise Block(
@@ -594,6 +619,85 @@ def _check_entry_ticket(old_state, new_state, appended):
         )
 
 
+def _gate_owners(graph, tier):
+    """gate → the phases that may claim it, derived from the graph.
+
+    A gate is EARNED in the phase whose work produces its evidence, and the
+    graph already says which phase that is: an edge `A->B` demanding gate `g` is
+    the statement that `g` is what leaving A costs. So the phases that own `g`
+    are the sources of the edges that ask for it.
+
+    Nothing enforced that. `transition.py --claim` checked only that the name is
+    a known gate and that its evidence exists, and never read the phase; a raw
+    Write that appends no history returns early in `validate`, so it was not
+    covered either. Under QUICK-FIX, `CODE->CLOSEOUT` costs define, tests and
+    sast — three booleans that could all be set while sitting in DEFINE, before
+    a line of the fix existed. `transition.py` states the contract ("in the
+    phase that owns it") in its own `--claim` help text, and nothing held it.
+
+    Several owners is normal: QUICK-FIX asks `define` on both `DEFINE->CODE` and
+    `CODE->CLOSEOUT`, so both phases may claim it. A gate no edge asks for has no
+    owner, and it fails closed — a gate nothing spends is not one anything earns.
+    """
+    owners = {}
+    for name, spec in _effective_edges(graph, tier).items():
+        src = name.split("->", 1)[0]
+        for gate in (spec or {}).get("gates") or []:
+            owners.setdefault(gate, set()).add(src)
+    return owners
+
+
+def _check_gate_owner(old_state, new_state, graph, appended):
+    """A gate may only be set true in a phase the graph says earns it.
+
+    Judged against the phase the work was done IN, which for a write that also
+    takes an edge is the phase being LEFT, not the one being entered:
+    `--to PLAN --gate define` is the ordinary shape of finishing DEFINE, and
+    reading the destination there refuses the whole happy path.
+    """
+    if len(appended) > 1:
+        # A replay of a whole run (post mode), not a claim. Each edge is judged
+        # on its own terms there; there is no single phase this is "in".
+        return
+    if appended and _is_resume(appended[0]):
+        # Resuming a paused ticket RESTORES the gates it had already earned.
+        # Reaching IDLE wipes them, so every one of them looks newly claimed
+        # here, and the edge comes from IDLE, which owns nothing — so judging a
+        # resume by this rule refuses every pause, which is the exit the method
+        # advertises as costing nothing. What those gates are worth on the way
+        # back is the resume check's question, not this one's.
+        return
+    tier = new_state.get("tier") or old_state.get("tier")
+    if not tier:
+        return                          # no tier, no pipeline to own anything yet
+    old_gates = old_state.get("gates") or {}
+    new_gates = new_state.get("gates") or {}
+    if not isinstance(new_gates, dict):
+        return                          # shape is another check's business
+    claimed = sorted(g for g, v in new_gates.items() if v and not old_gates.get(g))
+    if not claimed:
+        return
+    try:
+        owners = _gate_owners(graph, tier)
+    except Block:
+        return                          # a graph that will not resolve is reported elsewhere
+    phase = appended[0].get("from") if appended else new_state.get("phase", IDLE)
+    for gate in claimed:
+        allowed = owners.get(gate, set())
+        if phase in allowed:
+            continue
+        where = (", ".join(sorted(allowed)) if allowed else None)
+        raise Block(
+            f"`{gate}` cannot be claimed in {phase}: " + (
+                f"under tier {tier} it is earned in {where}."
+                if where else
+                f"no edge in tier {tier} asks for it, so nothing spends it and nothing earns it."
+            ) + " A gate is the evidence that a phase's work was done, so claiming it from "
+            "another phase records work that has not happened yet. Take the transitions in "
+            "order and claim it where it is earned."
+        )
+
+
 def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
              gates_scope="all", skip_edges=0):
     old_h, new_h = _check_append_only(old_state, new_state)
@@ -607,6 +711,9 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     _check_entry_ticket(old_state, new_state, appended)
     _check_idle_invariant(new_state)
     _check_ticket_shape(new_state)
+    # Also before the early return: an in-phase write is exactly how a gate is
+    # claimed, so the phase it is claimed from has to be judged here or nowhere.
+    _check_gate_owner(old_state, new_state, graph, appended)
     _check_gates_have_a_ticket(new_state)
 
     old_phase = old_state.get("phase", IDLE)
@@ -914,6 +1021,29 @@ def resolve_in_repo(path, root):
     return os.path.realpath(path)
 
 
+def lexical_in_repo(path, root):
+    """The path as WRITTEN, anchored to the repo, with no symlink resolved.
+
+    `resolve_in_repo` follows symlinks, and it has to: that is what stops a
+    guarded file being written under an unguarded name. But the sealed lists are
+    about NAMES — `.ddw/`, `.ddw-sessions/`, `.claude/settings.json` — and
+    resolving first answers the question about a different name. With `.ddw`
+    made a symlink to a directory outside the repository, writes to
+    `.ddw/rules/transition-graph.json` and `.ddw/scripts/hook-gate.py` resolved
+    outside, so `enforcement_write_denied` said "not ours" and returned 0, while
+    `src/app.ts` in the same phase returned 2.
+    (`.ddw-sessions/`, `.ddw-installed.json` and `.claude/settings.json` were
+    NOT affected — measured — because nothing had moved those.)
+
+    So both readings are judged: the resolved one catches a guarded file reached
+    under another name, and this one catches another file reached under a
+    guarded name. Neither subsumes the other.
+    """
+    if not os.path.isabs(path):
+        path = os.path.join(root, path)
+    return os.path.normpath(path)
+
+
 def _outside_repo(target, root):
     """Is this resolved path outside the repository DDW is guarding?
 
@@ -949,6 +1079,29 @@ PROTECTED_FILES = frozenset({
     ".claude/settings.json", ".codex/hooks.json",
     ".cursor/hooks.json", ".gemini/settings.json",
 })
+# And the directories those adapters install their hook scripts INTO — the
+# `wiring.to` of each `adapters/*/adapter.json`.
+#
+# Every one of these paths was protected only by `_manifest_paths`, which reads
+# `.ddw-installed.json` and returns an empty set when it cannot. So `rm
+# .ddw-installed.json` — one innocuous-looking JSON file, nothing else — turned
+# a refused write to `.claude/hooks/validate-state-transition.sh` into exit 0.
+# Measured: `.claude/settings.json` and `.ddw/` stayed sealed, because they are
+# named above; every hook script fell open, because none of them was.
+#
+# What this actually buys is narrower than it looks, and saying so is the point:
+# whoever can delete the manifest has a shell, and a shell could already write
+# the hook without any of this seeing it (decision 11). It closes the case where
+# the manifest is absent for an ordinary reason — a clone that never committed
+# it — and leaves a repository in that state as protected as one that did.
+#
+# A closed set for the same reason as above: these are DDW's own adapters, not a
+# guess about your project. `scripts/verify_install.sh` holds it to what the
+# adapters actually declare.
+PROTECTED_WIRING_DIRS = (
+    ".claude/hooks/", ".codex/hooks/ddw/", ".cursor/hooks/ddw/",
+    ".gemini/hooks/ddw/", ".github/hooks/", ".opencode/plugins/",
+)
 INSTALL_MANIFEST = ".ddw-installed.json"
 
 
@@ -1006,6 +1159,8 @@ def enforcement_write_denied(target, root):
         what = "part of DDW itself"
     elif rel in PROTECTED_FILES:
         what = "what wires DDW's gates into this tool"
+    elif any(rel.startswith(p) for p in PROTECTED_WIRING_DIRS):
+        what = "where DDW's hooks are installed for this tool"
     elif rel in _manifest_paths(root):
         what = "a file DDW installed, and the wiring that makes the gates run"
     if what is None:
@@ -1243,6 +1398,39 @@ def _receipt_unwitnessed(root, marker_name):
             "either — re-running the validator is the whole fix.)" % marker_name)
 
 
+def _receipt_spent(root, gate, marker_name):
+    """Was this receipt earned BEFORE the corrective loop took the gate back?
+
+    The journal is ordered, so the question is a comparison of positions: the
+    last line recording `gate` as spent, against the line recording this receipt
+    as written. A receipt that predates the spending attests to work done before
+    the code changed.
+
+    Returns None when there is no journal to read — the same "unknown, never
+    empty" rule the witness check uses, for the same reason.
+    """
+    entries = _journal_lines(os.path.join(root, ".ddw-state.json"))
+    if not entries:
+        return None
+    spent_at = written_at = None
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("record") == "spent" and gate in (entry.get("gates") or []):
+            spent_at = i
+        elif entry.get("record") == "receipt" and entry.get("name") == marker_name:
+            written_at = i
+    if spent_at is None:
+        return None
+    if written_at is not None and written_at > spent_at:
+        return None
+    return ("the %s gate was cleared by a corrective loop after this receipt was written, so the "
+            "receipt attests to a run from before the code changed. A test or SAST report is a "
+            "report ABOUT the code, and its own bytes do not change when the code does — which is "
+            "why re-running it is the only thing that can say the fix holds. Run the validator "
+            "again and claim the gate with the new receipt." % gate)
+
+
 def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact):
     """One gate, one artifact, one receipt naming that artifact's CURRENT bytes.
 
@@ -1312,12 +1500,35 @@ def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact
         # the filename it was written for; nothing had ever read it back.
         try:
             with open(marker, encoding="utf-8") as fh:
-                named = fh.read().strip()
+                lines = fh.read().splitlines()
         except OSError:
-            named = ""
+            lines = []
+        named = lines[0].strip() if lines else ""
+        # …and it has to be a receipt earned under the rules THIS ticket is
+        # being held to. The tier selects which rules a validator runs, and no
+        # validator recorded which one it was asked for: the same bytes that
+        # FAILED as a FEATURE PASSED as a QUICK-FIX and wrote a receipt this
+        # gate could not tell apart. The state's tier is the authority — the
+        # receipt's prefix is not, because the define gate reads an `rca-`
+        # document for tier FIX, so prefix and tier legitimately differ.
+        #
+        # A receipt with no tier line was written before validators recorded it.
+        # Refusing those would strand every ticket mid-flight on upgrade, for a
+        # document that really was validated, so they are accepted as they were.
+        stamped = next((ln.split(":", 1)[1].strip() for ln in lines[1:]
+                        if ln.split(":", 1)[0].strip().lower() == "tier" and ":" in ln), "")
+        if stamped and state.get("tier") and stamped != state.get("tier"):
+            return ("the %s gate has a receipt for %s, but it was validated under `--tier %s` "
+                    "while this ticket is tier %s. The tier decides which rules run, so that "
+                    "receipt does not say this document passes the rules this ticket is held "
+                    "to. Run `python3 .ddw/scripts/%s %s --tier %s`."
+                    % (gate, os.path.relpath(path, root), stamped, state.get("tier"),
+                       script, os.path.relpath(path, root), state.get("tier")))
         if not named or named == os.path.basename(path):
             unwitnessed = _receipt_unwitnessed(root, os.path.basename(marker))
-            return unwitnessed if unwitnessed else None
+            if unwitnessed:
+                return unwitnessed
+            return _receipt_spent(root, gate, os.path.basename(marker))
     rel = os.path.relpath(path, root)
     # No "DDW: " here. Every caller prefixes this reason with its own wording —
     # `DDW blocked this write:`, `ddw-transition:`, `DDW:` — and a prefix baked
@@ -1547,18 +1758,79 @@ def _journal_lines(state_path):
     alike. The two are told apart by shape and never by position.
     """
     out = []
+    if _not_a_regular_file(journal_path(state_path)):
+        return out              # named by _check_state_not_erased, which refuses
     try:
-        with open(journal_path(state_path), encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if line:
-                    try:
-                        out.append(json.loads(line))
-                    except ValueError:
-                        continue
+        with open(journal_path(state_path), "rb") as fh:
+            raw = fh.read()
     except OSError:
-        pass
+        return out
+    # Read as BYTES and decoded a line at a time. `encoding="utf-8"` on the file
+    # raises `UnicodeDecodeError` from the ITERATION, not from `json.loads`, so
+    # it escaped both handlers here — one stray byte anywhere in the journal came
+    # out of the hook as a traceback, and every write in the repository was
+    # refused for it, permanently, with the refusal naming `.ddw-state.json`: a
+    # file with nothing wrong in it. `_journal_undecodable` is what turns that
+    # into something a person can act on.
+    for line in raw.split(b"\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line.decode("utf-8")))
+        except (ValueError, UnicodeDecodeError):
+            continue
     return out
+
+
+def _not_a_regular_file(path):
+    """Is something at this path that is not a file we can finish reading?
+
+    Asked BEFORE opening, because that is the whole point: `mkfifo
+    .ddw-journal.jsonl` makes `open()` itself block until a writer appears, and
+    no writer ever does — so every hook in the repository hangs, forever, with
+    no output and no exit code. A hung hook is not a refusal: the tool is left
+    waiting, and nothing tells the user why. A timeout would only convert it
+    into a slow one. What is true is simpler: DDW's records are regular files,
+    and anything else at those paths did not get there by accident.
+
+    Returns the reason, or None. `os.path.isfile` follows symlinks, so a symlink
+    to a real file stays fine.
+    """
+    if not os.path.exists(path) or os.path.isfile(path):
+        return None
+    return (
+        "`%s` is not a regular file. DDW's records are files; a FIFO, socket or device at that "
+        "path makes every hook block on opening it, which stops the session without saying "
+        "anything. Remove it and restore the real file." % os.path.basename(path)
+    )
+
+
+def _journal_undecodable(state_path):
+    """How many journal lines cannot be read as text at all.
+
+    Counted rather than skipped in silence: the journal is what the erase check
+    compares the state against, so quietly dropping lines makes a damaged record
+    look like a shorter run — which is the exact reading the erase check exists
+    to refuse. A line that cannot be decoded is a line whose transition cannot be
+    ruled out.
+    """
+    if _not_a_regular_file(journal_path(state_path)):
+        return 0                # a different problem, named separately below
+    try:
+        with open(journal_path(state_path), "rb") as fh:
+            raw = fh.read()
+    except OSError:
+        return 0
+    bad = 0
+    for line in raw.split(b"\n"):
+        if not line.strip():
+            continue
+        try:
+            line.decode("utf-8")
+        except UnicodeDecodeError:
+            bad += 1
+    return bad
 
 
 def _journal_entries(state_path):
@@ -1698,9 +1970,30 @@ def record_journal(state_path):
             last = next((g for g in reversed(snaps) if isinstance(g, dict)), None)
             lines = list(history[known:])
             if last != held:
+                # A gate that WAS held and is not any more was spent: the
+                # corrective loop took it back. Recorded by name, because a
+                # receipt is content-hashed and that is not enough for two of
+                # them. For define, spec, threat and verify the artifact IS
+                # what changed, so re-earning costs a real re-validation — the
+                # hash moved. For tests and sast the artifact is a report ABOUT
+                # code that is about to change: the report's bytes are the same
+                # after the fix as before it, so the old receipt went on opening
+                # the gate and QUICK-FIX CLOSEOUT->CODE (or FEATURE VERIFY->CODE)
+                # cost nothing at all. `clears` was a boolean operation and
+                # nothing outlived the write that performed it.
+                #
+                # Not on the way to IDLE: reaching IDLE wipes every gate as part
+                # of parking or closing the ticket, and a paused ticket restores
+                # them on resume without re-validating anything. Recording that
+                # as spending would refuse every resumed ticket.
+                phase_now = state.get("phase", IDLE)
+                dropped = sorted(g for g in (last or {}) if g not in held)
+                if dropped and phase_now != IDLE:
+                    lines.append({"record": "spent", "gates": dropped,
+                                  "ticket": state.get("ticket"), "phase": phase_now})
                 lines.append({"record": "gates", "gates": held,
                               "ticket": state.get("ticket"),
-                              "phase": state.get("phase", IDLE)})
+                              "phase": phase_now})
             for line in lines:
                 fh.write(json.dumps(line, sort_keys=True) + "\n")
     except (OSError, TypeError, ValueError):
@@ -1723,6 +2016,20 @@ def _check_state_not_erased(state_path):
     the file, so the history cannot be dropped by deleting what holds it — the
     next write is refused until a human says what happened.
     """
+    for _path in (journal_path(state_path), state_path):
+        _odd = _not_a_regular_file(_path)
+        if _odd:
+            raise Block(_odd)
+    damaged = _journal_undecodable(state_path)
+    if damaged:
+        raise Block(
+            f"{damaged} line(s) of `.ddw-journal.jsonl` cannot be read as text. That file is the "
+            "record the history is checked against, so a line nobody can read is a transition "
+            "nobody can rule out — and this refusal is about the JOURNAL, not about "
+            "`.ddw-state.json`, which may be perfectly fine. Restore the journal from a backup, "
+            "or if you accept losing the tamper-evidence for this run, remove the unreadable "
+            "lines yourself and tell the user you did."
+        )
     recorded = _journal_entries(state_path)
     if not recorded:
         return
@@ -1735,9 +2042,29 @@ def _check_state_not_erased(state_path):
         )
     try:
         with open(state_path, encoding="utf-8") as fh:
-            history = (json.load(fh) or {}).get("history") or []
-    except (OSError, ValueError, AttributeError):
-        return                       # unreadable is the other check's business
+            text = fh.read()
+    except OSError:
+        return
+    if not text.strip():
+        # Zero bytes is not garbage and it is not absence, and it fell between
+        # the two: this check bailed to "unreadable is the other check's
+        # business", and that check reads a blank file as a fresh IDLE, because
+        # a fresh install genuinely leaves an empty state file behind. So
+        # truncating the state — `: > .ddw-state.json`, or any editor saving an
+        # empty buffer — produced a repository at IDLE with no ticket and no
+        # history, and a write to product source that DEFINE had just refused
+        # went through.
+        #
+        # Which of the two it is, is not a guess: an empty state with nothing in
+        # the journal is the install; an empty state with transitions recorded
+        # is a history that was destroyed. Counted as the zero entries it now
+        # holds, so the comparison below says exactly that.
+        history = []
+    else:
+        try:
+            history = (json.loads(text) or {}).get("history") or []
+        except (ValueError, AttributeError):
+            return                   # unreadable is the other check's business
     # `recorded` is already DISTINCT transitions — `_journal_entries` folds a line
     # written twice, wherever in the file it landed. The comparison used to be
     # against raw lines, which reads a journal line written TWICE as a history
@@ -1779,7 +2106,39 @@ def _read_state_or_refuse(state_path):
     return text, parsed
 
 
-def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, raw_tool=None):
+def _method_write_denied(target, method):
+    """A write to the method itself, wherever the method actually lives.
+
+    `enforcement_write_denied` asks whether a path is under `.ddw/` *in the
+    repo*, which is the whole story for a drop-in install and none of it for a
+    plugin one: there the method sits in a plugin root shared by every project,
+    and every guard on DDW's own files answered "outside the repo, not ours".
+    Measured: writes to the plugin's `transition-graph.json`, `hook-gate.py` and
+    `validate-transition.py` all returned 0 while a write to `src/app.ts` in the
+    same event returned 2 — and with `"PLAN->CLOSEOUT": {"gates": []}` injected
+    into that graph, a FEATURE walked PLAN→CLOSEOUT with no spec, threat, tests,
+    sast or verify. One write, and DDW stops holding in every repository that
+    installs it as a plugin.
+
+    Kept separate from the repo guard because the answer is different: this one
+    holds no matter which side of the repo boundary the path falls on.
+    """
+    if not method:
+        return None
+    root = os.path.realpath(method)
+    if target != root and not target.startswith(root + os.sep):
+        return None
+    return (
+        f"`{os.path.relpath(target, root)}` is part of DDW itself — the method this repository "
+        "is being held to, which under a plugin install lives outside the repository and is "
+        "shared by every project using it. No phase writes it, and a write here would change "
+        "the rules for all of them. To change how DDW is installed, run `install.sh` (or "
+        "`uninstall`) yourself, outside the ticket."
+    )
+
+
+def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, raw_tool=None,
+               method=None):
     """PreToolUse: judge a pending write. `paths` is every path the event names.
 
     Every candidate is judged, not just the first one found: an envelope
@@ -1789,9 +2148,23 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
     root = os.path.realpath(repo) if repo else os.path.dirname(os.path.realpath(state_path))
     state_real = os.path.realpath(state_path)
 
-    targets = [resolve_in_repo(pth, root) for pth in paths if isinstance(pth, str) and pth]
+    named = [pth for pth in paths if isinstance(pth, str) and pth]
+    targets = [resolve_in_repo(pth, root) for pth in named]
+    # The same paths unresolved: the sealed lists are about names, and following
+    # a symlink first answers the question about a different name.
+    lexicals = [lexical_in_repo(pth, root) for pth in named]
     if not targets:
         return None                                   # no path to judge
+
+    # Asked BEFORE the early return below, because that return is exactly what
+    # let this through: under a plugin install the method is outside the repo,
+    # so "nothing here is in the repository" was true of a write to DDW's own
+    # graph. The scratch path the corrupt-state recovery prescribes is not under
+    # the method root, so that door stays open.
+    for target in targets:
+        denied = _method_write_denied(target, method)
+        if denied:
+            return denied
 
     # Nothing this event names is in the repository, so none of it is DDW's to
     # judge. The per-target guards below already say that — but they run after
@@ -1804,7 +2177,14 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
     #
     # This does not soften the corrupt-state rule. Every path inside the repo,
     # the state file first, stays refused until a human restores it.
-    if all(_outside_repo(t, root) for t in targets):
+    #
+    # Judged on BOTH readings of each path. A `.ddw` symlinked to a directory
+    # outside the repository made every write to the method resolve outside it,
+    # so this returned "none of it is DDW's to judge" about DDW's own graph —
+    # while `src/app.ts` in the same phase was refused. A path that is in the
+    # repo under either reading is one this has to look at.
+    if (all(_outside_repo(t, root) for t in targets)
+            and all(_outside_repo(lex, root) for lex in lexicals)):
         return None
 
     # Is this event a WRITE at all?
@@ -1835,7 +2215,7 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
     # the mirror image of the decoy this function was written to close.
     _, disk = _read_state_or_refuse(state_path)
     phase = disk.get("phase", IDLE)
-    for target in targets:
+    for target, lexical in zip(targets, lexicals):
         if target == state_real:
             continue
         if not writing:
@@ -1846,6 +2226,12 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
         reason = enforcement_write_denied(target, root)
         if reason:
             return reason
+        # …and under the name it was written as, which is a different question
+        # whenever a symlink stands between the two.
+        if lexical != target:
+            reason = enforcement_write_denied(lexical, root)
+            if reason:
+                return reason
         reason = source_write_denied(target, root, phase)
         if reason:
             return reason

@@ -23,14 +23,36 @@
 # written portably instead, and the pinned total is what catches the next one.
 set -uo pipefail
 
-EXPECT_CHECKS=${EXPECT_CHECKS:-506}   # bump this when you add or remove a check, on purpose
+# Bump this when you add or remove a check, on purpose. NOT read from the
+# environment: `EXPECT_CHECKS=0` used to print "check total not pinned yet" as a
+# PASS, so a run of 43 of 523 checks exited 0 — the pinned total is the one thing
+# standing between "the suite passed" and "the suite stopped early", and it was
+# a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
+# `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
+# softenable without editing the file they were talking about.
+EXPECT_CHECKS=525
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
 EXPECT_ADAPTERS=6
+# The mutation list is the coverage figure, and its length was pinned nowhere:
+# `grep -rn 366` over the whole tree returned nothing. Deleting entries left
+# `--check-anchors`, `--cover` and every check in this file green, and the
+# published percentage went on being a percentage of a smaller list. The same
+# reason `EXPECT_CHECKS` exists, one file over.
+EXPECT_MUTATIONS=393
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$(mktemp -d)"
+# EXPORTED, because the Python blocks below anchor their own temporary
+# directories to it: `tempfile.mkdtemp(dir=os.environ["WORK"])` registers no finaliser and cleans up
+# nothing, so fifty-four of them per run were left behind for good. One run of
+# this file leaked ~50 directories and nobody noticed; one mutation run, which
+# is this file once per fault across ten parallel shards, put 38 GB and 36,000
+# entries into /tmp in two hours. The leak was never in `mutate.py` — it was
+# here, and the mutations only multiplied it.
+#
+# One place is responsible for cleanup, and it is the trap on the next line.
+export WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 FAILS=0
 CHECKS=0
@@ -100,6 +122,11 @@ n() { local c=0 x; for x in $1; do [ -e "$x" ] && c=$((c+1)); done; echo "$c"; }
 [ "$(n "$SELF/adapters/*/adapter.json")" = "$EXPECT_ADAPTERS" ] \
   && ok "$EXPECT_ADAPTERS adapter recipes" \
   || bad "expected $EXPECT_ADAPTERS adapters, found $(n "$SELF/adapters/*/adapter.json")"
+
+MUT_N="$(python3 "$SELF/scripts/mutate.py" --list | grep -cE '^ *[0-9]+\.')"
+[ "$MUT_N" = "$EXPECT_MUTATIONS" ] \
+  && ok "$EXPECT_MUTATIONS mutations, the number the coverage figure is a percentage of" \
+  || bad "expected $EXPECT_MUTATIONS mutations, found $MUT_N — deleting one deletes the measurement, not the cost"
 
 # ── 0. Source integrity ───────────────────────────────────────────────────────
 section "Source integrity"
@@ -1578,10 +1605,13 @@ assert "validate_prd.py" in said and "--claim define" in said, \
     "the gate refusal names neither the validator that earns it nor the claim: " + said[:200]
 
 # A write that appends an entry going nowhere: the move is an in-phase write.
+# `or` was too loose to hold this: the message keeps `--claim` while losing the
+# clause that says WHAT carries no entry, and a refusal that names a flag
+# without naming the situation it is for is the one a model works around.
 same = refusal(st("DEFINE", H), st("DEFINE", H + [{"timestamp": "2026-01-01T00:02:00Z",
                                                    "from": "DEFINE", "to": "DEFINE", "action": "c",
                                                    "tier": "FEATURE", "ticket": "T-1"}]))
-assert "no history entry" in same.lower() or "--claim" in same, \
+assert "in-phase" in same.lower() and "no history entry" in same.lower() and "--claim" in same, \
     "a self-edge says only that it goes nowhere: " + same[:200]
 
 # History appended from a phase the disk is not at: re-read and append from there.
@@ -1654,7 +1684,7 @@ assert blocked(idle, kept), \
 # seen by replaying: driven through the real script, on disk.
 import subprocess, tempfile
 paused_disk = out("pause: waiting on review")
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 state = os.path.join(work, ".ddw-state.json")
 json.dump(paused_disk, open(state, "w", encoding="utf-8"))
 # With the journal the run really has by then: post mode fired on every edge
@@ -1952,7 +1982,7 @@ HEADER = ("# PRD\n\n| Field | Value |\n|-------|-------|\n| Ticket | T-1 |\n"
 
 
 def loop_row(total, since):
-    path = os.path.join(tempfile.mkdtemp(), "prd-T-1.md")
+    path = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "prd-T-1.md")
     open(path, "w", encoding="utf-8").write(HEADER % (total, since))
     out = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/validate_prd.py"), path,
                           "--tier", "FEATURE"], capture_output=True, text=True).stdout
@@ -2175,7 +2205,7 @@ import json, os, subprocess, sys, tempfile, hashlib
 src = sys.argv[1]
 vt = os.path.join(src, "ddw/scripts/validate-transition.py")
 graph = os.path.join(src, "ddw/rules/transition-graph.json")
-repo = tempfile.mkdtemp()
+repo = tempfile.mkdtemp(dir=os.environ["WORK"])
 os.makedirs(os.path.join(repo, "docs/ddw/prd"))
 os.makedirs(os.path.join(repo, ".ddw-sessions"))
 state = os.path.join(repo, ".ddw-state.json")
@@ -2309,7 +2339,7 @@ import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
 tr = os.path.join(src, "ddw/scripts/transition.py")
 graph = os.path.join(src, "ddw/rules/transition-graph.json")
-repo = tempfile.mkdtemp()
+repo = tempfile.mkdtemp(dir=os.environ["WORK"])
 state = os.path.join(repo, ".ddw-state.json")
 r = subprocess.run([sys.executable, tr, "--to", "CLASSIFY", "--action", "classify",
                     "--tier", "FEATURE", "--ticket", "FEAT-007", "--state", state,
@@ -2521,6 +2551,46 @@ case "$VTFOUT" in
   *) bad "61% line coverage passed a report quoting an 80% floor" ;;
 esac
 
+# The two layouts a real report arrives in, both of which used to be read as an
+# absence: coverage as the two-column table every coverage tool prints, whose
+# metric name is the bare word, and the lint result under its own heading rather
+# than on a `Lint:` line. Refusing either says "coverage missing" or "no lint
+# result" about a document that has both — which sends the author looking for
+# something that is already there.
+cat > "$VP/docs/ddw/reports/tests-layout.md" <<'TSTLAY'
+# Test run — FEAT-002
+
+| Field | Value |
+|---|---|
+| Runner | pytest 8.2 |
+| Command | uv run pytest -q --cov=app |
+| Total | 10 |
+| Passed | 10 |
+| Failed | 0 |
+| Skipped | 0 |
+| Coverage floor | 80% (AGENTS.md) |
+
+## Coverage
+| Metric | % |
+|---|---|
+| Line | 88% |
+| Branch | 84% |
+| Function | 90% |
+
+## Lint
+ruff clean
+TSTLAY
+VTLOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/tests-layout.md" 2>/dev/null || true)"
+case "$VTLOUT" in
+  *"✅ F-TEST-04"*"line 88%"*"branch 84%"*"function 90%"*)
+    ok "and a two-column coverage table is read by its bare metric names, not called missing" ;;
+  *) bad "coverage written as \`| Line | 88% |\` — the shape every coverage tool prints — read as absent" ;;
+esac
+case "$VTLOUT" in
+  *"W-TEST-01"*) bad "a lint result under its own \`## Lint\` heading is reported as no lint result at all" ;;
+  *) ok "and a lint result under its own heading counts, so W-TEST-01 does not send the reader hunting" ;;
+esac
+
 VRP="$VP/docs/ddw/reports"; mkdir -p "$VRP"
 cat > "$VRP/verify-FEAT-001.md" <<'VEREOF'
 # Verify FEAT-001
@@ -2557,6 +2627,87 @@ case "$VVOUT" in
   *) bad "a verdict reporting 61% line coverage passed the 80% floor" ;;
 esac
 
+# The report written in the shape the verify SKILL mandates, with every
+# criterion marked FAILED. `❌` is not a word character, so the `\b(...)\b` this
+# rule used demanded one on both sides of the mark — and no shape the skill
+# teaches has that. The mark was unmatchable in the document it was designed
+# for: F-VER-01 answered "all AC carry a passing verdict" about a verdict where
+# none did, and the receipt was written. Everything else in this report is
+# sound, so the mark is the only thing under test.
+VFD="$WORK/verify-failed/docs/ddw"; mkdir -p "$VFD/reports" "$VFD/prd" "$VFD/specs"
+cp "$VP/docs/ddw/prd/prd-FEAT-001.md" "$VFD/prd/prd-FEAT-001.md"
+cp "$VS/spec-FEAT-001.md" "$VFD/specs/spec-FEAT-001.md"
+cat > "$VFD/reports/verify-FEAT-001.md" <<'VERFAIL'
+# Verification FEAT-001
+
+| Field | Value |
+|---|---|
+| Module | app/routes/public.py |
+| Line coverage | 94% |
+| Branch coverage | 91% |
+| Function coverage | 100% |
+| Coverage floor | 80% (AGENTS.md, "Testing") |
+| Lint | `ruff check .` — clean |
+
+## Acceptance criteria
+- ❌ AC-01 — `test_form_visible` never ran
+- ❌ AC-02 — `test_campo_faltante_devuelve_400` not implemented
+
+## Spec blocks
+- Block 1 — implementado completo.
+
+## Tests
+- Sad-path tests: `test_email_invalido_devuelve_422` covers the documented 422 path
+
+Result: FAILED
+VERFAIL
+VFOUT="$(python3 "$SELF/ddw/scripts/validate_verify.py" "$VFD/reports/verify-FEAT-001.md" \
+        --tier FEATURE --prd "$VFD/prd/prd-FEAT-001.md" --spec "$VFD/specs/spec-FEAT-001.md" \
+        2>/dev/null || true)"
+case "$VFOUT" in
+  *"❌ F-VER-01"*"AC-01"*"AC-02"*)
+    ok "and an AC marked ❌ in the shape the skill teaches is read as failing, not as a passing verdict" ;;
+  *) bad "every AC marked ❌ and F-VER-01 called it a passing verdict — the mark the skill mandates never matched" ;;
+esac
+
+# Which documents the verdict is checked AGAINST is chosen by whoever runs the
+# validator, and nothing tied that choice to the ticket. Point `--prd` and
+# `--spec` at a file with no AC bullets and no `## Block` headings and the run
+# printed "all 0 AC", "all 0 spec block(s)", "all 0 test(s)" and PASSED — three
+# green rules whose subject was empty, and a receipt for them.
+VEMPTY="$WORK/verify-empty/docs/ddw"; mkdir -p "$VEMPTY/reports" "$VEMPTY/prd" "$VEMPTY/specs"
+printf '# Nothing here\n\nA document with no acceptance criteria and no blocks.\n' \
+  > "$VEMPTY/prd/prd-FEAT-009.md"
+cp "$VEMPTY/prd/prd-FEAT-009.md" "$VEMPTY/specs/spec-FEAT-009.md"
+cat > "$VEMPTY/reports/verify-FEAT-009.md" <<'VEREMPTY'
+# Verification FEAT-009
+
+| Field | Value |
+|---|---|
+| Line coverage | 94% |
+| Branch coverage | 91% |
+| Function coverage | 100% |
+| Lint | `ruff check .` — clean |
+
+## Tests
+- Sad-path tests: `test_invalid` covers the documented 422 path
+
+Result: PASSED
+VEREMPTY
+VEOUT="$(python3 "$SELF/ddw/scripts/validate_verify.py" "$VEMPTY/reports/verify-FEAT-009.md" \
+        --tier FEATURE --prd "$VEMPTY/prd/prd-FEAT-009.md" \
+        --spec "$VEMPTY/specs/spec-FEAT-009.md" 2>/dev/null || true)"
+case "$VEOUT" in
+  *"❌ F-VER-01"*"❌ F-VER-02"*)
+    ok "a PRD with no criteria and a spec with no blocks are refused, not counted as all zero of them" ;;
+  *) bad "\"all 0 AC\" and \"all 0 spec block(s)\" passed as a complete verdict — the rules were green over nothing" ;;
+esac
+python3 "$SELF/ddw/scripts/validate_verify.py" "$VEMPTY/reports/verify-FEAT-009.md" --tier FEATURE \
+  --prd "$VP/docs/ddw/prd/prd-FEAT-001.md" --spec "$VS/spec-FEAT-001.md" >/dev/null 2>&1
+[ "$?" = "3" ] \
+  && ok "and a verdict cannot be checked against another ticket's documents" \
+  || bad "FEAT-009's verdict was validated against FEAT-001's PRD and spec — the flags were untied from the ticket"
+
 # ── The catalogued rules nothing had ever broken on purpose ──────────────────
 #
 # Eight rules across four validators were catalogued, implemented, and never
@@ -2572,7 +2723,7 @@ PRD = os.path.join(vp, "docs/ddw/prd/prd-FEAT-001.md")
 SPEC = os.path.join(vs, "spec-FEAT-001.md")
 TM = os.path.join(vtm, "threat-FEAT-001.md")
 VER = os.path.join(vrp, "verify-FEAT-001.md")
-tmp = tempfile.mkdtemp()
+tmp = tempfile.mkdtemp(dir=os.environ["WORK"])
 
 
 def run(script, path, *extra):
@@ -2711,6 +2862,99 @@ for RCP_V in spec threat verify; do
     || bad "validate_$RCP_V.py returned a verdict for a tier whose phase does not exist"
 done
 
+# ── The receipt says which rules it was earned under ──────────────────────────
+#
+# `--tier` picks which rules run, and no validator constrained it or recorded
+# it. So the same bytes could be judged by a shorter set of rules on request,
+# and the receipt — named by a digest of the content alone — came out
+# byte-identical either way. The gate, which knows the ticket's tier perfectly
+# well, had nothing to compare against and opened.
+#
+# The tiers are read from the graph that defines them, so this cannot pass by
+# agreeing with a list typed twice.
+python3 - "$SELF" <<'PYTIERARG' && ok "every validator refuses a --tier the graph does not define" || bad "a validator accepts any --tier at all, and the tier is what decides which rules run"
+import json, os, subprocess, sys
+src = sys.argv[1]
+tiers = sorted(json.load(open(os.path.join(src, "ddw/rules/transition-graph.json"),
+                              encoding="utf-8"))["tiers"])
+assert tiers, "the graph defines no tiers, so this check has nothing to hold the validators to"
+scripts = sorted(f for f in os.listdir(os.path.join(src, "ddw/scripts"))
+                 if f.startswith("validate_") and f.endswith(".py"))
+assert len(scripts) == 6, "expected the six document validators, found: %s" % scripts
+for name in scripts:
+    path = os.path.join(src, "ddw/scripts", name)
+    r = subprocess.run([sys.executable, path, os.devnull, "--tier", "WHATEVER"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "WHATEVER" in (r.stdout + r.stderr), \
+        "%s accepted `--tier WHATEVER`: any string at all selected the rules it runs" % name
+    # …and it still accepts every tier that does exist. A flag constrained to
+    # nothing is not a fix, it is the same gate shut a different way.
+    for tier in tiers:
+        r = subprocess.run([sys.executable, path, os.devnull, "--tier", tier],
+                           capture_output=True, text=True)
+        assert "invalid choice" not in (r.stdout + r.stderr), \
+            "%s rejects `--tier %s`, which the graph defines" % (name, tier)
+PYTIERARG
+
+python3 - "$SELF" <<'PYTIERRCP' && ok "and a receipt earned under another tier does not open the gate" || bad "a document validated under QUICK-FIX rules opens a FEATURE's gate — the tier was decoration"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+prd_dir = os.path.join(repo, "docs", "ddw", "prd")
+os.makedirs(prd_dir, exist_ok=True)
+prd = os.path.join(prd_dir, "prd-T-1.md")
+# The body the finding used: it FAILS as a FEATURE and PASSES as a QUICK-FIX,
+# which is the whole point — one document, two verdicts, one receipt.
+open(prd, "w", encoding="utf-8").write(
+    "# PRD T-1\n\nbug: none. change: everything. regression test: none. risk: none.\n")
+val = os.path.join(repo, ".ddw", "scripts", "validate_prd.py")
+assert subprocess.run([sys.executable, val, prd, "--tier", "FEATURE"],
+                      capture_output=True).returncode != 0, \
+    "this PRD is supposed to fail FEATURE rules; the fixture no longer demonstrates anything"
+assert subprocess.run([sys.executable, val, prd, "--tier", "QUICK-FIX"],
+                      capture_output=True).returncode == 0, \
+    "…and to pass QUICK-FIX rules, which is what makes the two receipts comparable"
+
+sess = os.path.join(repo, ".ddw-sessions")
+marker = os.path.join(sess, next(f for f in os.listdir(sess) if f.startswith("prd-validated-")))
+assert "tier: QUICK-FIX" in open(marker, encoding="utf-8").read(), \
+    "the receipt does not record which rules earned it, so nothing downstream can ask"
+
+state_p = os.path.join(repo, ".ddw-state.json")
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+      "tier": "FEATURE", "ticket": "T-1"}]
+state = {"tier": "FEATURE", "phase": "DEFINE", "ticket": "T-1", "gates": {}, "history": H}
+open(state_p, "w", encoding="utf-8").write(json.dumps(state))
+ev = json.dumps({"tool_name": "Write",
+                 "tool_input": {"file_path": state_p,
+                                "content": json.dumps(dict(state, gates={"define": True}))}})
+r = subprocess.run([sys.executable, os.path.join(repo, ".ddw/scripts/validate-transition.py"),
+                    "--mode", "pre", "--state", state_p, "--repo", repo,
+                    "--graph", os.path.join(repo, ".ddw/rules/transition-graph.json")],
+                   input=ev, capture_output=True, text=True)
+assert r.returncode == 2, "the define gate opened on a receipt earned under QUICK-FIX rules"
+assert "QUICK-FIX" in (r.stdout + r.stderr) and "FEATURE" in (r.stdout + r.stderr), \
+    "the refusal does not name both tiers, so it does not say what to re-run: " + \
+    (r.stdout + r.stderr)[:200]
+
+# A receipt written before validators recorded the tier has no line to compare,
+# and refusing those would strand every ticket in flight at upgrade for a
+# document that really was validated. It is honoured as it was.
+open(marker, "w", encoding="utf-8").write("prd-T-1.md\n")
+r = subprocess.run([sys.executable, os.path.join(repo, ".ddw/scripts/validate-transition.py"),
+                    "--mode", "pre", "--state", state_p, "--repo", repo,
+                    "--graph", os.path.join(repo, ".ddw/rules/transition-graph.json")],
+                   input=ev, capture_output=True, text=True)
+assert r.returncode == 0, \
+    "a pre-upgrade receipt, which records no tier, is now refused — every ticket in flight " \
+    "at upgrade is stranded: " + (r.stdout + r.stderr)[:200]
+PYTIERRCP
+
 # ── The commit gate asks git, not the model ───────────────────────────────────
 #
 # Tracked changes only: untracked files are the build output and the scratch
@@ -2718,9 +2962,19 @@ done
 # the one thing this repo holds to be worse than no gate at all.
 CG="$WORK/commit-gate"; mkdir -p "$CG"; git -C "$CG" init -q .
 git -C "$CG" config user.email ddw@example.com; git -C "$CG" config user.name DDW
+# Signing off, like every other fixture that commits: a contributor with
+# `commit.gpgsign` on globally has no key this fixture can reach, the base
+# commit never lands, and the three checks below report a gate defect for a
+# tree that was never committed in the first place.
+git -C "$CG" config commit.gpgsign false
 bash "$SELF/install.sh" "$CG" --target claude >/dev/null 2>&1
 printf 'v1\n' > "$CG/src.txt"; git -C "$CG" add -A >/dev/null 2>&1
 git -C "$CG" commit -qm base >/dev/null 2>&1
+# And a fixture that failed to commit says so as itself, rather than handing the
+# next three checks a tree they will describe as the gate's fault.
+git -C "$CG" rev-parse --verify -q HEAD >/dev/null \
+  && ok "the commit-gate fixture has a base commit to judge" \
+  || bad "the commit-gate fixture never committed: the three checks below measure the fixture, not the gate"
 CG_REL='{"tier":"FEATURE","phase":"CLOSEOUT","ticket":"FEAT-001","title":null,"tracker":null,"gates":{"define":true,"spec":true,"threat":true,"tests":true,"sast":true,"verify":true},"block":null,"discovery":null,"history":[{"timestamp":"2026-07-29T20:00:00Z","from":"IDLE","to":"CLASSIFY","action":"a"},{"timestamp":"2026-07-29T20:01:00Z","from":"CLASSIFY","to":"DEFINE","action":"b","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:02:00Z","from":"DEFINE","to":"PLAN","action":"c","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:03:00Z","from":"PLAN","to":"CODE","action":"d","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:04:00Z","from":"CODE","to":"VERIFY","action":"e","tier":"FEATURE","ticket":"FEAT-001"},{"timestamp":"2026-07-29T20:05:00Z","from":"VERIFY","to":"CLOSEOUT","action":"f","tier":"FEATURE","ticket":"FEAT-001"}]}'
 printf '%s' "$CG_REL" > "$CG/.ddw-state.json"
 python3 - "$CG" "$CG_REL" > "$CG/ev.json" <<'PYCG'
@@ -2814,7 +3068,7 @@ def template(rel, after):
     return m.group(1).replace("{ticket}", "T-1")
 
 
-d = tempfile.mkdtemp()
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
 for sub in ("prd", "specs", "reports"):
     os.makedirs(os.path.join(d, "docs/ddw", sub))
 open(os.path.join(d, "docs/ddw/prd/prd-T-1.md"), "w", encoding="utf-8").write(
@@ -2886,7 +3140,7 @@ python3 "$SELF/ddw/scripts/transition.py" --to CLASSIFY --action "probe" \
 python3 - "$SELF" <<'PYWORKTREE' && ok "a git worktree resolves to its own root, so the ticket's state lands in the checkout the ticket is in" || bad "the state file lands in the enclosing repository, or the helper cannot find a root at all — in the layout DDW itself recommends"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 main = os.path.join(work, "main")
 os.makedirs(main)
 env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
@@ -2941,7 +3195,7 @@ root = sys.argv[1]
 # event enters. An earlier version of this check called decide_pre directly and
 # passed while Copilot wrote source in DEFINE — it tested the layer beneath the
 # defect and agreed with itself.
-d = tempfile.mkdtemp(); subprocess.run(["git", "-C", d, "init", "-q"], check=True)
+d = tempfile.mkdtemp(dir=os.environ["WORK"]); subprocess.run(["git", "-C", d, "init", "-q"], check=True)
 os.makedirs(os.path.join(d, ".ddw", "rules"), exist_ok=True)
 open(os.path.join(d, ".ddw", "rules", "classify.instructions.md"), "w").write("x")
 st = os.path.join(d, ".ddw-state.json")
@@ -3709,6 +3963,37 @@ for needle in ("scripts/mutate.py --shard", "--check-anchors", "--cover"):
     for s in owning:
         assert not s.get("continue-on-error"), f"`{needle}` runs with continue-on-error"
         assert "|| true" not in str(s.get("run", "")), f"`{needle}`'s failure is swallowed"
+
+# Every job that RUNS the suite has to be a machine the suite's own preflight
+# accepts — asked of all workflows, not of a hand-listed three, because the one
+# that forgets is always the one nobody thought to list.
+#
+# The preflight calls `bad()` for a missing tool and `bad()` decides the exit
+# code, so a job without the CLI exits non-zero on a tree with nothing wrong
+# with it. In `verify` that is a loud false failure. In `mutations` it was
+# silent and worse: the runner reads a non-zero exit as "the fault was caught",
+# so all ten shards reported every mutation killed without one being examined,
+# and the job printed 100%. `release` had the same shape, unfired only because
+# no tag has been pushed.
+#
+# Which tool is derived from the preflight loop rather than restated here: add
+# one there and this starts asking about it.
+import glob, re
+suite_src = open(os.path.join(sys.argv[1], "scripts/verify_install.sh"), encoding="utf-8").read()
+loop = re.search(r"^for TOOL in ([A-Za-z0-9 _-]+); do", suite_src, re.M)
+assert loop, "the preflight no longer loops over the tools it requires — this check reads that list"
+if "claude" in loop.group(1).split():
+    RUNS_SUITE = ("scripts/verify_install.sh", "scripts/mutate.py --shard", "scripts/mutate.py --only")
+    for path in sorted(glob.glob(os.path.join(sys.argv[1], ".github/workflows/*.yml"))):
+        doc = yaml.safe_load(open(path, encoding="utf-8")) or {}
+        for job_name, job in (doc.get("jobs") or {}).items():
+            jsteps = job.get("steps", []) or []
+            if not any(n in str(s.get("run", "")) for s in jsteps for n in RUNS_SUITE):
+                continue
+            assert any("@anthropic-ai/claude-code" in str(s.get("run", "")) for s in jsteps), \
+                ("%s: job `%s` runs the suite without installing the CLI its preflight requires — "
+                 "the suite exits non-zero on a clean tree, and in a mutation job that reads as "
+                 "every fault caught" % (os.path.basename(path), job_name))
 PYCI
 
 # ── The prose against the data ────────────────────────────────────────────────
@@ -3848,7 +4133,7 @@ grep -q "ddw" "$UN/.claude/settings.json" \
 python3 - "$SELF" <<'PYUNINST' && ok "uninstalling leaves nothing DDW installed behind, on any of the six tools, and keeps a file you edited unless you force it" || bad "an uninstall leaves DDW files behind, or destroys a file you had changed"
 import json, os, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 for target in ("claude", "codex", "copilot", "cursor", "gemini", "opencode"):
     repo = os.path.join(work, target)
     os.makedirs(repo)
@@ -3926,7 +4211,7 @@ PYUNINST
 python3 - "$SELF" <<'PYESCAPE' && ok "an uninstall refuses a manifest entry naming anything outside the repo, the repo root itself, or .git — and says so" || bad "a committed manifest can make the uninstaller delete a path DDW never installed, up to and including the working tree"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 repo = os.path.join(work, "victim")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
@@ -3975,7 +4260,7 @@ PYESCAPE
 python3 - "$SELF" <<'PYCLAIM' && ok "a gate is claimed in the phase that owns it, and a whole ticket closes through the helper alone" || bad "the helper cannot close a ticket, or --claim opens a gate with no evidence"
 import hashlib, json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 for k, v in (("user.email", "ddw@test"), ("user.name", "ddw"), ("commit.gpgsign", "false")):
@@ -4088,7 +4373,7 @@ assert edges["PLAN->CODE"]["gates"] == ["only-mine"], \
     "the chain is walked so the parent wins — a tier cannot override what it extends"
 
 # 4. The linter's dangling-reference check, over the prose it actually ships.
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 subprocess.run(["cp", "-r", src, os.path.join(work, "repo")], check=True)
 repo = os.path.join(work, "repo")
 victim = os.path.join(repo, "skills", "ddw-status", "SKILL.md")
@@ -4800,6 +5085,28 @@ for poison in ("", [], 0, False):
     bad_tier = dict(mid); bad_tier["tier"] = poison
     assert rc(mid, bad_tier) == 2, f"tier={poison!r} was accepted and disarms the lock"
 
+# `null` is the same poison wearing the one costume the check let past: it is
+# the value a caller may legitimately send to mean "unchanged", so it resolved
+# to the old tier, every comparison passed — and it LANDED. Two writes, neither
+# appending history, neither saying anything, both exit 0, and a FEATURE in
+# DEFINE is a QUICK-FIX that skips PLAN and VERIFY. Driven as the two writes it
+# actually takes, because each one alone looks like nothing. Omitting the key
+# is the same state by another spelling, so it is asked the same way.
+#
+# The second write is what makes the first one worth refusing, and it is asked
+# about here so the reason this closes is on the record: from a tier-less state
+# the lock has nothing to compare and accepts anything. That write is NOT
+# refused by shape — a tier legitimately reappears from nothing when a paused
+# ticket resumes out of IDLE, and refusing it there would strand every pause —
+# so what has to hold is that no write can produce the state it starts from.
+for drop in (lambda s: dict(s, tier=None), lambda s: {k: v for k, v in s.items() if k != "tier"}):
+    dropped = drop(mid)
+    assert rc(mid, dropped) == 2, \
+        "a write dropped the tier mid-ticket: the next write then sets any tier, unchecked"
+    assert rc(dropped, dict(dropped, tier="QUICK-FIX")) == 0, \
+        "this is the write the one above exists to keep unreachable; if it now fails on its " \
+        "own, say so here rather than leaving the refusal above resting on a stale reason"
+
 # An idle state carries no ticket — every time it is written, not only on the
 # edge that lands there. Otherwise the next write re-plants a full set of gates.
 idle = {"tier": None, "phase": "IDLE", "gates": {},
@@ -4814,8 +5121,17 @@ only_gates = dict(idle, ticket="T-1"); only_gates["gates"] = {"spec": True}
 assert rc(idle, only_gates) == 2, "gates were planted onto an idle state"
 
 # ...and none of that may cost the legal moves.
-mark = dict(mid); mark["gates"] = {"define": True, "spec": True}
-assert rc(mid, mark) == 0, "marking a gate in-phase is legal and was refused"
+# Marking a gate this phase OWNS. The fixture used to add `spec` from DEFINE,
+# which under FEATURE is earned in PLAN — so the check demonstrating that
+# in-phase marking is legal was itself the claim-from-anywhere hole, asserted as
+# correct behaviour.
+ungated = dict(mid); ungated["gates"] = {}
+mark = dict(ungated); mark["gates"] = {"define": True}
+assert rc(ungated, mark) == 0, "marking a gate the phase owns is legal and was refused"
+early = dict(mid); early["gates"] = {"define": True, "spec": True}
+assert rc(mid, early) == 2, \
+    "`spec` was claimed from DEFINE: under FEATURE it is earned in PLAN, and a gate claimed " \
+    "from another phase records work that has not happened"
 classified = {"tier": None, "phase": "CLASSIFY", "gates": {}, "history": [h("IDLE", "CLASSIFY")]}
 assigned = {"tier": "FEATURE", "phase": "DEFINE", "gates": {},
             "history": [h("IDLE", "CLASSIFY"), h("CLASSIFY", "DEFINE", "FEATURE")]}
@@ -5143,7 +5459,7 @@ fence = re.search(r"```bash\n(.*?)```", skill, re.S)
 assert fence, "the self-check skill no longer carries a runnable block"
 snippet = fence.group(1)
 assert "INCONSISTENCY" in snippet, "the block no longer reports anything"
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 for target in ("claude", "codex", "copilot", "cursor", "gemini", "opencode"):
     repo = os.path.join(work, target)
     os.makedirs(repo)
@@ -5345,7 +5661,64 @@ with tempfile.TemporaryDirectory() as repo:
     assert "stop" in low and "do not repair" in low, f"the refusal does not say to stop: {out!r}"
     for order in ("fix the state and redo", "redo the transition with the write tool"):
         assert order not in low, f"the refusal still orders a repair: {order!r}"
+
+    # The third disguise, and the one that fell between the two checks above:
+    # zero bytes. Not absent, so the deletion net does not fire; not garbage, so
+    # the parse guard does not either — and a blank state is read as a fresh
+    # IDLE, because a fresh install genuinely leaves one behind. `: >
+    # .ddw-state.json` therefore put the repository at IDLE with no ticket and
+    # no history, and the write to product source that DEFINE had just refused
+    # went through.
+    open(state, "w", encoding="utf-8").close()
+    rc, out = post(repo)
+    assert rc == 2, "a state truncated to zero bytes read as a fresh IDLE — the run was erased " \
+                    "by emptying the file rather than deleting it"
+    assert "history" in out.lower(), \
+        "the refusal does not say what was lost, which is what tells the user to restore: %r" % out
 PYEOF
+
+# …and a blank state with NOTHING recorded is not an erasure: it is a repository
+# where the run has not started. A guard that cannot tell "nobody has begun"
+# from "somebody erased this" refuses the first write in every new repository,
+# which is how a guard gets deleted rather than fixed. Both spellings of "not
+# started" are asked about — no file at all, which is what install leaves, and
+# an empty one, which is what a `touch` or an editor leaves.
+python3 - "$SELF" <<'PYEMPTYFRESH' && ok "and a blank state with nothing in the journal is a run that has not started, not one that was erased" || bad "the first write in a freshly installed repository is refused as an erased run"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+state = os.path.join(repo, ".ddw-state.json")
+ddw = os.path.join(repo, ".ddw")
+assert not os.path.exists(os.path.join(repo, ".ddw-journal.jsonl")), \
+    "a fresh install now has a journal, which changes what 'nothing recorded' means here"
+event = json.dumps({"tool_name": "Write",
+                    "tool_input": {"file_path": os.path.join(repo, "src", "app.ts"),
+                                   "content": "x"}})
+
+
+def first_write():
+    return subprocess.run([sys.executable, os.path.join(ddw, "scripts", "hook-gate.py"),
+                           "--mode", "pre", "--state", state, "--repo", repo, "--method", ddw,
+                           "--graph", os.path.join(ddw, "rules", "transition-graph.json")],
+                          input=event, capture_output=True, text=True)
+
+
+assert not os.path.exists(state), \
+    "install now writes a state file, so the case below is no longer the one it ships"
+r = first_write()
+assert r.returncode == 0, \
+    "the first write in a freshly installed repository is refused: " + (r.stdout + r.stderr)[:200]
+
+open(state, "w", encoding="utf-8").close()
+r = first_write()
+assert r.returncode == 0, \
+    "an empty state file with an empty journal is refused as an erased run — that is a repo " \
+    "nobody has started: " + (r.stdout + r.stderr)[:200]
+PYEMPTYFRESH
 
 python3 - "$SELF" <<'PYEOF' && ok "and it says the whole finding once, not on every tool call" || bad "the same corrupt state is re-reported in full forever — see above"
 import json, os, subprocess, sys, tempfile
@@ -5593,7 +5966,7 @@ PYEOF
 python3 - "$SELF" <<'PYPIDMARKERS' && ok "a dozen edits in one session leave one marker, not a dozen — the guard counts sessions, not writes" || bad "every write registers a session of its own, so the concurrency warning fires against a directory with one person in it"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -5625,7 +5998,7 @@ PYPIDMARKERS
 
 python3 - "$SB2" <<'PYONESIDED' && ok "a session that cannot announce itself says the guard is one-sided, and does not invent a session to say it" || bad "a boot that could not register stays silent about it, or pads the count with a session nobody is running"
 import os, re, shutil, subprocess, sys, tempfile
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 repo = os.path.join(work, "repo")
 shutil.copytree(sys.argv[1], repo, symlinks=True)
 boot = os.path.join(repo, ".ddw", "scripts", "session-boot.py")
@@ -5701,7 +6074,7 @@ ddw_event_path snake "$ALL/.ddw-paused/TICKET-1.ddw-state.json"
 python3 - "$SELF" <<'PYENF' && ok "DDW's own machinery — the method, the receipts, the wiring, the manifest — is unwritable in EVERY phase, and the repo stays writable" || bad "the pipeline can edit the rules that stop it: see which path and which phase, above"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -5751,7 +6124,7 @@ PYENF
 python3 - "$SELF" <<'PYDRIFT' && ok "a tampered install is reported at boot, and a correct one says nothing — for all six tools" || bad "the enforcement can be replaced through a shell and the next session is never told"
 import os, subprocess, sys, tempfile
 src = sys.argv[1]
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 MARK = "not what was installed"
 for target in ("claude", "codex", "copilot", "cursor", "gemini", "opencode"):
     repo = os.path.join(work, target)
@@ -5790,6 +6163,25 @@ for target in ("claude", "codex", "copilot", "cursor", "gemini", "opencode"):
     out = say()
     assert MARK in out and expect in out and victim in out, \
         f"{target}: tampering with {victim} was not reported: {out[:200]}"
+
+    # …and the three files the detection actually exists for, by name. The
+    # victim above is `sorted(...)[0]`, which on every tool is the first thing
+    # under `.claude/` or its equivalent — so this check could never reach the
+    # method, and the method was not in the manifest at all: a clean install
+    # recorded 28 entries and none of them under `.ddw/`. Tampering with the
+    # graph, the validator and the gate reported NOTHING, while the same byte in
+    # a hook script reported CHANGED. The graph decides which gates exist; it was
+    # the least watched file in the repository.
+    for rel in (".ddw/rules/transition-graph.json",
+                ".ddw/scripts/validate-transition.py",
+                ".ddw/scripts/hook-gate.py"):
+        assert "method:" + rel in recorded, \
+            f"{target}: {rel} is not in the manifest, so no shell edit to it is ever reported"
+        with open(os.path.join(repo, rel), "a", encoding="utf-8") as fh:
+            fh.write("\n# tampered\n")
+        out = say()
+        assert MARK in out and "CHANGED" in out and rel in out, \
+            f"{target}: a shell rewriting {rel} is not reported at boot: {out[:200]}"
 PYDRIFT
 
 # The gates' own worst case, and the easiest state in the world to be in: the
@@ -5802,7 +6194,7 @@ PYDRIFT
 python3 - "$SELF" <<'PYNOART' && ok "a gate claimed for a document that does not exist is refused, and so is one nothing can read" || bad "six of the eight gates open when the artifact is simply absent — the whole pipeline walks with no artifacts at all"
 import hashlib, json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -5877,7 +6269,7 @@ PYNOART
 python3 - "$SELF" <<'PYWITNESS' && ok "a receipt no validator is recorded as having written does not open its gate" || bad "a receipt written by hand still opens its gate — the shell path is unguarded and unreported"
 import hashlib, importlib.util, json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -5936,7 +6328,7 @@ src = sys.argv[1]
 
 # 1. The helper answers an unexpected fault with a sentence and exit 2. Exit 1 is
 #    what a shell reads as an ordinary error and a caller may continue past.
-repo = os.path.join(tempfile.mkdtemp(), "r1")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "r1")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -5953,7 +6345,7 @@ assert "Traceback" not in r.stderr and "could not reach a verdict" in r.stderr, 
 # 2. install.sh finds the manifest wherever a previous version left it. It moved
 #    out of .ddw/ once; reading only the new place makes an upgrade look like a
 #    first install and re-ask the question the manifest exists to answer.
-legacy = os.path.join(tempfile.mkdtemp(), "r2")
+legacy = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "r2")
 os.makedirs(legacy)
 subprocess.run(["git", "-C", legacy, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), legacy, "--target", "claude"],
@@ -5969,7 +6361,7 @@ assert "updating" in out.splitlines()[0], \
 
 # 3. The .gitignore: created by the install only when it writes into it, and
 #    removed by the uninstall when nothing of yours is left in it.
-gi = os.path.join(tempfile.mkdtemp(), "r3")
+gi = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "r3")
 os.makedirs(gi)
 subprocess.run(["git", "-C", gi, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), gi, "--target", "claude"],
@@ -5979,7 +6371,7 @@ subprocess.run(["bash", os.path.join(src, "uninstall.sh"), gi, "--yes"],
 assert not os.path.exists(os.path.join(gi, ".gitignore")), \
     "the uninstall left behind the empty .gitignore the install created"
 # …and a .gitignore that was yours keeps its rules and loses only the block.
-gi2 = os.path.join(tempfile.mkdtemp(), "r4")
+gi2 = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "r4")
 os.makedirs(gi2)
 subprocess.run(["git", "-C", gi2, "init", "-q"], check=True)
 open(os.path.join(gi2, ".gitignore"), "w", encoding="utf-8").write("node_modules/\n")
@@ -6035,7 +6427,7 @@ assert not missing, "these rule IDs are printed to users and defined in no catal
 # left the linter free to stop asking: its pattern demanded a numeric suffix, so
 # F-SAST-COVERAGE and its siblings were excused by the regex rather than by
 # being catalogued.
-probe = os.path.join(tempfile.mkdtemp(), "repo")
+probe = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 subprocess.run(["cp", "-r", src, probe], check=True)
 victim = os.path.join(probe, "ddw/rules/plan.instructions.md")
 open(victim, "a", encoding="utf-8").write("\n\nSee F-MADEUP-RULE for the details.\n")
@@ -6060,7 +6452,7 @@ src = sys.argv[1]
 
 
 def fresh():
-    repo = os.path.join(tempfile.mkdtemp(), "repo")
+    repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
     os.makedirs(repo)
     subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
     subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -6129,7 +6521,7 @@ import importlib.util
 spec = importlib.util.spec_from_file_location(
     "vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-d = tempfile.mkdtemp()
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
 st = os.path.join(d, ".ddw-state.json")
 H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "c"},
      {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "d"}]
@@ -6208,7 +6600,7 @@ WRITES = {"FEATURE": ("prd", "prd", "prd"),
           "QUICK-FIX": ("prd", "fix", "prd"),
           "FIX": ("specs", "rca", "prd")}
 for tier, (subdir, stem, receipt) in WRITES.items():
-    repo = os.path.join(tempfile.mkdtemp(), "repo")
+    repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
     os.makedirs(repo)
     subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
     subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -6244,7 +6636,7 @@ for tier, (subdir, stem, receipt) in WRITES.items():
 spec = importlib.util.spec_from_file_location(
     "vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-root = os.path.realpath(tempfile.mkdtemp())
+root = os.path.realpath(tempfile.mkdtemp(dir=os.environ["WORK"]))
 qf = {"tier": "QUICK-FIX"}
 for rel in ("app/Http/Middleware/Authenticate.php", "src/API/keys.py",
             "db/Migrations/001.sql", "schema.SQL", "config/.ENV"):
@@ -6263,7 +6655,7 @@ PYTIERS
 python3 - "$SELF" <<'PYSPEND' && ok "the write that spends commit and pr is asked for their evidence, not only the write that claimed them" || bad "the closing edge owes evidence to nobody: the gates are asked when turned on and never when cashed"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 for k, v in (("user.email", "ddw@test"), ("user.name", "ddw"), ("commit.gpgsign", "false")):
@@ -6318,7 +6710,7 @@ PYSPEND
 python3 - "$SELF" <<'PYHELPERCLOSE' && ok "the helper asks the closing edge for the evidence it spends, and not only the hook" || bad "a ticket closes through the sanctioned helper over work that only exists on your disk"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 for k, v in (("user.email", "ddw@test"), ("user.name", "ddw"), ("commit.gpgsign", "false")):
@@ -6372,7 +6764,7 @@ helper = os.path.join(src, "ddw/scripts/transition.py")
 TRIALS = 8
 lost = []
 for trial in range(TRIALS):
-    repo = os.path.join(tempfile.mkdtemp(), "repo")
+    repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
     os.makedirs(repo)
     subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
     state = os.path.join(repo, ".ddw-state.json")
@@ -6405,7 +6797,7 @@ import importlib.util
 spec = importlib.util.spec_from_file_location("ddw_transition_probe", helper)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
-probe = os.path.join(tempfile.mkdtemp(), ".ddw-state.json")
+probe = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), ".ddw-state.json")
 open(probe, "w", encoding="utf-8").write('{"phase": "CLASSIFY"}\n')
 
 
@@ -6432,7 +6824,7 @@ PYRACEWRITE
 python3 - "$SELF" <<'PYCLOSEWIPE' && ok "a run refused by post mode is not blessed by closing it: the closing write owes what the run never paid" || bad "one more write to IDLE erases every post-mode finding — a forged ticket closes itself clean"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -6495,7 +6887,7 @@ src = sys.argv[1]
 
 
 def repo_with_ddw(context=None, install=True):
-    repo = os.path.join(tempfile.mkdtemp(), "repo")
+    repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
     os.makedirs(repo)
     subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
     if context is not None:
@@ -6646,7 +7038,7 @@ assert open(os.path.join(repo, "CLAUDE.md"), "rb").read() == odd, \
 
 # 4. A document that is not UTF-8. The validators' own contract says exit 3 for
 #    "cannot read"; all six exited 1 with a stack.
-d = tempfile.mkdtemp()
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
 bad = os.path.join(d, "not-utf8.md")
 open(bad, "wb").write(b"# report\n\xff\xfe\n")
 for v in sorted(glob.glob(os.path.join(src, "ddw/scripts/validate_*.py"))):
@@ -6688,7 +7080,7 @@ for v, doc in (("validate_spec.py", "docs/ddw/specs/spec-T-1.md"),
 # 4c. The method linter is on the same list. One rule file in the wrong encoding
 #     took it down with a stack and exit 1 — the exit code that means "a claim
 #     did not check out", from a run where no claim was ever read.
-probe = os.path.join(tempfile.mkdtemp(), "method")
+probe = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "method")
 shutil.copytree(src, probe, symlinks=True,
                 ignore=shutil.ignore_patterns(".git", "__pycache__"))
 open(os.path.join(probe, "ddw/rules/odd-encoding.instructions.md"), "wb").write(b"texto\xf3\n")
@@ -6738,7 +7130,7 @@ PYSKIP2
 python3 - "$SELF" <<'PYUPGRADE' && ok "a graph change under an open ticket does not condemn the steps already taken, and a new illegal step is still refused" || bad "upgrading DDW mid-ticket strands the ticket permanently, or the window that allows it lets anything through"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -6794,6 +7186,44 @@ suite = open(os.path.join(src, "scripts/verify_install.sh"), encoding="utf-8").r
 # reads has been deleted from every recipe.
 assert re.search(r"^assert checked >= 2,", suite, re.M), \
     "the trust_note check lost the guard that stops it iterating zero times"
+# The pinned totals are constants of this file, not knobs. Read as source
+# because the run cannot see the difference: `EXPECT_CHECKS=${EXPECT_CHECKS:-N}`
+# behaves identically until someone sets it, and then a run of 43 of 523 checks
+# exits 0 while printing a green total. Both documents that tell contributors
+# never to soften this variable were describing a variable anyone could soften
+# from outside the file.
+# Every temporary directory this file makes has to be anchored to `$WORK`, the
+# one the trap deletes. `tempfile.mkdtemp()` registers no finaliser and removes
+# nothing — fifty-five of them ran per pass and every one was left behind. Alone
+# that is fifty stale directories nobody notices; under `mutate.py` it is this
+# file once per fault across ten shards, which put 38 GB and 36,000 entries into
+# /tmp in two hours and took the disk with it. The leak was never in the runner.
+#
+# Read as source, because a run cannot see its own litter: the directories
+# outlive the process that made them, which is the whole defect.
+assert re.search(r"^export WORK=", suite, re.M), \
+    "WORK is not exported, so the Python blocks cannot anchor to it and `os.environ[\"WORK\"]` " \
+    "raises KeyError in every one of them"
+# Comment lines are skipped: this rule is about calls, and the paragraph above
+# names the broken form in prose. A checker that reads its own explanation as a
+# violation is one somebody deletes.
+loose = [i + 1 for i, ln in enumerate(suite.splitlines())
+         if re.search(r"tempfile\.mkdtemp\((?!dir=)", ln) and not ln.lstrip().startswith("#")]
+assert not loose, (
+    "%d temporary-directory call(s) do not pass `dir=` (line %s), so they land in /tmp and "
+    "nothing ever removes them: the trap on WORK is the only cleanup this file has, and a "
+    "directory outside it is outside that" % (len(loose), ", ".join(map(str, loose[:6]))))
+# …and TemporaryDirectory is fine as it is: it cleans up on its own. Named here
+# so the next reader does not "fix" the seven that are already correct.
+assert "TemporaryDirectory" in suite, \
+    "the self-cleaning form is gone from the file, which makes the rule above the only one left"
+
+for pin in ("EXPECT_CHECKS", "EXPECT_MUTATIONS"):
+    m = re.search(r"^%s=(.+)$" % pin, suite, re.M)
+    assert m, "%s is no longer pinned at the top of the suite" % pin
+    assert re.fullmatch(r"[1-9][0-9]*", m.group(1).strip()), \
+        "%s is not a plain number (%s): a total the environment can set is not a pinned total" % (
+            pin, m.group(1).strip())
 # The six validation skills are DERIVED from the gate table; a hand-typed list
 # named four of them for months. Asked by RUNNING the derivation, not by looking
 # for its shape: a check that greps for its own assertion text is satisfied by
@@ -6815,7 +7245,7 @@ for name in derived:
 # entry names was never in the tree — so it reads as covered for as long as it
 # exists. One shipped, and lived through two audits. Driven by handing
 # --check-anchors a copy carrying exactly that shape.
-probe = os.path.join(tempfile.mkdtemp(), "method")
+probe = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "method")
 shutil.copytree(src, probe, symlinks=True,
                 ignore=shutil.ignore_patterns(".git", "__pycache__"))
 mut = os.path.join(probe, "scripts/mutate.py")
@@ -6831,10 +7261,33 @@ assert r.returncode != 0 and "unparseable" in r.stdout, \
     "--check-anchors accepted a mutation that leaves the file it edits unable to parse: " + \
     (r.stdout + r.stderr)[-200:]
 
+# The same fabricated measurement one layer down: `run_one` reads a non-zero
+# exit as "the suite caught the fault", and a suite that was ALREADY red — a
+# tool the preflight refuses over, a signing config this machine cannot satisfy,
+# a half-applied edit — makes every fault report as caught without one check
+# having examined it. The run then prints 100%. Driven by handing the runner a
+# copy whose suite cannot pass: it has to refuse before injecting anything, and
+# say which of the two it was.
+# The suite is made to FAIL without being made to disappear: every anchor stays
+# where it is, so the run gets past --check-anchors and the question actually
+# reaches the guard being driven.
+red = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "method")
+shutil.copytree(src, red, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+redsuite = os.path.join(red, "scripts/verify_install.sh")
+redtext = open(redsuite, encoding="utf-8").read()
+open(redsuite, "w", encoding="utf-8").write(
+    "echo 'a check that has nothing to do with any mutation'\nexit 1\n" + redtext)
+r = subprocess.run([sys.executable, os.path.join(red, "scripts/mutate.py"), "--only", "1"],
+                   capture_output=True, text=True)
+assert r.returncode != 0 and "UNMUTATED" in r.stdout, \
+    "a run over an already-red suite reported its faults as caught: " + (r.stdout + r.stderr)[-200:]
+assert "Injecting" not in r.stdout, \
+    "the runner injected a fault into a tree whose suite was already failing: " + r.stdout[-200:]
+
 # --cover has to refuse a workflow whose mutation job cannot fail, and one that
 # injects the same mutation twice. Driven against doctored copies of the real
 # workflow, because that is what the number is about.
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 real = open(os.path.join(src, ".github/workflows/mutations.yml"), encoding="utf-8").read()
 
 
@@ -6892,7 +7345,7 @@ PYMETA
 python3 - "$SELF" <<'PYCORRUPT' && ok "the helper refuses a state it cannot read instead of overwriting it with a fresh IDLE" || bad "transition.py --write destroys a corrupt state's history — the file the whole product exists to protect"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -6923,7 +7376,7 @@ PYCORRUPT
 python3 - "$SELF" <<'PYSECOND' && ok "installing a second tool leaves that tool's pre-existing hooks alone and says they are yours" || bad "adding a second tool silently destroys the user's own hook scripts"
 import os, subprocess, sys, tempfile
 src = sys.argv[1]
-repo = os.path.join(tempfile.mkdtemp(), "repo")
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
@@ -7042,12 +7495,15 @@ python3 - "$SELF" <<'PYEJECT' && ok "the method resolves to the repo's copy when
 import os, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 guard = os.path.join(src, "adapters/claude/hooks/lib/guard.sh")
-work = tempfile.mkdtemp()
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
 repo, plugin = os.path.join(work, "repo"), os.path.join(work, "plugin")
-os.makedirs(os.path.join(repo, ".ddw"))
-os.makedirs(os.path.join(plugin, "ddw"))
 for d, name in ((os.path.join(repo, ".ddw"), "repo"), (os.path.join(plugin, "ddw"), "plugin")):
+    os.makedirs(os.path.join(d, "scripts"))
     open(os.path.join(d, "orchestrator.md"), "w", encoding="utf-8").write(name)
+    # An install is the method's SCRIPTS being there. The fixture used to be a
+    # directory with one markdown file in it, which is exactly the shape the
+    # check below now exists to refuse.
+    open(os.path.join(d, "scripts", "hook-gate.py"), "w", encoding="utf-8").write("#\n")
 
 
 def resolved():
@@ -7063,7 +7519,588 @@ assert resolved() == os.path.join(repo, ".ddw"), \
 shutil.rmtree(os.path.join(repo, ".ddw"))
 assert resolved() == os.path.join(plugin, "ddw"), \
     "with no repo copy it did not fall back to the plugin: %r" % resolved()
+
+# A directory is not an install. Chosen by directory, `mkdir .ddw` resolved the
+# method to an empty folder, and every hook then bowed out at its
+# `[ -f "$DDW/scripts/hook-gate.py" ] || exit 0` — so one command with no
+# privileges and no content turned enforcement off for the repo.
+os.makedirs(os.path.join(repo, ".ddw"))
+assert resolved() == os.path.join(plugin, "ddw"), \
+    "an empty .ddw won the method: `mkdir .ddw` resolves DDW to a folder with no gate in it, " \
+    "and every hook exits 0 rather than falling back to the copy that does: %r" % resolved()
 PYEJECT
+
+# …and the same question asked of the hooks themselves, because resolving a path
+# correctly is not the thing that has to hold — refusing the write is. Under a
+# plugin install the fallback an empty `.ddw` skips is the only copy of the
+# method there is, so the hook that refused a write exits 0 for the same write
+# once the directory exists. Driven through the shipped hook scripts, both
+# modes, with the plugin as the only place the method lives.
+python3 - "$SELF" <<'PYEMPTYDDW' && ok "an empty .ddw does not disarm the hooks: enforcement falls back to the plugin, not open" || bad "\`mkdir .ddw\` turns every Claude hook off — one command, no privileges, and the refusal becomes exit 0"
+import json, os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+repo, plugin = os.path.join(work, "repo"), os.path.join(work, "plugin")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+shutil.copytree(os.path.join(src, "ddw"), os.path.join(plugin, "ddw"),
+                ignore=shutil.ignore_patterns("__pycache__"))
+shutil.copytree(os.path.join(src, "adapters/claude/hooks"), os.path.join(plugin, "hooks"))
+
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+      "tier": "FEATURE", "ticket": "T-1"}]
+open(os.path.join(repo, ".ddw-state.json"), "w", encoding="utf-8").write(json.dumps(
+    {"tier": "FEATURE", "phase": "DEFINE", "ticket": "T-1", "gates": {}, "history": H}))
+event = json.dumps({"tool_name": "Write",
+                    "tool_input": {"file_path": os.path.join(repo, "src", "app.ts"),
+                                   "content": "x"}})
+
+
+def hook(name):
+    return subprocess.run(["bash", os.path.join(plugin, "hooks", name)],
+                          input=event, capture_output=True, text=True,
+                          env=dict(os.environ, CLAUDE_PROJECT_DIR=repo,
+                                   CLAUDE_PLUGIN_ROOT=plugin)).returncode
+
+
+before = hook("validate-state-transition.sh")
+assert before == 2, \
+    "the fixture does not refuse this write to begin with (rc %s), so it cannot show anything " \
+    "being turned off" % before
+os.makedirs(os.path.join(repo, ".ddw"))
+after = hook("validate-state-transition.sh")
+assert after == 2, \
+    "`mkdir .ddw` turned a refused write (exit 2) into an allowed one (exit %s): the method " \
+    "resolved to the empty directory and the hook bowed out instead of using the plugin" % after
+PYEMPTYDDW
+
+# ── The method is protected where the method actually is ─────────────────────
+#
+# Every guard on DDW's own files asked "is this path under the repo root?",
+# which is the whole story for a drop-in install and none of it for a plugin
+# one: there the method sits in a plugin root SHARED BY EVERY PROJECT, so a
+# write to it was outside the repo, therefore "not ours", therefore allowed. One
+# write to the graph — `"PLAN->CLOSEOUT": {"gates": []}` — and a FEATURE reaches
+# CLOSEOUT with no spec, threat, tests, sast or verify, in every repository that
+# installs DDW as a plugin.
+python3 - "$SELF" <<'PYPLUGINSEAL' && ok "under a plugin install the method itself is sealed, and the out-of-repo recovery path still is not" || bad "the plugin's graph, gate and validator are writable from inside a ticket — one write disarms DDW in every repo using it"
+import json, os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+repo, plugin = os.path.join(work, "repo"), os.path.join(work, "plugin")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+shutil.copytree(os.path.join(src, "ddw"), os.path.join(plugin, "ddw"),
+                ignore=shutil.ignore_patterns("__pycache__"))
+shutil.copytree(os.path.join(src, "adapters/claude/hooks"), os.path.join(plugin, "hooks"))
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+      "tier": "FEATURE", "ticket": "T-1"}]
+open(os.path.join(repo, ".ddw-state.json"), "w", encoding="utf-8").write(json.dumps(
+    {"tier": "FEATURE", "phase": "DEFINE", "ticket": "T-1", "gates": {}, "history": H}))
+
+
+def write_to(path):
+    event = json.dumps({"tool_name": "Write",
+                        "tool_input": {"file_path": path, "content": "x"}})
+    return subprocess.run(["bash", os.path.join(plugin, "hooks",
+                                                "validate-state-transition.sh")],
+                          input=event, capture_output=True, text=True,
+                          env=dict(os.environ, CLAUDE_PROJECT_DIR=repo,
+                                   CLAUDE_PLUGIN_ROOT=plugin))
+
+
+# The three that matter: the rules, the gate, and the code that judges.
+for rel in ("ddw/rules/transition-graph.json", "ddw/scripts/hook-gate.py",
+            "ddw/scripts/validate-transition.py"):
+    r = write_to(os.path.join(plugin, rel))
+    assert r.returncode == 2, \
+        "a write to the plugin's %s was allowed (rc %s) — the method is shared, so this " \
+        "disarms DDW for every repository using it, not just this one" % (rel, r.returncode)
+
+# The control: the same event shape, inside the repo, still refused for its own
+# reason. Without it a gate that refused everything would pass this check.
+assert write_to(os.path.join(repo, "src", "app.ts")).returncode == 2, \
+    "the control write is no longer refused, so the assertions above prove nothing"
+
+# And the one door that has to stay open: the corrupt-state recovery this
+# product prescribes tells the model to write the corrected state to a scratch
+# path outside the repo. That path is not under the method root, and sealing the
+# method must not turn that instruction into a painted door a second time.
+out = os.path.join(work, "ddw-recovery-state.json")
+r = write_to(out)
+assert r.returncode == 0, \
+    "the out-of-repo scratch path the corrupt-state refusal tells the model to use is now " \
+    "refused too: the recovery it prescribes cannot be carried out: " + (r.stdout + r.stderr)[:200]
+PYPLUGINSEAL
+
+# ── Input that stops the hook rather than being refused by it ────────────────
+#
+# Two shapes the journal can take that no handler covered. A single non-UTF-8
+# byte raised `UnicodeDecodeError` from the file ITERATION, not from
+# `json.loads`, so it escaped both `except` clauses and came out of the hook as
+# a traceback — every write in the repository refused, permanently, with the
+# refusal naming `.ddw-state.json`, a file with nothing wrong in it. And
+# `mkfifo .ddw-journal.jsonl` makes `open()` itself block until a writer that
+# never comes: every hook hangs, with no output and no exit code. A hung hook is
+# not a refusal — nothing tells the user anything at all.
+#
+# Driven with a timeout, because the second one reproduces by NOT returning:
+# checking an exit code cannot detect it.
+python3 - "$SELF" <<'PYHOSTILEJOURNAL' && ok "a journal that cannot be decoded, or is not a file at all, is a refusal that names it — not a stack and not a hang" || bad "one odd byte in the journal bricks the repo blaming the wrong file, or a FIFO there hangs every hook forever"
+import importlib.util, os, subprocess, sys, tempfile
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location(
+    "vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(vt)
+
+STATE = '{"phase":"IDLE","tier":null,"gates":{},"history":[]}'
+
+
+def fresh():
+    repo = tempfile.mkdtemp(dir=os.environ["WORK"])
+    open(os.path.join(repo, ".ddw-state.json"), "w", encoding="utf-8").write(STATE)
+    return repo, os.path.join(repo, ".ddw-state.json")
+
+
+# One byte that is not UTF-8, on its own line.
+repo, state = fresh()
+with open(os.path.join(repo, ".ddw-journal.jsonl"), "wb") as fh:
+    fh.write(b'{"from":"IDLE","to":"CLASSIFY"}\n\xff\xfe\n')
+try:
+    vt._check_state_not_erased(state)
+    raise AssertionError("an undecodable journal line was ignored, so the record it is the "
+                         "evidence for can be short by one transition and nothing says so")
+except vt.Block as exc:
+    why = str(exc)
+assert ".ddw-journal.jsonl" in why, \
+    "the refusal does not name the journal — it used to name .ddw-state.json, which is the file " \
+    "the reader then goes and inspects for nothing: %s" % why
+# The lines that ARE readable still parse: one bad byte is not the whole file.
+assert vt._journal_lines(state) == [{"from": "IDLE", "to": "CLASSIFY"}], \
+    "a single undecodable line took the readable ones with it"
+
+# …and the shape that reproduces by hanging. Run in a child with a timeout,
+# because if this regresses the assertion is never reached at all.
+probe = """
+import importlib.util, os, sys, tempfile
+spec = importlib.util.spec_from_file_location("vt", sys.argv[1])
+vt = importlib.util.module_from_spec(spec); spec.loader.exec_module(vt)
+victim, state_text = sys.argv[2], sys.argv[3]
+repo = tempfile.mkdtemp(dir=os.environ["WORK"])
+state = os.path.join(repo, ".ddw-state.json")
+# The FIFO goes where the victim says; whatever is NOT the fifo is a real file,
+# so the only unusual thing in the repo is the one under test.
+if victim != ".ddw-state.json":
+    open(state, "w", encoding="utf-8").write(state_text)
+os.mkfifo(os.path.join(repo, victim))
+try:
+    vt._read_state_or_refuse(state)
+    print("ALLOWED")
+except vt.Block as exc:
+    print("BLOCK " + str(exc))
+"""
+for victim in (".ddw-journal.jsonl", ".ddw-state.json"):
+    try:
+        out = subprocess.run([sys.executable, "-c", probe,
+                              os.path.join(src, "ddw/scripts/validate-transition.py"),
+                              victim, STATE],
+                             capture_output=True, text=True, timeout=20).stdout
+    except subprocess.TimeoutExpired:
+        raise AssertionError(
+            "a FIFO at %s hung the hook: `open()` blocks for a writer that never comes, so the "
+            "session stops with no output and no exit code" % victim)
+    assert out.startswith("BLOCK") and victim in out, \
+        "a FIFO at %s was not refused by name: %s" % (victim, out[:150])
+
+# The everyday journal is untouched by any of this.
+repo, state = fresh()
+open(os.path.join(repo, ".ddw-journal.jsonl"), "w", encoding="utf-8").write(
+    '{"from":"IDLE","to":"CLASSIFY"}\n')
+open(state, "w", encoding="utf-8").write(
+    '{"phase":"CLASSIFY","tier":null,"gates":{},"history":'
+    '[{"timestamp":"t","from":"IDLE","to":"CLASSIFY","action":"a"}]}')
+vt._check_state_not_erased(state)
+PYHOSTILEJOURNAL
+
+# ── The corrective loop costs what it gave back ──────────────────────────────
+#
+# `clears` was a boolean operation and nothing outlived the write that performed
+# it. For define, spec, threat and verify that is enough: the artifact IS what
+# changed, so its hash moves and the old receipt stops matching. For tests and
+# sast it is not — the artifact is a report ABOUT code that is about to change,
+# and its bytes are identical after the fix. So VERIFY->CODE and back
+# re-presented the same receipts and cost nothing, which is the loop the method
+# documents as its recovery path.
+python3 - "$SELF" <<'PYSPENT' && ok "a gate the corrective loop cleared cannot be re-claimed with the receipt from before it" || bad "tests and sast are re-claimed for free after a corrective loop — the report's bytes did not change, and neither did anything else"
+import hashlib, json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+for sub in ("prd", "specs", "security", "reports"):
+    os.makedirs(os.path.join(repo, "docs", "ddw", sub), exist_ok=True)
+os.makedirs(os.path.join(repo, ".ddw-sessions"), exist_ok=True)
+tr = os.path.join(repo, ".ddw", "scripts", "transition.py")
+vt = os.path.join(repo, ".ddw", "scripts", "validate-transition.py")
+graph = os.path.join(repo, ".ddw", "rules", "transition-graph.json")
+state = os.path.join(repo, ".ddw-state.json")
+
+
+def receipt(prefix, rel):
+    """What a PASSED validation leaves: the marker AND the journal line."""
+    path = os.path.join(repo, rel)
+    open(path, "w", encoding="utf-8").write("# %s\n" % rel)
+    digest = hashlib.sha256(open(path, encoding="utf-8").read().encode("utf-8")).hexdigest()[:12]
+    name = "%s-validated-%s" % (prefix, digest)
+    open(os.path.join(repo, ".ddw-sessions", name), "w", encoding="utf-8").write(
+        os.path.basename(path))
+    with open(os.path.join(repo, ".ddw-journal.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"record": "receipt", "name": name,
+                             "file": os.path.basename(path)}, sort_keys=True) + "\n")
+
+
+def step(*args):
+    r = subprocess.run([sys.executable, tr, "--state", state, "--graph", graph, "--write", *args],
+                       capture_output=True, text=True)
+    if r.returncode == 0:
+        subprocess.run([sys.executable, vt, "--mode", "post", "--state", state, "--graph", graph],
+                       capture_output=True, text=True)
+    return r.returncode, (r.stderr or "").strip()
+
+
+receipt("prd", "docs/ddw/prd/prd-T-9.md")
+receipt("spec", "docs/ddw/specs/spec-T-9.md")
+receipt("threat", "docs/ddw/security/threat-T-9.md")
+for args in (("--to", "CLASSIFY", "--action", "classify: a feature",
+              "--tier", "FEATURE", "--ticket", "T-9"),
+             ("--to", "DEFINE", "--action", "write the PRD"),
+             ("--to", "PLAN", "--action", "plan it", "--gate", "define"),
+             ("--to", "CODE", "--action", "implement", "--gate", "spec", "--gate", "threat")):
+    rc, why = step(*args)
+    assert rc == 0, "the walk to CODE was refused: %s" % why
+
+receipt("tests", "docs/ddw/reports/tests-T-9.md")
+receipt("sast", "docs/ddw/security/sast-T-9.md")
+rc, why = step("--to", "VERIFY", "--action", "verify it", "--gate", "tests", "--gate", "sast")
+assert rc == 0, "the first VERIFY was refused: %s" % why
+
+rc, why = step("--to", "CODE", "--action", "fix what verification found")
+assert rc == 0, "the corrective loop was refused: %s" % why
+
+# The move: forward again on the receipts from before the fix. The reports are
+# untouched, so their hashes are exactly what they were.
+rc, why = step("--to", "VERIFY", "--action", "verify again", "--gate", "tests", "--gate", "sast")
+assert rc != 0, \
+    "the gates the corrective loop cleared were re-claimed with the receipts written before it: " \
+    "the reports never changed, so nothing asked whether they had been re-run"
+assert "corrective loop" in why or "cleared" in why, \
+    "the refusal does not say why the receipt is stale: %s" % why
+
+# …and re-running the validators is what pays for it. Same bytes, same digest,
+# same marker name — a new journal line, which is the only thing that can record
+# that a report was produced again.
+receipt("tests", "docs/ddw/reports/tests-T-9.md")
+receipt("sast", "docs/ddw/security/sast-T-9.md")
+rc, why = step("--to", "VERIFY", "--action", "verify again", "--gate", "tests", "--gate", "sast")
+assert rc == 0, \
+    "re-running the validators does not re-open the gate, so the corrective loop is a dead end: %s" % why
+PYSPENT
+
+# ── The sealed names are sealed as NAMES ─────────────────────────────────────
+#
+# Paths are resolved through symlinks before being judged, and they have to be:
+# that is what stops a guarded file being written under an unguarded name. But
+# the sealed lists are about names, so resolving first answers the question
+# about a different one. With `.ddw` made a symlink to a directory outside the
+# repository, `.ddw/rules/transition-graph.json` and `.ddw/scripts/hook-gate.py`
+# resolved outside it, and the guard said "nothing here is DDW's to judge" about
+# DDW's own graph — while `src/app.ts`, in the same phase and the same event
+# shape, was refused.
+#
+# `install.sh` never builds that topology, and `.ddw-sessions/` and
+# `.ddw-installed.json` were never affected. Both halves are asserted, so the
+# refusal rests on what is true rather than on the wider claim it was reported
+# with.
+python3 - "$SELF" <<'PYSYMSEAL' && ok "a .ddw symlinked out of the repository is still sealed, under the name it was written as" || bad "moving .ddw behind a symlink makes DDW's own graph and gate writable from inside a ticket"
+import json, os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+repo, outside = os.path.join(work, "repo"), os.path.join(work, "elsewhere")
+os.makedirs(repo)
+os.makedirs(outside)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+shutil.move(os.path.join(repo, ".ddw"), os.path.join(outside, "ddw"))
+os.symlink(os.path.join(outside, "ddw"), os.path.join(repo, ".ddw"))
+
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+      "tier": "FEATURE", "ticket": "T-1"}]
+state = os.path.join(repo, ".ddw-state.json")
+open(state, "w", encoding="utf-8").write(json.dumps(
+    {"tier": "FEATURE", "phase": "DEFINE", "ticket": "T-1", "gates": {}, "history": H}))
+ddw = os.path.join(repo, ".ddw")
+
+
+def write_to(path):
+    # Deliberately WITHOUT --method: that flag seals the method wherever it
+    # lives, and it would mask whether the name-based seal still holds. This is
+    # the guard underneath it.
+    event = json.dumps({"tool_name": "Write", "tool_input": {"file_path": path, "content": "x"}})
+    return subprocess.run([sys.executable, os.path.join(ddw, "scripts", "hook-gate.py"),
+                           "--mode", "pre", "--state", state, "--repo", repo,
+                           "--graph", os.path.join(ddw, "rules", "transition-graph.json")],
+                          input=event, capture_output=True, text=True).returncode
+
+
+for rel in (".ddw/rules/transition-graph.json", ".ddw/scripts/hook-gate.py",
+            ".ddw/scripts/validate-transition.py"):
+    assert write_to(os.path.join(repo, rel)) == 2, \
+        "`%s` was writable once .ddw pointed outside the repo: the seal is on the name, and " \
+        "the name is still `.ddw/`" % rel
+
+# The two the finding also claimed and that were never affected — asserted so
+# the record says what is true rather than what was reported.
+for rel in (".ddw-sessions/forged", ".ddw-installed.json"):
+    assert write_to(os.path.join(repo, rel)) == 2, "%s stopped being sealed" % rel
+assert write_to(os.path.join(repo, "src", "app.ts")) == 2, \
+    "the control write is no longer refused, so the assertions above prove nothing"
+
+# And the scratch path outside the repo that the corrupt-state refusal tells the
+# model to use has to stay reachable: judging the written name must not turn
+# every out-of-repo path into a refusal.
+assert write_to(os.path.join(work, "ddw-recovery-state.json")) == 0, \
+    "the out-of-repo recovery path the refusal prescribes is now refused as well"
+PYSYMSEAL
+
+# ── A gate is earned in the phase that does its work ─────────────────────────
+#
+# `--claim` checked that the name is a known gate and that its evidence exists,
+# and never read the phase; a raw Write that appends no history returns early in
+# `validate`, so nothing covered that path either. Under QUICK-FIX the closing
+# edge CODE->CLOSEOUT costs define, tests and sast — three booleans that could
+# all be set while sitting in DEFINE, before a line of the fix existed.
+# `transition.py --claim` states the contract in its own help text ("in the
+# phase that owns it") and nothing held it.
+#
+# The owners are derived from the graph, not listed here: an edge `A->B` asking
+# for `g` is the statement that `g` is what leaving A costs.
+python3 - "$SELF" <<'PYGATEOWNER' && ok "a gate cannot be claimed from a phase the graph does not say earns it" || bad "the gates of a later phase can be claimed from an earlier one — the order that IS the guarantee is optional"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location(
+    "vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(vt)
+graph = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json"), encoding="utf-8"))
+
+owners = vt._gate_owners(graph, "QUICK-FIX")
+assert owners.get("tests") == {"CODE"} and owners.get("sast") == {"CODE"}, \
+    "QUICK-FIX no longer earns tests/sast in CODE; this check is asserting a graph that changed"
+# Several owners is normal and must stay allowed: QUICK-FIX asks `define` on
+# both DEFINE->CODE and CODE->CLOSEOUT.
+assert owners.get("define") == {"DEFINE", "CODE"}, \
+    "a gate asked for by two edges no longer has two owners: %r" % (owners.get("define"),)
+
+
+def h(f, t, tier="QUICK-FIX"):
+    return {"timestamp": "2026-01-01T00:00:00Z", "from": f, "to": t, "action": "a",
+            "tier": tier, "ticket": "T-1"}
+
+
+HIST = [h("IDLE", "CLASSIFY"), h("CLASSIFY", "DEFINE")]
+at_define = {"tier": "QUICK-FIX", "phase": "DEFINE", "ticket": "T-1", "gates": {},
+             "history": HIST}
+
+
+def claim(state, gates, phase=None):
+    new = json.loads(json.dumps(state))
+    new["gates"] = dict(new.get("gates") or {}, **gates)
+    if phase:
+        new["phase"] = phase
+    try:
+        vt.validate(state, new, graph)
+        return None
+    except vt.Block as exc:
+        return str(exc)
+
+
+# The three the closing edge costs, claimed from DEFINE.
+for gate in ("tests", "sast"):
+    why = claim(at_define, {gate: True})
+    assert why, "`%s` was claimed from DEFINE, where the fix has not been written yet" % gate
+    assert "CODE" in why, "the refusal does not say where it IS earned: %s" % why
+
+# …and the same claim from the phase that owns it is untouched.
+at_code = {"tier": "QUICK-FIX", "phase": "CODE", "ticket": "T-1",
+           "gates": {"define": True},
+           "history": HIST + [h("DEFINE", "CODE")]}
+for gate in ("tests", "sast"):
+    assert claim(at_code, {gate: True}) is None, \
+        "`%s` cannot be claimed in CODE, which is the only phase that earns it" % gate
+
+# A gate no edge asks for has no owner and fails closed — a gate nothing spends
+# is not one anything earns.
+assert claim(at_define, {"verify": True}), \
+    "`verify` was claimed under QUICK-FIX, a tier whose graph never asks for it"
+
+# And under FEATURE, `define` is DEFINE's alone: claiming it from PLAN is the
+# same move one phase later.
+feat = {"tier": "FEATURE", "phase": "PLAN", "ticket": "T-1", "gates": {},
+        "history": [h("IDLE", "CLASSIFY", "FEATURE"), h("CLASSIFY", "DEFINE", "FEATURE"),
+                    h("DEFINE", "PLAN", "FEATURE")]}
+assert claim(feat, {"spec": True}) is None, "`spec` is earned in PLAN and was refused there"
+assert claim(feat, {"define": True}), "`define` was claimed from PLAN under FEATURE"
+PYGATEOWNER
+
+# ── Deleting the manifest is not an uninstall ────────────────────────────────
+#
+# `_manifest_paths` returns an empty set when it cannot read
+# `.ddw-installed.json`, and every hook script was protected by nothing else. So
+# `rm .ddw-installed.json` — one file whose name reads like a build artifact —
+# turned a refused write to the gate script into exit 0, and turned drift
+# detection off permanently, which is the worse half: the write leaves evidence,
+# and this removes what would have reported it.
+python3 - "$SELF" <<'PYNOMANIFEST' && ok "deleting the install manifest neither unseals the hooks nor silences the drift report" || bad "\`rm .ddw-installed.json\` unseals every hook script and leaves a tampered repo reading like a clean one"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+      "tier": "FEATURE", "ticket": "T-1"}]
+state_p = os.path.join(repo, ".ddw-state.json")
+open(state_p, "w", encoding="utf-8").write(json.dumps(
+    {"tier": "FEATURE", "phase": "DEFINE", "ticket": "T-1", "gates": {}, "history": H}))
+ddw = os.path.join(repo, ".ddw")
+
+
+def write_to(rel):
+    event = json.dumps({"tool_name": "Write",
+                        "tool_input": {"file_path": os.path.join(repo, rel), "content": "x"}})
+    return subprocess.run([sys.executable, os.path.join(ddw, "scripts", "hook-gate.py"),
+                           "--mode", "pre", "--state", state_p, "--repo", repo,
+                           "--method", ddw,
+                           "--graph", os.path.join(ddw, "rules", "transition-graph.json")],
+                          input=event, capture_output=True, text=True).returncode
+
+
+SEALED = (".claude/hooks/validate-state-transition.sh", ".claude/hooks/enforce.sh",
+          ".claude/settings.json", ".ddw/rules/transition-graph.json")
+for rel in SEALED:
+    assert write_to(rel) == 2, "%s is not sealed even WITH the manifest present" % rel
+
+os.remove(os.path.join(repo, ".ddw-installed.json"))
+for rel in SEALED:
+    assert write_to(rel) == 2, \
+        "with the manifest deleted, `%s` became writable: the only thing protecting the hook " \
+        "scripts was a file anyone can remove" % rel
+
+# And the boot has to say so. Silence here is the permanent half: nothing in the
+# repository can be compared against anything again, and every later session
+# reads a tampered install as a clean one.
+sb = os.path.join(ddw, "scripts", "session-boot.py")
+out = subprocess.run([sys.executable, sb, "--repo", repo, "--session-id", "s"],
+                     capture_output=True, text=True).stdout
+assert ".ddw-installed.json" in out, \
+    "the boot says nothing about a missing manifest in a repo that plainly has `.ddw/` in it: " \
+    + out[:200]
+
+# …and it must stay quiet where the manifest is legitimately absent. A plugin
+# install writes nothing into the repository, so there is no `.ddw/` and no
+# manifest, and warning there would train the reader to ignore this.
+plugin_repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "plain")
+os.makedirs(plugin_repo)
+subprocess.run(["git", "-C", plugin_repo, "init", "-q"], check=True)
+quiet = subprocess.run([sys.executable, sb, "--repo", plugin_repo, "--session-id", "s"],
+                       capture_output=True, text=True).stdout
+assert ".ddw-installed.json" not in quiet, \
+    "a repo DDW was never installed into is reported as having lost its manifest: " + quiet[:200]
+PYNOMANIFEST
+
+# The sealed wiring directories are a closed literal in the shipped validator,
+# because it cannot read `adapters/`. This is what stops that literal drifting
+# from what the adapters actually declare — an adapter whose destination is not
+# sealed is one `rm` away from being unprotected again.
+python3 - "$SELF" <<'PYWIRINGSEAL' && ok "every adapter's hook destination is in the validator's sealed set" || bad "an adapter installs its hooks somewhere the validator does not seal"
+import json, glob, os, re, sys
+src = sys.argv[1]
+vt = open(os.path.join(src, "ddw/scripts/validate-transition.py"), encoding="utf-8").read()
+m = re.search(r"PROTECTED_WIRING_DIRS = \(([^)]*)\)", vt, re.S)
+assert m, "the validator no longer carries a sealed set of wiring directories"
+sealed = tuple(s.strip().strip('"').strip("'") for s in m.group(1).split(",") if s.strip())
+assert sealed, "the sealed set is empty"
+
+declared = []
+for path in sorted(glob.glob(os.path.join(src, "adapters/*/adapter.json"))):
+    recipe = json.load(open(path, encoding="utf-8"))
+    wiring = recipe.get("wiring") or []
+    if isinstance(wiring, dict):
+        wiring = [wiring]
+    for w in wiring:
+        to = w.get("to") if isinstance(w, dict) else None
+        if to:
+            declared.append((os.path.basename(os.path.dirname(path)), to.rstrip("/") + "/"))
+assert len(declared) >= 6, "found %d wiring destinations, fewer than there are adapters" % len(declared)
+
+for adapter, dest in declared:
+    assert any(dest == s or dest.startswith(s) for s in sealed), \
+        "the %s adapter installs its hooks into `%s`, which no entry of PROTECTED_WIRING_DIRS " \
+        "covers: deleting the manifest leaves them writable" % (adapter, dest)
+PYWIRINGSEAL
+
+# Sealing it depends on each adapter HANDING the gate the method root it already
+# resolved to find the gate. Asked of every adapter, derived from the files, so
+# the next one added is asked too rather than being the one nobody listed.
+python3 - "$SELF" <<'PYMETHODARG' && ok "every adapter's pre-write hook hands the gate the method root it resolved" || bad "an adapter invokes the gate without --method, so under a plugin install the method is unprotected there"
+import os, re, sys
+src = sys.argv[1]
+adapters = os.path.join(src, "adapters")
+
+# Both spellings of a gate invocation run across several lines — the shell ones
+# with `\` continuations, the JS one as an argv array — so this reads whole
+# invocations. Judging line by line called two correct adapters broken, which is
+# the failure mode that gets a check deleted rather than fixed.
+pre = []
+for dirpath, _dirs, files in os.walk(adapters):
+    for name in sorted(files):
+        if not name.endswith((".sh", ".js")):
+            continue
+        path = os.path.join(dirpath, name)
+        rel = os.path.relpath(path, src)
+        text = open(path, encoding="utf-8").read()
+        if name.endswith(".sh"):
+            joined = re.sub(r"\\\n\s*", " ", text)
+            for line in joined.splitlines():
+                # Matched on the INVOCATION, not on the gate's filename: four of
+                # the six adapters run it through a `$GATE` variable, and a
+                # matcher looking for `hook-gate.py` saw two of them.
+                if "--mode pre" in line and "python3" in line and not line.lstrip().startswith("#"):
+                    pre.append((rel, " ".join(line.split())))
+        else:
+            m = re.search(r"const runGate[\s\S]{0,500}?\n\s*\}\)", text)
+            if m and "gate" in m.group(0):
+                # This one is called for both modes with `mode` as a variable,
+                # so it has to carry --method for the pre call to be covered.
+                pre.append((rel, " ".join(m.group(0).split())))
+
+assert len(pre) >= 6, \
+    "found %d gate invocations across the adapters, which is fewer than there are adapters — " \
+    "this check is not reading them: %s" % (len(pre), [r for r, _ in pre])
+for rel, call in pre:
+    assert "--method" in call, \
+        "%s runs the gate in pre mode without --method: under a plugin install the method " \
+        "root is outside the repo, and every guard on DDW's own files answers 'not ours'" % rel
+PYMETHODARG
 
 # /ddw-commit's template against the rule this repo enforces on itself. The
 # template could be changed to emit the trailer `check_commits.py` refuses, and
@@ -7079,7 +8116,7 @@ m = re.search(r"^AI-assisted:.*$", skill, re.M)
 assert m, "the template no longer carries the attribution trailer at all"
 # Through the checker, not against a string: a commit written the way the skill
 # says has to pass the script that guards this repo's own history.
-repo = tempfile.mkdtemp()
+repo = tempfile.mkdtemp(dir=os.environ["WORK"])
 subprocess.run(["git", "-C", repo, "init", "-q", "-b", "main"], check=True)
 for k, v in (("user.email", "ddw@test"), ("user.name", "ddw"), ("commit.gpgsign", "false")):
     subprocess.run(["git", "-C", repo, "config", k, v], check=True)
@@ -7788,6 +8825,13 @@ step("verify", "--to", "VERIFY", "--action", "verify it", "--gate", "tests", "--
 # The corrective loop: back to CODE, giving up what VERIFY granted, then forward
 # again re-earning it. The pipeline's own documented recovery path.
 step("corrective loop", "--to", "CODE", "--action", "fix what verification found")
+# …and re-earning them means RUNNING them again. The reports' bytes are
+# identical before and after the fix — they are reports about the code, not the
+# code — so the content hash cannot tell the two runs apart, and reusing the old
+# receipts used to cost nothing. What distinguishes them is the journal line a
+# validator leaves when it passes, which is what these two calls model.
+receipt("tests", "docs/ddw/reports/tests-T-1.md")
+receipt("sast", "docs/ddw/security/sast-T-1.md")
 step("re-verify", "--to", "VERIFY", "--action", "verify again", "--gate", "tests", "--gate", "sast")
 receipt("verify", "docs/ddw/reports/verify-T-1.md")
 step("closeout", "--to", "CLOSEOUT", "--action", "close it out", "--gate", "verify")
@@ -7832,8 +8876,10 @@ assert "SKIPS" in verdict, "the verdict never mentions the checks that did not r
 assert re.search(r"exit \$\(\(.*SKIPS.*\)\)", verdict), \
     "the exit code ignores the skips, so a run that skipped everything exits 0"
 PYSKIP
-if [ "$EXPECT_CHECKS" -eq 0 ]; then
-  ok "check total not pinned yet (set EXPECT_CHECKS to $((CHECKS + 1)) at the top of this file)"
+if [ "$EXPECT_CHECKS" -le 0 ]; then
+  # Not a pass. An unpinned total is the absence of this check, and printing it
+  # green is how a run of 43 of 523 exited 0.
+  bad "the check total is not pinned (EXPECT_CHECKS=$EXPECT_CHECKS) — set it to $((CHECKS + 1)) at the top of this file"
 elif [ "$CHECKS" -eq "$((EXPECT_CHECKS - 1))" ]; then
   ok "all $EXPECT_CHECKS checks ran"
 else

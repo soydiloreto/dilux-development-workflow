@@ -68,7 +68,17 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - run: python3 -m pip install --quiet pyyaml
+      - name: Install what the suite asserts it needs
+        run: |
+          python3 -m pip install --quiet pyyaml
+          # Load-bearing HERE in a way it is nowhere else. The suite's preflight
+          # calls `bad()` for a missing tool, so without this the suite exits
+          # non-zero on every copy — and this job reads a non-zero exit as "the
+          # fault was caught". Every mutation reported killed, none examined,
+          # 100% printed. The runner now refuses a red baseline rather than
+          # reporting on it, which turns that into a failed job; installing the
+          # CLI is what turns it back into a measurement.
+          npm install -g @anthropic-ai/claude-code
       # Every mutation here is a defect that actually shipped once; a surviving
       # one is a check that does not exist. This job must not be made "faster"
       # by deleting mutations — that is deleting the measurement, not the cost.

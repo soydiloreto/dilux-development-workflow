@@ -142,7 +142,7 @@ def _loops_since_human(text):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("prd")
-    ap.add_argument("--tier", default="FEATURE")
+    ap.add_argument("--tier", default="FEATURE", choices=ddw_receipt.TIERS)
     args = ap.parse_args()
     try:
         text = open(args.prd, encoding="utf-8").read()
@@ -320,7 +320,7 @@ def main():
         # PRD after validating and the hash no longer matches — validate again.
         # One writer for all six receipts, so the rule cannot drift six ways —
         # and so that writing one is RECORDED in the journal the gate reads.
-        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.prd, "prd", text))
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.prd, "prd", text, args.tier))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

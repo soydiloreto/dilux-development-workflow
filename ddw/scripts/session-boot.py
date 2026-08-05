@@ -168,6 +168,26 @@ def other_live_sessions(repo, session_id):
         return 0, registered
 
 
+def _no_manifest(why):
+    """`.ddw/` is here and the record of what was installed is not.
+
+    Reported as loudly as a CHANGED file, because it is strictly worse: a
+    changed file is one thing this can name, and a missing manifest is every
+    file at once — nothing in the repository can be compared against anything
+    again, and the state is permanent. It is also the cheapest thing in the
+    world to reach, being a `rm` of a file whose name reads like a build
+    artifact.
+    """
+    return [
+        "⚠️ DDW: the record of what was installed here is gone.",
+        f"   MISSING  .ddw-installed.json ({why})",
+        "   `.ddw/` is in this repository, so DDW was installed into it — which means this "
+        "file existed. Without it nothing can be checked against what was installed, and a "
+        "tampered repository reads exactly like a clean one. Say so to the user before doing "
+        "anything else; re-running `install.sh` writes it again.",
+    ]
+
+
 def enforcement_drift(repo):
     """Files DDW installed whose bytes no longer match what it installed.
 
@@ -183,13 +203,23 @@ def enforcement_drift(repo):
     overwriting your work.
     """
     manifest = os.path.join(repo, ".ddw-installed.json")
+    # A missing manifest read as "plugin mode, or never installed" and said
+    # nothing. But those two cases have no `.ddw/` in the repository, and a
+    # drop-in install does — so the one state this could not be is the one it was
+    # treated as. Deleting the manifest therefore turned drift detection off
+    # permanently and left a tampered repository indistinguishable from a clean
+    # one, which is worse than the write it also unsealed: that write leaves
+    # evidence, and this removes the thing that would have reported it.
+    installed_here = os.path.isdir(os.path.join(repo, ".ddw"))
     try:
         with open(manifest, encoding="utf-8") as fh:
             recorded = json.load(fh)
-    except (OSError, ValueError):
-        return []                      # no manifest (plugin mode, or never installed)
+    except (OSError, ValueError) as exc:
+        if not installed_here:
+            return []                  # plugin mode, or never installed
+        return _no_manifest(type(exc).__name__)
     if not isinstance(recorded, dict) or not recorded:
-        return []
+        return _no_manifest("it is empty or not an object") if installed_here else []
     import hashlib
 
     def fingerprint(path):

@@ -107,7 +107,8 @@ export const DdwPlugin = async ({ directory }) => {
 
   const runGate = (mode, payload) =>
     execFileSync("python3", [gate, "--dialect", "standard", "--mode", mode,
-                             "--state", state, "--graph", graph, "--repo", directory], {
+                             "--state", state, "--graph", graph, "--repo", directory,
+                             "--method", ddw], {
       input: payload ?? "",
       stdio: ["pipe", "pipe", "pipe"],
     })

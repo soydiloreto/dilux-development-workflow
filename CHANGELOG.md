@@ -94,6 +94,171 @@ were in the pipeline's belief that it was enforcing anything.
   CLOSEOUT, the pause-vs-prefix match and the tier chain's direction had no
   mutation. Plus eleven documentation claims that were false about the code.
 
+#### Round two: the ticket that closes without answering the question
+
+- **The closing edge asked for nothing, in all three places that judge it.**
+  `transition.py` asked `gate_evidence_missing` only about the gates named in
+  `--gate`, and `--gate` is refused on `--to IDLE` — so the sanctioned helper,
+  the path the method tells the model to take, asked nothing exactly where the
+  evidence matters, and closed a ticket over uncommitted work with exit 0. Post
+  mode had the mirror of it: `scope == "none"` gated the evidence arm too, so a
+  forged run refused at CLOSEOUT was blessed in full by one more write to IDLE.
+- **Two runs of the helper in one turn lost an edge.** Read and write were not
+  one critical section: both read the same phase, both validated, both wrote,
+  and the second `os.replace` dropped the first one's transition while both
+  exited 0. A write now refuses to land over a state that moved under it.
+- **The uninstaller deleted the repository.** `claude:.` in a committed manifest
+  resolves to the repo itself, passed a containment check written as "is it
+  inside?", and reached `shutil.rmtree` — working tree, `.git`, and every file
+  the user had ever written. A mutation for the traversal case existed and
+  killed nothing, because no check ever drove it.
+- **A journal line written twice slid the index** that finds what just landed,
+  so post mode owed evidence for nothing; and deleting the journal outright
+  turned the receipt-witness check off, so a hand-written receipt opened its
+  gate again in one command.
+- **`pid-$$` is not a session.** The pre-write hook runs on every edit and
+  identified itself by its own shell, so a repo with one person in it grew one
+  live session per write and then warned about twelve of them.
+
+#### An entry point that answers with a stack
+
+- **The installer assumed the shape of your settings file.** A `hooks` that is
+  null, a string, a top-level array, or a `PreToolUse` that is a mapping where
+  the tool's own schema says list — each reached `cur.append(blk)` and came out
+  an `AttributeError`, with `.claude/` and `.ddw/` already on disk, no manifest
+  and no hooks wired: a repo that looks installed, is not, and whose drift
+  detector is off for good. Same for a context file that is not UTF-8, which is
+  what a Spanish `AGENTS.md` saved as cp1252 is.
+- **The uninstaller was worse in one case**: `PreToolUse: "oops"` was iterated as
+  a sequence, so the file came back rewritten one character per list element,
+  exit 0, "Done." A tool that corrupts what it was asked to clean and reports
+  success is worse than one that refuses.
+- **Four validators read their companion document through a bare `except
+  OSError`**, so the everyday case of a PRD in the wrong encoding exited 1 with
+  a stack; the method linter took the whole run down on one rule file saved the
+  same way.
+- **A worktree is a repository whose `.git` is a file.** The root walk asked
+  whether it was a directory, so the layout the boot itself recommends could not
+  resolve a root at all, and a worktree nested in another checkout resolved to
+  the enclosing one — the ticket's state landing beside somebody else's work.
+- **`--check-anchors` now compiles what each mutation would produce.** A
+  mutation that leaves the file unparseable measures the file not compiling:
+  every check dies on the import and the run records a kill. One had shipped and
+  lived through two audits.
+
+#### The document a phase is told to write has to pass the gate it is written for
+
+- **Three plausible renderings of a complete test run were refused for their
+  layout** — a coverage table whose rows are labelled `Line`, a lint result under
+  its own heading, a failure named by test rather than by `path::test`, and
+  `sad-path` with the hyphen English actually uses. Each read to the user as
+  "your report is incomplete" about a report that was not.
+- **Neither the test report nor the verification verdict had a canonical shape
+  anywhere**, so there was nothing to copy and every draft was a guess. Both
+  skills now carry the document, and the suite extracts each one and runs it
+  through the validator that reads it.
+- **The three refusals a real run hits most named the fact and not the move.**
+  "gate 'spec' required for X is not true" says what is wrong and nothing about
+  what to do, and what the model does next is edit the state by hand — which the
+  hook then refuses just as finally.
+
+#### Round three: the instrument, and the gates that opened on the wrong evidence
+
+- **The mutation figure was arithmetic over a run that never happened.** The CI
+  job never installed the Claude CLI; the suite's preflight calls `bad()` for a
+  missing tool; the runner reads any non-zero exit as "the fault was caught". So
+  every shard reported every mutation killed without examining one, and printed
+  100%. The same shape arrived locally through `commit.gpgsign` — the one
+  fixture that commits without disabling signing could not commit at all on a
+  contributor's machine, and three checks blamed the commit gate for a tree that
+  was never committed. The runner now asks an **unmutated** copy first and
+  refuses to inject anything into a suite that cannot pass, saying which of the
+  two it was; both CI jobs install the CLI; and every workflow job that runs the
+  suite is held to the preflight's own tool list.
+- **`--tier` decided which rules ran and nothing recorded which one was asked
+  for.** The same PRD failed as a FEATURE and passed as a QUICK-FIX, and the
+  receipt — named by a digest of the content alone — came out byte-identical
+  either way, so the gate had nothing to compare against. Receipts record the
+  tier they were earned under, the gate refuses one that is not the ticket's,
+  and `--tier` accepts only the tiers the graph defines. Receipts written before
+  this carry no tier line and are still honoured.
+- **`mkdir .ddw` turned every Claude hook off.** The method was chosen by the
+  directory being there rather than the gate being there, so an empty folder won
+  the lookup and each hook bowed out at its `[ -f "$DDW/scripts/hook-gate.py" ]
+  || exit 0` — two lines below a python3 branch that deliberately fails closed.
+  Under a plugin install the fallback it skipped is the only copy of the method
+  there is. One command, no privileges, no content, and a write refused with
+  exit 2 was allowed with exit 0.
+- **Under a plugin install the method was writable from inside a ticket.** Every
+  guard on DDW's own files asked "is this under the repo root?", and a plugin
+  root is not — so writes to the plugin's graph, gate and validator all returned
+  0 while `src/app.ts` in the same event returned 2. With `"PLAN->CLOSEOUT":
+  {"gates": []}` injected into that graph, a FEATURE reached CLOSEOUT with no
+  spec, threat, tests, sast or verify — and the plugin root is shared, so one
+  write disarms DDW in **every** repository using it. The hooks now hand the gate
+  the method root they already resolve, and it is judged before the guard that
+  bows out for paths outside the repo.
+- **`.ddw/` was not in the install manifest.** A clean install recorded 28
+  entries and none of them under the method, so the drift check — the detection
+  half of "prevention where a path is visible, detection where it is not" —
+  could not see a shell rewriting `transition-graph.json`, `hook-gate.py` or
+  `validate-transition.py`. Three separate comments in the code named exactly
+  that vector as the one the manifest covers. The method tree is fingerprinted
+  file by file now, and the drift check drives those three by name rather than
+  whichever entry sorts first.
+- **`rm .ddw-installed.json` unsealed every hook script and silenced the drift
+  report for good.** The hook scripts were protected by the manifest alone, and
+  a manifest that cannot be read returned an empty set; a missing one was read
+  as "plugin mode, or never installed", which are the two cases that have no
+  `.ddw/` in the repository. Each adapter's hook destination is sealed by name
+  now, and a repo that plainly has `.ddw/` in it reports a missing manifest as
+  loudly as a changed file.
+- **A state truncated to zero bytes read as a fresh IDLE.** Not absent, so the
+  deletion net did not fire; not garbage, so the parse guard did not either —
+  and a blank state is a fresh install's ordinary state. `: > .ddw-state.json`
+  therefore put the repository at IDLE with no ticket and no history, and the
+  write to product source that DEFINE had just refused went through. An empty
+  state with transitions in the journal is now the erasure it is; an empty one
+  with nothing recorded is still the run that has not started.
+- **A gate could be claimed from any phase.** `--claim` checked that the name is
+  a known gate and that its evidence exists, and never read the phase; a raw
+  write that appends no history returned early in the validator, so nothing
+  covered that path either. Under QUICK-FIX the closing edge costs `define`,
+  `tests` and `sast` — three booleans that could all be set while sitting in
+  DEFINE, before a line of the fix existed. The owning phases are derived from
+  the graph: an edge `A->B` asking for `g` is the statement that `g` is what
+  leaving A costs.
+- **The corrective loop cost nothing.** `clears` was a boolean operation and
+  nothing outlived the write that performed it. For `define`, `spec`, `threat`
+  and `verify` that is enough — the artifact IS what changed, so its hash moves.
+  For `tests` and `sast` it is not: the artifact is a report ABOUT code that is
+  about to change, and its bytes are identical after the fix, so VERIFY→CODE and
+  back re-presented the same receipts. The journal now records a gate as spent
+  when a loop clears it, and a receipt written before that no longer opens it.
+- **A write could drop `tier` to null**, and the next write then set any tier it
+  liked: FEATURE → null → QUICK-FIX, two writes, both exit 0, neither saying
+  anything, and the ticket walks a graph with no PLAN and no VERIFY. Null reads
+  as "unchanged" everywhere it is consulted, exactly like the `""` and `0` the
+  check already refused — it just arrives as the value a caller may legitimately
+  send.
+- **`❌` was unmatchable in the document it was designed for.** It is not a word
+  character, so inside a `\b(...)\b` group it demanded one on both sides, and
+  every shape the verify skill teaches (`- AC-01 ❌`, `| AC-01 | ❌ |`) has a space
+  or a pipe there. A verdict marking every criterion failed read as "all AC carry
+  a passing verdict" and wrote its receipt.
+- **A verdict could be checked against documents that were not the ticket's.**
+  `--prd` and `--spec` are chosen by whoever runs the validator; pointing both at
+  a file with no criteria and no blocks printed "all 0 AC", "all 0 spec
+  block(s)", "all 0 test(s)" and PASSED — three green rules whose subject was
+  empty. Zero criteria is now a refusal, and the documents have to name the
+  ticket the report does.
+- **A `.ddw` symlinked out of the repository was not sealed.** Paths are resolved
+  through symlinks before being judged, which is what stops a guarded file being
+  written under an unguarded name — but the sealed lists are about names, so
+  resolving first answers a different question. Both readings are judged now.
+  (`.ddw-sessions/` and `.ddw-installed.json` were never affected, and
+  `install.sh` never builds that topology.)
+
 ### Added
 
 - **`transition.py --claim <gate>`** — marking a gate in the phase that earns it,
@@ -101,9 +266,17 @@ were in the pipeline's belief that it was enforcing anything.
 - **Enforcement-drift reporting at session start**: every file the installer
   recorded, hashed against the manifest, so a change made through a shell is
   told to the next session instead of never being noticed.
-- 48 checks and 58 mutations: **479 checks, 318 mutations**. Among them, one
-  check per skill's load-bearing claim — ten of the seventeen could have their
-  entire body replaced with "TODO." and the suite stayed green.
+- **A baseline run in `scripts/mutate.py`**, and argument validation ahead of it:
+  the runner asks whether the suite passes on an unmutated copy before injecting
+  anything, so a red suite is a refusal rather than a fabricated 100%.
+- **The tier on every receipt**, in the file and in the journal, so a gate can
+  ask which rules earned the evidence it is being handed.
+- **A `spent` record in the journal** when a corrective loop clears a gate, which
+  is what makes re-earning `tests` and `sast` cost a real re-run.
+- 92 checks and 126 mutations over the three rounds: **523 checks, 386
+  mutations**. Among them, one check per skill's load-bearing claim — ten of the
+  seventeen could have their entire body replaced with "TODO." and the suite
+  stayed green.
 
 ---
 
