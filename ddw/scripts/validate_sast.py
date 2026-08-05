@@ -30,6 +30,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 # The seventeen scan categories, with the severity the catalog fixes for each.
 # Fixed on purpose: a model that finds a hardcoded secret and files it as Medium
 # has downgraded a Critical, and the severity is what decides whether the phase
@@ -156,14 +159,14 @@ def _field(body, names):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
-    ap.add_argument("--tier", default="FEATURE")
+    ap.add_argument("--tier", default="FEATURE", choices=ddw_receipt.TIERS)
     ap.add_argument("--today", default=None,
                     help="ISO date to age suppressions against; today if omitted")
     args = ap.parse_args()
 
     try:
         text = open(args.report, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_sast: cannot read {args.report}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -348,7 +351,13 @@ def main():
         ok("F-SAST-19", f"{len(sups)} suppression(s) within their review window")
 
     # W-SAST-01 is a warning by catalog: Low/Informational left undocumented.
-    lows = re.findall(r"\b(?:low|informational|informativ\w*)\b", text, re.IGNORECASE)
+    # Not the ones a count already dismisses. `0 Low`, `Low: 0` and the Result
+    # line's own summary are the report SAYING there are none, and warning about
+    # those made a clean report carry a warning about findings it does not have.
+    lows = [m for m in re.finditer(r"\b(?:low|informational|informativ\w*)\b",
+                                   text, re.IGNORECASE)
+            if not re.search(r"(?:^|[\s|(])0\s*$", text[max(0, m.start() - 12):m.start()])
+            and not re.search(r"^\s*:?\s*0\b", text[m.end():m.end() + 8])]
     if lows and not re.search(r"\b(?:documented|documentad|noted|registrad)\w*", text, re.IGNORECASE):
         warn("W-SAST-01", f"{len(lows)} Low/Informational mention(s) with nothing saying they were "
                           "documented")
@@ -378,15 +387,14 @@ def main():
         pass
 
     if fails == 0:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        abs_p = os.path.abspath(args.report)
-        idx = abs_p.rfind(os.sep + "docs" + os.sep)
-        root = abs_p[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"sast-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(abs_p) + "\n")
-        print(f"Receipt: .ddw-sessions/sast-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        # …and under WHICH CLOCK. Suppressions expire, `--today` decides when,
+        # and the caller chooses `--today`: the same report passed with lapsed
+        # suppressions by naming a day they were still fresh, and the receipt
+        # came out identical to one earned this morning.
+        print("Receipt: .ddw-sessions/"
+              + ddw_receipt.write(args.report, "sast", text, args.tier, asof=today.isoformat()))
 
     # The table above is for the USER, and it does not reach them by itself.
     # Same reason as every other validator: the rule lives where the output is.

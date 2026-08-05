@@ -20,7 +20,18 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python3 -m pip install --quiet pyyaml
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Install what the suite asserts it needs
+        run: |
+          python3 -m pip install --quiet pyyaml
+          # The suite's preflight refuses a machine missing any of its tools, so
+          # a release job without the CLI cannot pass the gate it exists to be.
+          # Latent only because no tag has been pushed yet: the first one would
+          # have failed here, on the one run where a red result is most expensive
+          # to discover.
+          npm install -g @anthropic-ai/claude-code
 
       # Tagging a commit whose suite is red would publish a version nobody
       # verified. Cheaper to find out here than after someone installs it.

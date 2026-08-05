@@ -29,6 +29,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 # A block opens with `## Block N — name`; a fix-plan's unit is a numbered step
 # under `## Solution — steps`. Both are what the create-spec templates emit.
 BLOCK_HEAD = re.compile(r"^##\s+Block\s+(\d+)\s*[—\-:]?\s*(.*)$", re.MULTILINE)
@@ -51,7 +54,7 @@ INPUT_SURFACE = re.compile(r"\b(input|entrada|form|formulario|request body|paylo
                            r"params|query string|upload|campo del usuario)\b", re.IGNORECASE)
 SAD_PATH = re.compile(r"\b(invalid|inv[aá]lid[oa]|error|fail|falla|fallo|missing|faltante|"
                       r"reject|rechaz|duplicate|duplicad|unauthor|no autorizado|forbidden|"
-                      r"prohibido|timeout|conflict|conflicto|sad path|camino triste|"
+                      r"prohibido|timeout|conflict|conflicto|sad[ -]path|camino triste|"
                       r"400|401|403|404|409|422|429|500)\b", re.IGNORECASE)
 REGRESSION = re.compile(r"\bregression|regresi[oó]n\b", re.IGNORECASE)
 ROLLBACK = re.compile(r"\brollback|revert|reversa|reverse migration|migraci[oó]n inversa\b",
@@ -189,16 +192,26 @@ def _loop_count(text, label):
     m = re.search(rf"^\s*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else 0
 
+
+def _loops_since_human(text):
+    """Rounds since a person last decided something, which is what the ceiling
+    is about. Absent, it falls back to the running total — an older document has
+    no second number, and reading its total is the safe direction to be wrong
+    in: it stops sooner, never later."""
+    m = re.search(r"^\s*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
+                  text, re.IGNORECASE | re.MULTILINE)
+    return int(m.group(1)) if m else None
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("spec")
-    ap.add_argument("--tier", default="FEATURE")
+    ap.add_argument("--tier", default="FEATURE", choices=ddw_receipt.TIERS)
     ap.add_argument("--prd", default=None,
                     help="the PRD to check coverage against; found from the spec if omitted")
     args = ap.parse_args()
     try:
         text = open(args.spec, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_spec: cannot read {args.spec}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -238,7 +251,7 @@ def main():
     if prd_path:
         try:
             prd_text = open(prd_path, encoding="utf-8").read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             prd_text = ""
 
     if is_fix:
@@ -357,7 +370,21 @@ def main():
         # W-SPEC-01 is PRD→spec traceability, and a fix-plan answers to an RCA
         # rather than to FRs. Warning about it there is noise the reader learns
         # to skip, which is how a real warning goes unread.
-        if not is_fix and not re.search(r"\bFR-\d+\b", body):
+        # …and not when the coverage table already says which FR this block
+        # carries. F-SPEC-01 reads that table and reports every FR covered; this
+        # warning read only the block's own body, so one run printed "all 3 FR
+        # are referenced by a block" and "block referencing no FR" about the same
+        # block, three lines apart. A validator that contradicts itself in one
+        # output teaches the reader to skip both rows.
+        #
+        # Matched on the block NUMBER, which is what a coverage row can be
+        # expected to carry: the label also holds the block's name, and the row
+        # says `Block 3`, never `Block 3 (the retry queue)`.
+        num = re.match(r"Block (\d+)", label or "")
+        covered_here = num and re.search(
+            r"^\s*\|\s*FR-\d+\s*\|[^|\n]*\bBlock\s*%s\b" % num.group(1),
+            text, re.MULTILINE)
+        if not is_fix and not re.search(r"\bFR-\d+\b", body) and not covered_here:
             no_fr.append(label)
         if len(files) > 5 or len(body.split()) > 500:
             oversized.append(f"{label} ({len(files)} files, {len(body.split())} words)")
@@ -415,7 +442,17 @@ def main():
     rows.append("  👁  F-SPEC-12 (contradicts the PRD) and F-SPEC-13 (terminology diverging from")
     rows.append("      the PRD) are MANUAL: judge them and say so explicitly in your report.")
 
-    loops = _loop_count(text, "Spec loops")
+    total_loops = _loop_count(text, "Spec loops")
+    since = _loops_since_human(text)
+    loops = total_loops if since is None else since
+    if since is not None and since > total_loops:
+        # The running total counts every round; the second number counts a subset
+        # of them. A "since" above the total means one of the two was not being
+        # kept — and the one the ceiling reads is the one that would then let the
+        # document loop forever, which is the failure this ceiling exists to stop.
+        fail("F-SPEC-LOOP", f"the header says {since} loop(s) since the last human decision but only "
+             f"{total_loops} in total. The total counts every round and is never reset, so it "
+             "cannot be the smaller of the two: one of the counters was not incremented.")
     if loops >= LOOP_CEILING:
         fail("F-SPEC-LOOP", f"this artifact has been through {loops} corrective loops "
                             f"(the ceiling is {LOOP_CEILING}). Three rounds of correcting a "
@@ -425,7 +462,8 @@ def main():
                             "counter with their answer recorded. Under `autonomy: minimal` this is "
                             "one of the three stops that do not have a mode.")
     else:
-        ok("F-SPEC-LOOP", f"{loops} corrective loop(s), under the ceiling of {LOOP_CEILING}")
+        ok("F-SPEC-LOOP", f"{loops} loop(s) since a human decided, under the ceiling of "
+                     f"{LOOP_CEILING}; {total_loops} in total for this document")
 
     result = "PASSED" if fails == 0 else f"FAILED ({fails} FAIL{'S' if fails > 1 else ''})"
     report = [f"/ddw-validate-spec {args.spec} — {result}", "─" * 64]
@@ -450,15 +488,9 @@ def main():
         report_path = None
 
     if fails == 0:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        spec_abs = os.path.abspath(args.spec)
-        idx = spec_abs.rfind(os.sep + "docs" + os.sep)
-        root = spec_abs[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"spec-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(spec_abs) + "\n")
-        print(f"Receipt: .ddw-sessions/spec-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.spec, "spec", text, args.tier))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

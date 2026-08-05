@@ -354,6 +354,20 @@ committed.
 delete both files, and that is fine: the guarantee is not that the history is indestructible, it is
 that destroying it takes a deliberate act rather than one impatient `rm`.
 
+**It also records the gates, and that is not a second feature.** Post-write validation asks for
+evidence on the gates the transitions that just landed declare — so a write that declares *no*
+transition owed nothing, and `jq '.gates.tests = true'` reached the disk unasked. The pre-write path
+does not catch it either: it owes evidence on what a write *newly* claims, and by the time it runs
+the forged `true` is already the prior. So the journal also carries the gates as they stood the last
+time a verdict blessed them, and what changed since that line is what gets asked. Not "every gate
+currently true" — re-checking an old claim on every write means editing the PRD two phases later
+brings the pipeline down, and a gate that fires on legal work is how a team learns to route around
+gates.
+
+Why in the journal rather than beside it: removing it has to cost something. Deleting the journal
+makes post-write validation **stricter**, not weaker — with nothing recorded, every entry counts as
+having just landed and every gate its edges declare is owed again.
+
 ---
 
 ## 16. A gate is an attestation, and they are not all the same strength
@@ -477,6 +491,150 @@ live only in the helper the model is asked to call, so the same state written wi
 went through: exit 2 through `transition.py`, exit 0 through the hook. A guarantee with a polite way
 around it is a promise wearing the word "gate", which is the exact thing decision 1 exists to
 prevent.
+
+---
+
+## 17. A pull request waits for people, and the pipeline has to wait with it
+
+**The decision.** You can step back one phase, always, and stepping back gives up what that phase
+granted. A ticket can be **paused at CLOSEOUT** once its commit and its pull request exist. Resuming
+there asks about both again. And when the phase is IDLE and the repo has a remote, DDW asks the
+forge what is waiting for you.
+
+**The complaint this answers.** You finish, you open the pull request, and the review takes two
+days. There is one state per directory, so the ticket sat in CLOSEOUT and you could not start
+anything else — and when the review came back asking for changes, the method's own advice was to
+open a *new* ticket, on a *new* branch, for work that belongs to the same pull request. That is
+bookkeeping nobody believes, and people route around a method that asks them to lie in it.
+
+**Why stepping back is one phase at a time, declared in the graph.** The alternative was a rule in
+code — "any earlier phase is legal" — and the graph would have stopped being the authority. Instead
+each backward edge is data, with a `clears` list naming exactly what it takes away, and the
+validator refuses a backward write that still holds them. Four steps to get from CLOSEOUT to DEFINE,
+and each one is a history entry saying why. The record ends up saying how far back a review sent
+you, which is worth more than the convenience of one jump.
+
+**And it closes a hole that predates the feature.** `PLAN→DEFINE` already existed and cleared
+nothing, so you could step back, rewrite the PRD, and step forward claiming `define` — with no
+receipt asked for, because evidence is owed only when a gate is claimed for the *first* time and
+this one never stopped being true. The helper refused it. The hook did not. That is the same shape
+as decision 16's own worst moment, in the pipeline's documented recovery path, and it was reachable
+until the `clears` rule landed in `validate()`.
+
+**Why the pause exception is exactly this narrow.** `no_walkaway` exists so `"abandon"` cannot be a
+skeleton key: relabel the exit and ship with no commit and no PR. That reasoning does not cover a
+ticket whose commit and pull request are already paid for and whose only remaining dependency is
+another person. So: a **pause** is allowed there, an **abandon** is not, and both gates are read
+from the state *before* the write so the same write cannot grant them and spend them.
+
+Resuming gives `commit` and `pr` back false. A gate already true is never re-asked, and days passed
+— the pull request may have been closed, the branch may have moved. Two instant questions, one to
+git and one to the forge, against a closeout that would otherwise be satisfied by evidence earned
+before the wait.
+
+**And a reviewer sending you back is the same event.** `CLOSEOUT→VERIFY` first gave up `verify`
+alone, which left the ticket walking forward again still holding `commit` and `pr` — the two gates
+that say the work shipped — after changing the code they were earned on. It gives up all three now,
+and QUICK-FIX's `CLOSEOUT→CODE` gives up `tests`, `sast`, `commit` and `pr`. Stepping back from a
+review and pausing to wait for one end in the same place, which is the only way it makes sense: the
+question a gate answers is about the work as it stands, not as it stood.
+
+**A resumed ticket asks which mode to come back in.** Reaching IDLE clears `autonomy`, so without a
+second moment to choose it the setting is simply lost across a pause — and the only way back would
+be abandoning the ticket and classifying it again, which throws away the work to recover a
+preference. So resuming is the one other place that field may be set, and the pause protocol makes
+the assistant put it to the user: *this ticket was running in `minimal`, two days have passed, keep
+it?*
+
+Narrow, because a resume cannot be manufactured. It needs a real, unresumed pause **of this ticket**,
+**from the exact phase** being re-entered, and it has to come from IDLE — the first version of this
+matched the word `resume:` anywhere, which meant an ordinary `PLAN→CODE` labelled that way granted
+the mode for free, since the resume rules only run on the edges out of IDLE. The value chosen is
+stamped on the resume edge, so the history says a mode was decided there rather than inherited.
+
+What the hook cannot see is whether the question was actually asked. That stop is the method's, like
+the loop ceiling: a hook can prove a pause happened; it cannot prove a person was consulted. Said
+plainly rather than implied, because a guarantee whose scope is unstated gets read as covering
+everything.
+
+**Pausing means working on something else, so a pause is not the last thing that happened.** The
+first implementation looked at the entry immediately before the resume, which held only if you
+paused and came straight back — the case a pause is *for* is the other one. It searches backwards
+now for the last pause that has not been resumed, pairing each resume already in the history with
+the pause it consumed. Two consequences worth stating: one pause cannot be resumed twice (otherwise
+`resume` re-enters a phase whose ticket closed months ago, carrying whatever gates the write cares
+to declare), and another ticket's pause is not your ticket's way back in.
+
+**Why the ceiling counts two numbers.** `PRD loops` is the running total and nobody resets it: six
+months on, "this document cost five rounds" is worth being able to read. The ceiling measures
+something else — rounds since a person last decided anything — because a round the model drove and
+a round a reviewer asked for are not the same event, and a review comment is already the decision
+the ceiling exists to provoke. Charging it would spend the model's budget on the one case where a
+human was demonstrably in the loop.
+
+**Why the forge is asked at IDLE and nowhere else.** The rule is deterministic on purpose: phase is
+IDLE and the repo has a remote → ask, every time; anything else → never. A network call on every
+session start, in every repo DDW is installed in, is a cost this project should refuse to hide; and
+mid-ticket the answer is not one you need. IDLE is where you decide what is next, and it is also the
+only moment a fresh clone on another machine can be told anything — the pause lives in
+`.ddw-paused/`, which never leaves the machine that wrote it.
+
+**The cost.** Three things this does not do, said plainly. Two machines on one ticket are not
+coordinated: git is the arbiter, and DDW only reports that your branch fell behind. The `history`
+does not travel between machines — the shared record of that work is the commits and the pull
+request. And resuming on a second machine means re-walking the pipeline over the committed
+artifacts, re-earning each receipt, because writing a state that claims eight gates is the forged
+state the hook exists to refuse.
+
+---
+
+## 18. The pipeline does not get to edit the pipeline
+
+**The decision.** DDW's own machinery is unwritable from inside a ticket, in every phase: the method
+(`.ddw/`), the receipts (`.ddw-sessions/`), the journal, the install manifest, and each tool's hook
+scripts and the settings key that wires them. `.ddw-state.json`, `.ddw-paused/` and `docs/` stay
+writable — writing the state is how the pipeline advances, and every other rule here judges that
+write.
+
+**Why it needed saying at all.** The guard existed, and it was inside the rule about which phases may
+write source. That rule returns early for CODE and CLOSEOUT, so the protection covered exactly the
+phases where the agent cannot write anything anyway and stood down in the one where it works.
+Measured end to end on a real install: in CODE, add an edge to the transition graph, then take it —
+a FEATURE closed having never claimed `tests`, `sast`, `verify`, `commit` or `pr`, with both hooks
+green and 462 checks passing. Or skip the graph entirely and write your own receipt into
+`.ddw-sessions/`, which opens six gates with one `Write`.
+
+**What it does not reach, said plainly.** A shell. `printf > .ddw/rules/transition-graph.json` is not
+a tool call with a path in it, and decision 11 is the older, honest version of this limit. Two things
+follow from that rather than one apology: the six validators record in the journal that they wrote
+each receipt, so a receipt nobody's validator wrote is refused; and the session boot hashes every
+file the installer recorded and reports the ones that no longer match. Prevention where a path is
+visible, detection where it is not. Neither is a promise that a determined user cannot get around
+their own tools — that promise cannot be made by anything running on the same machine.
+
+**The cost.** While a ticket is open you cannot ask the agent to edit your `.claude/settings.json`,
+because that file is what wires the gates in. Install, uninstall and settings changes happen between
+tickets, by you. And an upgrade mid-ticket has to re-run its validators, because receipts earned
+before the upgrade carry no record: a minute of work, and the alternative is a compatibility hatch
+that stays open forever.
+
+---
+
+## 19. A gate claimed for a document that is not there
+
+**The decision.** Claiming a receipt gate for a document that does not exist is refused, and so is
+claiming one for a document that cannot be read as UTF-8. Both used to pass.
+
+**Why it was wrong, precisely.** The code said "no artifact on disk means no claim to check", and
+that sentence is false at every place it is reached: the evidence table is consulted **only** for
+gates being claimed — the pre path passes what a write newly claims, the post path passes what the
+landed edges require, the helper passes `--gate`. By the time the question is asked, the claim has
+been made. So the easiest state in the world to be in — no document — was the one that satisfied six
+of the eight gates. A FEATURE walked `IDLE→CLOSEOUT` producing nothing at all.
+
+**The cost.** Synthetic runs have to produce their artifacts, which is why this repository's own
+suite grew a helper that writes the document and the receipt together. That is the right cost: a
+fixture that claims a gate it did not earn is a fixture testing the forgery rather than the rule.
 
 ---
 

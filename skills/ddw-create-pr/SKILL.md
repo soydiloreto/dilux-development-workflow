@@ -3,7 +3,7 @@ name: ddw-create-pr
 description: >
   Opens a Pull Request with a standard format and AI attribution labels, or records why one is not
   possible in this repo.
-  Trigger: /ddw-create-pr, during DDW's RELEASE phase.
+  Trigger: /ddw-create-pr, during DDW's CLOSEOUT phase.
 ---
 
 # Skill: /ddw-create-pr
@@ -54,14 +54,14 @@ missing and offer the options:
 
 - **Option 1 or 2** → mark `gates.pr = true` with the reason recorded in the closeout summary. The
   gate means *"the PR step was completed"*, and completing it in a repo that cannot host one means
-  recording why, out loud. This is what keeps a local-only repo from getting stuck in RELEASE
+  recording why, out loud. This is what keeps a local-only repo from getting stuck in CLOSEOUT
   forever.
-  **Then RELEASE's step 4 still runs.** No PR means nothing is going to merge this branch on its
+  **Then CLOSEOUT's step 4 still runs.** No PR means nothing is going to merge this branch on its
   own, which is exactly when "where does this land?" has to be answered rather than assumed.
-- **Option 3** → do not set the gate. The ticket stays in RELEASE, which is correct: the user asked
+- **Option 3** → do not set the gate. The ticket stays in CLOSEOUT, which is correct: the user asked
   to stop.
 
-> This is not a loophole. `RELEASE → IDLE` demands the `pr` gate precisely so that nobody closes a
+> This is not a loophole. `CLOSEOUT → IDLE` demands the `pr` gate precisely so that nobody closes a
 > ticket while quietly skipping the review step. Announcing "there is no remote, so there is no PR"
 > in front of the user is a decision they took; silently omitting it is the thing being prevented.
 
@@ -135,7 +135,7 @@ Body:
 
 ## Updating .ddw-state.json
 - `gates.pr` → `true` once the PR is created, or once the user chooses option 1 or 2 above. The
-  RELEASE closeout requires this gate before it will reset to IDLE.
+  CLOSEOUT closeout requires this gate before it will reset to IDLE.
 
 ## Language
 

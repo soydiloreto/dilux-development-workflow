@@ -37,7 +37,7 @@ wins.
 - **Stateless:** `💬 [query]` → direct answer, no phase, no ticket.
 - **Pipeline:** `{emoji} {TIER} · {action} [{N}/5] | {ticket}: {title}`
 - **DISCOVERY:** `📝 DISCOVERY · {action} | {ticket}: {title}`
-- CLASSIFY is not numbered. The 5 phases: DEFINE(1)→PLAN(2)→CODE(3)→VERIFY(4)→RELEASE(5).
+- CLASSIFY is not numbered. The 5 phases: DEFINE(1)→PLAN(2)→CODE(3)→VERIFY(4)→CLOSEOUT(5).
 - DISCOVERY does not use numbered phases — it reflects current activity (Exploring / Formalizing /
   Closing).
 
@@ -49,7 +49,7 @@ wins.
 📐 FEATURE · Planning spec [2/5] | PROJ-108: Product catalog
 💻 FEATURE · Implementing [3/5] · Block 2/4 | PROJ-108: Product catalog
 🔎 FIX · Verifying [4/5] | PROJ-55: /users endpoint returns 500
-🚀 FIX · Releasing [5/5] | FIX-001: Fix typo in email validation
+🏁 FIX · Closing out [5/5] | FIX-001: Fix typo in email validation
 ⚡ QUICK-FIX · Implementing | FIX-002: Typo in log message
 📝 DISCOVERY · Exploring concept | DISC-001: Product marketplace
 📝 DISCOVERY · Formalizing PRDs (2/4) | DISC-001: Product marketplace
@@ -142,12 +142,24 @@ When the user wants to pause the current ticket:
 When the user wants to resume a paused ticket:
 1. List the paused tickets in `.ddw-paused/`.
 2. The user picks which one to resume.
-3. Restore the saved metadata — `tier`, `ticket`, `title`, `tracker`, `block`, `gates` — into the
+3. **Ask about the mode, before restoring anything.** `autonomy` does NOT come back on its own: it
+   is the setting that decides whether a person is asked before each step, and days have passed.
+   Read what the ticket was walked under — the last history entry of that ticket carrying
+   `"autonomy": "minimal"`, and `assisted` if there is none — and put it to the user:
+
+   > This ticket was running in `minimal` (no confirmation between steps). Two days have passed.
+   > Keep it, or go back to confirming each step?
+
+   Their answer is what you pass as `--autonomy` on the resume. Resuming is the only edge outside
+   CLASSIFY where that field may be set, and it may only be set by asking — the hook can see that a
+   real pause is being resumed, it cannot see whether you asked. Do not skip the question because
+   the previous value was `minimal`; that is exactly the answer that needs re-confirming.
+4. Restore the saved metadata — `tier`, `ticket`, `title`, `tracker`, `block`, `gates` — into the
    CURRENT `.ddw-state.json`, and append a `IDLE → <phase>` entry with
    `action: "resume: <ticket>"`. **Never overwrite the file with the saved copy:** its `history` is
    shorter than the one on disk, and history is append-only — restoring it wholesale reads as a
    truncation and gets refused.
-4. Run the normal "work in progress" flow (propose, do not auto-resume).
+5. Run the normal "work in progress" flow (propose, do not auto-resume).
 
 ## Self-Check before write actions
 
@@ -192,9 +204,9 @@ the corresponding Skill.`
   the threat model and any ADR, CODE the implementation once it is green and the SAST report,
   VERIFY its verification report, DISCOVERY its concept and PRDs. CLASSIFY produces no file and
   therefore commits nothing.
-- NEVER modify the PRD in the PLAN, CODE, VERIFY or RELEASE phases. If PLAN reveals the PRD needs
+- NEVER modify the PRD in the PLAN, CODE, VERIFY or CLOSEOUT phases. If PLAN reveals the PRD needs
   changes, apply the corrective loop back to DEFINE (protocol in `.ddw/rules/plan.instructions.md`).
-- NEVER modify the spec in the CODE, VERIFY or RELEASE phases.
+- NEVER modify the spec in the CODE, VERIFY or CLOSEOUT phases.
 - NEVER write outside `docs/ddw/discovery/` and `docs/ddw/prd/` in the DISCOVERY phase.
 - If the user asks for something belonging to another phase, answer: "That action belongs to phase
   [X]. We are currently in [Y]. Let's finish this phase first."
@@ -355,20 +367,20 @@ any other section.
 - **Sequence:** `/ddw-verify-module` → PASS (BLOCKING GATE).
 - **If it fails:** apply the corrective loop back to CODE (update state + clear gates + history). Do
   NOT fix code in VERIFY. Protocol in `.ddw/rules/verify.instructions.md`.
-- **Exit:** the `verify` gate present + user confirms (not under `minimal` — see § Autonomy) → `phase`→`RELEASE`.
+- **Exit:** the `verify` gate present + user confirms (not under `minimal` — see § Autonomy) → `phase`→`CLOSEOUT`.
 
 ---
 
-## Router: Phase `RELEASE`
+## Router: Phase `CLOSEOUT`
 
-- **Load:** `.ddw/rules/release.instructions.md`, `.ddw/rules/commits.instructions.md`,
+- **Load:** `.ddw/rules/closeout.instructions.md`, `.ddw/rules/commits.instructions.md`,
   `.ddw/rules/branches.instructions.md`, `.ddw/rules/tracker.instructions.md`
 - **Skills:** `/ddw-commit`, `/ddw-create-pr`, `/ddw-self-check`, `/ddw-status`
 - **Blocked:** new code. Modifying the PRD. Modifying specs. Tests.
-- **Status line:** `🚀 {TIER} · Releasing [5/5] | {ticket}: {title}`
+- **Status line:** `🏁 {TIER} · Closing out [5/5] | {ticket}: {title}`
 - **Mandatory sequence (every step is a blocking gate):** CHANGELOG → `/ddw-commit` (gate `commit`)
   → `/ddw-create-pr` (gate `pr`, MANDATORY) → tracker update (a mandatory step, but not a gate: it depends on an external system and the graph carries no `tracker` edge condition) → closeout.
-- **Exit:** ALL RELEASE gates present + user confirms (not under `minimal` — see § Autonomy) closeout → reset state to IDLE. Resetting to
+- **Exit:** ALL CLOSEOUT gates present + user confirms (not under `minimal` — see § Autonomy) closeout → reset state to IDLE. Resetting to
   IDLE without completing every step is FORBIDDEN.
 
 ---
@@ -391,7 +403,7 @@ any other section.
 
 ## Router: Tier QUICK-FIX (cross-cutting modifier)
 
-**Applies when `tier == "QUICK-FIX"`.** It modifies the behavior of DEFINE/CODE/RELEASE; PLAN and
+**Applies when `tier == "QUICK-FIX"`.** It modifies the behavior of DEFINE/CODE/CLOSEOUT; PLAN and
 VERIFY **do not exist** for this tier (the graph blocks them).
 
 - **DEFINE:** produce the fix-brief (4 lines) via `Skill(skill="ddw-create-prd")` (QUICK-FIX
@@ -400,8 +412,8 @@ VERIFY **do not exist** for this tier (the graph blocks them).
   non-empty), never with the full `F-PRD-*` rules.
 - **CODE:** implement the fix + `Skill(skill="ddw-test")` (gate `tests`) +
   `Skill(skill="ddw-security-sast")` (gate `sast`), then commit it. Transition straight to
-  **RELEASE**. Do NOT go through VERIFY.
-- **RELEASE:** `Skill(skill="ddw-commit")` + `Skill(skill="ddw-create-pr")`. Reset to IDLE.
+  **CLOSEOUT**. Do NOT go through VERIFY.
+- **CLOSEOUT:** `Skill(skill="ddw-commit")` + `Skill(skill="ddw-create-pr")`. Reset to IDLE.
 
 Allowed transition graph: `.ddw/rules/transition-graph.json`, key `"QUICK-FIX"` under `tiers`. The
 PreToolUse hook `validate-state-transition.sh` validates every transition against that graph;
@@ -409,8 +421,14 @@ attempting `DEFINE→PLAN` or `CODE→VERIFY` with this tier will be blocked.
 
 Scope safeguard: the shared gate blocks writes to sensitive paths, or an
 accumulated diff over 10 LOC, while `tier=="QUICK-FIX"`. To escalate: abandon the ticket (to IDLE
-with `action: "abandon: …"`) and reclassify from CLASSIFY as a FIX. There is no edge back from CODE
-to DEFINE — a bigger fix is a different ticket, with its own branch and its own RCA.
+with `action: "abandon: …"`) and reclassify from CLASSIFY as a FIX — a bigger fix is a different
+ticket, with its own branch and its own RCA.
+
+`CODE→DEFINE` exists in this tier, and it is **not** that escape hatch: it is for rewriting the
+brief when the fix turns out to be something else than what the brief describes, and it gives up
+`define`, which then has to be earned again against the brief as it now is. Escalating is still a
+new ticket. (This paragraph said the edge did not exist while the graph carried it and the helper
+took it — a contradiction the model resolves by believing whichever it read last.)
 
 Status line: `⚡ QUICK-FIX · {action} | {ticket}: {title}` (no 5-phase numbering).
 
@@ -425,14 +443,18 @@ Status line: `⚡ QUICK-FIX · {action} | {ticket}: {title}` (no 5-phase numberi
    of the array — never prepend, reorder or mutate previous entries. **Atomic — `transition.py`
    helper (primary) or a full `Write` (fallback):** `phase`, the corresponding `gate` and the
    `history` entry all go in **a single write**. Primary path: run
-   `.ddw/scripts/transition.py --to <PHASE> --action "<reason>" [--gate <g>...] [--tier <TIER>]`
-   (once per transition) and copy its stdout into a `Write` of the state. `--tier` (an enum) is the
-   only metadata the helper sets; `ticket`/`title`/etc. you fill in the SAME `Write`. Fallback:
+   `.ddw/scripts/transition.py --to <PHASE> --action "<reason>" [--gate <g>...] [--tier <TIER>]
+   [--ticket <ID>]` (once per transition) and copy its stdout into a `Write` of the state. `--tier`
+   (an enum) and `--ticket` are the metadata the helper sets — **set the ticket on the edge that
+   classifies the request**, because a gate cannot be claimed without one: the ticket is how every
+   receipt finds its document. `title`/`tracker` you fill in the SAME `Write`. Fallback:
    compose the full-file `Write` by hand (header + history together). **NEVER** transition the state
    with `Edit` (it cannot touch the header at the top and append to history at the end in one
    operation) or with `Bash/jq/sed/echo` (those writes bypass PreToolUse). `Edit` is only valid for
-   in-phase updates that do NOT change `phase`. **Strict shape:** `{timestamp, from, to, action}` —
-   no `note`/`tier`/`ticket`; `from`/`to`/`action` are required even on resets or abandons to IDLE.
+   in-phase updates that do NOT change `phase`. **Shape:** `{timestamp, from, to, action, ticket,
+   tier}` — `from`/`to`/`action` are required even on resets or abandons to IDLE, and `ticket`/`tier`
+   are what make the entry attributable after a closeout wipes them from the header (the helper
+   stamps both; see `.ddw/rules/state.instructions.md`). No other keys.
    (The `validate-state-transition.sh` hook rejects prepends, truncation and phase changes without
    an entry; `validate-state-postwrite.sh` (PostToolUse) revalidates the state on disk and blocks
    illegal transitions written by any path, including Bash — but get it right the first time with

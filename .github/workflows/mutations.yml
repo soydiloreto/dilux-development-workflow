@@ -50,16 +50,23 @@ jobs:
       - run: python3 scripts/mutate.py --check-anchors
 
   mutations:
-    name: can the suite fail? (${{ matrix.shard }}/10)
+    name: can the suite fail? (${{ matrix.shard }}/24)
     runs-on: ubuntu-latest
-    # One fault is one full run of the suite. Ten slices of the list finish in
-    # well under this; a single process does not, and a job killed at its
-    # timeout reports "cancelled", which is not an answer to the question.
-    timeout-minutes: 45
+    # One fault is one full run of the suite, so the slice count is not a
+    # preference — it is what keeps a shard under the ceiling. Ten slices did,
+    # for a list of 393 faults and a suite of 460 checks. Both grew, and three
+    # consecutive runs died at exactly 45:00 and reported "cancelled", which is
+    # the shape this repository already named as "not an answer": the coverage
+    # number CI publishes was unobtainable and nothing said so. Twenty-four
+    # slices puts a shard back at roughly half the ceiling, and the ceiling
+    # itself is raised so the next growth is a slow job rather than a silent
+    # one. Whoever adds faults: divide, do not delete.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -68,11 +75,21 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - run: python3 -m pip install --quiet pyyaml
+      - name: Install what the suite asserts it needs
+        run: |
+          python3 -m pip install --quiet pyyaml
+          # Load-bearing HERE in a way it is nowhere else. The suite's preflight
+          # calls `bad()` for a missing tool, so without this the suite exits
+          # non-zero on every copy — and this job reads a non-zero exit as "the
+          # fault was caught". Every mutation reported killed, none examined,
+          # 100% printed. The runner now refuses a red baseline rather than
+          # reporting on it, which turns that into a failed job; installing the
+          # CLI is what turns it back into a measurement.
+          npm install -g @anthropic-ai/claude-code
       # Every mutation here is a defect that actually shipped once; a surviving
       # one is a check that does not exist. This job must not be made "faster"
       # by deleting mutations — that is deleting the measurement, not the cost.
-      - run: python3 scripts/mutate.py --shard ${{ matrix.shard }}/10
+      - run: python3 scripts/mutate.py --shard ${{ matrix.shard }}/24
 
   coverage:
     name: did every fault get injected?

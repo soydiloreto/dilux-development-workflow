@@ -259,6 +259,41 @@ def load_manifest(repo):
     return {}
 
 
+METHOD_DIR = ".ddw"
+
+
+def record_method(repo, manifest):
+    """Fingerprint the method tree into the manifest, file by file.
+
+    A clean install wrote 28 entries and not one of them was under `.ddw/` — so
+    the drift check, which is the whole detection half of "prevention where a
+    path is visible, detection where it is not", could not see a shell rewriting
+    `transition-graph.json`, `validate-transition.py` or `hook-gate.py`.
+    Measured: tampering with all three reported nothing, while the same byte in
+    `.claude/hooks/enforce.sh` reported CHANGED. The graph is the file that
+    decides which gates exist; it was the least watched thing in the repository.
+
+    Three separate comments — `session-boot.py`, `validate-transition.py`,
+    `verify_install.sh` — named exactly this shell vector as the one the manifest
+    covers. It did not.
+
+    Recorded per FILE rather than as one directory hash: importing the validator
+    creates `.ddw/scripts/__pycache__`, and a directory fingerprint would take
+    that in and report drift on every install that had ever run. The `method:`
+    prefix keeps these apart from a tool's wiring, and `enforcement_drift`
+    already splits any `prefix:path` key, so nothing downstream changes.
+    """
+    root = os.path.join(repo, METHOD_DIR)
+    if not os.path.isdir(root):
+        return
+    for base, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+        for name in sorted(files):
+            path = os.path.join(base, name)
+            rel = os.path.relpath(path, repo).replace(os.sep, "/")
+            manifest["method:" + rel] = _fingerprint(path)
+
+
 def save_manifest(repo, manifest):
     try:
         with open(os.path.join(repo, MANIFEST), "w", encoding="utf-8") as fh:
@@ -307,6 +342,29 @@ def claim(rel, src_path, dst_path, manifest, collisions, label, ours_if_unknown=
         # Applied unconditionally, this would eat it.
         return True
     collisions.append(f"{label}/{os.path.basename(rel)}")
+    return False
+
+
+def _names_installed_file(block, manifest, tool):
+    """Does this settings block run a file the manifest says DDW installed?
+
+    The question both the installer and the uninstaller need, and neither had:
+    "is this block ours?" was answered by comparing it against what the CURRENT
+    version ships, so a block wired by an older one belonged to nobody. It was
+    left behind on upgrade and left behind on uninstall, still naming a script
+    that had been removed.
+
+    The manifest is the record of what DDW put on disk, so a block naming one of
+    those paths is DDW's. A block of the user's that happens to sit in the same
+    file names a script of theirs, which is not in the manifest.
+    """
+    text = json.dumps(block, sort_keys=True)
+    for k in manifest:
+        if not isinstance(k, str) or not k.startswith(tool + ":"):
+            continue
+        rel = k.split(":", 1)[1]
+        if rel and rel in text:
+            return True
     return False
 
 
@@ -386,7 +444,32 @@ def main():
     # Whether DDW had ever been installed here, decided before this run
     # starts adding to it. It is what separates an upgrade from a first
     # install, and therefore DDW's own older file from one of the user's.
-    had_manifest = bool(manifest)
+    # …for THIS tool. Asked of the whole manifest, installing a second tool into
+    # a repo that already had DDW answered "upgrade" for a target that had never
+    # been installed — so `ours_if_unknown` fired on files DDW had never written,
+    # and the user's own `.codex/hooks/session-start.sh`, `enforce.sh`,
+    # `pre-compact.sh` (exactly the names a user of that agent already has) were
+    # overwritten with no backup, no warning and exit 0. The installer's central
+    # promise is that it never overwrites a file it did not put there.
+    #
+    # And it is asked about the WIRING, not about the tool. `ours_if_unknown`
+    # exists for one situation and one only: manifests written before the wiring
+    # went through `claim()`, which recorded skills and agents and nothing else,
+    # so on the first upgrade every hook looked like a file of the user's. That
+    # is a manifest with entries for this tool and NONE of them wiring. Asked as
+    # "has this tool ever been installed", it stayed true forever — so the day a
+    # new version starts shipping a file at a path the user already has one at,
+    # the upgrade overwrote it with no backup, no ⚠ and exit 0. Measured: a
+    # `.claude/hooks/audit.sh` of the user's, replaced by DDW's on the second
+    # run. A file DDW never recorded is the user's, on every run after the
+    # first as much as on it.
+    wiring_dirs = [w["to"].rstrip("/") + "/" for w in recipe.get("wiring", [])]
+    recorded_wiring = any(
+        isinstance(k, str) and k.startswith(args.id + ":")
+        and any(k.split(":", 1)[1].startswith(d) for d in wiring_dirs)
+        for k in manifest)
+    had_manifest = (any(isinstance(k, str) and k.startswith(args.id + ":") for k in manifest)
+                    and not recorded_wiring)
     print(f"  ── wiring: {recipe.get('label', args.id)}")
 
     # 1. Skills — ONE source (skills), copied into this tool's own location.
@@ -394,7 +477,7 @@ def main():
         src = os.path.join(args.self, "skills")
         dst = os.path.join(args.target, recipe["skills"]["dir"])
         landed = copy_tree_no_clobber(src, dst, recipe["skills"]["dir"], collisions,
-                                      manifest, f"{args.id}:skills")
+                                      manifest, f"{args.id}:{recipe['skills']['dir']}")
         # Report what LANDED, not what was on offer: printing the source count on
         # a run that skipped one is how a half-installed method looks complete.
         print(f"  ✓ {recipe['skills']['dir']:<22} {landed} skills")
@@ -420,7 +503,7 @@ def main():
                 rendered = toml_agent(fm, body)
             else:
                 rendered = "---\n" + "\n".join(yaml_block(fm)) + "\n---\n" + body
-            rel = f"{args.id}:agents/{out_name}"
+            rel = f"{args.id}:{spec['dir']}/{out_name}"
             if os.path.exists(out_path):
                 current = open(out_path, encoding="utf-8").read()
                 if current == rendered:
@@ -467,7 +550,7 @@ def main():
             rendered = "---\n" + "\n".join(yaml_block(fm)) + "\n---\n" + body.rstrip() + "\n"
             out_name = cmd.get("filename", "{name}.md").replace("{name}", name)
             out_path = os.path.join(dst_dir, out_name)
-            rel = f"{args.id}:commands/{out_name}"
+            rel = f"{args.id}:{cmd['dir']}/{out_name}"
             if os.path.exists(out_path):
                 current = open(out_path, encoding="utf-8").read()
                 if current == rendered:
@@ -516,26 +599,78 @@ def main():
     if sm:
         src = json.load(open(os.path.join(adapter_dir, sm["from"]), encoding="utf-8"))
         dst_path = os.path.join(args.target, sm["to"])
+
+        def _sidecar(reason):
+            """The file is the user's, and it is not one we can merge into.
+
+            The same answer the unparseable case already had, for every other way
+            a settings file can be shaped unexpectedly: `{"hooks": null}`,
+            `{"hooks": {"PreToolUse": {…}}}` (a mapping where the tool's own
+            schema says list), a top-level array. Each of those reached
+            `cur.append(blk)` and came out as an AttributeError mid-install —
+            with `.claude/` and `.ddw/` already on disk, no manifest written, and
+            no hooks wired. A half-install that says "Traceback" is the one
+            outcome an installer owes the user a sentence for instead.
+            """
+            side = os.path.join(os.path.dirname(dst_path), "ddw-settings.json")
+            os.makedirs(os.path.dirname(side), exist_ok=True)
+            with open(side, "w", encoding="utf-8") as fh:
+                json.dump(src, fh, indent=2)
+            print(f"  ! {sm['to']} {reason}; wrote ddw-settings.json alongside it. Merge its "
+                  "hooks into your file by hand, or move yours aside and re-run — DDW's hooks "
+                  "are NOT wired until you do.")
+
         dst = {}
         if os.path.exists(dst_path):
             try:
-                dst = json.load(open(dst_path, encoding="utf-8"))
-            except ValueError:
-                side = os.path.join(os.path.dirname(dst_path), "ddw-settings.json")
-                json.dump(src, open(side, "w", encoding="utf-8"), indent=2)
-                print(f"  ! {sm['to']} is not valid JSON; wrote ddw-settings.json alongside it")
+                with open(dst_path, encoding="utf-8") as fh:
+                    dst = json.load(fh)
+            except (OSError, ValueError, RecursionError) as exc:
+                _sidecar("could not be read (%s)" % exc.__class__.__name__)
                 dst = None
+            else:
+                if not isinstance(dst, dict):
+                    _sidecar("holds a %s where an object was expected" % type(dst).__name__)
+                    dst = None
         if dst is not None:
             for k, v in (sm.get("base") or {}).items():
                 dst.setdefault(k, v)
             key = sm["merge_key"]
             dst.setdefault(key, {})
+            if not isinstance(dst.get(key), dict):
+                _sidecar("has a `%s` that is a %s, not an object" % (key, type(dst[key]).__name__))
+                dst = None
+        if dst is not None:
             for event, blocks in src[key].items():
                 cur = dst[key].setdefault(event, [])
+                if not isinstance(cur, list):
+                    # One event of theirs is shaped differently. Refusing the
+                    # whole file over it would be worse than saying which one.
+                    _sidecar("has a `%s.%s` that is a %s, not a list"
+                             % (key, event, type(cur).__name__))
+                    dst = None
+                    break
+                # A block DDW wired once and no longer ships is DDW's to take
+                # out. The merge was add-only in both directions: rename a hook
+                # script between versions and the upgrade left the old block
+                # wired beside the new one — two hooks, one of them pointing at
+                # a script that is about to stop existing — and the uninstall
+                # after it took out only what the CURRENT adapter defines, so
+                # the repo came away configured to run a command that had just
+                # been deleted. A block is DDW's when it names a file this
+                # manifest records as DDW's; anything else is the user's and is
+                # left exactly where it is.
+                shipped = [json.dumps(b, sort_keys=True) for b in blocks]
+                stale = [b for b in cur
+                         if json.dumps(b, sort_keys=True) not in shipped
+                         and _names_installed_file(b, manifest, args.id)]
+                for b in stale:
+                    cur.remove(b)
                 seen = [json.dumps(b, sort_keys=True) for b in cur]
                 for blk in blocks:
                     if json.dumps(blk, sort_keys=True) not in seen:
                         cur.append(blk)
+        if dst is not None:
             os.makedirs(os.path.dirname(dst_path), exist_ok=True)
             with open(dst_path, "w", encoding="utf-8") as fh:
                 json.dump(dst, fh, indent=2, ensure_ascii=False)
@@ -563,8 +698,25 @@ def main():
     for snippet_path, ctx_name in blocks:
         ctx = os.path.join(args.target, ctx_name)
         snippet = open(snippet_path, encoding="utf-8").read()
-        existing = open(ctx, encoding="utf-8").read() if os.path.exists(ctx) else ""
-        if "BEGIN DDW" in existing:
+        try:
+            existing = open(ctx, encoding="utf-8").read() if os.path.exists(ctx) else ""
+        except (OSError, UnicodeDecodeError) as exc:
+            # A context file DDW cannot read is a context file DDW must not
+            # rewrite: appending to it would mean writing back whatever the
+            # replacement characters decoded to, and losing the user's bytes. A
+            # Spanish AGENTS.md saved as cp1252 crashed here mid-install, hooks
+            # already wired and no manifest written — so the drift detector was
+            # off for good in a repo that looked installed.
+            print(f"  ! {ctx_name:<22} could not be read as UTF-8 ({exc.__class__.__name__}); "
+                  "left untouched. Add the activation block by hand, or save it as UTF-8 and "
+                  "re-run the installer.")
+            continue
+        # The MARKER, not the words. A context file that merely mentions
+        # "BEGIN DDW" in prose — a README explaining the block, which is exactly
+        # what a project documenting its own setup writes — took this branch and
+        # then raised ValueError on the `index` below, mid-install, leaving the
+        # repo half-wired.
+        if "<!-- BEGIN DDW" in existing:
             # Upgrade it in place. Finding the block and leaving it was silent
             # data rot: the block is what loads the orchestrator, so a version
             # that changes it — a new import, a different entry point — would
@@ -596,6 +748,7 @@ def main():
                 fh.write(snippet)
             print(f"  ✓ {ctx_name:<22} activation block appended")
 
+    record_method(args.target, manifest)
     save_manifest(args.target, manifest)
 
     if collisions:

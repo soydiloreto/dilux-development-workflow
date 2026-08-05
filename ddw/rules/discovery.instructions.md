@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.1.0
+version: 1.2.0
 ---
 
 # DISCOVERY Tier (Ideation and Product Definition)
@@ -157,9 +157,10 @@ For each identified PRD:
    it inline, do NOT read SKILL.md as a file; the skill already has the template and handles
    naming).
    - Path: `docs/ddw/prd/prd-{ticket}-{NN}.md` (e.g. `prd-DISC-001-01.md`)
-   - The PRD **MUST include the complete header** with `PRD loops: 0`. That field is incremented
-     every time the PRD is modified (both in DISCOVERY and in future DEFINE phases of the pipeline).
-     Without it, later modifications cannot be tracked.
+   - The PRD **MUST include the complete header** with `PRD loops: 0` and `Loops since last human
+     decision: 0`. Both are incremented every time the PRD is modified (in DISCOVERY and in future
+     DEFINE phases alike); the second goes back to 0 whenever a human decides something. Without
+     them, later modifications cannot be tracked and the ceiling has nothing to measure.
    - The PRD follows exactly the same template and rules as any PRD in the normal pipeline.
 2. Update the PRD's status in the state to `"created"`.
 3. Run `ddw-validate-prd` on the PRD.

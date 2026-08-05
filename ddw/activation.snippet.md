@@ -2,7 +2,7 @@
 # DDW — Dilux Development Workflow
 
 This repo uses **DDW**: an agent-driven development pipeline with the phases
-`CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE`.
+`CLASSIFY → DEFINE → PLAN → CODE → VERIFY → CLOSEOUT`.
 
 Before answering, read `.ddw/orchestrator.md` and run its Boot Sequence. It is a strict state
 machine: it decides what you are allowed to do based on the phase recorded in `.ddw-state.json`.

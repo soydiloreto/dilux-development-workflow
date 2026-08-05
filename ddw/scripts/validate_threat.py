@@ -27,6 +27,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 STRIDE = ("Spoofing", "Tampering", "Repudiation", "Information Disclosure",
           "Denial of Service", "Elevation of Privilege")
 # What each category is allowed to be called, so a model writing in Spanish or
@@ -36,7 +39,10 @@ STRIDE_ALIASES = {
     "Tampering": (r"tampering|manipulaci[oó]n|alteraci[oó]n"),
     "Repudiation": (r"repudiation|repudio"),
     "Information Disclosure": (r"information disclosure|divulgaci[oó]n|fuga de informaci[oó]n"),
-    "Denial of Service": (r"denial of service|dos\b|denegaci[oó]n de servicio"),
+    # `dos\b` with no boundary in front of it: "parametros ligados" ends in
+    # `dos`, so a model that never mentions denial of service at all was
+    # credited with analysing it by any Spanish past participle in the plural.
+    "Denial of Service": (r"denial of service|\bdos\b|denegaci[oó]n de servicio"),
     "Elevation of Privilege": (r"elevation of privilege|elevaci[oó]n de privilegios?|escalada"),
 }
 SENSITIVE = re.compile(r"\b(pii|credential|credencial|password|contrase[ñn]a|token|secret|"
@@ -46,6 +52,46 @@ AT_REST = re.compile(r"\b(at rest|en reposo|en disco|encrypt\w*|cifrad\w*|hash\w
                      re.IGNORECASE)
 IN_TRANSIT = re.compile(r"\b(in transit|en tr[aá]nsito|tls|https|ssl|mtls)\b", re.IGNORECASE)
 ACCEPTED = re.compile(r"riesgo aceptado|accepted risk", re.IGNORECASE)
+# A control can be mentioned in order to say there is none. "We do NOT encrypt
+# at rest" contains `encrypt` and `at rest`, and a search for either read it as
+# the control being in place.
+NEGATION = re.compile(r"\b(no|not|non|sin|nunca|never|ninguna|ning[uú]n|without)\b",
+                      re.IGNORECASE)
+
+
+def _unfilled(value):
+    """Is this still the template's placeholder rather than an answer?
+
+    Every other validator here already knows this: `validate_spec._bullets`
+    drops `- [test name] — validates AC-xx`, and `validate_prd` does the same,
+    because a document copied is not a document written. This one had no such
+    notion, and the canonical threat model — every field a bracketed
+    placeholder — passed all seven rules and earned the receipt that opens
+    PLAN→CODE. Copy the template, change `path/to/file.py` to a real file, and
+    the `threat` gate was paid.
+
+    The brackets are removed and what is left is inspected: `[zone A] → [zone
+    B]: [what crosses it]` leaves punctuation, and `credentials (see [ASVS
+    V8])` leaves the answer.
+    """
+    v = (value or "").strip().strip("*_`")
+    if not v:
+        return True
+    return not re.search(r"[0-9A-Za-zÀ-ÿ]", re.sub(r"\[[^\[\]]*\]", "", v))
+
+
+def _entry_after(body, pattern):
+    """What a labelled line carries after its label, or None if there is no
+    such line. `- **Spoofing:** the session token is bearer-only` → the text."""
+    for ln in body.splitlines():
+        m = re.search(pattern, ln, re.IGNORECASE)
+        # The match has to BE the label — everything before it a bullet and its
+        # emphasis. Matched anywhere in the line, the word inside a sentence
+        # about something else answers for the category, and what comes back as
+        # "the analysis" is the tail of that other sentence.
+        if m and re.fullmatch(r"[\s*_`\-—–|>]*", ln[:m.start()]):
+            return re.sub(r"^[\s*_:`\-—–|]+", "", ln[m.end():]).strip()
+    return None
 
 
 def _sections(text):
@@ -101,6 +147,42 @@ def _table_rows(body):
     return rows[1:] if len(rows) > 1 else []
 
 
+def _table_rows_with_header(body):
+    """The same rows as `_table_rows`, header included — the header is what says
+    which column holds which control."""
+    rows = []
+    for ln in body.splitlines():
+        if not ln.strip().startswith("|"):
+            continue
+        cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+        if not cells or all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+            continue
+        rows.append(cells)
+    return rows
+
+
+def _states_control(text, pattern):
+    """Does the document STATE this control, outside the tables?
+
+    Two ways this used to answer wrongly. It read `data_body + risk_body` only,
+    so a model that declares its encryption under a `## Encryption` heading —
+    the obvious place to put it — was told it had none. And it matched the
+    words anywhere, so "we do NOT encrypt at rest" satisfied the rule it
+    contradicts. Table lines are skipped here because the column reading above
+    already judges them, header included.
+    """
+    for ln in text.splitlines():
+        if ln.strip().startswith("|"):
+            continue
+        m = pattern.search(ln)
+        if not m or _unfilled(ln):
+            continue
+        if NEGATION.search(ln[:m.start()]):
+            continue                      # a sentence denying the control
+        return True
+    return False
+
+
 def _repo_relative(path):
     ab = os.path.abspath(path)
     idx = ab.rfind(os.sep + "docs" + os.sep)
@@ -136,7 +218,7 @@ def _find_spec(tm_path, text, explicit):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("threat_model")
-    ap.add_argument("--tier", default="FEATURE")
+    ap.add_argument("--tier", default="FEATURE", choices=ddw_receipt.TIERS)
     ap.add_argument("--spec", default=None,
                     help="the spec this model analyses; found from the document if omitted")
     args = ap.parse_args()
@@ -148,7 +230,7 @@ def main():
 
     try:
         text = open(args.threat_model, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_threat: cannot read {args.threat_model}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -182,23 +264,41 @@ def main():
         unanalysed = [c[0] for c in components
                       if not any(c[0].strip().lower() in n or n in c[0].strip().lower()
                                  for n in named)]
-        gaps = []
+        gaps, empty = [], []
         for title, body in analysed:
-            missing = [cat for cat in STRIDE
-                       if not re.search(STRIDE_ALIASES[cat], body, re.IGNORECASE)]
+            missing, unwritten = [], []
+            for cat in STRIDE:
+                entry = _entry_after(body, STRIDE_ALIASES[cat])
+                if entry is None:
+                    missing.append(cat)
+                elif _unfilled(entry):
+                    # The category is named and nothing is said about it. Six
+                    # labels with `[analysis]` after each is the template, not
+                    # an analysis, and it used to count as full STRIDE coverage.
+                    unwritten.append(cat)
             if missing:
                 gaps.append(f"{title} (missing {', '.join(missing)})")
+            if unwritten:
+                empty.append(f"{title} (still the template's placeholder for "
+                             f"{', '.join(unwritten)})")
         if unanalysed:
             fail("F-TM-01", f"component with no STRIDE analysis: {', '.join(unanalysed)}")
         elif gaps:
             fail("F-TM-01", f"incomplete STRIDE coverage: {'; '.join(gaps)}")
+        elif empty:
+            fail("F-TM-01", f"STRIDE category named and not analysed: {'; '.join(empty)}")
         else:
             ok("F-TM-01", f"all 6 STRIDE categories evaluated for {len(analysed)} component(s)")
 
     # F-TM-02: the crossings.
     boundaries = _section(sections, "trust boundaries", "fronteras de confianza", "l[ií]mites")
-    if re.search(r"^\s*[-*|]\s*\S", boundaries, re.MULTILINE):
+    declared = [ln for ln in boundaries.splitlines()
+                if re.match(r"^\s*[-*|]\s*\S", ln) and not _unfilled(ln.lstrip(" -*|"))]
+    if declared:
         ok("F-TM-02", "trust boundaries are declared")
+    elif re.search(r"^\s*[-*|]\s*\S", boundaries, re.MULTILINE):
+        fail("F-TM-02", "the trust boundaries are the template's placeholders: `[zone A] → "
+                        "[zone B]` names no crossing of this design")
     else:
         fail("F-TM-02", "no trust boundary declared: the crossings are where the vulnerabilities are")
 
@@ -209,7 +309,8 @@ def main():
         fail("F-TM-03", "no risks table: a threat model that identifies nothing treats nothing")
     else:
         untreated = [r[0] for r in risks
-                     if len(r) < 2 or not r[-1] or re.fullmatch(r"[-–—.\s]*", r[-1])]
+                     if len(r) < 2 or not r[-1] or re.fullmatch(r"[-–—.\s]*", r[-1])
+                     or _unfilled(r[-1])]
         if untreated:
             fail("F-TM-03", f"threat with neither mitigation nor accepted risk: {', '.join(untreated)}")
         else:
@@ -225,11 +326,24 @@ def main():
     else:
         incomplete = []
         for title, body in accepted:
-            missing = [label for label, pat in (
+            missing = []
+            for label, pat in (
                 ("who accepted it", r"accepted by|aceptad[oa] por|aprobad[oa] por"),
                 ("the justification", r"justification|justificaci[oó]n|motivo"),
-                ("the review conditions", r"review|revisi[oó]n|condiciones"),
-            ) if not re.search(pat, body, re.IGNORECASE)]
+                # The whole label, not its first word: `review` alone matched
+                # inside "Review conditions:" and the "entry" that came back
+                # was the rest of the label.
+                ("the review conditions",
+                 r"review conditions|condiciones de revisi[oó]n|condiciones|revisi[oó]n"),
+            ):
+                # The LABEL was the whole test, so `**Accepted by:** [who]`
+                # counted as a name. A risk accepted by nobody, for no stated
+                # reason, reviewed never — with all three fields "present".
+                entry = _entry_after(body, pat)
+                if entry is None:
+                    missing.append(label)
+                elif _unfilled(entry):
+                    missing.append(f"{label} (still `{entry[:24]}`)")
             if missing:
                 incomplete.append(f"{title} (missing {', '.join(missing)})")
         if incomplete:
@@ -241,7 +355,8 @@ def main():
     data_body = _section(sections, "data classification", "clasificaci[oó]n de datos", "datos")
     data_rows = _table_rows(data_body)
     if data_rows:
-        unclassified = [r[0] for r in data_rows if len(r) < 2 or not r[1].strip()]
+        unclassified = [r[0] for r in data_rows
+                        if len(r) < 2 or not r[1].strip() or _unfilled(r[1])]
         if unclassified:
             fail("F-TM-05", f"sensitive data with no classification: {', '.join(unclassified)}")
         else:
@@ -251,14 +366,34 @@ def main():
     else:
         ok("F-TM-05", "no sensitive data to classify")
 
+    # A row is sensitive by what its CLASSIFICATION says. The template's
+    # placeholder lists every class at once — `[PII / credentials / financial /
+    # public]` — so an unfilled table was read as declaring PII, and the same
+    # placeholder in the control columns then paid for encrypting it.
     sensitive_rows = [r for r in data_rows
-                      if len(r) > 1 and re.search(r"pii|credential|credencial|financ", r[1], re.I)]
+                      if len(r) > 1 and not _unfilled(r[1])
+                      and re.search(r"pii|credential|credencial|financ", r[1], re.I)]
     if not sensitive_rows:
         ok("F-TM-07", "no PII or credentials to encrypt")
     else:
-        scope = data_body + "\n" + risk_body
-        missing = [w for w, pat in (("at rest", AT_REST), ("in transit", IN_TRANSIT))
-                   if not pat.search(scope)]
+        header = next((r for r in _table_rows_with_header(data_body)), [])
+        cols = {}
+        for i, cell in enumerate(header):
+            if AT_REST.search(cell) and "at rest" not in cols:
+                cols["at rest"] = i
+            elif IN_TRANSIT.search(cell):
+                cols["in transit"] = i
+        missing = []
+        for word, pat in (("at rest", AT_REST), ("in transit", IN_TRANSIT)):
+            if word in cols:
+                # The table has a column for it, so the answer belongs in the
+                # row: one item encrypted no longer pays for the rest of them.
+                blank = [r[0] for r in sensitive_rows
+                         if len(r) <= cols[word] or _unfilled(r[cols[word]])]
+                if blank:
+                    missing.append("%s (%s)" % (word, ", ".join(blank)))
+            elif not _states_control(text, pat):
+                missing.append(word)
         if missing:
             fail("F-TM-07", f"PII/credentials with no encryption {' and no '.join(missing)}")
         else:
@@ -270,7 +405,7 @@ def main():
     if spec_path:
         try:
             spec_text = open(spec_path, encoding="utf-8").read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             spec_text = ""
     if not spec_text:
         fail("F-TM-06", "the spec could not be read, so the model was NOT checked against the "
@@ -315,15 +450,9 @@ def main():
         pass
 
     if fails == 0:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        tm_abs = os.path.abspath(args.threat_model)
-        idx = tm_abs.rfind(os.sep + "docs" + os.sep)
-        root = tm_abs[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"threat-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(tm_abs) + "\n")
-        print(f"Receipt: .ddw-sessions/threat-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.threat_model, "threat", text, args.tier))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

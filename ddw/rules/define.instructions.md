@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.4.0
+version: 2.0.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -135,8 +135,8 @@ encapsulates the template, naming, file location, `PRD loops` handling and outpu
    - Present the questions to the user.
    - Wait for answers.
    - Re-invoke the skill via the Skill tool with `skill="ddw-create-prd"` in update mode to fold the
-     answers into the PRD (do NOT write inline; the skill increments `PRD loops` and re-runs
-     `ddw-validate-prd`).
+     answers into the PRD (do NOT write inline; the skill increments `PRD loops`, resets `Loops
+     since last human decision` to 0 — the user just decided — and re-runs `ddw-validate-prd`).
    - Repeat until PASSED.
 8. **Scope control** (see the section below).
 9. Present the PRD **and its validation report** (name the report file and
@@ -310,7 +310,7 @@ The original PRD (`prd-{TICKET}.md`) becomes an index document:
 ## Suggested implementation order
 a → b → c
 
-> **The `Status` column is maintained, not decorative.** RELEASE's closeout moves the finished
+> **The `Status` column is maintained, not decorative.** CLOSEOUT's closeout moves the finished
 > sub-ticket to `done` — with where its branch landed — and the next one to `active`. Left
 > unmaintained it says every sub-ticket is pending forever, and a reader has no way to tell that
 > from the truth.

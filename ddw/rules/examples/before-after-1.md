@@ -18,7 +18,7 @@ The developer tells the agent "fix this bug" and the agent:
 3. **PLAN**: produces a lightweight fix-plan with steps and a regression test
 4. **CODE**: implements the fix, writes the regression test, passes SAST
 5. **VERIFY**: verify-module passes
-6. **RELEASE**: commit with gitmoji, PR with AI attribution
+6. **CLOSEOUT**: commit with gitmoji, PR with AI attribution
 
 ## Rules applied
 - `.ddw/rules/classify.instructions.md` — tier classification

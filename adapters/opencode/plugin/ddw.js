@@ -74,7 +74,7 @@ export const DdwPlugin = async ({ directory }) => {
     return [
       BOOT_MARK,
       "This repo is governed by DDW (Dilux Development Workflow), a strict state machine over",
-      "CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE, recorded in .ddw-state.json at the repo root.",
+      "CLASSIFY → DEFINE → PLAN → CODE → VERIFY → CLOSEOUT, recorded in .ddw-state.json at the repo root.",
       `The method lives at ${ddw} — read ${join(ddw, "orchestrator.md")} and follow its Boot Sequence before doing anything else.`,
       "The method STAYS with the plugin: do NOT install DDW into this repo — no install.sh, no copying .ddw/ or .opencode/. " +
       "Where the method's documents say `.ddw/...`, resolve them under the path above. " +
@@ -107,7 +107,8 @@ export const DdwPlugin = async ({ directory }) => {
 
   const runGate = (mode, payload) =>
     execFileSync("python3", [gate, "--dialect", "standard", "--mode", mode,
-                             "--state", state, "--graph", graph, "--repo", directory], {
+                             "--state", state, "--graph", graph, "--repo", directory,
+                             "--method", ddw], {
       input: payload ?? "",
       stdio: ["pipe", "pipe", "pipe"],
     })

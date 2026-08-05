@@ -1,7 +1,7 @@
 ---
 name: ddw-module-verifier
 model: inherit
-description: Spawn it in VERIFY, on an implementation it did not write, to cross-check a module against the PRD, the spec and the tests. Validates complete traceability from requirements to implementation.
+description: Spawn it on an implementation it did not write, at either of two moments — per block in CODE, to check that block against its spec and to check the TDD evidence (which test was seen to fail, and on which assertion); and in VERIFY, to cross-check the whole module against the PRD, the spec and the tests. Validates complete traceability from requirements to implementation.
 tools: Read, Grep, Glob, Bash
 ---
 

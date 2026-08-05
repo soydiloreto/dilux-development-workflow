@@ -28,9 +28,21 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 MINIMUM = 80        # line, branch and function coverage — testing.instructions.md
-FAILING = re.compile(r"\b(fail|failed|falla|fallo|fallido|error|❌)\b", re.IGNORECASE)
-SAD_PATH = re.compile(r"\b(sad path|camino triste|invalid|inv[aá]lid|negative test|"
+# `❌` is not a word character, so inside a `\b(...)\b` group it demanded a word
+# character on BOTH sides of it — and every shape the verify skill tells the
+# model to write (`- AC-01 ❌`, `| AC-01 | ❌ |`) has a space or a pipe there.
+# Only `x❌y` ever matched. A report marking every criterion failed read as
+# "all N AC carry a passing verdict", F-VER-01 passed, and the receipt was
+# written. The mark carries its own boundary; it does not need one imposed.
+FAILING = re.compile(r"(?:\b(?:fail|failed|falla|fallo|fallido|error)\b|❌|✗|✘)", re.IGNORECASE)
+# `sad-path` as well as `sad path`: the hyphenated adjective is the ordinary
+# English spelling in front of a noun ("sad-path tests"), and a rule that reads
+# one and not the other refuses the report for a punctuation mark.
+SAD_PATH = re.compile(r"\b(sad[ -]path|camino triste|invalid|inv[aá]lid|negative test|"
                       r"entrada inv[aá]lida|edge case|caso borde)\b", re.IGNORECASE)
 
 
@@ -86,7 +98,7 @@ def _find(path_of_report, name_pattern, subdir, stems):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
-    ap.add_argument("--tier", default="FEATURE")
+    ap.add_argument("--tier", default="FEATURE", choices=ddw_receipt.TIERS)
     ap.add_argument("--prd", default=None)
     ap.add_argument("--spec", default=None)
     args = ap.parse_args()
@@ -98,7 +110,7 @@ def main():
 
     try:
         text = open(args.report, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_verify: cannot read {args.report}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -120,18 +132,49 @@ def main():
     prd_path = args.prd or _find(args.report, r"verify-(.+)\.md$", "prd", ("prd",))
     spec_path = args.spec or _find(args.report, r"verify-(.+)\.md$", "specs", ("spec", "fix"))
 
+    # `--prd` and `--spec` are chosen by whoever runs this, and nothing tied
+    # them to the ticket the report is about — so the verdict for T-1 could be
+    # checked against T-2's documents, or against any file at all. When the
+    # report names its ticket, the documents have to name the same one. When it
+    # does not (a scratch filename), there is nothing to compare and this says
+    # nothing rather than guessing.
+    _ticket = re.match(r"verify-(.+)\.md$", os.path.basename(args.report))
+    if _ticket:
+        want = _ticket.group(1)
+        for flag, given in (("--prd", args.prd), ("--spec", args.spec)):
+            if not given:
+                continue
+            stem = os.path.basename(given)
+            if not re.search(r"-%s\.md$" % re.escape(want), stem):
+                print("validate_verify: %s is %s, which is not a document for ticket %s. The "
+                      "verdict for one ticket cannot be checked against another's documents; "
+                      "pass this ticket's, or omit the flag and let it be resolved by name."
+                      % (flag, stem, want), file=sys.stderr)
+                sys.exit(3)
+
     # F-VER-01: every AC of the PRD accounted for, and none reported failing.
     prd_text = ""
     if prd_path:
         try:
             prd_text = open(prd_path, encoding="utf-8").read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             prd_text = ""
+    acs = _ids(prd_text, "AC") if prd_text else []
     if not prd_text:
         fail("F-VER-01", "the PRD could not be read, so AC coverage was NOT checked. "
                          "Pass --prd <path> and run again")
+    elif not acs:
+        # Zero criteria is not "every criterion accounted for". `--prd` is chosen
+        # by whoever runs this, and pointing it at any file with no AC bullets
+        # printed "all 0 AC from the PRD carry a passing verdict" and passed — a
+        # green rule whose subject was empty, which is the same nothing-measured
+        # this project refuses everywhere else. A PRD with no acceptance criteria
+        # is not one this can check: either the wrong file was passed, or the PRD
+        # has nothing to verify against yet.
+        fail("F-VER-01", "the PRD names no acceptance criteria (%s), so there was nothing to "
+                         "check the report against. Point --prd at this ticket's PRD, or write "
+                         "the criteria before verifying against them" % _repo_relative(prd_path))
     else:
-        acs = _ids(prd_text, "AC")
         unmentioned = [a for a in acs if not re.search(r"\b%s\b" % a, text)]
         if unmentioned:
             fail("F-VER-01", f"AC with no verdict in the report: {', '.join(unmentioned)}")
@@ -149,7 +192,7 @@ def main():
     if spec_path:
         try:
             spec_text = open(spec_path, encoding="utf-8").read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             spec_text = ""
     if not spec_text:
         fail("F-VER-02/06", "the spec could not be read, so block and test coverage were NOT "
@@ -158,7 +201,14 @@ def main():
         blocks = re.findall(r"^##\s+Block\s+(\d+)", spec_text, re.MULTILINE)
         missing = [f"Block {b}" for b in blocks
                    if not re.search(r"block\s*%s\b" % b, text, re.IGNORECASE)]
-        if missing:
+        if not blocks:
+            # Same emptiness as F-VER-01, one document over: a spec with no
+            # `## Block` heading is not the spec for this ticket, and "all 0
+            # spec block(s) are accounted for" said the work was covered.
+            fail("F-VER-02", "the spec names no blocks (%s), so there was nothing to check the "
+                             "report against. Point --spec at this ticket's spec"
+                             % _repo_relative(spec_path))
+        elif missing:
             fail("F-VER-02", f"spec block with no verdict in the report: {', '.join(missing)}")
         else:
             ok("F-VER-02", f"all {len(blocks)} spec block(s) are accounted for")
@@ -228,15 +278,9 @@ def main():
         pass
 
     if fails == 0:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        abs_ = os.path.abspath(args.report)
-        idx = abs_.rfind(os.sep + "docs" + os.sep)
-        root = abs_[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"verify-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(abs_) + "\n")
-        print(f"Receipt: .ddw-sessions/verify-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.report, "verify", text, args.tier))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

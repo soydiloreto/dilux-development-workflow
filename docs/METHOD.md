@@ -10,7 +10,7 @@ You ask for something in plain language. You never invoke a phase by hand.
 4. **CODE** — implemented block by block, each with its tests. *Gate: suite green, SAST clean.*
 5. **VERIFY** — cross-checked by an agent that did **not** write the code, against the PRD and the
    spec, and the verdict written to a report. If it fails, back to CODE. Never patched here.
-6. **RELEASE** — CHANGELOG, PR, ticket, closeout.
+6. **CLOSEOUT** — CHANGELOG, PR, ticket, closeout.
 
 Every arrow needs your explicit approval — unless you asked for `minimal` autonomy when the work was
 classified, in which case the arrows stop asking and nothing else changes (see *Minimal
@@ -35,7 +35,7 @@ The short lane has a guard of its own: a hook stops it the moment the change rea
 or grows past ten lines, and tells you to reclassify.
 
 And you can always **walk away**. Abandon a ticket, or pause it for later, from any phase, owing
-nothing — as long as you say which one it is. The one exception is RELEASE, where nothing is left to
+nothing — as long as you say which one it is. The one exception is CLOSEOUT, where nothing is left to
 decide and only steps remain: an exit there is a closeout and owes its gates, or the word "abandon"
 would be a skeleton key. Everywhere else, bailing out is allowed; doing it silently is not, because
 the history is what someone reads six months from now to find out why this was dropped.

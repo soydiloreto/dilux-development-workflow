@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.3.0
+version: 2.0.0
 ---
 
 # Commit and PR Conventions
@@ -87,7 +87,7 @@ everything in it:
 | DEFINE | The PRD (and the RCA, on a FIX) | 📝 `docs` |
 | PLAN | The spec/fix-plan, the threat model, any ADR | 📝 `docs` |
 | CODE | **One commit per block** — code + tests — as each block passes its reviews and its tests. Plus whatever the closeout changed | The tier's gitmoji |
-| RELEASE | The CHANGELOG and whatever is left | The tier's gitmoji |
+| CLOSEOUT | The CHANGELOG and whatever is left | The tier's gitmoji |
 
 **CODE is the phase that commits more than once, and that is the same rule, not an exception to
 it.** Its unit of work is the block, so the block is what gets committed — exactly as the line at
@@ -102,7 +102,7 @@ being asserted.
 If a phase produced nothing new to commit, it commits nothing. An empty commit to tick a gate is
 noise, and the gate does not ask for a commit — it asks for the work to be on the record.
 
-> **Only the commit that a closeout edge depends on touches `gates.commit`** — RELEASE for every tier, and the DISCOVERY closeout, which has no RELEASE phase and would otherwise be unable to close at all. The earlier phases commit without setting it. Were any of
+> **Only the commit that a closeout edge depends on touches `gates.commit`** — CLOSEOUT for every tier, and the DISCOVERY closeout, which has no CLOSEOUT phase and would otherwise be unable to close at all. The earlier phases commit without setting it. Were any of
 > them to set it, the closeout gate would read `true` from the first phase on and would stop
 > guarding anything.
 

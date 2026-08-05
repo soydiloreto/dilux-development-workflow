@@ -3,7 +3,7 @@ name: ddw-commit
 description: >
   Creates a commit following Gitmoji + Conventional Commits, with mandatory AI attribution.
   Trigger: /ddw-commit, when a DDW phase closes and has artifacts to commit (DEFINE, PLAN, CODE,
-  DISCOVERY, RELEASE).
+  DISCOVERY, CLOSEOUT).
 ---
 
 # Skill: /ddw-commit
@@ -21,15 +21,23 @@ Creates a commit following Gitmoji + Conventional Commits, with mandatory AI att
 1. Run `git status` and `git diff --staged`.
 2. If nothing is staged, look at the working tree:
    - **Dirty** → ask the user which files to include.
-   - **Clean, in RELEASE** → there is nothing left to commit, because the earlier phases already
+   - **Clean, in CLOSEOUT** → there is nothing left to commit, because the earlier phases already
      committed their own artifacts. Do NOT manufacture an empty commit: run
      `git log <base>..HEAD --oneline`, show the branch's commits, and report the gate as satisfied
      by them.
    - **Clean, in any other phase** → this phase produced nothing to commit. Say so and stop.
 3. Check there are no files carrying secrets (.env, credentials).
-4. Check the gates **this phase's commit depends on**: in CODE, `tests` and `sast` must both be
-   `true`. DEFINE, PLAN and DISCOVERY commit documentation and depend on no gate — at the moment
-   they commit, the gate they are about to earn is not set yet, so demanding it would deadlock.
+4. Check the gates **this phase's commit depends on**, and note that CODE commits twice for
+   different reasons:
+   - **A block commit in CODE** — code plus its tests, as each block passes its reviews and its
+     tests, which is what `.ddw/rules/commits.instructions.md` mandates — depends on **that
+     block's** reviews and tests, not on the phase gates. `tests` and `sast` are earned over the
+     whole phase and are still false while the blocks are being committed one at a time; demanding
+     them here forbade the very commit the rules require.
+   - **The phase's closing commit in CODE**, the one taken before leaving for VERIFY, is where
+     `tests` and `sast` must both be `true`.
+   - DEFINE, PLAN and DISCOVERY commit documentation and depend on no gate — at the moment they
+     commit, the gate they are about to earn is not set yet, so demanding it would deadlock.
 5. Analyze the changes to classify the type and scope.
 6. Write the commit message with a gitmoji (see `.ddw/rules/commits.instructions.md` for the
    reference table):
@@ -66,12 +74,12 @@ The two worth repeating, because they are about *this* skill's behaviour:
 - **Never push automatically.** Ask.
 
 ## Updating .ddw-state.json
-- `gates.commit` → `true` **when this commit is the one a closeout edge depends on — that is, in RELEASE for any tier, and at the DISCOVERY closeout. Anywhere else, do not touch `gates`.** The closeout checks it
+- `gates.commit` → `true` **when this commit is the one a closeout edge depends on — that is, in CLOSEOUT for any tier, and at the DISCOVERY closeout. Anywhere else, do not touch `gates`.** The closeout checks it
   before resetting to IDLE.
 - **In any other phase, do not touch `gates`.** DEFINE, PLAN, CODE and DISCOVERY commit their own
   artifacts (see `.ddw/rules/commits.instructions.md`), and if any of them set `commit` the closeout
   gate would be true from the first phase onward and would stop meaning anything. The gate does not
-  say "a commit exists" — it says "the release step was completed".
+  say "a commit exists" — it says "the closeout step was completed".
 
 ## Language
 

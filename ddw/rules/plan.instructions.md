@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Phase 2: PLAN (Technical Planning)
@@ -64,7 +64,8 @@ because:
 
 3. **In DEFINE (re-entry):**
    - Apply the modifications to the PRD.
-   - Increment `PRD loops` in the header.
+   - Increment `PRD loops` in the header, and reset `Loops since last human decision` to 0: coming
+     back from PLAN is a decision a person made, which is exactly what the ceiling waits for.
    - Run `ddw-validate-prd` (MANDATORY — no exceptions).
    - The user approves the updated PRD.
    - Transition back to PLAN: `phase` → `"PLAN"`, `gates.define` → `true`.

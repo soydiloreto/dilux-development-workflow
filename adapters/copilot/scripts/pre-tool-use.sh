@@ -34,4 +34,4 @@ GATE="$DDW/scripts/hook-gate.py"
 STATE="$REPO/.ddw-state.json"
 GRAPH="$DDW/rules/transition-graph.json"
 
-exec python3 "$GATE" --dialect copilot --mode pre --state "$STATE" --graph "$GRAPH" --repo "$REPO"
+exec python3 "$GATE" --dialect copilot --mode pre --state "$STATE" --graph "$GRAPH" --repo "$REPO" --method "$DDW"

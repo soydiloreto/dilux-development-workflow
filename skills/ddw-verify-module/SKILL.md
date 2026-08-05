@@ -73,7 +73,7 @@ block, the three coverage numbers, the sad-path answer and the lint answer. Then
 (under a plugin install, resolve `.ddw/scripts/` at the plugin's method path). **Paste its output
 VERBATIM** — every row, every rule ID, on **every** run, including a re-validation of a verdict that
 has not changed. A PASSED run writes the content-hashed receipt the `verify` gate demands; without it
-the VERIFY→RELEASE transition refuses.
+the VERIFY→CLOSEOUT transition refuses.
 
 **What that receipt does and does not say.** DDW does not run your suite — it does not know your
 runner, your directory or your environment, and a gate that cannot be satisfied honestly gets
@@ -131,6 +131,43 @@ failure sends the ticket back to CODE.
 
 Both rows are mandatory: the first is the verdict, the second is the validator's checklist — the
 path the script printed, so the user can read every rule instead of asking for it again.
+
+### The verdict document, in the shape the validator reads
+
+The box above is what the USER sees. `docs/ddw/reports/verify-{ticket}.md` is what the validator
+reads, and it had no canonical shape at all — so a complete verdict could be refused for its layout:
+an AC named without its identifier, a block referred to by name only, `sad-path` written with the
+hyphen English actually uses. Write it like this:
+
+```markdown
+# Verification {ticket}
+
+| Field | Value |
+|---|---|
+| Module | app/routes/public.py |
+| Line coverage | 91% |
+| Branch coverage | 84% |
+| Function coverage | 88% |
+| Coverage floor | 80% (AGENTS.md, "Testing") |
+| Lint | `ruff check .` — clean |
+
+## Acceptance criteria
+- ✅ AC-01 — `test_form_visible` (app/routes/public.py:12)
+- ✅ AC-02 — `test_campo_faltante_devuelve_400`
+- ✅ AC-03 — `test_email_invalido_devuelve_422`
+
+## Spec blocks
+- ✅ Block 1 — every task done, tests named above
+
+## Tests
+- ✅ Sad-path tests: `test_email_invalido_devuelve_422` covers the documented 422 path
+
+Result: PASSED
+```
+
+Every AC by its **identifier** (`AC-01`, not "the first criterion"), every block by its **number**,
+every test the spec promised by **name**, the three coverage numbers, and the floor quoted from the
+project. Those are what F-VER-01 to F-VER-06 look for, one rule each.
 
 ## PASS/FAIL criteria
 - **PASSED:** 0 FAILs → `gates.verify` = `true`. WARNINGs are reported and do not block.

@@ -36,14 +36,27 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}
   echo "INCONSISTENCY: .ddw/orchestrator.md is missing. Reinstall with install.sh."
 
 # Some context file must carry the activation block. Which one depends on the
-# tool, and a repo may legitimately have several.
-grep -lqF "BEGIN DDW" "$ROOT"/CLAUDE.md "$ROOT"/AGENTS.md "$ROOT"/GEMINI.md 2>/dev/null || \
+# tool, and a repo may legitimately have several — so each is asked separately.
+# Handing grep three filenames when only one exists exits 2 for the missing
+# operand EVEN AFTER a match, so this reported a healthy install as broken on
+# every one of the six tools.
+found=0
+for f in CLAUDE.md AGENTS.md GEMINI.md; do
+  [ -f "$ROOT/$f" ] && grep -qF "BEGIN DDW" "$ROOT/$f" && found=1
+done
+[ "$found" = 1 ] || \
   echo "INCONSISTENCY: no context file carries the DDW block. Reinstall with install.sh."
 
 # At least one tool's enforcement must be wired, or the gates are decoration.
-ls "$ROOT"/.claude/hooks/*.sh "$ROOT"/.codex/hooks/ddw/*.sh "$ROOT"/.cursor/hooks/ddw/*.sh \
-   "$ROOT"/.gemini/hooks/ddw/*.sh "$ROOT"/.github/hooks/ddw/*.sh \
-   "$ROOT"/.opencode/plugins/ddw.js >/dev/null 2>&1 || \
+# Same shape, same reason: one `ls` over six globs fails when any of them matches
+# nothing, and five of the six never match in a single-tool install.
+wired=0
+for g in "$ROOT"/.claude/hooks/*.sh "$ROOT"/.codex/hooks/ddw/*.sh "$ROOT"/.cursor/hooks/ddw/*.sh \
+         "$ROOT"/.gemini/hooks/ddw/*.sh "$ROOT"/.github/hooks/ddw/*.sh \
+         "$ROOT"/.opencode/plugins/ddw.js; do
+  [ -e "$g" ] && wired=1
+done
+[ "$wired" = 1 ] || \
   echo "INCONSISTENCY: no enforcement is wired for any tool. Reinstall with install.sh --target <tool>."
 ```
 
@@ -55,7 +68,7 @@ ls "$ROOT"/.claude/hooks/*.sh "$ROOT"/.codex/hooks/ddw/*.sh "$ROOT"/.cursor/hook
   `tracker`, `autonomy`, `gates`, `block`, `discovery`, `history`. `autonomy` absent or `null` reads
   as `assisted` and is NOT an inconsistency — a state written before the field existed did not opt
   into anything, and reporting it as broken would fail every repo that upgraded.
-- `phase` is a valid value (`IDLE`, `CLASSIFY`, `DEFINE`, `PLAN`, `CODE`, `VERIFY`, `RELEASE`,
+- `phase` is a valid value (`IDLE`, `CLASSIFY`, `DEFINE`, `PLAN`, `CODE`, `VERIFY`, `CLOSEOUT`,
   `DISCOVERY`).
 - `tier` is `null` (in IDLE/CLASSIFY) or a valid value (`QUICK-FIX`, `FIX`, `FEATURE`,
   `DISCOVERY`).

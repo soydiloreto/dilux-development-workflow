@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Validation Rules — Central Catalog
@@ -74,7 +74,7 @@ Valuable, Estimable, Small, Testable), EARS (Easy Approach to Requirements Synta
 
 | ID | Check | Precise description | Basis |
 |---|---|---|---|
-| F-PRD-01 | FR with no AC | Every functional requirement (FR-xx) must have at least one acceptance criterion (AC-xx) validating it. If an FR has no linked AC → FAIL. | IEEE 830 §4.3.1: every requirement must be verifiable. INVEST: Testable. If you cannot verify it, you cannot ship it. |
+| F-PRD-01 | FR with no AC | Every functional requirement (FR-xx) must have at least one acceptance criterion (AC-xx) validating it, and the AC must **name** it — the check looks for the FR's own identifier inside the criterion's text, because "validates it" is not something a script can read any other way. Write `- AC-01 (FR-01): …`. If an FR is named by no AC → FAIL. | IEEE 830 §4.3.1: every requirement must be verifiable. INVEST: Testable. If you cannot verify it, you cannot ship it. |
 | F-PRD-02 | Non-binary AC | Every acceptance criterion must be evaluable as PASS or FAIL without ambiguity. It must follow the pattern: "Given [context], when [action], then [measurable result]". If an AC says "works correctly", "behaves appropriately" or uses any unmeasurable adjective → FAIL. | BDD: acceptance criteria are verifiable contracts. An ambiguous AC produces divergent implementations. |
 | F-PRD-03 | NFR with no metric | Every non-functional requirement (NFR-xx) must include a quantitative value. Valid examples: "< 500ms p95", "99.9% uptime", "≥ 80% coverage". Invalid examples: "fast", "secure", "scalable", "highly available". | IEEE 830 §3.4: NFRs must be measurable. "Fast" is not a requirement, it is a wish. Without a number there is no possible acceptance criterion. |
 | F-PRD-04 | Empty "Out of Scope" | For tier FEATURE: the "Out of Scope" section must exist and contain at least one explicit item. If the section is missing or empty → FAIL. | The #1 cause of scope creep is not defining what is NOT included. Whatever is not explicitly excluded is assumed to be included. |
@@ -82,7 +82,7 @@ Valuable, Estimable, Small, Testable), EARS (Easy Approach to Requirements Synta
 | F-PRD-06 | Ambiguous verb | Requirements must use defined imperative verbs: "must", "must not". If a requirement uses "should", "could", "may", "ideally", "it is recommended" → FAIL. | IEEE 830 §3.1: "shall" for mandatory; "should" is forbidden in requirements because it creates contractual ambiguity. A requirement that "should" be met is a requirement that can be ignored. |
 | F-PRD-07 | Undeclared dependencies | If an FR references another module, an external service, or an existing feature, that dependency must be listed in the "Dependencies" section. If there are undeclared cross-references → FAIL. | Undeclared dependencies cause implementation blockers and integration errors. |
 | F-PRD-08 | Missing structural section | The PRD must contain ALL of these sections: Context and Problem, Goals, Functional Requirements, Non-Functional Requirements, Acceptance Criteria, Out of Scope (FEATURE), Dependencies. If any is missing → FAIL. | A structurally incomplete PRD cannot be validated. Missing sections are requirements nobody thought about. |
-| F-PRD-LOOP | Corrective loop at its ceiling | The PRD header's `PRD loops` counter reached 3. The loop is mandatory while it converges; three rounds without converging means what is missing is a decision nobody wrote down, not another pass. → FAIL, and the way past it is a human answering, with the counter reset and their answer recorded. | Under `autonomy: minimal` this is one of the three stops that have no mode. A counter incremented and compared to nothing is a tally, not a stop. |
+| F-PRD-LOOP | Corrective loop at its ceiling | The PRD header's `Loops since last human decision` reached 3 (falling back to `PRD loops` when a document predates the second counter). **Two numbers on purpose:** `PRD loops` is the running total, never reset, so six months on the document can say what it cost; the ceiling measures rounds since a person last decided something, because a round the model drove and a round a reviewer asked for are not the same event — and a review comment is already the decision this ceiling exists to provoke. The loop is mandatory while it converges; three rounds without converging means what is missing is a decision nobody wrote down, not another pass. → FAIL, and the way past it is a human answering, with the counter reset and their answer recorded. | Under `autonomy: minimal` this is one of the three stops that have no mode. A counter incremented and compared to nothing is a tally, not a stop. |
 | F-PRD-09 | AC not in EARS form | Every acceptance criterion must match one of the five EARS patterns (see below). An AC that matches none → FAIL, quoting it and naming the pattern it most likely wants. **Does not apply to DISCOVERY**, whose PRDs are exploratory, or to QUICK-FIX, whose artifact is the 4-line fix-brief. | EARS (Easy Approach to Requirements Syntax, Rolls-Royce) turns a criterion into a shape a reader can check rather than a sentence they have to interpret. It is what AWS's Kiro adopted for spec-driven work with agents, for the same reason: a template makes an *absent* case visible, and free prose does not. |
 
 ### WARNING rules
@@ -155,7 +155,7 @@ completeness principle (every design decision must be documented).
 | F-SPEC-09 | Input with no validation | Every block that receives user input must specify validation rules: type, maximum length, format, allowed values. If the block accepts input and does not document validation → FAIL. | OWASP Top 10 A03 (Injection). Input with no documented validation = input with no implemented validation = a vulnerability. |
 | F-SPEC-10 | No error handling | Every block must document which errors can occur and how they are handled (error code, message, action). If a block has no error-handling section → FAIL. | Undocumented error handling gets implemented ad hoc: every developer invents their own format, errors get swallowed, and the user sees inconsistent messages or stack traces. |
 | F-SPEC-11 | Undocumented dependencies between blocks/steps | The spec (or fix-plan) must have a dependencies section stating which blocks (FEATURE) or steps (FIX) depend on which. If blocks or steps reference other blocks' entities/services with no declared ordering → FAIL. | Without a dependency order, parallel implementation causes merge conflicts and integration errors. |
-| F-SPEC-LOOP | Corrective loop at its ceiling | The spec header's `Spec loops` counter reached 3. Same rule and same reason as `F-PRD-LOOP`. | Same. |
+| F-SPEC-LOOP | Corrective loop at its ceiling | The spec header's `Loops since last human decision` reached 3. Same rule and same reason as `F-PRD-LOOP`. | Same. |
 | F-SPEC-16 | Documented error with no test | **Every error a block documents under F-SPEC-10 must appear in that block's test list (F-SPEC-06).** Count them: fewer tests naming an error condition than errors documented → FAIL, naming which ones are unaccounted for. | This is the same standard F-VER-04 already applies — every input path needs a sad-path test — moved to the phase where it can still be met. F-SPEC-10 makes the errors *written down*; without this rule nothing makes them *tested*, so a spec passes PLAN with a full error section and a happy-path-only test list. VERIFY then catches it two phases later, when the code exists and the test can no longer be written first: a test added to cover an error path that already works documents the status quo, which is exactly what Rule #-1 in `testing.instructions.md` says proves nothing. The gap is not in CODE. It is here. |
 
 ### 2.4 Spec ↔ PRD consistency
@@ -282,6 +282,10 @@ To suppress a Medium finding as a false positive or an accepted risk:
 |---|---|---|
 | F-SAST-SEVERITY | Severity downgraded by marker | A Critical or High category filed under `⚠️`. The catalog fixes the severity per category; a marker does not change it, and *What can NEVER be a WARNING* names a confirmed vulnerability explicitly. → FAIL, and it still owes a location, a BLOCKED verdict and (never) a suppression. | It was the cheapest bypass in the script: a warning marker exempted a Critical from every other rule at once. |
 | F-SAST-SUPPRESS | Critical or High suppressed | §4.1 says Critical and High cannot be suppressed. A suppression block naming one → FAIL. | Nothing enforced it, so the seven fields were being validated for a finding the catalog says has to be fixed. |
+| F-SAST-COVERAGE | A catalogued category with no verdict | Every mandatory category above has to carry a ✅ / ⚠️ / ❌ on its own line, with its ID. A category the report never judged is a category nobody scanned, and it used to be indistinguishable from a clean one. → FAIL, naming each missing ID. |
+| F-SAST-LOCATION | A finding with no file and line | Any ❌ or ⚠️ has to name `file:line`. A finding nobody can navigate to is a finding nobody will fix, and it is what a report says when it is describing a category rather than reporting a scan. → FAIL. |
+| F-SAST-MEDIUM | A Medium neither fixed nor suppressed | §4.1 makes Medium a FAIL by default, suppressible only with the seven fields of §4.4. A Medium listed and then left alone is the disposition the catalog does not have. → FAIL. |
+| F-SAST-VERDICT | The stated result contradicts the findings | The report says PASSED (or does not say BLOCKED) while listing a Critical or High. The verdict line is what the state reads; a report whose summary disagrees with its own body is the one shape a receipt must never attest. → FAIL. |
 | F-SAST-18 | Every suppression must have all 7 fields filled in. If any is missing → FAIL. | FAIL |
 | F-SAST-19 | Suppressions must be reviewed when SAST is re-run. If a suppression is more than 6 months old → FAIL (it must be re-evaluated). | FAIL |
 | W-SAST-01 | Low or Informational finding left undocumented. | WARNING |
@@ -354,13 +358,13 @@ a document; whether it is a true document remains the reader's judgement, and ev
 
 | Area | FAIL rules | WARNING rules | Total |
 |---|---|---|---|
-| PRD | 10 | 5 | 15 |
-| Spec / Fix-Plan | 17 | 3 | 20 |
+| PRD | 9 | 5 | 14 |
+| Spec / Fix-Plan | 16 | 3 | 19 |
 | Threat Model | 7 | 2 | 9 |
-| SAST | 21 | 1 | 22 |
+| SAST | 19 | 1 | 20 |
 | Test Run Report | 8 | 1 | 9 |
 | Module Verify | 6 | 3 | 9 |
-| **Total** | **69** | **15** | **84** |
+| **Total** | **65** | **15** | **80** |
 
 ---
 

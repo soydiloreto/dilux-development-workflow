@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -115,24 +116,54 @@ def ensure_gitignore(repo):
         pass                          # a read-only checkout is not worth failing over
 
 
+def refresh_marker(repo, session_id):
+    """Say that this session is still here. Returns True if it could.
+
+    Split out of `other_live_sessions` for one reason: the marker goes stale
+    after STALE_SECONDS and only the Claude adapter had somewhere to refresh it
+    from — an extra PreToolUse shim that runs on every write. In the other five
+    tools the marker was written once at session start and swept two hours
+    later, so every session long enough to matter vanished from the count and
+    the concurrency warning stopped firing for exactly the sessions it exists
+    for. The refresh is the method's, like everything else the hooks share, so
+    it is one function here rather than five shims out there.
+    """
+    if not session_id:
+        return False                  # no id, no marker (see the note in main)
+    try:
+        sess_dir = os.path.join(repo, ".ddw-sessions", "live")
+        os.makedirs(sess_dir, exist_ok=True)
+        with open(os.path.join(sess_dir, safe_id(session_id)), "w", encoding="utf-8") as fh:
+            fh.write(str(int(time.time())))
+        return True
+    except OSError:
+        return False
+
+
 def other_live_sessions(repo, session_id):
     """Count sessions other than this one that are still alive on this directory.
 
     Registers FIRST, then counts. The other order is a race the guard loses
     against the exact scenario it exists for — two terminals opened on one repo
     at the same time — and in that window neither session was warned.
+
+    Returns `(others, announced)`. The count is what it is whether or not this
+    session managed to write its own marker; `announced` says whether the guard
+    runs in both directions, and the caller says so out loud when it does not.
     """
-    sess_dir = os.path.join(repo, ".ddw-sessions")
+    # A namespace of its own, and this is not tidiness. The markers used to live
+    # directly in `.ddw-sessions/`, which is also where the six gates' RECEIPTS
+    # live — and the sweep below unlinks anything older than STALE_SECONDS
+    # without asking what it is. Every ticket longer than two hours, which is
+    # every FEATURE, had its evidence deleted by the bookkeeping that thinks it
+    # is expiring dead sessions; the gate then blamed the document ("if the PRD
+    # changed after validating, validate again") for a change nobody made.
+    # Measured. Liveness markers and evidence do not share a directory.
+    sess_dir = os.path.join(repo, ".ddw-sessions", "live")
     now = time.time()
-    mine = os.path.join(sess_dir, session_id)
-    registered = False
-    try:
-        os.makedirs(sess_dir, exist_ok=True)
-        with open(mine, "w", encoding="utf-8") as fh:
-            fh.write(str(int(now)))
-        registered = True
-    except OSError:
-        pass          # cannot register; still worth counting who else is here
+    # Registers FIRST, then counts, through the same function the write path
+    # calls — one definition of what a marker is and where it lives.
+    registered = refresh_marker(repo, session_id)
 
     try:
         others = 0
@@ -149,9 +180,201 @@ def other_live_sessions(repo, session_id):
             # forever while being alone on disk.
             if name.lower() != session_id.lower():
                 others += 1
-        return others if registered else others
+        return others, registered
     except OSError:
-        return 0
+        return 0, registered
+
+
+def _no_manifest(why):
+    """`.ddw/` is here and the record of what was installed is not.
+
+    Reported as loudly as a CHANGED file, because it is strictly worse: a
+    changed file is one thing this can name, and a missing manifest is every
+    file at once — nothing in the repository can be compared against anything
+    again, and the state is permanent. It is also the cheapest thing in the
+    world to reach, being a `rm` of a file whose name reads like a build
+    artifact.
+    """
+    return [
+        "⚠️ DDW: the record of what was installed here is gone.",
+        f"   MISSING  .ddw-installed.json ({why})",
+        "   `.ddw/` is in this repository, so DDW was installed into it — which means this "
+        "file existed. Without it nothing can be checked against what was installed, and a "
+        "tampered repository reads exactly like a clean one. Say so to the user before doing "
+        "anything else; re-running `install.sh` writes it again.",
+    ]
+
+
+def enforcement_drift(repo):
+    """Files DDW installed whose bytes no longer match what it installed.
+
+    The pre-write hook refuses a WRITE to any of them, in every phase. What it
+    cannot see is a shell: `printf > .ddw/rules/transition-graph.json` is not a
+    tool call with a path in it, and `docs/RATIONALE.md` decision 11 is honest
+    that the shell is detected rather than prevented. This is that detection —
+    the manifest recorded a sha256 for every installed file at install time and
+    nothing had ever read it back.
+
+    It reports; it does not repair. A file that changed may be a tampered gate or
+    may be a deliberate local edit, and DDW does not get to decide which by
+    overwriting your work.
+    """
+    manifest = os.path.join(repo, ".ddw-installed.json")
+    # A missing manifest read as "plugin mode, or never installed" and said
+    # nothing. But those two cases have no `.ddw/` in the repository, and a
+    # drop-in install does — so the one state this could not be is the one it was
+    # treated as. Deleting the manifest therefore turned drift detection off
+    # permanently and left a tampered repository indistinguishable from a clean
+    # one, which is worse than the write it also unsealed: that write leaves
+    # evidence, and this removes the thing that would have reported it.
+    installed_here = os.path.isdir(os.path.join(repo, ".ddw"))
+    try:
+        with open(manifest, encoding="utf-8") as fh:
+            recorded = json.load(fh)
+    except (OSError, ValueError) as exc:
+        if not installed_here:
+            return []                  # plugin mode, or never installed
+        return _no_manifest(type(exc).__name__)
+    if not isinstance(recorded, dict) or not recorded:
+        return _no_manifest("it is empty or not an object") if installed_here else []
+    import hashlib
+
+    def fingerprint(path):
+        """The installer's own hash, for files and for whole directories — a
+        skill is a directory, and hashing it as a file reported every correct
+        install as missing. One definition, two readers: scripts/install_target.py
+        `_fingerprint`."""
+        h = hashlib.sha256()
+        if os.path.isfile(path):
+            with open(path, "rb") as fh:
+                h.update(fh.read())
+            return h.hexdigest()
+        if not os.path.isdir(path):
+            return None
+        for base, dirs, files in os.walk(path):
+            dirs.sort()
+            for f in sorted(files):
+                p = os.path.join(base, f)
+                h.update(os.path.relpath(p, path).encode())
+                with open(p, "rb") as fh:
+                    h.update(fh.read())
+        return h.hexdigest()
+
+    changed, gone = [], []
+    for key, digest in recorded.items():
+        if not isinstance(key, str) or not isinstance(digest, str):
+            continue
+        rel = key.split(":", 1)[1] if ":" in key else key
+        try:
+            actual = fingerprint(os.path.join(repo, rel))
+        except OSError:
+            actual = None
+        if actual is None:
+            gone.append(rel)
+        elif actual != digest:
+            changed.append(rel)
+    if not changed and not gone:
+        return []
+    lines = ["⚠️ DDW: what enforces the pipeline is not what was installed."]
+    for rel in sorted(gone)[:6]:
+        lines.append(f"   MISSING  {rel}")
+    for rel in sorted(changed)[:6]:
+        lines.append(f"   CHANGED  {rel}")
+    extra = len(gone) + len(changed) - min(len(gone), 6) - min(len(changed), 6)
+    if extra > 0:
+        lines.append(f"   … and {extra} more.")
+    lines.append("   The hooks refuse to write these, so a change here came from a shell or from "
+                 "outside the session. Say so to the user before doing anything else; re-running "
+                 "`install.sh` restores them.")
+    return lines
+
+
+def awaiting_review(repo, timeout=5):
+    """Your open pull requests in this repo, or why they could not be read.
+
+    Deterministic, and that is the whole design of it: **phase is IDLE and the
+    repo has a remote → ask, every time. Anything else → never ask.** No
+    heuristics, no "sometimes". Mid-ticket it stays quiet — you know what you are
+    doing and a network call on every session start, in every repo DDW is
+    installed in, is a cost worth refusing.
+
+    IDLE is the moment the question is worth asking: you have nothing in flight
+    and you are about to decide what is next. It also covers the case a local
+    file cannot — a fresh clone on another machine, where there is no paused
+    ticket to notice, because the pause lives in `.ddw-paused/` and that never
+    leaves the machine that wrote it. The forge is the only shared record.
+
+    It never raises and never guesses. When it cannot look, it says so and says
+    why: an empty answer and an unanswerable question are different things, and
+    printing nothing for both is how a tool teaches people it has nothing to say.
+    """
+    CANNOT = "🔕 DDW: could not check your open pull requests — "
+    SHOWN = 8
+    try:
+        remote = subprocess.run(["git", "-C", repo, "remote"], capture_output=True,
+                                text=True, timeout=timeout)
+    except Exception:
+        remote = None
+    if remote is None or remote.returncode != 0:
+        # "git failed" and "there is no remote" are different answers, and only
+        # one of them is silence. A directory that is not a repository at all is
+        # not a failure worth a line — DDW is simply not the thing to say it.
+        # `exists`, not `isdir`: in a worktree `.git` is a file, and a worktree
+        # is a repository whose git failures are worth the same line.
+        if os.path.exists(os.path.join(repo, ".git")):
+            return [CANNOT + "git could not read this repo's remotes."]
+        return []
+    if not remote.stdout.strip():
+        return []                      # no remote: no pull requests to have, and no noise
+    try:
+        out = subprocess.run(["gh", "pr", "list", "--author", "@me", "--state", "open",
+                              # Explicit, because gh's default page size is its
+                              # business and not ours. The count below is what
+                              # the user acts on, so it has to be a count of the
+                              # same thing every time.
+                              "--limit", "30",
+                              "--json", "number,title,headRefName,reviewDecision,updatedAt"],
+                             cwd=repo, capture_output=True, text=True, timeout=timeout,
+                             stdin=subprocess.DEVNULL)
+    except FileNotFoundError:
+        return [CANNOT + "`gh` is not installed."]
+    except subprocess.TimeoutExpired:
+        return [CANNOT + f"the forge did not answer in {timeout}s."]
+    except Exception as exc:
+        # Anything else — a locale that cannot decode gh's output, a permission
+        # error on the executable — used to be reported as a timeout, which is a
+        # statement about the network that nobody established.
+        return [CANNOT + f"{type(exc).__name__} while running gh."]
+    if out.returncode != 0:
+        why = (out.stderr or "").strip().splitlines()
+        detail = why[0][:120] if why else f"gh exited {out.returncode}"
+        return [CANNOT + detail]
+    try:
+        prs = json.loads(out.stdout or "[]")
+    except ValueError:
+        return [CANNOT + "gh returned something unparseable."]
+    # Shape-checked, not trusted. `gh` returning an object, or a list of strings,
+    # crashed the boot on `pr.get` — and a session boot that raises takes the
+    # phase announcement down with it, which is the one line that must survive.
+    if not isinstance(prs, list):
+        return [CANNOT + "gh returned something that is not a list of pull requests."]
+    prs = [p for p in prs if isinstance(p, dict)]
+    if not prs:
+        return []
+    lines = [f"🔎 DDW: {len(prs)} open pull request(s) of yours in this repo:"]
+    for pr in prs[:SHOWN]:
+        decision = str(pr.get("reviewDecision") or "").upper()
+        note = {"CHANGES_REQUESTED": "  ← changes requested",
+                "APPROVED": "  ← approved, ready to merge"}.get(decision, "")
+        lines.append(f"   #{pr.get('number')} {str(pr.get('headRefName'))[:44]}{note}")
+    if len(prs) > SHOWN:
+        # Never a silent truncation: a list that stops without saying so reads as
+        # the whole list, and the ones it dropped are the oldest — the ones most
+        # likely to be the forgotten review this exists to surface.
+        lines.append(f"   … and {len(prs) - SHOWN} more (showing the first {SHOWN}).")
+    lines.append("   A ticket paused at CLOSEOUT resumes there; what a reviewer asks for is a step "
+                 "back, and each step back gives up the gates that phase granted.")
+    return lines
 
 
 def pending_subtickets(repo):
@@ -349,10 +572,19 @@ def main():
     else:
         phase = "IDLE"
 
-    session_id = safe_id(args.session_id or f"pid-{os.getpid()}")
-    others = other_live_sessions(repo, session_id) if started else 0
+    # No id, no marker. A pid is not a session: the pre-write hook runs on EVERY
+    # edit, and each run had a pid of its own, so a repo with one person working
+    # in it grew one "live session" per write and then warned about twelve of
+    # them. An identity nobody supplied is better left unclaimed than invented —
+    # the count stays right, and the caller that has a real session id (every
+    # session-start hook does) still refreshes the one marker that means it.
+    session_id = safe_id(args.session_id) if args.session_id else ""
+    others, announced = other_live_sessions(repo, session_id) if started else (0, True)
 
     lines = []
+    # First, above everything: if the enforcement itself was changed, nothing
+    # below it means what it says.
+    lines += enforcement_drift(repo)
     if others:
         lines += [
             f"⚠️ DDW: {others} other session(s) are working in THIS SAME directory.",
@@ -360,7 +592,23 @@ def main():
             "   the other finds out when a hook stops it. To work in parallel, give each one its own",
             "   worktree: git worktree add ../<repo>-<TICKET> -b feat/<TICKET>",
         ]
+    if not announced:
+        # Half a guard, named as half a guard. This session can see the others;
+        # the others cannot see this one, and a warning nobody receives reads
+        # exactly like a directory nobody else is working in.
+        lines += [
+            "⚠️ DDW: this session could not write its marker under .ddw-sessions/live, so the",
+            "   next session opened on this directory will NOT be warned about this one. The",
+            "   count above is one-sided rather than wrong.",
+        ]
     if phase == "IDLE":
+        # `started` and `--quiet` both gate the network call, not just its
+        # output. Without them the boot reached out to the forge in a repo that
+        # has never run DDW, and again on a quiet run whose whole point is to
+        # print nothing — paying a round trip on every session start for a line
+        # that was going to be discarded.
+        if started and not args.quiet:
+            lines += awaiting_review(repo)
         pending = pending_subtickets(repo)
         if pending:
             listed = ", ".join(t for _, t in pending)
@@ -416,4 +664,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Fail SOFT and always say something. This is the session's first line, and a
+    # traceback here means the model starts with no idea what phase it is in —
+    # which is worse than any message this could have printed. A state so deeply
+    # nested that json raises RecursionError is not a state; it is the case the
+    # UNREADABLE line was written for, and it was reaching the user as exit 1.
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException as exc:                  # noqa: BLE001 — breadth is the point
+        print("⚠️ DDW: the session boot could not run (%s: %s). This is NOT an idle "
+              "pipeline — a ticket may be mid-flight. Read .ddw-state.json yourself before "
+              "starting anything, and tell the user." % (type(exc).__name__, exc))
+        sys.exit(0)

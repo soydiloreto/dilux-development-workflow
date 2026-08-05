@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.7.0
+version: 2.0.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`
@@ -31,7 +31,7 @@ version: 1.7.0
 | Field | Type | Valid values | Description |
 |-------|------|--------------|-------------|
 | `tier` | `string \| null` | `"QUICK-FIX"`, `"FIX"`, `"FEATURE"`, `"DISCOVERY"`, `null` | Tier of the current work. `null` in IDLE. |
-| `phase` | `string` | `"IDLE"`, `"CLASSIFY"`, `"DEFINE"`, `"PLAN"`, `"CODE"`, `"VERIFY"`, `"RELEASE"`, `"DISCOVERY"` | Current phase of the state machine. |
+| `phase` | `string` | `"IDLE"`, `"CLASSIFY"`, `"DEFINE"`, `"PLAN"`, `"CODE"`, `"VERIFY"`, `"CLOSEOUT"`, `"DISCOVERY"` | Current phase of the state machine. |
 | `ticket` | `string \| null` | Tracker ID (e.g. `"PROJ-123"`) or internal (e.g. `"FIX-001"`, `"FEAT-001"`, `"DISC-001"`) | The ticket identifier. `null` in IDLE. |
 | `title` | `string \| null` | Free text | Descriptive title of the ticket. `null` in IDLE. |
 | `tracker` | `string \| null` | The tracker's ID | Set when the ticket comes from a tracker. `null` when the ID is internal. |
@@ -69,14 +69,26 @@ They look identical in the `phase` field and owe completely different things:
 
 | | What it means | Gates owed | Declared as |
 |---|---|---|---|
-| **Closeout** | The work ships | The edge's gates — no `commit` and `pr`, no close | any `action` |
+| **Closeout** | The work is finished and handed over | The edge's gates — no `commit` and `pr`, no close | any `action` |
 | **Abandon** | The work will never ship | none | `action: "abandon: <reason>"` |
 | **Pause** | Set aside, to be resumed | none | `action: "pause: <reason>"` |
 
 Walking away — abandon or pause — is allowed from any phase **except the ones listed in the graph's
-`no_walkaway`**, which today means RELEASE. At RELEASE nothing is left to decide, only steps to
+`no_walkaway`**, which today means CLOSEOUT. At CLOSEOUT nothing is left to decide, only steps to
 finish, so an exit there is a closeout and owes its gates. Without that rule the word `"abandon"`
 would be a skeleton key: relabel the exit and ship without a commit or a PR.
+
+**One exception, and it is narrow.** A **pause** at CLOSEOUT is allowed once `commit` and `pr` are
+both true. The work is committed, the pull request is open, and what you are waiting for is another
+person — refusing there protects nothing and leaves the ticket sitting in CLOSEOUT for two days while
+you cannot start anything else, because there is one state per directory. An **abandon** at CLOSEOUT
+is still refused, which is what the skeleton key was about, and both gates are read from the state
+*before* the write, so the same write cannot grant them and spend them.
+
+**Resuming at CLOSEOUT gives `commit` and `pr` back false.** Days passed: the pull request may have
+been closed, the branch may have been force-pushed. A gate already true is never re-asked, so
+without this the closeout would be satisfied by evidence earned before the wait. Both questions are
+instant — one to git, one to the forge.
 
 ```json
 { "timestamp": "…", "from": "DISCOVERY", "to": "IDLE",
@@ -90,6 +102,25 @@ An exit to IDLE that declares none of the three, on an edge the graph does not c
 Bailing out is always allowed; doing it silently is not — the history is the audit trail of what
 happened to each ticket, and "this was dropped, and why" is exactly the kind of thing worth being
 able to read six months later.
+
+### Going back
+
+**You can always step back one phase, and stepping back gives up what that phase granted.** The
+graph declares it per edge, in `clears`: `CLOSEOUT→VERIFY` gives up `verify`, `VERIFY→CODE` gives up
+`tests` and `sast`, `CODE→PLAN` gives up `spec` and `threat`, `PLAN→DEFINE` gives up `define`.
+Stepping out of CODE backwards also clears `block` — you are not implementing one any more.
+
+To go from CLOSEOUT back to DEFINE you take four steps, and each one is a history entry saying why.
+That is the record of how far back a review sent you.
+
+**The validator refuses a backward write that still holds those gates**, and that is not tidiness.
+Clearing them in the helper alone left a hand-written state able to step back, keep the gates,
+rewrite the artifact and step forward again — with no receipt asked for, because evidence is owed
+only when a gate is claimed for the *first* time. That is a rewritten PRD laundered through the
+pipeline's own recovery path, and it was reachable until this rule existed.
+
+Going back is never a shortcut: it is strictly more expensive than going forward, because everything
+from there on has to be earned again against the artifacts as they now are.
 
 **Reaching IDLE resets the ticket:** `tier` back to `null`, `gates` back to `{}`. This is enforced,
 not merely expected. Leaving them behind let the NEXT ticket inherit gates the previous one paid

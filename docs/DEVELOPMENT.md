@@ -11,12 +11,12 @@ DDW separates **the method** from **the wiring**:
 
 **Plugin mode.** `.claude-plugin/plugin.json` declares the packaging,
 `.claude-plugin/marketplace.json` is what makes it installable at all, and
-`adapters/claude/plugin-hooks.json` carries the same six hooks resolved from the
+`adapters/claude/plugin-hooks.json` carries the same five hooks resolved from the
 plugin root rather than the project.
 
 Every hook resolves the method through `ddw_method` in `adapters/claude/hooks/lib/guard.sh`:
 **the repo's `.ddw/` first, the plugin second.** That sentence used to be here
-and was false — two of the six hooks did it, the other four looked only in the
+and was false — two of the five hooks did it, the other three looked only in the
 repo, and `session-start.sh` was one of them. Installed as a plugin, DDW loaded
 its skills and its agents and enforced nothing, which is the failure
 `scripts/acceptance.md` opens by naming. It read as working because the drop-in
@@ -177,7 +177,7 @@ and it is the part a reader will overreach on.
 ## One write, one transition
 
 The pre-write mode caps a single write at **one** appended history entry. Without the cap, one
-`Write` could append the whole pipeline — IDLE through RELEASE, every gate asserted at the end — and
+`Write` could append the whole pipeline — IDLE through CLOSEOUT, every gate asserted at the end — and
 pass: no gate is missing, and the sequencing that is the entire point of a state machine evaporates.
 
 ## Agents
@@ -223,14 +223,14 @@ A tier is **declarative**: the FSM validator indexes by tier generically (`_effe
 5. The skill producing the DEFINE artifact (`skills/ddw-create-prd`), if it uses an artifact other
    than the PRD.
 
-**Three ways to reach IDLE.** A **closeout** ships the work and owes the edge's gates —
-`RELEASE → IDLE` requires `commit` and `pr`, so a ticket cannot be marked done without them.
+**Three ways to reach IDLE.** A **closeout** finishes the work and hands it over and owes the edge's gates —
+`CLOSEOUT → IDLE` requires `commit` and `pr`, so a ticket cannot be marked done without them.
 **Abandoning** and **pausing** owe nothing, because the work is not going to ship, but they must be
 declared: the history entry's `action` starts with `abandon` or `pause` (matched on the first word —
 an unanchored prefix once made "abandonware cleanup" a valid exit).
 
 Walking away is allowed from anywhere except the phases the graph lists under `no_walkaway`, which
-today is `RELEASE`: at that point nothing is left to decide, only steps to finish. Without that
+today is `CLOSEOUT`: at that point nothing is left to decide, only steps to finish. Without that
 rule the word `abandon` is a skeleton key — relabel the exit and ship with no commit and no PR.
 
 Since closing resets `tier` and `gates`, the validator evaluates those edges against the state as it
@@ -354,7 +354,23 @@ CI runs both on pull requests, which is where the range exists.
 full run of the suite per injected fault. In one process that does not finish
 inside any timeout worth setting, and a job killed at its timeout reports
 *cancelled*, which is not an answer to the question it was asked. So it runs in
-ten slices, `mutate.py --shard I/10`, one job each.
+twenty-four slices, `mutate.py --shard I/24`, one job each.
+
+**The slice count lives in three places and only two of them are checked.** The
+matrix and the `--shard I/N` argument are tied together by `mutate.py --cover`,
+and `verify_install.sh` does the arithmetic that keeps a slice under the job's
+timeout — a faults-per-shard figure that grew past the ceiling once, killing
+three runs at exactly 45:00 while every check on the branch stayed green. The
+third place is `main`'s branch protection, which lists the required checks BY
+NAME: rename the shards and the required contexts never appear again, so the
+pull request is blocked forever with everything passing. Nothing in this
+repository can read that list — it is GitHub's, not the tree's. **Re-sharding is
+two commits and one API call**, and the call is the one nobody remembers:
+
+```bash
+gh api -X PATCH repos/<owner>/<repo>/branches/main/protection/required_status_checks \
+  --input contexts.json   # the four suites, every shard by its new name, and both coverage jobs
+```
 
 Splitting a measurement is how a measurement goes quietly missing: drop a matrix
 entry and every remaining job is still green while the faults in that slice are

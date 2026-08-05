@@ -31,4 +31,4 @@ command -v python3 >/dev/null 2>&1 || {
   exit 2
 }
 
-exec python3 "$GATE" --dialect cursor --mode pre --state "$STATE" --graph "$GRAPH" --repo "$REPO"
+exec python3 "$GATE" --dialect cursor --mode pre --state "$STATE" --graph "$GRAPH" --repo "$REPO" --method "$DDW"

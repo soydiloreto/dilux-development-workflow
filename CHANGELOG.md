@@ -19,6 +19,480 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.18.0] — Unreleased
+
+A pre-merge audit: twelve specialists, each given a subsystem and told to run it
+rather than read it, each followed by a skeptic told to refute what it found. 45
+defects survived that. The three worst were not in the pipeline's logic — they
+were in the pipeline's belief that it was enforcing anything.
+
+### Fixed
+
+- **In CODE, the agent could rewrite the rules that stop it.** The guard against
+  writing DDW's own files lived inside the phase rule, and that rule returns
+  early for CODE and CLOSEOUT — so it covered exactly the phases where nothing
+  can be written anyway and stood down in the one where the work happens.
+  Measured end to end on a real install: rewrite `transition-graph.json` to add
+  an edge, rewrite `validate-transition.py`, replace the tool's hook with
+  `exit 0`, or simply `Write` a receipt into `.ddw-sessions/` and open six gates
+  with a touch — and close a FEATURE that never claimed `tests`, `sast`,
+  `verify`, `commit` or `pr`, with both hooks green. The method, the receipts,
+  the journal, the manifest and each tool's wiring are now unwritable in **every**
+  phase, and `.ddw-state.json`, `.ddw-paused/` and `docs/` stay writable.
+- **A whole FEATURE could reach CLOSEOUT with no artifacts at all.** No PRD, no
+  spec, no threat model, no test report, no SAST report, no verdict — six gates
+  true, nothing on disk. `_receipt_missing` returned "nothing to check" when the
+  document was absent, and that sentence is false at every call site: the
+  function is reached only for a gate being **claimed**. A missing document is a
+  refusal now, and so is one that cannot be read as UTF-8.
+- **A receipt could be written by hand.** The tool path is closed above; a shell
+  is not (decision 11). So the six validators now record, in the append-only
+  journal, that they wrote each receipt — and the gate asks for both. Forging
+  takes two coordinated writes instead of one, and the second one lands in a
+  record that outlives deleting the state.
+- **The install manifest named files that were not there** — 22 of 28 entries
+  used the source layout instead of the repo's, and nothing at runtime had ever
+  read it back. It is repo-relative now, which is what makes the two fixes above
+  precise, and what lets the session boot report an install whose enforcement no
+  longer matches what was installed.
+- **`transition.py --write` overwrote a corrupt state with a fresh IDLE**,
+  destroying the history — in precisely the situation the orchestrator says to
+  stop and report. It reads the state the way the hook does now, and refuses
+  where the hook refuses.
+- **Installing a second tool destroyed that tool's pre-existing hooks.** The
+  upgrade test asked the whole manifest instead of this tool's part of it, so a
+  target that had never been installed was treated as an upgrade, and files DDW
+  never wrote were replaced with no backup, no warning and exit 0.
+- **The sanctioned helper could not close a ticket in any tier.** `CLOSEOUT→IDLE`
+  wants `commit` and `pr`; reaching IDLE wipes the gates, so `--gate` there was
+  silently discarded and the refusal blamed a missing `--tier`, a flag that edge
+  ignores. `transition.py --claim <gate>` earns a gate in the phase that owns it,
+  and the refusal now says so.
+- **A skip counted as a pass.** Two plugin manifests had therefore never been
+  validated against the real schema in CI. Skips are counted apart, a run with
+  one does not go green, and CI installs the CLI those checks need.
+- **CI's steps could be deleted while every required check stayed green** — the
+  required contexts are job names, not the steps inside them. The suite now
+  asserts the content of both workflows, and the release workflow, which nothing
+  had ever checked existed.
+- **`F-PRD-03` was structurally incapable of failing.** It asked whether a
+  non-functional requirement contained a number, and read the whole bullet —
+  `NFR-01` contains digits. It printed a green row on every run since it was
+  written; "the load should be fast" passed as a measured requirement.
+- **`/ddw-self-check` reported two inconsistencies on every correct install of
+  all six tools** — one `grep` handed three filenames exits 2 for the missing
+  operand even after a match, and one `ls` over six globs fails when any is
+  empty, which five of six always are. A diagnostic that cries wolf on a healthy
+  repo is what people learn to ignore before the real one.
+- **Uninstall left every generated slash command behind** (most of an OpenCode
+  install), deleted the manifest its own `--force` advice needs, and left behind
+  an empty `.gitignore` the installer had created.
+- Eight catalogued rules across four validators had never been exercised by a
+  document that violates them; the linter never read `skills/` or `agents/` — the
+  two directories that name skills and agents most; four SAST rule IDs shown to
+  users were in no catalog; the loop counters, the QUICK-FIX way back from
+  CLOSEOUT, the pause-vs-prefix match and the tier chain's direction had no
+  mutation. Plus eleven documentation claims that were false about the code.
+
+#### Round two: the ticket that closes without answering the question
+
+- **The closing edge asked for nothing, in all three places that judge it.**
+  `transition.py` asked `gate_evidence_missing` only about the gates named in
+  `--gate`, and `--gate` is refused on `--to IDLE` — so the sanctioned helper,
+  the path the method tells the model to take, asked nothing exactly where the
+  evidence matters, and closed a ticket over uncommitted work with exit 0. Post
+  mode had the mirror of it: `scope == "none"` gated the evidence arm too, so a
+  forged run refused at CLOSEOUT was blessed in full by one more write to IDLE.
+- **Two runs of the helper in one turn lost an edge.** Read and write were not
+  one critical section: both read the same phase, both validated, both wrote,
+  and the second `os.replace` dropped the first one's transition while both
+  exited 0. A write now refuses to land over a state that moved under it.
+- **The uninstaller deleted the repository.** `claude:.` in a committed manifest
+  resolves to the repo itself, passed a containment check written as "is it
+  inside?", and reached `shutil.rmtree` — working tree, `.git`, and every file
+  the user had ever written. A mutation for the traversal case existed and
+  killed nothing, because no check ever drove it.
+- **A journal line written twice slid the index** that finds what just landed,
+  so post mode owed evidence for nothing; and deleting the journal outright
+  turned the receipt-witness check off, so a hand-written receipt opened its
+  gate again in one command.
+- **`pid-$$` is not a session.** The pre-write hook runs on every edit and
+  identified itself by its own shell, so a repo with one person in it grew one
+  live session per write and then warned about twelve of them.
+
+#### An entry point that answers with a stack
+
+- **The installer assumed the shape of your settings file.** A `hooks` that is
+  null, a string, a top-level array, or a `PreToolUse` that is a mapping where
+  the tool's own schema says list — each reached `cur.append(blk)` and came out
+  an `AttributeError`, with `.claude/` and `.ddw/` already on disk, no manifest
+  and no hooks wired: a repo that looks installed, is not, and whose drift
+  detector is off for good. Same for a context file that is not UTF-8, which is
+  what a Spanish `AGENTS.md` saved as cp1252 is.
+- **The uninstaller was worse in one case**: `PreToolUse: "oops"` was iterated as
+  a sequence, so the file came back rewritten one character per list element,
+  exit 0, "Done." A tool that corrupts what it was asked to clean and reports
+  success is worse than one that refuses.
+- **Four validators read their companion document through a bare `except
+  OSError`**, so the everyday case of a PRD in the wrong encoding exited 1 with
+  a stack; the method linter took the whole run down on one rule file saved the
+  same way.
+- **A worktree is a repository whose `.git` is a file.** The root walk asked
+  whether it was a directory, so the layout the boot itself recommends could not
+  resolve a root at all, and a worktree nested in another checkout resolved to
+  the enclosing one — the ticket's state landing beside somebody else's work.
+- **`--check-anchors` now compiles what each mutation would produce.** A
+  mutation that leaves the file unparseable measures the file not compiling:
+  every check dies on the import and the run records a kill. One had shipped and
+  lived through two audits.
+
+#### The document a phase is told to write has to pass the gate it is written for
+
+- **Three plausible renderings of a complete test run were refused for their
+  layout** — a coverage table whose rows are labelled `Line`, a lint result under
+  its own heading, a failure named by test rather than by `path::test`, and
+  `sad-path` with the hyphen English actually uses. Each read to the user as
+  "your report is incomplete" about a report that was not.
+- **Neither the test report nor the verification verdict had a canonical shape
+  anywhere**, so there was nothing to copy and every draft was a guess. Both
+  skills now carry the document, and the suite extracts each one and runs it
+  through the validator that reads it.
+- **The three refusals a real run hits most named the fact and not the move.**
+  "gate 'spec' required for X is not true" says what is wrong and nothing about
+  what to do, and what the model does next is edit the state by hand — which the
+  hook then refuses just as finally.
+
+#### Round three: the instrument, and the gates that opened on the wrong evidence
+
+- **The mutation figure was arithmetic over a run that never happened.** The CI
+  job never installed the Claude CLI; the suite's preflight calls `bad()` for a
+  missing tool; the runner reads any non-zero exit as "the fault was caught". So
+  every shard reported every mutation killed without examining one, and printed
+  100%. The same shape arrived locally through `commit.gpgsign` — the one
+  fixture that commits without disabling signing could not commit at all on a
+  contributor's machine, and three checks blamed the commit gate for a tree that
+  was never committed. The runner now asks an **unmutated** copy first and
+  refuses to inject anything into a suite that cannot pass, saying which of the
+  two it was; both CI jobs install the CLI; and every workflow job that runs the
+  suite is held to the preflight's own tool list.
+- **`--tier` decided which rules ran and nothing recorded which one was asked
+  for.** The same PRD failed as a FEATURE and passed as a QUICK-FIX, and the
+  receipt — named by a digest of the content alone — came out byte-identical
+  either way, so the gate had nothing to compare against. Receipts record the
+  tier they were earned under, the gate refuses one that is not the ticket's,
+  and `--tier` accepts only the tiers the graph defines. Receipts written before
+  this carry no tier line and are still honoured.
+- **`mkdir .ddw` turned every Claude hook off.** The method was chosen by the
+  directory being there rather than the gate being there, so an empty folder won
+  the lookup and each hook bowed out at its `[ -f "$DDW/scripts/hook-gate.py" ]
+  || exit 0` — two lines below a python3 branch that deliberately fails closed.
+  Under a plugin install the fallback it skipped is the only copy of the method
+  there is. One command, no privileges, no content, and a write refused with
+  exit 2 was allowed with exit 0.
+- **Under a plugin install the method was writable from inside a ticket.** Every
+  guard on DDW's own files asked "is this under the repo root?", and a plugin
+  root is not — so writes to the plugin's graph, gate and validator all returned
+  0 while `src/app.ts` in the same event returned 2. With `"PLAN->CLOSEOUT":
+  {"gates": []}` injected into that graph, a FEATURE reached CLOSEOUT with no
+  spec, threat, tests, sast or verify — and the plugin root is shared, so one
+  write disarms DDW in **every** repository using it. The hooks now hand the gate
+  the method root they already resolve, and it is judged before the guard that
+  bows out for paths outside the repo.
+- **`.ddw/` was not in the install manifest.** A clean install recorded 28
+  entries and none of them under the method, so the drift check — the detection
+  half of "prevention where a path is visible, detection where it is not" —
+  could not see a shell rewriting `transition-graph.json`, `hook-gate.py` or
+  `validate-transition.py`. Three separate comments in the code named exactly
+  that vector as the one the manifest covers. The method tree is fingerprinted
+  file by file now, and the drift check drives those three by name rather than
+  whichever entry sorts first.
+- **`rm .ddw-installed.json` unsealed every hook script and silenced the drift
+  report for good.** The hook scripts were protected by the manifest alone, and
+  a manifest that cannot be read returned an empty set; a missing one was read
+  as "plugin mode, or never installed", which are the two cases that have no
+  `.ddw/` in the repository. Each adapter's hook destination is sealed by name
+  now, and a repo that plainly has `.ddw/` in it reports a missing manifest as
+  loudly as a changed file.
+- **A state truncated to zero bytes read as a fresh IDLE.** Not absent, so the
+  deletion net did not fire; not garbage, so the parse guard did not either —
+  and a blank state is a fresh install's ordinary state. `: > .ddw-state.json`
+  therefore put the repository at IDLE with no ticket and no history, and the
+  write to product source that DEFINE had just refused went through. An empty
+  state with transitions in the journal is now the erasure it is; an empty one
+  with nothing recorded is still the run that has not started.
+- **A gate could be claimed from any phase.** `--claim` checked that the name is
+  a known gate and that its evidence exists, and never read the phase; a raw
+  write that appends no history returned early in the validator, so nothing
+  covered that path either. Under QUICK-FIX the closing edge costs `define`,
+  `tests` and `sast` — three booleans that could all be set while sitting in
+  DEFINE, before a line of the fix existed. The owning phases are derived from
+  the graph: an edge `A->B` asking for `g` is the statement that `g` is what
+  leaving A costs.
+- **The corrective loop cost nothing.** `clears` was a boolean operation and
+  nothing outlived the write that performed it. For `define`, `spec`, `threat`
+  and `verify` that is enough — the artifact IS what changed, so its hash moves.
+  For `tests` and `sast` it is not: the artifact is a report ABOUT code that is
+  about to change, and its bytes are identical after the fix, so VERIFY→CODE and
+  back re-presented the same receipts. The journal now records a gate as spent
+  when a loop clears it, and a receipt written before that no longer opens it.
+- **A write could drop `tier` to null**, and the next write then set any tier it
+  liked: FEATURE → null → QUICK-FIX, two writes, both exit 0, neither saying
+  anything, and the ticket walks a graph with no PLAN and no VERIFY. Null reads
+  as "unchanged" everywhere it is consulted, exactly like the `""` and `0` the
+  check already refused — it just arrives as the value a caller may legitimately
+  send.
+- **`❌` was unmatchable in the document it was designed for.** It is not a word
+  character, so inside a `\b(...)\b` group it demanded one on both sides, and
+  every shape the verify skill teaches (`- AC-01 ❌`, `| AC-01 | ❌ |`) has a space
+  or a pipe there. A verdict marking every criterion failed read as "all AC carry
+  a passing verdict" and wrote its receipt.
+- **A verdict could be checked against documents that were not the ticket's.**
+  `--prd` and `--spec` are chosen by whoever runs the validator; pointing both at
+  a file with no criteria and no blocks printed "all 0 AC", "all 0 spec
+  block(s)", "all 0 test(s)" and PASSED — three green rules whose subject was
+  empty. Zero criteria is now a refusal, and the documents have to name the
+  ticket the report does.
+- **A `.ddw` symlinked out of the repository was not sealed.** Paths are resolved
+  through symlinks before being judged, which is what stops a guarded file being
+  written under an unguarded name — but the sealed lists are about names, so
+  resolving first answers a different question. Both readings are judged now.
+  (`.ddw-sessions/` and `.ddw-installed.json` were never affected, and
+  `install.sh` never builds that topology.)
+- **A refused edge to IDLE prescribed a claim that changes nothing.** The hint
+  "run `--claim commit --claim pr` first" was pasted onto every refusal on the
+  way to IDLE, including the ones where no such edge exists: from CODE both
+  claims exit 0 and the retry prints the same sentence word for word. A fixed
+  point, and the only conclusion left to the reader is that the tool is broken.
+  The hint comes from the graph now — the gates where the edge asks for them,
+  and which phase closes a ticket where it does not.
+- **Out of IDLE, a paused ticket was told to reclassify.** The refusal said the
+  only transition from IDLE is `--to CLASSIFY`, and the suite's own happy path is
+  a counterexample: a paused ticket re-enters the phase it was paused in, and
+  that edge exits 0 on the same state. Following the hint means abandoning a
+  ticket that was one flag away from continuing — the advice the pause was added
+  to make unnecessary.
+- **The fix-plan template could not pass the gate it is written for.** A plan
+  written exactly as `ddw-create-spec` teaches was refused by F-SPEC-10 for its
+  layout: the template puts error handling in prose, and the validator counts
+  errors as a list, because F-SPEC-16 pairs each one with the test that names it.
+  The skill carries a worked fix-plan now, and the suite runs it through
+  `validate_spec.py --tier FIX` — the same guard the PRD, the test report and the
+  verdict already had.
+- **The SAST receipt recorded no clock.** `--today` decides which suppressions
+  have expired and the caller chooses it, so a report whose reviews lapsed months
+  ago passed by naming a day they were still fresh, and left a receipt
+  byte-identical to one earned this morning. The receipt records the day, and the
+  gate refuses one earned against another.
+- **A session's liveness marker expired under five of the six tools.** Only the
+  Claude adapter had a second PreToolUse shim to refresh it; everywhere else the
+  marker was written at session start and swept two hours later, so the
+  concurrency warning went quiet for exactly the sessions worth warning about.
+  The write gate every tool runs refreshes it now.
+- **The catalog's own summary counted rules it does not contain** — 69 FAIL and
+  84 in total where the tables define 65 and 80, with `ddw/rules/README.md`
+  repeating the 84. Rules were merged and removed over three rounds and nobody
+  recounted; the linter recounts now, per area and in total.
+- **`code.instructions.md` asked for `F-TEST-01` to `F-TEST-06`** with 07 and 08
+  implemented, and `check_rule_ranges` could never see it: the pattern demanded
+  whitespace straight after `-01`, and every rule ID in this method's prose is
+  written in backticks. It ran green for months over ranges that were all correct
+  while blind to the single stale one — and it read the rule files without
+  reading the skills that run them.
+- **Three of the instrument's own.** The check that every validator prints its
+  demand guarded itself with `assert cases` over a list literal three lines
+  above: every fixture could be missing and it passed having asked nothing. Two
+  entries in the mutation list injected the same edit — one fault counted twice,
+  in a list that IS the coverage figure. And the empty shard the suite drives was
+  typed as `400/400` when the list held 393, so the day it passed four hundred
+  that check ran a real mutation, which ran the suite, which reached the same
+  line again: a recursion that forks until the machine gives up. All three are
+  derived from the tree now instead of typed.
+
+### Added
+
+- **`transition.py --claim <gate>`** — marking a gate in the phase that earns it,
+  with the same evidence the hook demands and no history entry.
+- **Enforcement-drift reporting at session start**: every file the installer
+  recorded, hashed against the manifest, so a change made through a shell is
+  told to the next session instead of never being noticed.
+- **A baseline run in `scripts/mutate.py`**, and argument validation ahead of it:
+  the runner asks whether the suite passes on an unmutated copy before injecting
+  anything, so a red suite is a refusal rather than a fabricated 100%.
+- **The tier on every receipt**, in the file and in the journal, so a gate can
+  ask which rules earned the evidence it is being handed.
+- **A `spent` record in the journal** when a corrective loop clears a gate, which
+  is what makes re-earning `tests` and `sast` cost a real re-run.
+- **The clock on the SAST receipt**, alongside the tier, so the gate can ask
+  which day the suppressions were aged against.
+- 101 checks and 144 mutations over the four rounds: **532 checks, 404
+  mutations**. Among them, one check per skill's load-bearing claim — ten of the
+  seventeen could have their entire body replaced with "TODO." and the suite
+  stayed green.
+
+---
+
+## [0.17.0] — Unreleased
+
+Everything 0.15.0 added, audited by driving it instead of reading it. Four of the
+holes below made the release's own headline feature unusable; the rest were ways
+around gates that no check had a shape for.
+
+### Fixed
+
+- **Choosing an autonomy mode bricked the session.** Post mode replays the whole
+  run as one batch against a synthetic IDLE prior, and the autonomy check asked
+  whether `appended[0]` came from CLASSIFY — which, in that batch, it never does.
+  So every ticket that picked a mode and walked past DEFINE was refused by the
+  post hook, on every tool call, forever. The field the feature exists for made
+  the pipeline unusable and nothing drove it end to end. Any edge touching
+  CLASSIFY now satisfies it; on the pre path, where a write carries one edge,
+  that is the same question it always asked.
+- **Pausing worked only if you never worked on anything else.** `_paused_at`
+  read the entry immediately before the resume, assuming the pause was the last
+  thing that ever happened — the one thing a pause is for **not** being. Pause A,
+  run B end to end, come back for A, and the resume was refused as having no
+  paused ticket. It now searches backwards for the last **unresumed** pause, and
+  pairs each resume already in the history with the pause it consumed, so one
+  pause cannot be resumed twice. Another ticket's pause is not your way back in.
+- **`ticket: null` opened all six receipt gates at once.** Every receipt resolves
+  its document through the ticket, and "no document on disk" reads as "no claim
+  to check" — so clearing one field, one `jq` away, satisfied `define`, `spec`,
+  `threat`, `tests`, `sast` and `verify` together. A state claiming a receipt
+  gate must now name the ticket it earned it for, and naming it is the way out.
+- **A gate could be turned on without declaring a transition.** Post mode owed
+  evidence only for the gates the landed **edges** declared, so `jq '.gates.tests
+  = true'` — which appends no history entry — owed nothing; and the pre path did
+  not catch it either, because by then the forged `true` was already the prior
+  and nothing was newly claimed. The journal now carries a snapshot of the gates
+  as post mode last blessed them, and what changed since it is asked for its
+  evidence. It lives inside the journal so that removing it costs the transitions
+  too — and a journal that comes back empty makes post mode stricter, not weaker.
+- **The step back from CLOSEOUT kept the commit and the PR.** `CLOSEOUT→VERIFY`
+  gave up `verify` and nothing else, so a ticket sent back by a reviewer walked
+  forward again still holding `commit` and `pr` — the two gates that say the work
+  shipped. It now gives up all three, and QUICK-FIX's `CLOSEOUT→CODE` gives up
+  `tests`, `sast`, `commit` and `pr`.
+- **The counter the ceiling reads was one no template wrote.** `Loops since last
+  human decision` was in the rules, in the validators and in nothing that emits a
+  document, so every PRD and spec fell back to the running total — the exact
+  distinction 0.15.0 introduced, present everywhere except where it counts. Both
+  templates emit it, the skills say when it resets, and a `since` above the total
+  is refused: it counts a subset of the rounds the total counts, so it cannot be
+  the larger of the two.
+- **The pending-PR notice could take the session boot down with it.** A shape
+  from `gh` that was not a list of objects crashed on `pr.get`, and the boot's
+  phase line — the one line that has to survive — went with it. It also called
+  the forge on quiet runs and in repos that had never run DDW, reported every
+  failure as a timeout including the ones that were not, dropped the ninth and
+  later pull requests in silence, and answered a broken `git` with the same
+  silence as "you have no open PRs".
+- **The helper could not name a ticket.** With `--write` there is no later Write
+  to fill it in, so the sanctioned path produced exactly the state the rule above
+  now refuses. `transition.py --ticket` sets it, and stamps it on the history
+  entry — the closeout wipes the header's ticket, so an unstamped entry is
+  unattributable from then on.
+
+### Added
+
+- **`transition.py --ticket <ID>`**, and the helper stamps the ticket on the
+  history entry alongside the tier.
+- **One check walks a whole ticket the way a user walks it** — classify, define,
+  plan, code, pause, an unrelated ticket start to finish, resume, a corrective
+  loop, closeout — through `transition.py --write` and then the post hook after
+  every step. Three of the defects above were invisible to every check that
+  drives a function or builds a state to reach it, and visible in the first
+  minute of walking the thing. 9 checks and 33 mutations in total: 462 checks,
+  258 mutations.
+
+- **Eleven mutations that had been reported killed were not.** Three were
+  regressions this release caused and hid: the new ticket rule refused the
+  suite's negative fixtures *before* the rule under test could, so deleting
+  append-only, deleting timestamp validation, or uncapping transitions-per-write
+  left the suite green — a fixture refused for the wrong reason proves nothing.
+  The other eight were checks that tested the function instead of the path: the
+  pending-PR notice was driven directly and never through the boot, so deleting
+  the line that calls it was invisible; QUICK-FIX's own way back from CLOSEOUT
+  had no check at all; and the pause exception was never replayed by post mode,
+  which is the one place it can brick a repo.
+
+### Changed
+
+- **Resuming a paused ticket asks which mode to come back in.** Reaching IDLE
+  clears `autonomy`, so without a second moment to choose it the setting was
+  lost across every pause, recoverable only by abandoning the ticket. Resuming
+  is now the one other place it may be set, and the pause protocol makes the
+  assistant put the previous value to the user before restoring anything. It
+  needs a real, unresumed pause of that ticket, from the exact phase, out of
+  IDLE — the first draft matched the word `resume:` on any edge, which granted
+  the mode on an ordinary forward step; the check written alongside it caught
+  that before it shipped. What the hook cannot see is whether the question was
+  asked: that stop is the method's, like the loop ceiling, and it is checked as
+  prose because that is what it is.
+
+---
+
+## [0.16.0] — Unreleased
+
+### Changed — BREAKING
+
+- **The `RELEASE` phase is now `CLOSEOUT`.** The phase does not release anything:
+  it commits the artifacts, opens the pull request, updates the tracker and says
+  where the branch lands. The release — the merge, the deploy — happens after,
+  done by other people, possibly days later. The name promised the one thing the
+  phase does not do, and the pause added in 0.15.0 made the gap plain: you can
+  now sit there for two days having released nothing.
+
+  The method was already using the right word for it everywhere else — *"an exit
+  there is a closeout and owes its gates"* — so the phase and the act it performs
+  had two names for one thing. Now they have one.
+
+  **What breaks:** any `.ddw-state.json` carrying `phase: "RELEASE"`, and any
+  history entry naming it. Done now, before 1.0.0, because this is the cheapest
+  this rename will ever be: after publishing it is a migration and a broken
+  promise instead of a correction.
+
+  `ddw/rules/release.instructions.md` is `closeout.instructions.md`. The pipeline
+  diagram is regenerated, and its footer stops claiming every arrow waits for
+  you — under `minimal` it does not.
+
+---
+
+## [0.15.0] — Unreleased
+
+A pull request waits for people. The pipeline could not.
+
+### Added
+
+- **Step back one phase, always** — `CLOSEOUT→VERIFY`, `CODE→PLAN` (and
+  `CLOSEOUT→CODE`, `CODE→DEFINE` for QUICK-FIX) join the two that existed.
+  Each backward edge declares in the graph what it **gives up**, and the
+  validator refuses a backward write that still holds those gates. Four steps
+  from CLOSEOUT to DEFINE, each one a history entry saying why.
+- **Pause at CLOSEOUT**, once `commit` and `pr` are both paid for. An abandon
+  there is still refused. Resuming gives both back false and asks again — days
+  passed, and a gate already true is never re-asked.
+- **The forge is asked what is waiting for you**, when the phase is IDLE and the
+  repo has a remote. Deterministic: those two conditions → ask, every time;
+  anything else → never. When it cannot look it says why — `gh` missing, not
+  authenticated, no answer in five seconds — because an empty answer and an
+  unanswerable question are different things.
+
+### Fixed
+
+- **The corrective loop laundered rewritten artifacts.** `PLAN→DEFINE` cleared
+  nothing, so you could step back, rewrite the PRD, and step forward claiming
+  `define` with no receipt asked for — evidence is owed only when a gate is
+  claimed for the first time, and this one never stopped being true. The helper
+  refused it; the hook did not. Reachable before this release.
+
+### Changed
+
+- **The loop ceiling counts two numbers.** `PRD loops` stays the running total
+  and nobody resets it. The ceiling measures rounds since a human last decided
+  something — a review comment is already the decision it exists to provoke.
+
+---
+
 ## [0.14.2] — Unreleased
 
 ### Fixed
@@ -417,7 +891,7 @@ in, with the tool-specific wiring generalised from one agent to six.
 
 ### The method
 
-- Six phases — `CLASSIFY → DEFINE → PLAN → CODE → VERIFY → RELEASE` — with a
+- Six phases — `CLASSIFY → DEFINE → PLAN → CODE → VERIFY → CLOSEOUT` — with a
   gate between each pair and state that survives closing the session.
 - Five tiers, so the ceremony matches the size of the request: `QUERY`,
   `QUICK-FIX`, `FIX`, `FEATURE`, `DISCOVERY`.

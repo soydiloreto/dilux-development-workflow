@@ -21,6 +21,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ddw_receipt  # noqa: E402 — same directory, resolved above
+
 # Headers as ddw-create-prd emits them (English headers, prose in any language).
 SECTIONS = [
     ("Context and Problem", ("context and problem", "contexto")),
@@ -44,6 +47,43 @@ UNWANTED = re.compile(r"\bIF\b.+?\bTHEN\b.+?\bSHALL\b", re.IGNORECASE | re.DOTAL
 REQ_ID = re.compile(r"\b(FR|NFR|AC)-(\d+)\b")
 
 
+def _unfilled(value):
+    """Is this still the template's placeholder rather than an answer?
+
+    `[like this]` and `{like this}` both, because this repository ships both:
+    the PRD template writes `[Title]` and the fix-brief writes `{one descriptive
+    line}`. What is left once the placeholders are removed is what somebody
+    actually wrote — `docs/api.md:41 — {describe it}` keeps its path and counts.
+    """
+    v = (value or "").strip().strip("*_`")
+    if not v:
+        return True
+    return not re.search(r"[0-9A-Za-zÀ-ÿ]", re.sub(r"\[[^\[\]]*\]|\{[^{}]*\}", "", v))
+
+
+def _after_label(text, label):
+    """What the document says after `label:`, or "" if the label is absent.
+
+    Not anchored to the start of a line. A fix-brief is four labelled facts and
+    nothing says they must be four bullets — "bug: none. change: everything.
+    regression test: none. risk: none." is one line and four answers, and
+    demanding a line each refused it for its layout, which is the refusal this
+    repository keeps having to take back out.
+
+    The answer ends where the next label begins, so one label's answer is never
+    read as the next one's.
+    """
+    m = re.search(r"\b%s\s*\**\s*:" % re.escape(label), text, re.IGNORECASE)
+    if not m:
+        return ""
+    rest = text[m.end():]
+    stops = [rest.find("\n")] + [
+        mm.start() for other in FIX_BRIEF_SECTIONS if other != label
+        for mm in [re.search(r"\b%s\s*\**\s*:" % re.escape(other), rest, re.IGNORECASE)] if mm]
+    stops = [i for i in stops if i >= 0]
+    return (rest[:min(stops)] if stops else rest).strip()
+
+
 def _items(text, prefix):
     """Bullet items carrying an ID of the given prefix, as (id, full_text)."""
     out = []
@@ -64,6 +104,17 @@ def _items(text, prefix):
     if current:
         out.append(current)
     return out
+
+
+def _after_id(item_id, text):
+    """The requirement itself, with its identifier removed.
+
+    `_items` keeps the whole bullet so a rule can quote it back to the reader.
+    Any rule that then asks a question ABOUT THE CONTENT has to ask it of the
+    content — `NFR-01` carries digits, `FR-03` carries digits, and a rule looking
+    for a number found the label every time.
+    """
+    return re.sub(r"^\s*[-*]\s+\**" + re.escape(item_id) + r"\**\s*[:.(]?", "", text, count=1)
 
 
 def _repo_relative(path):
@@ -115,14 +166,24 @@ def _loop_count(text, label):
     m = re.search(rf"^\s*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else 0
 
+
+def _loops_since_human(text):
+    """Rounds since a person last decided something, which is what the ceiling
+    is about. Absent, it falls back to the running total — an older document has
+    no second number, and reading its total is the safe direction to be wrong
+    in: it stops sooner, never later."""
+    m = re.search(r"^\s*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
+                  text, re.IGNORECASE | re.MULTILINE)
+    return int(m.group(1)) if m else None
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("prd")
-    ap.add_argument("--tier", default="FEATURE")
+    ap.add_argument("--tier", default="FEATURE", choices=ddw_receipt.TIERS)
     args = ap.parse_args()
     try:
         text = open(args.prd, encoding="utf-8").read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"validate_prd: cannot read {args.prd}: {exc}", file=sys.stderr)
         sys.exit(3)
 
@@ -144,10 +205,21 @@ def main():
     if args.tier == "QUICK-FIX":
         low = text.lower()
         missing = [s for s in FIX_BRIEF_SECTIONS if s not in low]
+        # …and each of them has to SAY something. The four labels were the whole
+        # test, so the fix-brief exactly as `ddw-create-prd` ships it — `**Bug**:
+        # {one descriptive line}`, `**Change**: {file}:{line}` — passed and wrote
+        # the receipt. Copy the template, run the validator, and the one gate
+        # QUICK-FIX has before CODE was paid for a document that describes no
+        # bug, names no file and promises no test. Measured, receipt and all.
+        unwritten = [s for s in FIX_BRIEF_SECTIONS
+                     if s not in missing and _unfilled(_after_label(text, s))]
         if missing:
             fail("QUICK-FIX", f"fix-brief incomplete, missing: {', '.join(missing)}")
+        elif unwritten:
+            fail("QUICK-FIX", "fix-brief still carrying the template's placeholder in: "
+                              + ", ".join(unwritten))
         else:
-            ok("QUICK-FIX", "the four fix-brief sections are present")
+            ok("QUICK-FIX", "the four fix-brief sections are present and filled in")
     else:
         frs = _items(text, "FR")
         nfrs = _items(text, "NFR")
@@ -188,8 +260,13 @@ def main():
         else:
             ok("F-PRD-01", "every FR is validated by at least one AC")
 
-        # F-PRD-03: a number in every NFR.
-        unmetered = [i for i, t in nfrs if not re.search(r"\d", t)]
+        # F-PRD-03: a number in every NFR — in the REQUIREMENT, not in its label.
+        # `_items` returns the whole bullet, `NFR-01` included, so asking whether
+        # the text contains a digit was asking whether the identifier does. It
+        # always does. The rule was catalogued, implemented, printed a green row
+        # on every run, and could not fail on any document: "the load should be
+        # fast" passed as a measured requirement.
+        unmetered = [i for i, t in nfrs if not re.search(r"\d", _after_id(i, t))]
         if unmetered:
             fail("F-PRD-03", f"NFR with no quantitative value: {', '.join(unmetered)}")
         else:
@@ -232,10 +309,22 @@ def main():
         if not _section_body(text, ("risks", "riesgos")):
             warn("W-PRD-05", "Risks and Mitigations missing or empty")
 
-        rows.append("  👁  F-PRD-02 (binary ACs) and F-PRD-07 (undeclared cross-references) are")
+        rows.append("  👁  F-PRD-02 (binary ACs), F-PRD-07 (undeclared cross-references),")
+        rows.append("      W-PRD-01 (FR with no rationale) and W-PRD-03 (passive voice) are")
         rows.append("      MANUAL: judge them and say so explicitly in your report.")
+        rows.append("      A rule the script names and never prints is one nobody judges.")
 
-    loops = _loop_count(text, "PRD loops")
+    total_loops = _loop_count(text, "PRD loops")
+    since = _loops_since_human(text)
+    loops = total_loops if since is None else since
+    if since is not None and since > total_loops:
+        # The running total counts every round; the second number counts a subset
+        # of them. A "since" above the total means one of the two was not being
+        # kept — and the one the ceiling reads is the one that would then let the
+        # document loop forever, which is the failure this ceiling exists to stop.
+        fail("F-PRD-LOOP", f"the header says {since} loop(s) since the last human decision but only "
+             f"{total_loops} in total. The total counts every round and is never reset, so it "
+             "cannot be the smaller of the two: one of the counters was not incremented.")
     if loops >= LOOP_CEILING:
         fail("F-PRD-LOOP", f"this artifact has been through {loops} corrective loops "
                        f"(the ceiling is {LOOP_CEILING}). Three rounds of correcting a document "
@@ -245,7 +334,8 @@ def main():
                        "recorded. Under `autonomy: minimal` this is one of the three stops that do "
                        "not have a mode.")
     else:
-        ok("F-PRD-LOOP", f"{loops} corrective loop(s), under the ceiling of {LOOP_CEILING}")
+        ok("F-PRD-LOOP", f"{loops} loop(s) since a human decided, under the ceiling of "
+                     f"{LOOP_CEILING}; {total_loops} in total for this document")
 
     verdict = "PASSED" if fails == 0 else f"FAILED ({fails} FAIL{'S' if fails > 1 else ''})"
     report = [f"/ddw-validate-prd {args.prd} — {verdict}", "─" * 64]
@@ -276,15 +366,9 @@ def main():
         # The receipt is what makes "validated" a fact instead of a claim: it
         # is bound to THIS content, and the define gate demands it. Edit the
         # PRD after validating and the hash no longer matches — validate again.
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-        prd_abs = os.path.abspath(args.prd)
-        idx = prd_abs.rfind(os.sep + "docs" + os.sep)
-        root = prd_abs[:idx] if idx > 0 else os.getcwd()
-        sess = os.path.join(root, ".ddw-sessions")
-        os.makedirs(sess, exist_ok=True)
-        with open(os.path.join(sess, f"prd-validated-{digest}"), "w", encoding="utf-8") as fh:
-            fh.write(os.path.basename(prd_abs) + "\n")
-        print(f"Receipt: .ddw-sessions/prd-validated-{digest}")
+        # One writer for all six receipts, so the rule cannot drift six ways —
+        # and so that writing one is RECORDED in the journal the gate reads.
+        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.prd, "prd", text, args.tier))
 
     # The table above is for the USER, and it does not reach them by itself.
     #

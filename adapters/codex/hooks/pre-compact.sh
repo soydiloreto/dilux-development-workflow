@@ -21,4 +21,4 @@ command -v python3 >/dev/null 2>&1 || exit 0
 cat > /dev/null   # drain the event; this reads the disk, not stdin
 
 exec python3 "$BOOT" --repo "$REPO" --method "$DDW" --compact \
-  --format text --event PreCompact
+  --format nested --event PreCompact

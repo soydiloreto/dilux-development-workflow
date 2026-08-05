@@ -27,6 +27,26 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def _touch_marker(repo, session_id):
+    """Refresh this session's liveness marker, and never fail over it.
+
+    Best effort in the strongest sense: a hook whose job is to allow or refuse a
+    write must not turn a full disk, a read-only checkout or a session id the
+    harness declined to send into a verdict. Anything that goes wrong here
+    leaves the count stale, which is what it was before.
+    """
+    if not repo or not session_id:
+        return
+    try:
+        path = os.path.join(_HERE, "session-boot.py")
+        spec = importlib.util.spec_from_file_location("ddw_session_boot", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.refresh_marker(repo, str(session_id))
+    except Exception:                                         # noqa: BLE001
+        pass
+
+
 def _load_validator():
     path = os.path.join(_HERE, "validate-transition.py")
     spec = importlib.util.spec_from_file_location("ddw_validate_transition", path)
@@ -328,6 +348,15 @@ def main():
     ap.add_argument("--graph", required=True)
     ap.add_argument("--repo", default=None,
                     help="repo root; relative paths in the event resolve against it")
+    # Where the method itself lives, which under a plugin install is NOT inside
+    # the repo — and every guard on DDW's own files was written as "is this path
+    # under the repo root?". So the graph, this file and the validator were all
+    # writable, and the plugin root is shared, so one write disarmed DDW in every
+    # repository using it. The hooks already resolve this path to find the gate;
+    # passing it costs nothing and is the only thing that knows where the method
+    # is when it is not in the repo.
+    ap.add_argument("--method", default=None,
+                    help="the method root (.ddw, or the plugin's copy); no phase writes inside it")
     args = ap.parse_args()
 
     _VALIDATOR = vt = _load_validator()
@@ -376,6 +405,16 @@ def main():
     if not isinstance(event, dict):
         allow(args.dialect)
 
+    # Housekeeping, not policy — the rule at the top of this file is about
+    # DECISIONS, and this decides nothing: it says "still here" on behalf of a
+    # session that is plainly still here, since it is asking for a verdict. The
+    # marker expires after two hours, and only the Claude adapter had a second
+    # PreToolUse shim to refresh it from; in the other five tools every session
+    # longer than that was swept off disk and the concurrency guard went quiet
+    # for exactly the sessions worth warning about. The write itself lives in
+    # session-boot.py, so there is still one definition of what a marker is.
+    _touch_marker(args.repo, event.get("session_id") or event.get("sessionId"))
+
     tool_name, tool_input, paths, typed_but_wrong, raw_name = normalize(event, args.dialect)
     if typed_but_wrong:
         deny(args.dialect,
@@ -384,7 +423,7 @@ def main():
 
     try:
         reason = vt.decide_pre(args.state, args.graph, tool_name, tool_input, paths,
-                               repo=args.repo, raw_tool=raw_name)
+                               repo=args.repo, raw_tool=raw_name, method=args.method)
     except vt.Block as exc:
         deny(args.dialect, f"DDW FSM blocked the write to the state: {exc}")
     if reason:

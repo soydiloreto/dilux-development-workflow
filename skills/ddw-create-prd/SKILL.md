@@ -60,7 +60,9 @@ fix-brief** and mark the `define` gate:
 3. Produce the PRD from the standard template (below).
 4. The filename is derived from the ticket: `prd-{ticket}.md` (e.g. `prd-FEAT-001.md`).
 5. Run `ddw-validate-prd` automatically.
-6. If there are FAILs → fix them and increment `PRD loops`.
+6. If there are FAILs → fix them and increment **both** `PRD loops` and `Loops since last
+   human decision`. The first is the running total and nobody ever resets it; the second is what
+   the ceiling measures, and it goes back to 0 only when a human decides something.
 7. Present it to the user for approval.
 
 ### Update mode (existing PRD)
@@ -68,7 +70,9 @@ fix-brief** and mark the `define` gate:
 1. Read the existing PRD in full.
 2. Identify which sections need changes.
 3. Update in place — preserve whatever does not change.
-4. Increment `PRD loops` in the header.
+4. Increment `PRD loops` in the header — and `Loops since last human decision` too, unless this
+   update is applying an answer a human just gave, in which case that one resets to 0 and their
+   answer is recorded in the PRD.
 5. Run `ddw-validate-prd` automatically.
 6. Present the diff to the user for approval.
 
@@ -83,6 +87,7 @@ fix-brief** and mark the `define` gate:
 | Tracker | [tracker ticket or "none"] |
 | Date | [timestamp] |
 | PRD loops | 0 |
+| Loops since last human decision | 0 |
 
 ## Context and Problem
 [Describe the problem being solved]
@@ -99,12 +104,17 @@ fix-brief** and mark the `define` gate:
 
 ## Acceptance Criteria
 *(EARS — see `.ddw/rules/validation-rules.instructions.md` §1 for the five patterns)*
-- AC-01: WHEN [trigger], THE [system] SHALL [response].
-- AC-02: IF [failure or misuse], THEN THE [system] SHALL [response].
-- AC-03: ...
+
+**Every AC names the FR it validates, in parentheses.** `F-PRD-01` looks for the FR's own
+identifier inside the criterion, so an AC that validates FR-01 without naming it reads as an FR
+nothing validates — and the template used to produce exactly that, which failed the first PRD of
+every new install.
+- AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].
+- AC-02 (FR-01): IF [failure or misuse], THEN THE [system] SHALL [response].
+- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].
 
 ## Out of Scope
-[What is explicitly NOT included]
+- [what is explicitly NOT included, one item per line]
 
 ## Risks and Mitigations
 [Identified risks and how to mitigate them]
@@ -145,7 +155,7 @@ fix-brief** and mark the `define` gate:
 │  Functional requirements: [N]                            │
 │  Non-functional requirements: [N]                        │
 │  Acceptance criteria: [N]                                │
-│  PRD loops: [N]                                          │
+│  PRD loops: [N] (since last human decision: [N])         │
 │                                                          │
 │  Next: review the PRD and confirm to move on             │
 └─────────────────────────────────────────────────────────┘

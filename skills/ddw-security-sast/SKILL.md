@@ -2,7 +2,7 @@
 name: ddw-security-sast
 description: >
   Static Application Security Testing (SAST). Scans the code for security vulnerabilities. A
-  BLOCKING GATE — you cannot advance to VERIFY with open vulnerabilities.
+  BLOCKING GATE — the `sast` receipt is what lets a ticket leave CODE, in every tier.
   Trigger: /ddw-security-sast, during DDW's CODE phase.
 ---
 
@@ -10,7 +10,9 @@ description: >
 
 ## Description
 Static Application Security Testing (SAST). Scans the code for security vulnerabilities.
-**BLOCKING GATE** — you cannot advance to the VERIFY phase with open vulnerabilities.
+**BLOCKING GATE** — the `sast` receipt is what lets a ticket leave CODE: to VERIFY in
+FEATURE and FIX, straight to CLOSEOUT in QUICK-FIX. No tier leaves it with open
+vulnerabilities.
 
 ## Inputs
 - The files modified during implementation.
@@ -101,7 +103,7 @@ Critical and High can never be suppressed. They get fixed.
 (under a plugin install, resolve `.ddw/scripts/` at the plugin's method path). **Paste its output
 VERBATIM** — every row, every rule ID, on **every** run, including a re-validation of a report that
 has not changed. A PASSED run writes the content-hashed receipt the `sast` gate demands; without it
-the CODE→VERIFY transition refuses.
+the transition out of CODE refuses — CODE→VERIFY, or CODE→CLOSEOUT in QUICK-FIX.
 
 **What that receipt does and does not say.** DDW does not scan your code — the scan above is a model
 reading it, and no file can make that a proof. What the validator answers is whether the **report**

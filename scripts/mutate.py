@@ -42,18 +42,33 @@ SELF = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SELF)
 
 
-def edit(rel, old, new):
-    """A mutation that swaps one exact string in one file."""
+def edit(rel, old, new, last=False):
+    """A mutation that swaps one exact string in one file.
+
+    `last=True` swaps the LAST occurrence instead of the first, and it exists for
+    one case: a mutation that targets THIS file. The anchor is a literal in the
+    list above, so it appears before the code it names — `replace(..., 1)` edited
+    the mutation's own entry, the product went unchanged, and the fault was
+    reported as surviving (or, worse, as killed, when editing the list broke this
+    file's syntax and the suite went red for that instead). Every function this
+    file mutates in itself lives below the list, so the last occurrence is the
+    real one.
+    """
     def apply(repo):
         p = os.path.join(repo, rel)
         s = open(p, encoding="utf-8").read()
         if old not in s:
             return f"the anchor is gone from {rel} — update this mutation"
-        open(p, "w", encoding="utf-8").write(s.replace(old, new, 1))
+        if last:
+            head, _, tail = s.rpartition(old)
+            s = head + new + tail
+        else:
+            s = s.replace(old, new, 1)
+        open(p, "w", encoding="utf-8").write(s)
         return None
     # What this mutation needs to still be true of the tree, cheap enough to ask
     # about without running anything. See `--check-anchors`.
-    apply.probe = ("text", rel, old)
+    apply.probe = ("text", rel, old, new, last)
     return apply
 
 
@@ -98,11 +113,11 @@ def copy_to(src, dest):
 
 
 def _drop_gate(d):
-    d["tiers"]["FEATURE"]["VERIFY->RELEASE"]["gates"] = []
+    d["tiers"]["FEATURE"]["VERIFY->CLOSEOUT"]["gates"] = []
 
 
 def _drop_quickfix_close(d):
-    d["tiers"]["QUICK-FIX"].pop("CODE->RELEASE", None)
+    d["tiers"]["QUICK-FIX"].pop("CODE->CLOSEOUT", None)
 
 
 def _cursor_open(d):
@@ -140,8 +155,8 @@ MUTATIONS = [
           '        return "", _idle_template()  # noqa\n        raise Block(\n            f".ddw-state.json exists but cannot be read')),
     ("only the first path in an event is judged",
      edit("ddw/scripts/validate-transition.py",
-          "    targets = [resolve_in_repo(pth, root) for pth in paths if isinstance(pth, str) and pth]",
-          "    targets = [resolve_in_repo(pth, root) for pth in paths[:1] if isinstance(pth, str) and pth]")),
+          "    named = [pth for pth in paths if isinstance(pth, str) and pth]",
+          "    named = [pth for pth in paths[:1] if isinstance(pth, str) and pth]")),
 
     ("the replay judges stamped entries against the empty set again (M1 false positive)",
      edit("ddw/scripts/validate-transition.py",
@@ -165,9 +180,8 @@ MUTATIONS = [
           "   automatically at the end of `ddw-create-prd` via `ddw-validate-prd`, which\n")),
     ("a PASSED validation stops leaving its receipt",
      edit("ddw/scripts/validate_prd.py",
-          '        with open(os.path.join(sess, f"prd-validated-{digest}"), "w", encoding="utf-8") as fh:\n'
-          '            fh.write(os.path.basename(prd_abs) + "\\n")\n',
-          '        pass\n')),
+          '        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.prd, "prd", text, args.tier))',
+          "        pass")),
     ("the helper stops asking for the evidence the hook asks for",
      edit("ddw/scripts/transition.py",
           "    reason = vt.gate_evidence_missing(\n",
@@ -185,9 +199,8 @@ MUTATIONS = [
           "        if False:\n")),
     ("a component analysed against five STRIDE categories passes as six",
      edit("ddw/scripts/validate_threat.py",
-          "            missing = [cat for cat in STRIDE\n"
-          "                       if not re.search(STRIDE_ALIASES[cat], body, re.IGNORECASE)]\n",
-          "            missing = []\n")),
+          "                if entry is None:\n                    missing.append(cat)\n",
+          "                if False:\n                    missing.append(cat)\n")),
     ("the verify validator stops holding coverage to the floor",
      edit("ddw/scripts/validate_verify.py",
           "        below = [f\"{k} {v:.0f}%\" for k, v in cov.items() if v < MINIMUM]\n",
@@ -203,9 +216,8 @@ MUTATIONS = [
           "        pass")),
     ("Copilot's raw-text apply_patch is unjudged again (the M4 hole)",
      edit("ddw/scripts/hook-gate.py",
-          '    if not paths and raw_args and "*** Begin Patch" in raw_args:\n'
-          '        paths = _paths_from_patch(raw_args)\n',
-          '')),
+          '    if not paths and raw_args and "*** Begin Patch" in raw_args:',
+          '    if False and not paths and raw_args and "*** Begin Patch" in raw_args:')),
     ("the post net stops closing the gitignore window a plugin-born state opens",
      edit("ddw/scripts/validate-transition.py",
           "    _ensure_runtime_ignored(state_path)\n",
@@ -324,7 +336,7 @@ MUTATIONS = [
     # but the one its repair invents.
     ("`resume` stops requiring that a pause happened",
      edit("ddw/scripts/validate-transition.py",
-          "    paused_at = _paused_at(history, upto)",
+          "    paused_at = _paused_at(history, upto, entry.get(\"ticket\"))",
           "    paused_at = entry.get('to')  # noqa")),
     ("`resume` stops requiring the phase it was paused at",
      edit("ddw/scripts/validate-transition.py",
@@ -332,10 +344,12 @@ MUTATIONS = [
     ("post mode's compatibility hatch stops checking the phase",
      edit("ddw/scripts/validate-transition.py",
           '            and disk_state.get("phase", IDLE) == IDLE):', "            ):")),
-    ("the source guard exempts the method's own directory again",
-     edit("ddw/scripts/validate-transition.py",
-          '    ".claude", ".codex", ".cursor", ".gemini", ".opencode",',
-          '    ".ddw", ".claude", ".codex", ".cursor", ".gemini", ".opencode",')),
+    # (Removed: putting `.ddw` back in ALLOWED_WIRING_DIRS no longer changes
+    # anything — `enforcement_write_denied` refuses the method before that list
+    # is consulted, in every phase. A mutation that cannot fail measures nothing,
+    # and the list IS the coverage figure. What it used to test is covered by
+    # "the method itself stops being sealed" and "the pipeline can edit the rules
+    # that stop it again".)
     ("the pause protocol's own directory is no longer writable",
      edit("ddw/scripts/validate-transition.py",
           '    ".ddw-paused", ".ddw-sessions", ".ddw-work",',
@@ -351,8 +365,8 @@ MUTATIONS = [
      edit("scripts/install_target.py", "    if _relfiles(a) != _relfiles(b):", "    if False:")),
     ("the session id is used as a filename unsanitised",
      edit("ddw/scripts/session-boot.py",
-          "    session_id = safe_id(args.session_id or f\"pid-{os.getpid()}\")",
-          "    session_id = args.session_id or f\"pid-{os.getpid()}\"")),
+          '    session_id = safe_id(args.session_id) if args.session_id else ""',
+          '    session_id = args.session_id or ""')),
     ("the gitignore check matches comments again",
      edit("ddw/scripts/session-boot.py",
           "        rules = {ln.strip() for ln in existing.splitlines()\n"
@@ -436,20 +450,23 @@ MUTATIONS = [
      edit("ddw/rules/branches.instructions.md",
           "git rev-list --count HEAD..origin/{base}      # commits the base gained since",
           "# (skip the drift check)")),
-    ("RELEASE stops asking where the branch lands",
-     edit("ddw/rules/release.instructions.md",
+    ("CLOSEOUT stops asking where the branch lands",
+     edit("ddw/rules/closeout.instructions.md",
           "## Step 4: Integration — where does this branch land? (MANDATORY)",
           "## Step 4: Notes")),
     ("the closeout drops the Integration line, so the step can be skipped quietly",
-     edit("ddw/rules/release.instructions.md",
+     edit("ddw/rules/closeout.instructions.md",
           "│  Integration: [merged into X | on the PR | next ticket   │",
           "│                                                          │")),
 
     # ── Unfinished sub-tickets ───────────────────────────────────────────────
     ("the boot stops looking for sub-tickets nobody ran",
      edit("ddw/scripts/session-boot.py",
-          "    if phase == \"IDLE\":\n        pending = pending_subtickets(repo)",
-          "    if False:\n        pending = pending_subtickets(repo)")),
+          # Anchored on the call, not on the `if` above it: that line now carries
+          # the pull-request notice too, and pinning both meant adding a second
+          # thing to the same branch broke the mutation guarding the first.
+          "        pending = pending_subtickets(repo)",
+          "        pending = []")),
     ("a closed sub-ticket keeps being offered (the history's ticket is ignored)",
      edit("ddw/scripts/session-boot.py",
           "        if ticket in left or ticket == active:",
@@ -587,29 +604,31 @@ MUTATIONS = [
           "(or → DISCOVERY).")),
     ("a phase appends to history without being told what to stamp on the entry",
      edit("ddw/rules/verify.instructions.md",
-          "transition VERIFY \u2192 RELEASE, **stamped with `ticket` and `tier`** "
+          "transition VERIFY \u2192 CLOSEOUT, **stamped with `ticket` and `tier`** "
           "(see `.ddw/rules/state.instructions.md`)",
-          "transition VERIFY \u2192 RELEASE")),
+          "transition VERIFY \u2192 CLOSEOUT")),
 
     # ── What a gate rests on ─────────────────────────────────────────────────
     ("the receipt is asked for by the helper again, and not by the hook",
      edit("ddw/scripts/validate-transition.py",
-          "        reason = gate_evidence_missing(root, new_state,\n"
-          "                                       _gates_newly_claimed(old_state, new_state))\n"
+          "        reason = gate_evidence_missing(root, new_state, sorted(set(owed)))\n"
           "        if reason:\n"
           "            return reason",
           "        reason = None")),
     ("the shell can still set a gate that owes evidence",
      edit("ddw/scripts/validate-transition.py",
-          "            reason = gate_evidence_missing(os.path.dirname(os.path.abspath(state_path)),\n"
-          "                                           disk_state, owed)\n"
-          "            if reason:\n"
-          "                raise Block(reason)",
-          "            pass")),
+          "        reason = gate_evidence_missing(os.path.dirname(os.path.abspath(state_path)),\n"
+          "                                       disk_state, sorted(set(owed)))\n"
+          "        if reason:\n"
+          "            raise Block(reason)",
+          "        pass")),
     ("the receipt stops naming the PRD's current bytes, and attests to a rewrite",
      edit("ddw/scripts/validate-transition.py",
           'marker = os.path.join(root, ".ddw-sessions", "%s-validated-%s" % (receipt, digest))',
-          'marker = (glob.glob(os.path.join(root, ".ddw-sessions", "%s-validated-*" % receipt)) or [""])[0]')),
+          'sess = os.path.join(root, ".ddw-sessions")\n'
+          '    marker = next((os.path.join(sess, f) for f in\n'
+          '                   (sorted(os.listdir(sess)) if os.path.isdir(sess) else [])\n'
+          '                   if f.startswith(receipt + "-validated-")), "")')),
     ("the commit gate goes back to taking the model's word",
      # One key, never its neighbours: this table grows every time a gate earns
      # evidence, and an anchor that includes the next entry breaks on the growth
@@ -683,14 +702,14 @@ MUTATIONS = [
     # painted door this section exists to keep closed.
     ("the corrupt-state refusal orders a write it also forbids",
      edit("ddw/scripts/validate-transition.py",
-          "    if all(_outside_repo(t, root) for t in targets):\n        return None\n",
+          "    if (all(_outside_repo(t, root) for t in targets)\n            and all(_outside_repo(lex, root) for lex in lexicals)):\n        return None\n",
           "")),
     # And the other direction: one outside path in an envelope that also names
     # the state would wave the whole event through.
     ("one path outside the repo excuses every other path in the same event",
      edit("ddw/scripts/validate-transition.py",
-          "    if all(_outside_repo(t, root) for t in targets):",
-          "    if any(_outside_repo(t, root) for t in targets):")),
+          "    if (all(_outside_repo(t, root) for t in targets)",
+          "    if (any(_outside_repo(t, root) for t in targets)")),
 
     ("the record's row width goes back to being pinned, and every row stops matching",
      edit("scripts/verify_install.sh", "    if len(cells) != width:", "    if len(cells) != 8:")),
@@ -705,9 +724,34 @@ MUTATIONS = [
     # mutated is the CALL, and the suite asserts the call is there and is first.
     ("mutate.py stops verifying its anchors before it starts injecting",
      edit("scripts/mutate.py", "    if check_anchors() != 0:\n        return 1",
-          "    if False:\n        return 1")),
+          "    if False:\n        return 1", last=True)),
     # The ceiling was a number in four documents and a comparison in none of
     # them, so one of the three stops that hold under `minimal` was unreachable.
+    # ── Going back, and what going back costs ────────────────────────────────
+    ("the status line goes back to calling the phase by the name it lost",
+     edit("ddw/orchestrator.md", "🏁 {TIER} · Closing out [5/5]", "🚀 {TIER} · Releasing [5/5]")),
+    ("an upgraded state is accused of being forged instead of being explained",
+     edit("ddw/scripts/validate-transition.py",
+          "        if renamed:", "        if False:")),
+    ("a backward transition may keep the gates it is supposed to give up",
+     edit("ddw/scripts/validate-transition.py",
+          "        still_held = [g for g in cleared if gates.get(g) is True]",
+          "        still_held = []")),
+    ("the graph stops saying what stepping back gives up",
+     edit("ddw/rules/transition-graph.json",
+          '"clears": [\n          "define"\n        ]', '"clears": []')),
+    ("CLOSEOUT takes an abandon again, and the closeout's gates are dodgeable",
+     edit("ddw/scripts/validate-transition.py",
+          "                if not (_is_pause(entry) and paid):",
+          "                if False:")),
+    ("a pause at CLOSEOUT stops needing the work committed and the PR open",
+     edit("ddw/scripts/validate-transition.py",
+          '                paid = (all(gates_before.get(g) is True for g in ("commit", "pr"))',
+          "                paid = (True or all(gates_before.get(g) is True for g in ('commit', 'pr'))")),
+    ("resuming at CLOSEOUT keeps the commit and the PR earned before the wait",
+     edit("ddw/scripts/validate-transition.py",
+          '            if dst == "CLOSEOUT":\n                stale = [g for g in ("commit", "pr") if gates.get(g) is True]',
+          '            if False:\n                stale = [g for g in ("commit", "pr") if gates.get(g) is True]')),
     ("the corrective loop's ceiling goes back to being a number nothing compares",
      edit("ddw/scripts/validate_prd.py", "    if loops >= LOOP_CEILING:", "    if False:")),
     ("the sast gate goes back to turning true on the model's say-so",
@@ -725,9 +769,22 @@ MUTATIONS = [
      edit("ddw/scripts/validate_tests.py", "    if dupes:", "    if False:")),
     ("a PASSED SAST validation stops leaving its receipt",
      edit("ddw/scripts/validate_sast.py",
-          '        with open(os.path.join(sess, f"sast-validated-{digest}"), "w", encoding="utf-8") as fh:\n'
-          '            fh.write(os.path.basename(abs_p) + "\\n")\n',
-          '        pass\n')),
+          '        print("Receipt: .ddw-sessions/"\n'
+          '              + ddw_receipt.write(args.report, "sast", text, args.tier, asof=today.isoformat()))',
+          "        pass")),
+    ("a receipt is written and nothing records that a validator wrote it",
+     edit("ddw/scripts/ddw_receipt.py",
+          '            fh.write(json.dumps(record, sort_keys=True) + "\\n")',
+          "            pass")),
+    ("a receipt nobody's validator wrote opens its gate again",
+     edit("ddw/scripts/validate-transition.py",
+          "            unwitnessed = _receipt_unwitnessed(root, os.path.basename(marker))\n"
+          "            if unwitnessed:\n                return unwitnessed",
+          "            unwitnessed = None\n            if unwitnessed:\n                return unwitnessed")),
+    ("a receipt from before the corrective loop opens the gate it cleared",
+     edit("ddw/scripts/validate-transition.py",
+          "            return _receipt_spent(root, gate, os.path.basename(marker))",
+          "            return None")),
     ("a category nobody judged stops being noticed",
      edit("ddw/scripts/validate_sast.py",
           "    missing = [r for r in CATEGORIES if r not in lines]",
@@ -970,7 +1027,7 @@ MUTATIONS = [
           'PLUGIN_ROOT="${DDW_PLUGIN_ROOT:-${CURSOR_PLUGIN_ROOT:-}}"', 'PLUGIN_ROOT=""')),
     ("a plugin boot goes back to naming an orchestrator the repo does not have",
      edit("adapters/codex/hooks/session-start.sh",
-          ' --format text --method "$DDW"', ' --format text')),
+          ' --format nested --method "$DDW"', ' --format nested')),
 
     # ── Reads judged as writes ───────────────────────────────────────────────
     ("every tool is judged as a write again, so the agent cannot read",
@@ -979,8 +1036,8 @@ MUTATIONS = [
           "")),
     ("the raw tool name stops reaching the decision, so every read is an edit again",
      edit("ddw/scripts/hook-gate.py",
-          "                               repo=args.repo, raw_tool=raw_name)",
-          "                               repo=args.repo)")),
+          "                               repo=args.repo, raw_tool=raw_name, method=args.method)",
+          "                               repo=args.repo, method=args.method)")),
     # The one that shipped: asking "is this a write?" and letting an unrecognised
     # tool through as a read.
     ("unknown tools go back to being read as reads, and walk past the guard",
@@ -1023,7 +1080,7 @@ MUTATIONS = [
           "    if not os.path.exists(state_path):\n        return \"\", _idle_template()")),
     ("a shorter history passes as a simpler run",
      edit("ddw/scripts/validate-transition.py",
-          "    if len(history) < len(recorded):", "    if False:")),
+          "    if len(history) < len(seen):", "    if False:")),
     ("the refusal goes back to ordering a repair the graph forbids",
      edit("ddw/scripts/hook-gate.py",
           '"\\n\\nSTOP. Do not continue the pipeline, do not repair the state, and do not delete it. "',
@@ -1051,6 +1108,504 @@ MUTATIONS = [
           'echo "The pipeline starts on its own. See the \\"try:\\" line above for how to call it."',
           'echo "The pipeline starts on its own. Commands: /ddw-status, /ddw-help."')),
 
+    # ── The ticket a gate is earned for ──────────────────────────────────────
+    ("clearing the ticket opens the six receipt gates again",
+     edit("ddw/scripts/validate-transition.py",
+          "    if claimed:\n        raise Block(", "    if False:\n        raise Block(")),
+    ("the rule stops knowing which gates rest on a receipt",
+     edit("ddw/scripts/validate-transition.py",
+          'RECEIPT_GATES = ("define", "spec", "threat", "tests", "sast", "verify")',
+          "RECEIPT_GATES = ()")),
+    ("the invariant is written and never called",
+     edit("ddw/scripts/validate-transition.py",
+          "    _check_gates_have_a_ticket(new_state)\n", "")),
+    ("the helper cannot name the ticket it is earning gates for",
+     edit("ddw/scripts/transition.py",
+          "        if ticket is not None:\n            new_state[\"ticket\"] = ticket",
+          "        if False:\n            new_state[\"ticket\"] = ticket")),
+    ("history entries go back to being unattributable",
+     edit("ddw/scripts/transition.py",
+          '    if run_ticket:\n        entry["ticket"] = run_ticket',
+          '    if False:\n        entry["ticket"] = run_ticket')),
+
+    # ── The gate turned on with no transition to declare it ──────────────────
+    ("a gate flipped on disk stops being compared to the last blessed snapshot",
+     edit("ddw/scripts/validate-transition.py",
+          "    if snapshot is not None:\n        owed.extend(_gates_newly_claimed({\"gates\": snapshot}, disk_state))",
+          "    if False:\n        owed.extend(_gates_newly_claimed({\"gates\": snapshot}, disk_state))")),
+    ("the snapshot is never recorded, so there is nothing to compare against",
+     edit("ddw/scripts/validate-transition.py",
+          "            if last != held:", "            if False:")),
+    ("snapshot lines are counted as transitions, sliding the index that finds what landed",
+     edit("ddw/scripts/validate-transition.py",
+          '    entries, out = [e for e in _journal_lines(state_path)\n'
+          '                    if isinstance(e, dict) and "from" in e and "to" in e], []',
+          "    entries, out = _journal_lines(state_path), []")),
+    ("post mode judges the autonomy change against the first edge of the replay again",
+     edit("ddw/scripts/validate-transition.py",
+          '    touches_classify = any(e.get("from") == CLASSIFY or e.get("to") == CLASSIFY\n'
+          "                           for e in appended if isinstance(e, dict))",
+          '    touches_classify = bool(appended) and appended[0].get("from") == CLASSIFY')),
+
+    ("resuming stops being a moment the mode can be chosen, so a pause loses it",
+     edit("ddw/scripts/validate-transition.py",
+          "    resuming = any(_is_resume(e) and e.get(\"from\") == IDLE",
+          "    resuming = False and any(_is_resume(e) and e.get(\"from\") == IDLE")),
+    ("the word resume on any edge grants the mode, not only on the one out of IDLE",
+     edit("ddw/scripts/validate-transition.py",
+          '    resuming = any(_is_resume(e) and e.get("from") == IDLE\n'
+          "                   for e in appended if isinstance(e, dict))",
+          "    resuming = any(_is_resume(e) for e in appended if isinstance(e, dict))")),
+    ("the pause protocol stops asking which mode to come back in",
+     edit("ddw/orchestrator.md",
+          "3. **Ask about the mode, before restoring anything.**",
+          "3. **Restore the mode silently.**")),
+
+    # ── Pause, work on something else, come back ─────────────────────────────
+    ("a pause only resumes if it was the very last thing that happened",
+     edit("ddw/scripts/validate-transition.py",
+          "    prior = [e for e in history[:upto] if isinstance(e, dict)]",
+          "    prior = [e for e in history[:upto] if isinstance(e, dict)]\n"
+          "    return prior[-1].get('from') if prior and _is_pause(prior[-1]) else None")),
+    ("one pause can be resumed over and over",
+     edit("ddw/scripts/validate-transition.py",
+          "        if pending_resumes:\n            pending_resumes -= 1",
+          "        if False:\n            pending_resumes -= 1")),
+    ("another ticket's pause becomes this ticket's way back in",
+     edit("ddw/scripts/validate-transition.py",
+          '        if any(e.get("ticket") for e in prior):\n            prior = [e for e in prior if e.get("ticket") == ticket]',
+          '        if False:\n            prior = [e for e in prior if e.get("ticket") == ticket]')),
+
+    # ── The notice about pull requests waiting on a reviewer ─────────────────
+    ("the pending-PR notice goes back to crashing on a shape it did not expect",
+     edit("ddw/scripts/session-boot.py",
+          "    prs = [p for p in prs if isinstance(p, dict)]\n", "")),
+    ("a list gh did not return is rendered as pull requests anyway",
+     edit("ddw/scripts/session-boot.py",
+          "    if not isinstance(prs, list):", "    if False:")),
+    ("pull requests are dropped without a word again",
+     edit("ddw/scripts/session-boot.py", "    if len(prs) > SHOWN:", "    if False:")),
+    ("every way gh can fail is reported as a timeout again",
+     edit("ddw/scripts/session-boot.py",
+          "    except subprocess.TimeoutExpired:\n        return [CANNOT + f\"the forge did not answer in {timeout}s.\"]\n"
+          "    except Exception as exc:\n",
+          "    except Exception as exc:\n")),
+    ("git failing to read the remotes becomes silence again",
+     edit("ddw/scripts/session-boot.py",
+          '        if os.path.exists(os.path.join(repo, ".git")):\n            return [CANNOT + "git could not read this repo\'s remotes."]',
+          "        if False:\n            return [CANNOT]")),
+    ("the notice about waiting pull requests disappears from the boot",
+     edit("ddw/scripts/session-boot.py",
+          "            lines += awaiting_review(repo)", "            pass")),
+    ("the notice goes back to calling the forge on every boot, quiet or not",
+     edit("ddw/scripts/session-boot.py",
+          "        if started and not args.quiet:", "        if True:")),
+
+    # ── What the audit found still alive ─────────────────────────────────────
+    # Each of these is a mutation the list did not have, on code the checks do
+    # cover — which is the quieter half of a coverage figure: not a rule nobody
+    # tests, but a way of breaking it nobody had written down.
+    ("QUICK-FIX's step back from CLOSEOUT keeps everything it is supposed to give up",
+     edit("ddw/rules/transition-graph.json",
+          '      "CLOSEOUT->CODE": {\n        "gates": [],\n        "clears": [\n'
+          '          "tests",\n          "sast",\n          "commit",\n          "pr"\n        ]\n      }',
+          '      "CLOSEOUT->CODE": {\n        "gates": [],\n        "clears": []\n      }')),
+    ("a pause is matched by bare prefix again, so `pause-the-build` is a pause",
+     edit("ddw/scripts/validate-transition.py",
+          '    return action.strip().lower().split(":", 1)[0].strip() in ("pause", "paused")',
+          '    return action.strip().lower().startswith("pause")')),
+    ("the clears rule runs against the replay's synthetic prior and bricks the repo",
+     edit("ddw/scripts/validate-transition.py",
+          "        still_held = [g for g in cleared if gates.get(g) is True] if check_gates else []",
+          "        still_held = [g for g in cleared if gates.get(g) is True]")),
+    ("the pause exception is judged against the replay's synthetic prior too",
+     edit("ddw/scripts/validate-transition.py",
+          '                paid = (all(gates_before.get(g) is True for g in ("commit", "pr"))\n'
+          "                        if check_gates else True)",
+          '                paid = all(gates_before.get(g) is True for g in ("commit", "pr"))')),
+
+    # ── The two loop counters ────────────────────────────────────────────────
+    ("the PRD template stops emitting the counter the ceiling reads",
+     edit("skills/ddw-create-prd/SKILL.md",
+          "| Loops since last human decision | 0 |\n", "")),
+    ("the spec template stops emitting it too",
+     edit("skills/ddw-create-spec/SKILL.md",
+          "| Loops since last human decision | 0 |\n", "")),
+    ("the two counters may disagree in the direction that loops forever",
+     edit("ddw/scripts/validate_prd.py",
+          "    if since is not None and since > total_loops:", "    if False:")),
+
+    # ── DDW's own machinery, which no phase writes ───────────────────────────
+    ("the pipeline can edit the rules that stop it again",
+     edit("ddw/scripts/validate-transition.py",
+          "        reason = enforcement_write_denied(target, root)\n        if reason:\n            return reason\n",
+          "")),
+    ("the method itself stops being sealed",
+     edit("ddw/scripts/validate-transition.py",
+          'PROTECTED_PREFIXES = (".ddw/", ".ddw-sessions/")',
+          "PROTECTED_PREFIXES = ()")),
+    ("the agent can write its own receipts again",
+     edit("ddw/scripts/validate-transition.py",
+          'PROTECTED_PREFIXES = (".ddw/", ".ddw-sessions/")',
+          'PROTECTED_PREFIXES = (".ddw/",)')),
+    ("what wires the gates into the tool becomes writable",
+     edit("ddw/scripts/validate-transition.py",
+          '    ".claude/settings.json", ".codex/hooks.json",\n'
+          '    ".cursor/hooks.json", ".gemini/settings.json",\n',
+          "")),
+    ("the installed hook scripts stop being protected",
+     edit("ddw/scripts/validate-transition.py",
+          "    elif rel in _manifest_paths(root):", "    elif False:")),
+    ("the manifest goes back to naming files that are not there",
+     edit("scripts/install_target.py",
+          "            rel = f\"{args.id}:{spec['dir']}/{out_name}\"",
+          '            rel = f"{args.id}:agents/{out_name}"')),
+    ("a tampered install stops being reported at boot",
+     edit("ddw/scripts/session-boot.py",
+          "    lines += enforcement_drift(repo)\n", "")),
+    ("the drift report stops noticing a file that changed",
+     edit("ddw/scripts/session-boot.py",
+          "        elif actual != digest:\n            changed.append(rel)",
+          "        elif False:\n            changed.append(rel)")),
+    ("the drift report stops noticing a file that is gone",
+     edit("ddw/scripts/session-boot.py",
+          "        if actual is None:\n            gone.append(rel)",
+          "        if False:\n            gone.append(rel)")),
+
+    # ── A gate claimed for a document that is not there ──────────────────────
+    ("a missing artifact goes back to meaning there is nothing to check",
+     edit("ddw/scripts/validate-transition.py",
+          '        where = tried[0] if len(tried) == 1 else " or ".join("`%s`" % t for t in tried)',
+          "        return None\n        where = tried[0] if len(tried) == 1 else \" or \".join(\"`%s`\" % t for t in tried)")),
+    ("a document nothing can decode opens its gate again",
+     edit("ddw/scripts/validate-transition.py",
+          "    except (OSError, UnicodeDecodeError) as exc:",
+          "    except (OSError, UnicodeDecodeError) as exc:\n        return None")),
+    ("a directory named like the document ends the search for it",
+     edit("ddw/scripts/validate-transition.py",
+          "        if os.path.isfile(cand):", "        if os.path.exists(cand):")),
+
+    # ── What the pre-merge audit found ──────────────────────────────────────
+    ("the helper reads a corrupt state as a fresh IDLE and writes over it",
+     edit("ddw/scripts/transition.py",
+          "        old_text, old_state = vt._read_state_or_refuse(args.state)",
+          "        old_text, old_state = vt._load_disk_state(args.state)")),
+    ("installing a second tool treats the user's own hooks as DDW's to replace",
+     edit("scripts/install_target.py",
+          "    had_manifest = (any(isinstance(k, str) and k.startswith(args.id + \":\") for k in manifest)\n"
+          "                    and not recorded_wiring)",
+          "    had_manifest = bool(manifest) and not recorded_wiring")),
+    ("a check that did not run is summed into the green total again",
+     edit("scripts/verify_install.sh",
+          "skip() { CHECKS=$((CHECKS+1)); SKIPS=$((SKIPS+1));",
+          "skip() { CHECKS=$((CHECKS+1));")),
+    ("CI stops running the suite, and every required context stays green",
+     edit(".github/workflows/verify.yml",
+          "      - name: The suite\n        run: bash scripts/verify_install.sh",
+          "      - name: The suite\n        run: echo skipped")),
+    ("CI swallows the linter's failure",
+     edit(".github/workflows/verify.yml",
+          "      - name: The prose agrees with the machine\n        run: python3 scripts/lint_method.py",
+          "      - name: The prose agrees with the machine\n        run: python3 scripts/lint_method.py || true")),
+    ("CI stops installing the CLI the manifest checks need, so they skip",
+     edit(".github/workflows/verify.yml",
+          "          npm install -g @anthropic-ai/claude-code",
+          "          true")),
+    ("a mutation shard's failure stops failing the workflow",
+     edit(".github/workflows/mutations.yml",
+          "      - run: python3 scripts/mutate.py --shard",
+          "      - continue-on-error: true\n        run: python3 scripts/mutate.py --shard")),
+    ("a gate reads one document path and its skill documents another",
+     edit("skills/ddw-security-sast/SKILL.md",
+          "docs/ddw/security/sast-", "docs/ddw/sast/sast-")),
+    ("a skill points at a validator that is not the one the gate runs",
+     edit("skills/ddw-test/SKILL.md", "validate_tests.py", "validate_test.py")),
+
+    # ── Catalogued rules nothing had ever broken on purpose ─────────────────
+    ("an FR that no acceptance criterion validates stops being noticed",
+     edit("ddw/scripts/validate_prd.py",
+          "        orphans = [i for i, _ in frs if i not in ac_text]", "        orphans = []")),
+    ("an NFR with no number passes as a measured requirement",
+     edit("ddw/scripts/validate_prd.py",
+          '        unmetered = [i for i, t in nfrs if not re.search(r"\\d", _after_id(i, t))]',
+          "        unmetered = []")),
+    ("the rule that wants a number goes back to finding it in the label",
+     edit("ddw/scripts/validate_prd.py", "_after_id(i, t))]", "t)]")),
+    ("an acceptance criterion in free prose stops needing EARS",
+     edit("ddw/scripts/validate_prd.py",
+          "        non_ears = [i for i, t in acs if not EARS.search(t)]", "        non_ears = []")),
+    ("an FR the spec covers nowhere stops being noticed",
+     edit("ddw/scripts/validate_spec.py",
+          '        uncovered = [i for i in frs if not re.search(r"\\b%s\\b" % i, text)]',
+          "        uncovered = []")),
+    ("an acceptance criterion named by no test stops being noticed",
+     edit("ddw/scripts/validate_spec.py",
+          '        untested = [i for i in acs if not re.search(r"\\b%s\\b" % i, tests_text)]',
+          "        untested = []")),
+    ("a threat with neither mitigation nor accepted risk passes",
+     edit("ddw/scripts/validate_threat.py",
+          "        untreated = [r[0] for r in risks", "        untreated = [] or [r[0] for r in []")),
+    ("an acceptance criterion the verdict never mentions passes verification",
+     edit("ddw/scripts/validate_verify.py",
+          "    unmentioned = [a for a in acs", "    unmentioned = [] or [a for a in []")),
+
+    # ── The validator's own internals ───────────────────────────────────────
+    # There was a second "the session id is not sanitised" entry here. It
+    # injected `def safe_id_UNUSED(` with no body, so the file stopped parsing:
+    # every check died on the import, the run recorded a kill, and the defect it
+    # named was never in the tree. The class is covered by the entry above, which
+    # removes the sanitising and leaves the file compiling. `--check-anchors` now
+    # refuses this shape outright, which is how both of them were found.
+    ("walking away is matched by bare prefix again",
+     edit("ddw/scripts/validate-transition.py",
+          '    first = action.strip().lower().split(":", 1)[0].strip()\n'
+          '    return first in ("abandon", "abandoned", "pause", "paused")',
+          '    return action.strip().lower().startswith(("abandon", "pause"))')),
+    ("an Edit that matches many places stops needing replace_all",
+     edit("ddw/scripts/validate-transition.py",
+          '        if n > 1 and not bool(tool_input.get("replace_all", False)):',
+          "        if False:")),
+    ("a tool nobody mapped writes the state unexamined",
+     edit("ddw/scripts/validate-transition.py",
+          '    raise Block(f"tool {tool_name!r} is not supported',
+          '    return old_text\n    raise Block(f"tool {tool_name!r} is not supported')),
+    ("the pr gate goes back to `gh pr view`, where a branch named 123 is PR #123",
+     edit("ddw/scripts/validate-transition.py",
+          '        out = subprocess.run(["gh", "pr", "list", "--head", branch, "--state", "all",\n'
+          '                              "--json", "number,state"],',
+          '        out = subprocess.run(["gh", "pr", "view", branch,\n'
+          '                              "--json", "number,state"],')),
+    ("the tier chain is walked the wrong way, so a child cannot override its parent",
+     edit("ddw/scripts/validate-transition.py",
+          "    for name in reversed(chain):", "    for name in chain:")),
+
+    # ── The linter that runs in CI and had no mutation at all ───────────────
+    ("a skill referenced by name that does not exist stops being caught",
+     edit("scripts/lint_method.py", "            if m.group(1) not in skills:", "            if False:")),
+
+    # ── What the pre-merge audit found, second batch ────────────────────────
+    ("the self-check reports a healthy install as broken again",
+     edit("skills/ddw-self-check/SKILL.md",
+          'for f in CLAUDE.md AGENTS.md GEMINI.md; do\n  [ -f "$ROOT/$f" ] && grep -qF "BEGIN DDW" "$ROOT/$f" && found=1\ndone',
+          'grep -lqF "BEGIN DDW" "$ROOT"/CLAUDE.md "$ROOT"/AGENTS.md "$ROOT"/GEMINI.md 2>/dev/null || found=0')),
+    ("uninstall goes back to leaving every generated slash command behind",
+     edit("scripts/uninstall_repo.py",
+          'if kind not in ("skills", "agents", "commands") or not name:',
+          'if kind not in ("skills", "agents") or not name:')),
+    ("uninstall deletes the manifest that --force needs to find your files",
+     edit("scripts/uninstall_repo.py",
+          "    if os.path.exists(mpath) and not kept:", "    if os.path.exists(mpath):")),
+    ("a file you edited is removed without --force",
+     edit("scripts/uninstall_repo.py",
+          "        if fingerprint(path) != recorded and not args.force:",
+          "        if False:")),
+    ("the linter stops reading the skills and agents that name skills and agents",
+     edit("scripts/lint_method.py",
+          '    return (sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True))\n'
+          '            + sorted(glob.glob(os.path.join(root, "skills/*/SKILL.md")))\n'
+          '            + sorted(glob.glob(os.path.join(root, "agents/*.md"))))',
+          '    return sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True))')),
+    ("a rule ID whose suffix is a word stops having to be catalogued",
+     edit("scripts/lint_method.py",
+          'pattern = re.compile(r"\\b([FW]-[A-Z]+-[A-Z0-9]{2,})\\b")',
+          'pattern = re.compile(r"\\b([FW]-[A-Z]+-\\d{2,})\\b")')),
+    ("the trust_note check goes back to a loop that can iterate zero times",
+     edit("scripts/verify_install.sh",
+          "assert checked >= 2,", "assert True or checked >= 2,")),
+    ("a mutation job that never runs still reports full coverage",
+     edit("scripts/mutate.py",
+          '        if cond is not None and str(cond).strip().lower() not in ("true", "${{ true }}"):',
+          "        if False:", last=True)),
+    ("injecting the same mutation twice still reads as each exactly once",
+     edit("scripts/mutate.py",
+          "    twice = sorted(i for i, c in counted.items() if c > 1)", "    twice = []",
+          last=True)),
+
+    ("the helper cannot claim a gate in the phase that owns it",
+     edit("ddw/scripts/transition.py", "    if args.claim:", "    if False:")),
+    ("--gate on the closing edge is silently dropped again",
+     edit("ddw/scripts/transition.py",
+          '    if args.to == "IDLE" and args.gate:', "    if False:")),
+    ("the refusal on the closing edge blames the tier again",
+     edit("ddw/scripts/transition.py", '        elif args.to == "IDLE":', "        elif False:")),
+    ("the helper answers an unexpected fault with a traceback and exit 1",
+     edit("ddw/scripts/transition.py",
+          '    except Exception as exc:                      # noqa: BLE001 — the point is breadth',
+          "    except Exception as exc:\n        raise\n    except BaseException as exc:")),
+
+    # ── The last batch the audit named ──────────────────────────────────────
+    ("a selection that matches no mutation reports success again",
+     edit("scripts/mutate.py",
+          '        raise SystemExit("the selection matched no mutation — nothing was injected, and a run "',
+          '        pass\n    if False:\n        raise SystemExit("the selection matched no mutation — nothing was injected, and a run "',
+          last=True)),
+    ("install.sh looks for the manifest in one place again, so upgrades re-ask",
+     edit("install.sh",
+          'for rel in (".ddw-installed.json", os.path.join(".ddw", ".installed.json")):',
+          'for rel in (".ddw-installed.json",):')),
+    ("uninstall leaves behind the empty .gitignore the install created",
+     edit("scripts/uninstall_repo.py",
+          "            if not out.strip():\n                removed.append(\".gitignore\")",
+          "            if False:\n                removed.append(\".gitignore\")")),
+    ("the hooks claim to fail open where they fail closed",
+     edit("adapters/claude/hooks/validate-state-transition.sh",
+          "# Without python3 there is nothing to validate with, so this fails CLOSED (exit 2):",
+          "# Without python3 there is nothing to validate with. Explicit fail-open (exit 0).")),
+    ("the release workflow stops running the suite before it publishes",
+     edit(".github/workflows/release.yml", "scripts/verify_install.sh", "true # scripts/verify_install.sh")),
+    ("a skill's whole protocol is replaced by a placeholder",
+     edit("skills/ddw-help/SKILL.md", "/ddw-self-check", "/ddw-selfcheck")),
+    ("the commit template teaches the trailer this repo refuses",
+     edit("skills/ddw-commit/SKILL.md", "AI-assisted: yes",
+          "Co-Authored-By: Claude <noreply@anthropic.com>")),
+    ("the method resolves to the plugin even when the repo has its own copy",
+     edit("adapters/claude/hooks/lib/guard.sh", "ddw_method() {",
+          'ddw_method() {\n  [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -d "$CLAUDE_PLUGIN_ROOT/ddw" ] && { printf %s "$CLAUDE_PLUGIN_ROOT/ddw"; return 0; }')),
+    ("the re-validation rule is checked for a hand-typed subset of the gates again",
+     edit("scripts/verify_install.sh",
+          "print(\" \".join(GATE_SKILL[g] for g in\n                dict.fromkeys(",
+          'print("ddw-validate-prd ddw-validate-spec ddw-threat-modeling ddw-verify-module") or (lambda *a: None)(')),
+
+    ("the validation skills are checked from a hand-typed list again",
+     edit("scripts/verify_install.sh",
+          "print(\" \".join(GATE_SKILL[g] for g in",
+          'print("ddw-validate-prd ddw-validate-spec") or (lambda *a: None)(')),
+
+    # ── Two hooks at once, and a ticket that outlives lunch ─────────────────
+    # The lock itself has no mutation any more, and that is a statement rather
+    # than an omission: with the fold below reading DISTINCT transitions, a
+    # duplicate line costs bytes and nothing else, so removing `_lock` is an
+    # equivalent mutant — it cannot change an answer the suite can ask for. What
+    # the lock still buys is the duplicate never being written; what the fold
+    # buys is that one written anyway changes nothing. The second is the one a
+    # check can hold, so the second is the one measured.
+    ("the pre-write hook identifies the session by its own pid again",
+     edit("adapters/claude/hooks/enforce.sh",
+          '--session-id "$SID" --quiet', '--session-id "pid-$$" --quiet')),
+    ("a session id nobody supplied is invented from the process id",
+     edit("ddw/scripts/session-boot.py",
+          '    session_id = safe_id(args.session_id) if args.session_id else ""',
+          '    session_id = safe_id(args.session_id or f"pid-{os.getpid()}")')),
+    ("the gate refusal goes back to naming the fact and not the move",
+     edit("ddw/scripts/validate-transition.py",
+          "is not true.{how}", "is not true")),
+    ("a self-edge is refused without saying an in-phase write carries no entry",
+     edit("ddw/scripts/validate-transition.py",
+          "An in-phase change — claiming a gate, ", "")),
+    ("the phase mismatch names two phases and no way back",
+     edit("ddw/scripts/validate-transition.py",
+          "History is appended to what is ON DISK: re-read ", "")),
+    ("every install calls itself an update, in a repo that never had DDW",
+     edit("install.sh", 'if [ -n "$INSTALLED" ]; then', "if true; then")),
+    ("the coverage rule reads only the long metric names, so a coverage table is 'missing'",
+     edit("ddw/scripts/validate_tests.py",
+          '"Cobertura de l[i\u00ed]neas", "Lines", "Line")',
+          '"Cobertura de l[i\u00ed]neas", "Lines")')),
+    ("the lint result is only seen on one line, never under its own heading",
+     edit("ddw/scripts/validate_tests.py",
+          '        m = re.search(r"^#{1,6}',
+          '        m = None or re.search(r"^NEVERMATCHES#{1,6}')),
+    ("CLASSIFY loses the branch for a repo that has no context file at all",
+     edit("ddw/rules/classify.instructions.md",
+          "3. **If `AGENTS.md` does not exist at all**", "3. **If AGENTS.md is somewhere else**")),
+    ("the codex compaction nudge goes back to an envelope codex does not read",
+     edit("adapters/codex/hooks/pre-compact.sh",
+          "  --format nested --event PreCompact", "  --format text --event PreCompact")),
+    ("the root walk asks whether .git is a directory again, so a worktree has no root",
+     edit("ddw/scripts/transition.py",
+          'or os.path.exists(os.path.join(cur, ".git")):',
+          'or os.path.isdir(os.path.join(cur, ".git")):')),
+    ("a validator crashes on the counterpart document it finds by itself",
+     edit("ddw/scripts/validate_spec.py",
+          "            prd_text = open(prd_path, encoding=\"utf-8\").read()\n        except (OSError, UnicodeDecodeError):",
+          "            prd_text = open(prd_path, encoding=\"utf-8\").read()\n        except OSError:")),
+    ("the method linter answers a file it cannot decode with a stack",
+     edit("scripts/lint_method.py",
+          "    except (OSError, UnicodeDecodeError) as exc:\n        fail(path, \"could not be read as UTF-8",
+          "    except OSError as exc:\n        fail(path, \"could not be read as UTF-8")),
+    ("the uninstaller trusts the shape of the settings file it un-merges from",
+     edit("scripts/uninstall_repo.py",
+          "        if not isinstance(dst.get(key), dict):\n            continue\n", "")),
+    ("the uninstaller rewrites a hooks event that is not a list, one character per element",
+     edit("scripts/uninstall_repo.py",
+          "            if not isinstance(dst[key][event], list):\n                continue\n", "")),
+    ("the uninstaller rewrites a context file it could not decode",
+     edit("scripts/uninstall_repo.py",
+          "        except (OSError, UnicodeDecodeError):", "        except OSError:")),
+    ("the installer merges into a settings.json of any shape and crashes on the odd ones",
+     edit("scripts/install_target.py",
+          "                if not isinstance(dst, dict):", "                if False:")),
+    ("the installer trusts that a settings event holds a list",
+     edit("scripts/install_target.py",
+          "                if not isinstance(cur, list):", "                if False:")),
+    ("the installer reads a context file it cannot decode and rewrites it anyway",
+     edit("scripts/install_target.py",
+          "        except (OSError, UnicodeDecodeError) as exc:", "        except OSError as exc:")),
+    ("deleting the journal turns the receipt-witness check off again",
+     edit("ddw/scripts/validate-transition.py",
+          "        return set() if started else None", "        return None")),
+    ("a journal line written twice reads as a history entry deleted once",
+     edit("ddw/scripts/validate-transition.py",
+          "        if any(_same_entry(prev, entry) for prev in out):\n            continue",
+          "        if False:\n            continue")),
+    ("only NEIGHBOURING duplicate journal lines are folded, which is not the shape a race makes",
+     edit("ddw/scripts/validate-transition.py",
+          "        if any(_same_entry(prev, entry) for prev in out):",
+          "        if out and _same_entry(out[-1], entry):")),
+    ("the session sweep shares a directory with the evidence again",
+     edit("ddw/scripts/session-boot.py",
+          'sess_dir = os.path.join(repo, ".ddw-sessions", "live")',
+          'sess_dir = os.path.join(repo, ".ddw-sessions")')),
+
+    # ── The tiers that are not FEATURE ──────────────────────────────────────
+    ("the define gate looks only for a PRD, so QUICK-FIX cannot leave DEFINE",
+     edit("ddw/scripts/validate-transition.py",
+          '    return _receipt_missing(root, state, "define", "prd", "prd", ("prd", "fix"),',
+          '    return _receipt_missing(root, state, "define", "prd", "prd", ("prd",),')),
+    ("the define gate forgets the FIX tier's root cause analysis",
+     edit("ddw/scripts/validate-transition.py",
+          '    if (state.get("tier") or "") == "FIX":', "    if False:")),
+    ("the PRD template stops naming the FR each criterion validates",
+     edit("skills/ddw-create-prd/SKILL.md",
+          "- AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].",
+          "- AC-01: WHEN [trigger], THE [system] SHALL [response].")),
+
+    # ── The guards that were widest where they were least likely to bite ────
+    ("the QUICK-FIX sensitive-path guard is case-sensitive again",
+     edit("ddw/scripts/validate-transition.py",
+          '    probe = "/" + rel.lower()', '    probe = "/" + rel')),
+    ("the closing edge stops owing the evidence it spends",
+     edit("ddw/scripts/validate-transition.py",
+          "        if len(_nh) > len(_oh):", "        if False:")),
+    ("uninstall follows a manifest entry out of the repository",
+     edit("scripts/uninstall_repo.py",
+          "                or os.path.commonpath([real, repo_real]) != repo_real\n", "")),
+
+    ("the installer crashes on a context file that mentions the marker in prose",
+     edit("scripts/install_target.py",
+          '        if "<!-- BEGIN DDW" in existing:', '        if "BEGIN DDW" in existing:')),
+    ("the session boot answers an unexpected fault with a stack",
+     edit("ddw/scripts/session-boot.py",
+          "    except BaseException as exc:                  # noqa: BLE001 — breadth is the point",
+          "    except OSError as exc:")),
+    ("the uninstaller cannot run against a manifest shaped unexpectedly",
+     edit("scripts/uninstall_repo.py",
+          "        if not isinstance(manifest, dict):\n            manifest = {}",
+          "        if False:\n            manifest = {}")),
+    ("a validator exits 1 with a stack on a document that is not UTF-8",
+     edit("ddw/scripts/validate_prd.py",
+          "    except (OSError, UnicodeDecodeError) as exc:", "    except OSError as exc:")),
+    ("one write skips the phase that classifies the work",
+     edit("ddw/scripts/validate-transition.py",
+          "    if first_from != old_phase:",
+          "    if first_from != old_phase and not (old_phase == IDLE and first_from == CLASSIFY):")),
+    ("an upgrade mid-ticket strands the open ticket again",
+     edit("ddw/scripts/validate-transition.py",
+          "        if key not in edges and idx >= skip_edges:", "        if key not in edges:")),
+    ("the blessed window is widened to the whole run",
+     edit("ddw/scripts/validate-transition.py",
+          "             skip_edges=max(0, blessed - start))", "             skip_edges=10**9)")),
+
     # ── The payload ──────────────────────────────────────────────────────────
     ("a skill disappears", delete("skills/ddw-commit")),
     ("an agent disappears", delete("agents/ddw-sec-auditor.md")),
@@ -1058,7 +1613,246 @@ MUTATIONS = [
     ("an adapter recipe points at a directory that is not there",
      json_edit("adapters/claude/adapter.json",
                lambda d: d["skills"].update({"dir": ".claude/nope"}))),
+    ("the ticket is the one header field whose type nothing checks again",
+     edit("ddw/scripts/validate-transition.py",
+          "    _check_ticket_shape(new_state)\n", "")),
+    ("the SAST skill sends every tier to VERIFY again",
+     edit("skills/ddw-security-sast/SKILL.md",
+          "the `sast` receipt is what lets a ticket leave CODE, in every tier.",
+          "you cannot advance to VERIFY with open vulnerabilities.")),
+    ("the CLASSIFY rules drop the ticket from the helper's command again",
+     edit("ddw/rules/classify.instructions.md",
+          "--to DEFINE --tier <TIER> --ticket <ID> --action", "--to DEFINE --tier <TIER> --action")),
+    ("W-SPEC-01 goes back to contradicting F-SPEC-01 in the same output",
+     edit("ddw/scripts/validate_spec.py",
+          "        if not is_fix and not re.search(r\"\\bFR-\\d+\\b\", body) and not covered_here:",
+          "        if not is_fix and not re.search(r\"\\bFR-\\d+\\b\", body):")),
+    ("closing a ticket erases what post mode was about to refuse",
+     edit("ddw/scripts/validate-transition.py",
+          "    owed = []\n    known = len(_journal_entries(state_path))",
+          "    owed = []\n    known = len(_journal_entries(state_path)) if scope != \"none\" else 10**9")),
+    ("the boot's one-sided-guard warning is dropped on the path that can still count",
+     edit("ddw/scripts/session-boot.py", "        return others, registered", "        return others, True")),
+    ("the boot's one-sided-guard warning is dropped on the path that cannot list at all",
+     edit("ddw/scripts/session-boot.py", "        return 0, registered", "        return 0, True")),
+    ("a write lands over a state that changed since the helper read it",
+     edit("ddw/scripts/transition.py", "        if seen is not None:", "        if False:")),
+    ("the helper stops asking the closing edge for the evidence it spends",
+     edit("ddw/scripts/transition.py",
+          "    _owed = sorted(set(list(args.gate or []) + list(_cfg.get(\"gates\") or [])))",
+          "    _owed = list(args.gate or [])")),
+    ("the uninstaller follows a manifest entry to the repository root",
+     edit("scripts/uninstall_repo.py",
+          "        if (real == repo_real\n", "        if (False\n")),
+    ("the uninstaller follows a manifest entry into .git",
+     edit("scripts/uninstall_repo.py",
+          "                or real == git_dir\n                or real.startswith(git_dir + os.sep)",
+          "                or False")),
+    ("W-SAST-01 warns again about the Low findings a report says it does not have",
+     edit("ddw/scripts/validate_sast.py",
+          "    lows = [m for m in re.finditer(r\"\\b(?:low|informational|informativ\\w*)\\b\",",
+          "    lows = [m for m in re.finditer(r\"\\b(?:low|informational|informativ\\w*|clean)\\b\",")),
+    ("the run stops asking whether the suite passes before anything is injected",
+     edit("scripts/mutate.py", "    if baseline() != 0:", "    if False:", last=True)),
+    ("the mutation job goes back to running the suite on a machine its preflight refuses",
+     edit(".github/workflows/mutations.yml",
+          "          npm install -g @anthropic-ai/claude-code\n", "")),
+    ("the release job goes back to running the suite on a machine its preflight refuses",
+     edit(".github/workflows/release.yml",
+          "          npm install -g @anthropic-ai/claude-code\n", "")),
+    ("the suite goes back to leaving a temporary directory behind on every block",
+     edit("scripts/verify_install.sh",
+          'repo = tempfile.mkdtemp(dir=os.environ["WORK"])', "repo = tempfile.mkdtemp()")),
+    ("WORK stops being exported, so nothing can anchor to the one cleanup there is",
+     edit("scripts/verify_install.sh", 'export WORK="$(mktemp -d)"', 'WORK="$(mktemp -d)"')),
+    ("one undecodable byte in the journal escapes both handlers again",
+     edit("ddw/scripts/validate-transition.py",
+          "        except (ValueError, UnicodeDecodeError):\n            continue",
+          "        except ValueError:\n            continue")),
+    ("a FIFO where a record belongs hangs every hook again",
+     edit("ddw/scripts/validate-transition.py",
+          "    for _path in (journal_path(state_path), state_path):\n"
+          "        _odd = _not_a_regular_file(_path)\n        if _odd:\n            raise Block(_odd)\n",
+          "")),
+    ("the mutation count goes back to being pinned nowhere",
+     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=415", "EXPECT_MUTATIONS=0")),
+    ("the check total goes back to being unpinned, which used to print as a pass",
+     edit("scripts/verify_install.sh", "EXPECT_CHECKS=536", "EXPECT_CHECKS=0")),
+    ("the check total becomes a knob the environment can turn again",
+     edit("scripts/verify_install.sh", "EXPECT_CHECKS=536", "EXPECT_CHECKS=${EXPECT_CHECKS:-536}")),
+    ("the sealed names are judged only after symlinks are followed again",
+     edit("ddw/scripts/validate-transition.py",
+          "        if lexical != target:\n            reason = enforcement_write_denied(lexical, root)\n"
+          "            if reason:\n                return reason\n", "")),
+    ("a PRD with no acceptance criteria passes as all zero of them again",
+     edit("ddw/scripts/validate_verify.py", "    elif not acs:", "    elif False:")),
+    ("a verdict can be checked against another ticket's documents again",
+     edit("ddw/scripts/validate_verify.py",
+          '    _ticket = re.match(r"verify-(.+)\\.md$", os.path.basename(args.report))',
+          "    _ticket = None")),
+    ("a gate can be claimed from any phase again, in any order",
+     edit("ddw/scripts/validate-transition.py",
+          "    _check_gate_owner(old_state, new_state, graph, appended)\n", "")),
+    ("a state truncated to zero bytes reads as a fresh IDLE again",
+     edit("ddw/scripts/validate-transition.py",
+          "    if not text.strip():\n        # Zero bytes is not garbage and it is not absence",
+          "    if False:\n        # Zero bytes is not garbage and it is not absence")),
+    ("deleting the manifest unseals every hook script again",
+     edit("ddw/scripts/validate-transition.py",
+          "    elif any(rel.startswith(p) for p in PROTECTED_WIRING_DIRS):\n"
+          '        what = "where DDW\'s hooks are installed for this tool"\n', "")),
+    ("a missing manifest goes back to reading as a repo DDW was never installed into",
+     edit("ddw/scripts/session-boot.py",
+          '        return _no_manifest(type(exc).__name__)', "        return []")),
+    ("the method tree drops out of the manifest, and no shell edit to it is ever reported",
+     edit("scripts/install_target.py",
+          "    record_method(args.target, manifest)\n", "")),
+    ("the method root stops reaching the gate, so a plugin install seals nothing",
+     edit("adapters/claude/hooks/validate-state-transition.sh",
+          '  --repo "${CLAUDE_PROJECT_DIR}" \\\n  --method "$DDW"',
+          '  --repo "${CLAUDE_PROJECT_DIR}"')),
+    ("a write to the method itself is judged only when the method is inside the repo",
+     edit("ddw/scripts/validate-transition.py",
+          "        denied = _method_write_denied(target, method)", "        denied = None")),
+    ("`mkdir .ddw` picks the method again, and every Claude hook bows out",
+     edit("adapters/claude/hooks/lib/guard.sh",
+          '  if [ -f "${CLAUDE_PROJECT_DIR:-}/.ddw/scripts/hook-gate.py" ]; then',
+          '  if [ -d "${CLAUDE_PROJECT_DIR:-}/.ddw" ]; then')),
+    ("--tier goes back to accepting any string at all",
+     edit("ddw/scripts/validate_prd.py",
+          'ap.add_argument("--tier", default="FEATURE", choices=ddw_receipt.TIERS)',
+          'ap.add_argument("--tier", default="FEATURE")')),
+    ("the receipt stops recording which rules earned it",
+     edit("ddw/scripts/ddw_receipt.py",
+          '        if tier:\n            fh.write("tier: %s\\n" % tier)', "        pass")),
+    ("the gate stops asking whether the receipt's tier is the ticket's tier",
+     edit("ddw/scripts/validate-transition.py",
+          '        if stamped and state.get("tier") and stamped != state.get("tier"):',
+          "        if False:")),
+    ("a write may drop the tier again, and the next one sets whatever it likes",
+     edit("ddw/scripts/validate-transition.py",
+          "    if old_tier and raw_new is None and not reaching_idle and not in_classify:",
+          "    if False:")),
+    ("the ❌ every verify report is told to write goes back to being unmatchable",
+     edit("ddw/scripts/validate_verify.py",
+          "FAILING = re.compile(r\"(?:\\b(?:fail|failed|falla|fallo|fallido|error)\\b|❌|✗|✘)\", re.IGNORECASE)",
+          "FAILING = re.compile(r\"\\b(fail|failed|falla|fallo|fallido|error|❌)\\b\", re.IGNORECASE)")),
+    ("an upgrade goes back to calling every unknown wiring file DDW's own",
+     edit("scripts/install_target.py",
+          "    had_manifest = (any(isinstance(k, str) and k.startswith(args.id + \":\") for k in manifest)\n"
+          "                    and not recorded_wiring)",
+          "    had_manifest = any(isinstance(k, str) and k.startswith(args.id + \":\") for k in manifest)")),
+    ("an upgrade goes back to stacking the renamed hook beside the block it replaces",
+     edit("scripts/install_target.py",
+          "                for b in stale:\n                    cur.remove(b)\n", "")),
+    ("the uninstall goes back to leaving an older version's block wired to a deleted script",
+     edit("scripts/uninstall_repo.py",
+          "                    and not _names_installed_file(b, manifest, target)", "")),
+    ("the QUICK-FIX gate goes back to counting the four labels as a fix-brief",
+     edit("ddw/scripts/validate_prd.py",
+          "        unwritten = [s for s in FIX_BRIEF_SECTIONS\n"
+          "                     if s not in missing and _unfilled(_after_label(text, s))]",
+          "        unwritten = []")),
+    ("the PRD template goes back to teaching prose where the rule counts items",
+     edit("skills/ddw-create-prd/SKILL.md",
+          "- [what is explicitly NOT included, one item per line]",
+          "[What is explicitly NOT included]")),
+    ("the PRD template goes back to an acceptance criterion the validator refuses",
+     edit("skills/ddw-create-prd/SKILL.md",
+          "- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].",
+          "- AC-03 (FR-02): ...")),
+    ("the shard timeout goes back under what a shard actually takes",
+     edit(".github/workflows/mutations.yml", "    timeout-minutes: 75", "    timeout-minutes: 30")),
+    ("a word ending in `dos` answers for the denial-of-service category again",
+     edit("ddw/scripts/validate_threat.py",
+          '    "Denial of Service": (r"denial of service|\\bdos\\b|denegaci[o\u00f3]n de servicio"),',
+          '    "Denial of Service": (r"denial of service|dos\\b|denegaci[o\u00f3]n de servicio"),')),
+    ("the threat validator goes back to counting a bracketed placeholder as an answer",
+     edit("ddw/scripts/validate_threat.py",
+          '    return not re.search(r"[0-9A-Za-z\u00c0-\u00ff]", re.sub(r"\\[[^\\[\\]]*\\]", "", v))',
+          "    return False")),
+    ("the encryption rule goes back to reading two sections and believing a denial",
+     edit("ddw/scripts/validate_threat.py",
+          "            elif not _states_control(text, pat):",
+          "            elif not pat.search(data_body + risk_body):")),
+    ("the lexical reading stops anchoring on a root written through a symlink of its own",
+     edit("ddw/scripts/validate-transition.py",
+          "    if path == root or path.startswith(root + os.sep):\n        return path\n    parts = path.split(os.sep)",
+          "    return path\n    parts = path.split(os.sep)")),
+    ("nothing counts the catalog's rules against the summary that claims to total them",
+     edit("scripts/lint_method.py", "    check_rule_counts(root)\n", "")),
+    ("a rule range in backticks — the only shape the method uses — goes unread again",
+     edit("scripts/lint_method.py",
+          r'for m in re.finditer(r"\b([FW]-[A-Z]+)-0*1`?\s+to\s+`?\1-(\d+)\b", body):',
+          r'for m in re.finditer(r"\b([FW]-[A-Z]+)-0*1\s+to\s+\1-(\d+)\b", body):')),
+    ("the SAST receipt stops recording the clock its suppressions were aged against",
+     edit("ddw/scripts/validate_sast.py",
+          "              + ddw_receipt.write(args.report, \"sast\", text, args.tier, asof=today.isoformat()))",
+          "              + ddw_receipt.write(args.report, \"sast\", text, args.tier))")),
+    ("the gate stops asking which day the receipt was earned against",
+     edit("ddw/scripts/validate-transition.py",
+          "        if asof and asof != today:", "        if False:")),
+    ("the write gate stops refreshing the marker, so a long session expires under five of six tools",
+     edit("ddw/scripts/hook-gate.py",
+          '    _touch_marker(args.repo, event.get("session_id") or event.get("sessionId"))\n', "")),
+    ("the demand check goes back to guarding itself with a list literal that is always true",
+     edit("scripts/verify_install.sh", "assert not skipped, (", "assert True or not skipped, (")),
+    ("two entries injecting one edit stop being reported, and the denominator grows for free",
+     edit("scripts/mutate.py", "        if probe in first:", "        if False:", last=True)),
+    ("the fix-plan template goes back to teaching prose where the validator counts a list",
+     edit("skills/ddw-create-spec/SKILL.md",
+          "- [error condition] — [the code, the message, and what the caller does about it]",
+          "[Which errors can occur with this change, and how they are handled.]")),
+    ("the worked fix-plan documents its errors in prose, which reads to the validator as none",
+     edit("skills/ddw-create-spec/SKILL.md",
+          "- The file cannot be read — `ConfigUnreadable` naming the path; the caller falls back to defaults\n"
+          "  and logs once.\n- The file is not valid UTF-8 — the same error, with the byte offset; the fallback is the same.",
+          "The file cannot be read (`ConfigUnreadable` naming the path) or is not valid UTF-8 (the same\n"
+          "error, with the byte offset); either way the caller falls back to defaults and logs once.")),
+    ("the refusal on an edge to IDLE goes back to prescribing gates the edge never asks for",
+     edit("ddw/scripts/transition.py", '            owed = list(_cfg.get("gates") or [])',
+          '            owed = ["commit", "pr"]')),
+    ("a paused ticket at IDLE is told again that reclassifying is its only way out",
+     edit("ddw/scripts/transition.py",
+          '            paused_at = vt._paused_at(history, len(history), old_state.get("ticket"))',
+          "            paused_at = None")),
+    ("rule ranges go back to being read in the rule files and not in the skills that run them",
+     edit("scripts/lint_method.py",
+          "    for path in method_prose(root):\n        body = read(path)\n"
+          "        # Only ranges that START at 01.",
+          "    for path in sorted(glob.glob(os.path.join(root, \"ddw/**/*.md\"), recursive=True)):\n"
+          "        body = read(path)\n        # Only ranges that START at 01.")),
 ]
+
+
+def baseline():
+    """Does the suite pass on a copy nobody mutated?
+
+    `run_one` reads a non-zero exit as "the suite caught the fault", and it has
+    no way to tell that verdict apart from a suite that exits non-zero for a
+    reason no mutation put there: a missing tool the preflight refuses over, a
+    `commit.gpgsign` this machine cannot satisfy, a half-applied edit. Any one of
+    those makes every fault in the list report as caught without a single check
+    having examined it, and the run prints 100%.
+
+    That is the same fabricated measurement `check_anchors` exists to prevent,
+    one layer down, and it costs one run of the suite to refuse: ask the
+    unmutated tree first, and say which it was.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = os.path.join(tmp, "ddw")
+        shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
+                           capture_output=True, text=True, cwd=repo)
+        if r.returncode == 0:
+            return 0
+        print("The suite does not pass on an UNMUTATED copy of this tree, so every fault "
+              "below would\nbe recorded as caught without being examined. Nothing was "
+              "injected. The suite said:\n")
+        tail = [ln for ln in (r.stdout + r.stderr).splitlines() if ln.strip()][-25:]
+        for ln in tail:
+            print("  " + ln)
+        return 1
 
 
 def run_one(index, label, mutate):
@@ -1106,7 +1900,7 @@ def check_anchors():
         if probe is None:
             stale.append((i, label, "carries no probe — this constructor cannot be checked cheaply"))
             continue
-        kind, rel, needle = probe
+        kind, rel, needle = probe[0], probe[1], probe[2]
         path = os.path.join(ROOT, rel)
         if not os.path.exists(path):
             stale.append((i, label, f"{rel} does not exist"))
@@ -1116,6 +1910,47 @@ def check_anchors():
                 cache[rel] = open(path, encoding="utf-8").read()
             if needle not in cache[rel]:
                 stale.append((i, label, f"the anchor is gone from {rel}"))
+                continue
+            # …and the mutated file still has to be the same LANGUAGE. A
+            # "mutation" that leaves Python unparseable does not inject the
+            # defect it names — every check dies on the import, the run records
+            # a kill, and the fault it claimed to measure was never in the tree.
+            # One of these shipped, and it read as covered for as long as it
+            # existed. Compiled in memory: the answer is a parse, not a copy.
+            if rel.endswith(".py"):
+                text, new, last = cache[rel], probe[3], probe[4]
+                if last:
+                    head, _, tail = text.rpartition(needle)
+                    mutated = head + new + tail
+                else:
+                    mutated = text.replace(needle, new, 1)
+                try:
+                    compile(mutated, rel, "exec")
+                except SyntaxError as exc:
+                    stale.append((i, label, "leaves %s unparseable (%s at line %s), so it measures "
+                                            "the file not compiling, not the defect it names"
+                                            % (rel, exc.msg, exc.lineno)))
+    # Two entries that inject the SAME edit are one fault counted twice: the
+    # denominator grows, the percentage moves, and nothing new was ever tried.
+    # A pair shipped that way and neither run could see it — both were killed by
+    # the same check, which is exactly how a duplicate hides.
+    #
+    # `text` probes only. The `exists` constructors legitimately collide — six
+    # groups of `delete`/`json_edit` mutations name one file and change
+    # different things inside it, and treating those as duplicates would report
+    # correct entries as defects.
+    first = {}
+    for i, (label, mutate) in enumerate(MUTATIONS, 1):
+        probe = getattr(mutate, "probe", None)
+        if not probe or probe[0] != "text":
+            continue
+        if probe in first:
+            stale.append((i, label, "injects exactly what mutation %d injects — one fault counted "
+                                    "twice, and the kill rate is a percentage of the list"
+                                    % first[probe]))
+        else:
+            first[probe] = i
+
     if stale:
         print(f"check-anchors: {len(stale)} of {len(MUTATIONS)} mutations no longer apply.\n"
               "A mutation that cannot be injected proves nothing, and the list is the "
@@ -1146,10 +1981,24 @@ def cover(path, count):
         print(f"cover: no step in {path} runs a sharded mutation job — nothing to check")
         return 1
 
-    covered, problems = set(), []
+    counted, problems = {}, []
     for job_name, m in found:
         key, n = m.group(1), int(m.group(2))
-        entries = jobs[job_name].get("strategy", {}).get("matrix", {}).get(key)
+        job = jobs[job_name]
+        # A job that does not run covers nothing, and a job whose failure is
+        # swallowed measures nothing. Both were counted as full coverage: the
+        # arithmetic added up while the workflow was reporting on a run that
+        # either never happened or could not go red.
+        cond = job.get("if")
+        if cond is not None and str(cond).strip().lower() not in ("true", "${{ true }}"):
+            problems.append(f"{job_name}: the job is conditional (`if: {cond}`), so its shards "
+                            "may cover nothing on a given run")
+            continue
+        for label, obj in ((job_name, job), *((f"{job_name} step", s) for _, s in
+                                              [(job_name, st) for st in job.get("steps", [])])):
+            if obj.get("continue-on-error"):
+                problems.append(f"{label}: continue-on-error, so a surviving mutation is green")
+        entries = job.get("strategy", {}).get("matrix", {}).get(key)
         if not entries:
             problems.append(f"{job_name}: --shard reads matrix.{key}, and the matrix has no {key}")
             continue
@@ -1158,13 +2007,22 @@ def cover(path, count):
                             f"but each one is told it is 1 of {n}")
             continue
         for i in entries:
-            covered |= set(slice_of(f"{i}/{n}", count))
+            for idx in slice_of(f"{i}/{n}", count):
+                counted[idx] = counted.get(idx, 0) + 1
 
-    missing = sorted(set(range(1, count + 1)) - covered)
+    missing = sorted(set(range(1, count + 1)) - set(counted))
     if missing:
         problems.append(f"{len(missing)} mutations are in no shard: "
                         + ", ".join(str(i) for i in missing[:12])
                         + (" …" if len(missing) > 12 else ""))
+    # "Each exactly once" was printed and never measured. Two workflows sharding
+    # the same list, or one job's matrix overlapping another's, doubles the cost
+    # and hides that some other slice is empty.
+    twice = sorted(i for i, c in counted.items() if c > 1)
+    if twice:
+        problems.append(f"{len(twice)} mutations are injected more than once: "
+                        + ", ".join(str(i) for i in twice[:12])
+                        + (" …" if len(twice) > 12 else ""))
     if problems:
         print(f"cover: the sharded run does NOT cover all {count} mutations")
         for p in problems:
@@ -1201,6 +2059,31 @@ def main():
     if args.only and args.shard:
         raise SystemExit("--only and --shard both pick what runs; use one")
 
+    # What was asked for is settled FIRST, before any tree is copied or any suite
+    # is run. Both checks below cost a full run of the suite each, and spending
+    # them to then answer "there is no mutation 999999" is backwards twice over:
+    # it is minutes of work for a question answerable from the argument, and the
+    # two guards run this file recursively, so a suite that drives the empty
+    # selections would sit in that recursion instead of failing in a second.
+    if args.only is not None:
+        # A selection that names nothing runs nothing and then prints
+        # "0/0 faults caught (0%)" and exits 0 — a green run for a measurement
+        # that never happened, in the file whose whole job is to say when that is
+        # what happened.
+        if not args.only:
+            raise SystemExit("--only needs at least one mutation number")
+        out_of_range = sorted(i for i in args.only if not 1 <= i <= len(MUTATIONS))
+        if out_of_range:
+            raise SystemExit("no such mutation(s): %s (there are %d)"
+                             % (", ".join(str(i) for i in out_of_range), len(MUTATIONS)))
+    wanted = set(slice_of(args.shard, len(MUTATIONS))) if args.shard else None
+    chosen = [(i, m) for i, m in enumerate(MUTATIONS, 1)
+              if (not args.only or i in args.only)
+              and (wanted is None or i in wanted)]
+    if not chosen:
+        raise SystemExit("the selection matched no mutation — nothing was injected, and a run "
+                         "that injects nothing has measured nothing")
+
     # Anchors are verified HERE, before anything is injected, against the tree as
     # it is on disk. This check lived inside `verify_install.sh` for one
     # afternoon and it was worse than not having it: the suite runs inside the
@@ -1216,10 +2099,11 @@ def main():
     if check_anchors() != 0:
         return 1
 
-    wanted = set(slice_of(args.shard, len(MUTATIONS))) if args.shard else None
-    chosen = [(i, m) for i, m in enumerate(MUTATIONS, 1)
-              if (not args.only or i in args.only)
-              and (wanted is None or i in wanted)]
+    # …and the same question about the instrument itself, before the first
+    # injection: a suite that is already red measures nothing below.
+    if baseline() != 0:
+        return 1
+
     killed, survived, broken = 0, [], []
     # Name the slice in the output. A shard's log is a full green run to anyone
     # skimming it, and "193/193" is the only number worth reporting.
