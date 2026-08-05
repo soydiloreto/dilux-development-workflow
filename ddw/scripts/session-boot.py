@@ -116,6 +116,30 @@ def ensure_gitignore(repo):
         pass                          # a read-only checkout is not worth failing over
 
 
+def refresh_marker(repo, session_id):
+    """Say that this session is still here. Returns True if it could.
+
+    Split out of `other_live_sessions` for one reason: the marker goes stale
+    after STALE_SECONDS and only the Claude adapter had somewhere to refresh it
+    from — an extra PreToolUse shim that runs on every write. In the other five
+    tools the marker was written once at session start and swept two hours
+    later, so every session long enough to matter vanished from the count and
+    the concurrency warning stopped firing for exactly the sessions it exists
+    for. The refresh is the method's, like everything else the hooks share, so
+    it is one function here rather than five shims out there.
+    """
+    if not session_id:
+        return False                  # no id, no marker (see the note in main)
+    try:
+        sess_dir = os.path.join(repo, ".ddw-sessions", "live")
+        os.makedirs(sess_dir, exist_ok=True)
+        with open(os.path.join(sess_dir, safe_id(session_id)), "w", encoding="utf-8") as fh:
+            fh.write(str(int(time.time())))
+        return True
+    except OSError:
+        return False
+
+
 def other_live_sessions(repo, session_id):
     """Count sessions other than this one that are still alive on this directory.
 
@@ -137,16 +161,9 @@ def other_live_sessions(repo, session_id):
     # Measured. Liveness markers and evidence do not share a directory.
     sess_dir = os.path.join(repo, ".ddw-sessions", "live")
     now = time.time()
-    mine = os.path.join(sess_dir, session_id) if session_id else None
-    registered = False
-    try:
-        os.makedirs(sess_dir, exist_ok=True)
-        if mine:
-            with open(mine, "w", encoding="utf-8") as fh:
-                fh.write(str(int(now)))
-            registered = True
-    except OSError:
-        pass          # cannot register; still worth counting who else is here
+    # Registers FIRST, then counts, through the same function the write path
+    # calls — one definition of what a marker is and where it lives.
+    registered = refresh_marker(repo, session_id)
 
     try:
         others = 0

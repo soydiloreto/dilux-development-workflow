@@ -27,6 +27,26 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def _touch_marker(repo, session_id):
+    """Refresh this session's liveness marker, and never fail over it.
+
+    Best effort in the strongest sense: a hook whose job is to allow or refuse a
+    write must not turn a full disk, a read-only checkout or a session id the
+    harness declined to send into a verdict. Anything that goes wrong here
+    leaves the count stale, which is what it was before.
+    """
+    if not repo or not session_id:
+        return
+    try:
+        path = os.path.join(_HERE, "session-boot.py")
+        spec = importlib.util.spec_from_file_location("ddw_session_boot", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.refresh_marker(repo, str(session_id))
+    except Exception:                                         # noqa: BLE001
+        pass
+
+
 def _load_validator():
     path = os.path.join(_HERE, "validate-transition.py")
     spec = importlib.util.spec_from_file_location("ddw_validate_transition", path)
@@ -384,6 +404,16 @@ def main():
         allow(args.dialect)          # unreadable envelope: not ours to judge
     if not isinstance(event, dict):
         allow(args.dialect)
+
+    # Housekeeping, not policy — the rule at the top of this file is about
+    # DECISIONS, and this decides nothing: it says "still here" on behalf of a
+    # session that is plainly still here, since it is asking for a verdict. The
+    # marker expires after two hours, and only the Claude adapter had a second
+    # PreToolUse shim to refresh it from; in the other five tools every session
+    # longer than that was swept off disk and the concurrency guard went quiet
+    # for exactly the sessions worth warning about. The write itself lives in
+    # session-boot.py, so there is still one definition of what a marker is.
+    _touch_marker(args.repo, event.get("session_id") or event.get("sessionId"))
 
     tool_name, tool_input, paths, typed_but_wrong, raw_name = normalize(event, args.dialect)
     if typed_but_wrong:

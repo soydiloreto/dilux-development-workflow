@@ -79,7 +79,7 @@ def digest_of(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
-def write(artifact_path, prefix, text, tier=None):
+def write(artifact_path, prefix, text, tier=None, asof=None):
     """Write the receipt for `artifact_path` and record having written it.
 
     Returns the receipt's name, so the caller can print it.
@@ -94,6 +94,13 @@ def write(artifact_path, prefix, text, tier=None):
 
     A receipt with no tier line is one written before this existed, and it is
     still honoured; the gate only refuses a tier that is present and wrong.
+
+    `asof` is the same argument for a different variable: the CLOCK. SAST
+    suppressions expire, `validate_sast.py --today` lets the caller say which
+    day to age them against, and nothing recorded the answer — so a report whose
+    suppressions lapsed months ago passed under `--today 2025-02-01` and left a
+    receipt indistinguishable from one earned this morning. Recorded here, the
+    gate can ask; unrecorded, there was nothing to ask.
     """
     root = repo_root(artifact_path)
     name = "%s-validated-%s" % (prefix, digest_of(text))
@@ -104,6 +111,8 @@ def write(artifact_path, prefix, text, tier=None):
         fh.write(filename + "\n")
         if tier:
             fh.write("tier: %s\n" % tier)
+        if asof:
+            fh.write("asof: %s\n" % asof)
     # Best effort, like every other write to the journal: a record that cannot be
     # kept must not stop a validation that passed. It costs the extra guarantee,
     # not the run.
@@ -111,6 +120,8 @@ def write(artifact_path, prefix, text, tier=None):
         record = {"record": "receipt", "name": name, "file": filename}
         if tier:
             record["tier"] = tier
+        if asof:
+            record["asof"] = asof
         with open(os.path.join(root, JOURNAL), "a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, sort_keys=True) + "\n")
     except OSError:

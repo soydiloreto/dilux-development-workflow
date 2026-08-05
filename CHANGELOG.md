@@ -258,6 +258,55 @@ were in the pipeline's belief that it was enforcing anything.
   resolving first answers a different question. Both readings are judged now.
   (`.ddw-sessions/` and `.ddw-installed.json` were never affected, and
   `install.sh` never builds that topology.)
+- **A refused edge to IDLE prescribed a claim that changes nothing.** The hint
+  "run `--claim commit --claim pr` first" was pasted onto every refusal on the
+  way to IDLE, including the ones where no such edge exists: from CODE both
+  claims exit 0 and the retry prints the same sentence word for word. A fixed
+  point, and the only conclusion left to the reader is that the tool is broken.
+  The hint comes from the graph now — the gates where the edge asks for them,
+  and which phase closes a ticket where it does not.
+- **Out of IDLE, a paused ticket was told to reclassify.** The refusal said the
+  only transition from IDLE is `--to CLASSIFY`, and the suite's own happy path is
+  a counterexample: a paused ticket re-enters the phase it was paused in, and
+  that edge exits 0 on the same state. Following the hint means abandoning a
+  ticket that was one flag away from continuing — the advice the pause was added
+  to make unnecessary.
+- **The fix-plan template could not pass the gate it is written for.** A plan
+  written exactly as `ddw-create-spec` teaches was refused by F-SPEC-10 for its
+  layout: the template puts error handling in prose, and the validator counts
+  errors as a list, because F-SPEC-16 pairs each one with the test that names it.
+  The skill carries a worked fix-plan now, and the suite runs it through
+  `validate_spec.py --tier FIX` — the same guard the PRD, the test report and the
+  verdict already had.
+- **The SAST receipt recorded no clock.** `--today` decides which suppressions
+  have expired and the caller chooses it, so a report whose reviews lapsed months
+  ago passed by naming a day they were still fresh, and left a receipt
+  byte-identical to one earned this morning. The receipt records the day, and the
+  gate refuses one earned against another.
+- **A session's liveness marker expired under five of the six tools.** Only the
+  Claude adapter had a second PreToolUse shim to refresh it; everywhere else the
+  marker was written at session start and swept two hours later, so the
+  concurrency warning went quiet for exactly the sessions worth warning about.
+  The write gate every tool runs refreshes it now.
+- **The catalog's own summary counted rules it does not contain** — 69 FAIL and
+  84 in total where the tables define 65 and 80, with `ddw/rules/README.md`
+  repeating the 84. Rules were merged and removed over three rounds and nobody
+  recounted; the linter recounts now, per area and in total.
+- **`code.instructions.md` asked for `F-TEST-01` to `F-TEST-06`** with 07 and 08
+  implemented, and `check_rule_ranges` could never see it: the pattern demanded
+  whitespace straight after `-01`, and every rule ID in this method's prose is
+  written in backticks. It ran green for months over ranges that were all correct
+  while blind to the single stale one — and it read the rule files without
+  reading the skills that run them.
+- **Three of the instrument's own.** The check that every validator prints its
+  demand guarded itself with `assert cases` over a list literal three lines
+  above: every fixture could be missing and it passed having asked nothing. Two
+  entries in the mutation list injected the same edit — one fault counted twice,
+  in a list that IS the coverage figure. And the empty shard the suite drives was
+  typed as `400/400` when the list held 393, so the day it passed four hundred
+  that check ran a real mutation, which ran the suite, which reached the same
+  line again: a recursion that forks until the machine gives up. All three are
+  derived from the tree now instead of typed.
 
 ### Added
 
@@ -273,7 +322,9 @@ were in the pipeline's belief that it was enforcing anything.
   ask which rules earned the evidence it is being handed.
 - **A `spent` record in the journal** when a corrective loop clears a gate, which
   is what makes re-earning `tests` and `sast` cost a real re-run.
-- 92 checks and 126 mutations over the three rounds: **523 checks, 386
+- **The clock on the SAST receipt**, alongside the tier, so the gate can ask
+  which day the suppressions were aged against.
+- 101 checks and 144 mutations over the four rounds: **532 checks, 404
   mutations**. Among them, one check per skill's load-bearing claim — ten of the
   seventeen could have their entire body replaced with "TODO." and the suite
   stayed green.

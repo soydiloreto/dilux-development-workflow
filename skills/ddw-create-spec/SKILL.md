@@ -142,11 +142,11 @@ changes too small to deserve one, and it has no PLAN phase at all.
 [Order, if it matters. "None" if the steps are independent.]
 
 ## Error handling
-[Which errors can occur with this change, and how they are handled.]
+- [error condition] — [the code, the message, and what the caller does about it]
 
 ## Tests
 - [ ] **Regression test** — reproduces the original bug: fails BEFORE the fix, passes AFTER.
-- [ ] [other tests]
+- [ ] [one test per error condition above, naming it — F-SPEC-16 counts them]
 
 ## Regression risk
 [Low/Medium/High + what could break.]
@@ -159,6 +159,59 @@ changes too small to deserve one, and it has no PLAN phase at all.
 > The `FR-`/`NFR-`/`AC-` identifiers and these section names are what `ddw-validate-spec` matches on
 > (rules F-SPEC-01 to F-SPEC-16). Write the *content* in the user's language, but keep the
 > identifiers and the structure as written here.
+
+### The fix-plan, in the shape the validator reads
+
+The template above is a skeleton, and a skeleton cannot be validated: every bracketed row is a
+placeholder the validator drops on purpose, so an unfilled document fails and should. This is the
+same document filled in, and it is what `validate_spec.py --tier FIX` is run against — errors as a
+list because F-SPEC-16 counts them against the tests that name them, and prose in the error section
+counts as none.
+
+```markdown
+# Fix-plan {ticket}: The config loader eats the trailing newline
+
+| Field | Value |
+|-------|-------|
+| Ticket | {ticket} |
+| Tier | FIX |
+| RCA | docs/ddw/specs/rca-{ticket}.md |
+| Date | 2026-08-05 |
+| Spec loops | 0 |
+| Loops since last human decision | 0 |
+
+## Problem
+`loadConfig()` returns the file without its final newline, so every rewrite of the config produces a
+whole-file diff and three reviewers have now asked why.
+
+## Root cause
+`readText().rstrip()` was written to strip a BOM and takes the trailing newline with it.
+
+## Solution — steps
+1. `src/config/loader.ts:41` — strip the BOM only, with `replace(/^﻿/, "")`.
+2. `src/config/loader.ts:58` — write back the text that was read, unmodified.
+
+## Dependencies between steps
+None; the two steps are independent.
+
+## Error handling
+- The file cannot be read — `ConfigUnreadable` naming the path; the caller falls back to defaults
+  and logs once.
+- The file is not valid UTF-8 — the same error, with the byte offset; the fallback is the same.
+
+## Tests
+- [ ] **Regression test** — a config with a BOM keeps its trailing newline: fails BEFORE the fix,
+      passes AFTER.
+- [ ] An unreadable file surfaces the `ConfigUnreadable` error, and the defaults are used.
+- [ ] A file with an invalid UTF-8 byte reports the offset and falls back the same way.
+
+## Regression risk
+Low — the only caller is the config writer, and its output is asserted byte for byte.
+
+## Rollback plan *(mandatory)*
+- Steps: trivial: revert the commit
+- Indicators: config rewrites start showing whole-file diffs again
+```
 
 ## Granularity Rules
 - At most ~200 lines of code per task.

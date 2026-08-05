@@ -358,13 +358,13 @@ a document; whether it is a true document remains the reader's judgement, and ev
 
 | Area | FAIL rules | WARNING rules | Total |
 |---|---|---|---|
-| PRD | 10 | 5 | 15 |
-| Spec / Fix-Plan | 17 | 3 | 20 |
+| PRD | 9 | 5 | 14 |
+| Spec / Fix-Plan | 16 | 3 | 19 |
 | Threat Model | 7 | 2 | 9 |
-| SAST | 21 | 1 | 22 |
+| SAST | 19 | 1 | 20 |
 | Test Run Report | 8 | 1 | 9 |
 | Module Verify | 6 | 3 | 9 |
-| **Total** | **69** | **15** | **84** |
+| **Total** | **65** | **15** | **80** |
 
 ---
 

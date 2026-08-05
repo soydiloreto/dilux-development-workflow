@@ -389,7 +389,12 @@ def main():
     if fails == 0:
         # One writer for all six receipts, so the rule cannot drift six ways —
         # and so that writing one is RECORDED in the journal the gate reads.
-        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.report, "sast", text, args.tier))
+        # …and under WHICH CLOCK. Suppressions expire, `--today` decides when,
+        # and the caller chooses `--today`: the same report passed with lapsed
+        # suppressions by naming a day they were still fresh, and the receipt
+        # came out identical to one earned this morning.
+        print("Receipt: .ddw-sessions/"
+              + ddw_receipt.write(args.report, "sast", text, args.tier, asof=today.isoformat()))
 
     # The table above is for the USER, and it does not reach them by itself.
     # Same reason as every other validator: the rule lives where the output is.

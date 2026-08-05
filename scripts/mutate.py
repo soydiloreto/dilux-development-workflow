@@ -770,7 +770,8 @@ MUTATIONS = [
      edit("ddw/scripts/validate_tests.py", "    if dupes:", "    if False:")),
     ("a PASSED SAST validation stops leaving its receipt",
      edit("ddw/scripts/validate_sast.py",
-          '        print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.report, "sast", text, args.tier))',
+          '        print("Receipt: .ddw-sessions/"\n'
+          '              + ddw_receipt.write(args.report, "sast", text, args.tier, asof=today.isoformat()))',
           "        pass")),
     ("a receipt is written and nothing records that a validator wrote it",
      edit("ddw/scripts/ddw_receipt.py",
@@ -1465,8 +1466,6 @@ MUTATIONS = [
           "print(\" \".join(GATE_SKILL[g] for g in\n                dict.fromkeys(",
           'print("ddw-validate-prd ddw-validate-spec ddw-threat-modeling ddw-verify-module") or (lambda *a: None)(')),
 
-    ("the suite's own guard against a loop that measures nothing is removed",
-     edit("scripts/verify_install.sh", "assert checked >= 2,", "assert True or checked >= 2,")),
     ("the validation skills are checked from a hand-typed list again",
      edit("scripts/verify_install.sh",
           "print(\" \".join(GATE_SKILL[g] for g in",
@@ -1676,11 +1675,11 @@ MUTATIONS = [
           "        _odd = _not_a_regular_file(_path)\n        if _odd:\n            raise Block(_odd)\n",
           "")),
     ("the mutation count goes back to being pinned nowhere",
-     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=393", "EXPECT_MUTATIONS=0")),
+     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=404", "EXPECT_MUTATIONS=0")),
     ("the check total goes back to being unpinned, which used to print as a pass",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=525", "EXPECT_CHECKS=0")),
+     edit("scripts/verify_install.sh", "EXPECT_CHECKS=532", "EXPECT_CHECKS=0")),
     ("the check total becomes a knob the environment can turn again",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=525", "EXPECT_CHECKS=${EXPECT_CHECKS:-525}")),
+     edit("scripts/verify_install.sh", "EXPECT_CHECKS=532", "EXPECT_CHECKS=${EXPECT_CHECKS:-532}")),
     ("the sealed names are judged only after symlinks are followed again",
      edit("ddw/scripts/validate-transition.py",
           "        if lexical != target:\n            reason = enforcement_write_denied(lexical, root)\n"
@@ -1738,6 +1737,49 @@ MUTATIONS = [
      edit("ddw/scripts/validate_verify.py",
           "FAILING = re.compile(r\"(?:\\b(?:fail|failed|falla|fallo|fallido|error)\\b|❌|✗|✘)\", re.IGNORECASE)",
           "FAILING = re.compile(r\"\\b(fail|failed|falla|fallo|fallido|error|❌)\\b\", re.IGNORECASE)")),
+    ("nothing counts the catalog's rules against the summary that claims to total them",
+     edit("scripts/lint_method.py", "    check_rule_counts(root)\n", "")),
+    ("a rule range in backticks — the only shape the method uses — goes unread again",
+     edit("scripts/lint_method.py",
+          r'for m in re.finditer(r"\b([FW]-[A-Z]+)-0*1`?\s+to\s+`?\1-(\d+)\b", body):',
+          r'for m in re.finditer(r"\b([FW]-[A-Z]+)-0*1\s+to\s+\1-(\d+)\b", body):')),
+    ("the SAST receipt stops recording the clock its suppressions were aged against",
+     edit("ddw/scripts/validate_sast.py",
+          "              + ddw_receipt.write(args.report, \"sast\", text, args.tier, asof=today.isoformat()))",
+          "              + ddw_receipt.write(args.report, \"sast\", text, args.tier))")),
+    ("the gate stops asking which day the receipt was earned against",
+     edit("ddw/scripts/validate-transition.py",
+          "        if asof and asof != today:", "        if False:")),
+    ("the write gate stops refreshing the marker, so a long session expires under five of six tools",
+     edit("ddw/scripts/hook-gate.py",
+          '    _touch_marker(args.repo, event.get("session_id") or event.get("sessionId"))\n', "")),
+    ("the demand check goes back to guarding itself with a list literal that is always true",
+     edit("scripts/verify_install.sh", "assert not skipped, (", "assert True or not skipped, (")),
+    ("two entries injecting one edit stop being reported, and the denominator grows for free",
+     edit("scripts/mutate.py", "        if probe in first:", "        if False:", last=True)),
+    ("the fix-plan template goes back to teaching prose where the validator counts a list",
+     edit("skills/ddw-create-spec/SKILL.md",
+          "- [error condition] — [the code, the message, and what the caller does about it]",
+          "[Which errors can occur with this change, and how they are handled.]")),
+    ("the worked fix-plan documents its errors in prose, which reads to the validator as none",
+     edit("skills/ddw-create-spec/SKILL.md",
+          "- The file cannot be read — `ConfigUnreadable` naming the path; the caller falls back to defaults\n"
+          "  and logs once.\n- The file is not valid UTF-8 — the same error, with the byte offset; the fallback is the same.",
+          "The file cannot be read (`ConfigUnreadable` naming the path) or is not valid UTF-8 (the same\n"
+          "error, with the byte offset); either way the caller falls back to defaults and logs once.")),
+    ("the refusal on an edge to IDLE goes back to prescribing gates the edge never asks for",
+     edit("ddw/scripts/transition.py", '            owed = list(_cfg.get("gates") or [])',
+          '            owed = ["commit", "pr"]')),
+    ("a paused ticket at IDLE is told again that reclassifying is its only way out",
+     edit("ddw/scripts/transition.py",
+          '            paused_at = vt._paused_at(history, len(history), old_state.get("ticket"))',
+          "            paused_at = None")),
+    ("rule ranges go back to being read in the rule files and not in the skills that run them",
+     edit("scripts/lint_method.py",
+          "    for path in method_prose(root):\n        body = read(path)\n"
+          "        # Only ranges that START at 01.",
+          "    for path in sorted(glob.glob(os.path.join(root, \"ddw/**/*.md\"), recursive=True)):\n"
+          "        body = read(path)\n        # Only ranges that START at 01.")),
 ]
 
 
@@ -1846,6 +1888,27 @@ def check_anchors():
                     stale.append((i, label, "leaves %s unparseable (%s at line %s), so it measures "
                                             "the file not compiling, not the defect it names"
                                             % (rel, exc.msg, exc.lineno)))
+    # Two entries that inject the SAME edit are one fault counted twice: the
+    # denominator grows, the percentage moves, and nothing new was ever tried.
+    # A pair shipped that way and neither run could see it — both were killed by
+    # the same check, which is exactly how a duplicate hides.
+    #
+    # `text` probes only. The `exists` constructors legitimately collide — six
+    # groups of `delete`/`json_edit` mutations name one file and change
+    # different things inside it, and treating those as duplicates would report
+    # correct entries as defects.
+    first = {}
+    for i, (label, mutate) in enumerate(MUTATIONS, 1):
+        probe = getattr(mutate, "probe", None)
+        if not probe or probe[0] != "text":
+            continue
+        if probe in first:
+            stale.append((i, label, "injects exactly what mutation %d injects — one fault counted "
+                                    "twice, and the kill rate is a percentage of the list"
+                                    % first[probe]))
+        else:
+            first[probe] = i
+
     if stale:
         print(f"check-anchors: {len(stale)} of {len(MUTATIONS)} mutations no longer apply.\n"
               "A mutation that cannot be injected proves nothing, and the list is the "

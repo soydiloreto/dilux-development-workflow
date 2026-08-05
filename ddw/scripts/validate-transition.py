@@ -17,6 +17,7 @@ anchored on the history entries that were APPENDED, not on the phase on disk:
 the model does not always persist an intermediate CLASSIFY.
 """
 import argparse
+import datetime
 import fnmatch
 import hashlib
 import json
@@ -1524,6 +1525,26 @@ def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact
                     "to. Run `python3 .ddw/scripts/%s %s --tier %s`."
                     % (gate, os.path.relpath(path, root), stamped, state.get("tier"),
                        script, os.path.relpath(path, root), state.get("tier")))
+        # …and under the clock this ticket is actually running on. `--today` is
+        # the caller's to choose, and it decides whether a suppression has
+        # expired: the same SAST report passed with suppressions six months
+        # lapsed by naming a day they were fresh, and wrote a receipt no gate
+        # could tell from one earned this morning. So the day is on the receipt,
+        # and a receipt earned against some other day is refused — re-running
+        # the validator costs seconds and answers the question honestly.
+        #
+        # Only SAST records one, and a receipt without the line is one written
+        # before this existed: accepted, for the same reason the tier line is.
+        asof = next((ln.split(":", 1)[1].strip() for ln in lines[1:]
+                     if ln.split(":", 1)[0].strip().lower() == "asof" and ":" in ln), "")
+        today = datetime.date.today().isoformat()
+        if asof and asof != today:
+            return ("the %s gate has a receipt for %s, but it was earned against the date %s and "
+                    "today is %s. That date decides which suppressions have expired, so the "
+                    "receipt does not say this report passes as of today. Run `python3 "
+                    ".ddw/scripts/%s %s --tier %s`."
+                    % (gate, os.path.relpath(path, root), asof, today, script,
+                       os.path.relpath(path, root), state.get("tier") or "<tier>"))
         if not named or named == os.path.basename(path):
             unwitnessed = _receipt_unwitnessed(root, os.path.basename(marker))
             if unwitnessed:

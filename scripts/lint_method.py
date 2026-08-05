@@ -467,27 +467,119 @@ def check_rule_ranges(root):
     an ID that does not exist; this catches the opposite, an ID that exists and
     is not being asked for.
     """
-    catalog = os.path.join(root, "ddw/rules/validation-rules.instructions.md")
-    text = read(catalog)
-    last = {}
-    for m in re.finditer(r"^\|\s*([FW]-[A-Z]+)-(\d+)\s*\|", text, re.M):
-        family, num = m.group(1), int(m.group(2))
-        last[family] = max(last.get(family, 0), num)
+    last = _catalog_last(root)
 
-    targets = sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True))
-    for path in targets:
+    # `ddw/**` alone left out the skills, which is where most of these ranges
+    # are written — the skill IS the thing that runs the catalog. Same scan set
+    # as every other prose check.
+    for path in method_prose(root):
         body = read(path)
         # Only ranges that START at 01. Those are the ones claiming "every rule
         # in this section"; a range from 04 to 11 names a group on purpose —
         # per-block completeness, say — and is not asserting it is the whole
         # catalog. Failing on those punishes correct prose.
-        for m in re.finditer(r"\b([FW]-[A-Z]+)-0*1\s+to\s+\1-(\d+)\b", body):
+        #
+        # The optional backticks are not cosmetic. Every ID in this repo's prose
+        # is written as code, so the range a reader sees is "`F-TEST-01` to
+        # `F-TEST-06`" — and demanding whitespace straight after `-01` meant the
+        # one shape the method actually uses was the one shape this could not
+        # see. It ran for months over ranges that were all correct and was blind
+        # to the single stale one.
+        for m in re.finditer(r"\b([FW]-[A-Z]+)-0*1`?\s+to\s+`?\1-(\d+)\b", body):
             family, hi = m.group(1), int(m.group(2))
             if family not in last or hi == last[family]:
                 continue
             fail(f"{rel(root, path)}:{body[:m.start()].count(chr(10)) + 1}",
-                 f"asks for {m.group(0)}, but the catalog's last {family} rule is "
-                 f"{family}-{last[family]:02d} — the ones past {hi} are never applied")
+                 f"asks for {family}-01 to {family}-{hi:02d}, but the catalog's last "
+                 f"{family} rule is {family}-{last[family]:02d} — the ones past {hi} "
+                 "are never applied")
+
+
+# The Quantitative Summary's rows, and the family each one counts. Hard-coded so
+# that adding a section to the catalog and forgetting its row is a lint failure
+# rather than a row this silently skips.
+_SUMMARY_AREAS = {
+    "PRD": "PRD",
+    "Spec / Fix-Plan": "SPEC",
+    "Threat Model": "TM",
+    "SAST": "SAST",
+    "Test Run Report": "TEST",
+    "Module Verify": "VER",
+}
+
+
+def _catalog_last(root):
+    """The highest rule number the catalog defines, per family."""
+    text = read(os.path.join(root, "ddw/rules/validation-rules.instructions.md"))
+    last = {}
+    for m in re.finditer(r"^\|\s*([FW]-[A-Z]+)-(\d+)\s*\|", text, re.M):
+        family, num = m.group(1), int(m.group(2))
+        last[family] = max(last.get(family, 0), num)
+    return last
+
+
+def check_rule_counts(root):
+    """The catalog's own summary must count the rules the catalog defines.
+
+    It said 69 FAIL rules and 84 total where the tables define 65 and 80, and
+    `ddw/rules/README.md` repeated the 84. Nobody mis-typed a total: rules were
+    removed and merged over three rounds and the summary was never recounted,
+    which is exactly the drift `check_counts` exists to stop for skills and
+    agents — only this table counts the thing the method is FOR, and a reader
+    reconciling "21 SAST rules" against nineteen in the tables above it has to
+    decide which half of one document to believe.
+
+    Counted from the ID column of the tables, which is the same source
+    `check_rule_ids` treats as the definition.
+    """
+    path = os.path.join(root, "ddw/rules/validation-rules.instructions.md")
+    text = read(path)
+    actual = {}
+    for m in re.finditer(r"^\|\s*([FW])-([A-Z]+)-(\d+)\s*\|", text, re.M):
+        actual[(m.group(2), m.group(1))] = actual.get((m.group(2), m.group(1)), 0) + 1
+
+    rows = re.findall(r"^\|\s*(?:\*\*)?([A-Za-z][^|*]*?)(?:\*\*)?\s*\|\s*(?:\*\*)?(\d+)(?:\*\*)?"
+                      r"\s*\|\s*(?:\*\*)?(\d+)(?:\*\*)?\s*\|\s*(?:\*\*)?(\d+)(?:\*\*)?\s*\|\s*$",
+                      text[text.find("## Quantitative Summary"):], re.M)
+    if not rows:
+        fail(rel(root, path), "has no Quantitative Summary table to check — either it was "
+             "removed or its shape changed, and this check went quiet either way")
+        return
+
+    seen, tot_f, tot_w = set(), 0, 0
+    for area, f_str, w_str, total_str in rows:
+        area, stated = area.strip(), (int(f_str), int(w_str), int(total_str))
+        if area.lower() == "total":
+            if stated[:2] != (tot_f, tot_w) or stated[2] != tot_f + tot_w:
+                fail(rel(root, path), f"totals {stated[0]} FAIL / {stated[1]} WARNING / "
+                     f"{stated[2]} rules; its own rows add up to {tot_f} / {tot_w} / "
+                     f"{tot_f + tot_w}")
+            continue
+        if area not in _SUMMARY_AREAS:
+            fail(rel(root, path), f"summarises an area named {area!r} that this check does not "
+                 "know how to count — map it to a rule family in _SUMMARY_AREAS")
+            continue
+        family = _SUMMARY_AREAS[area]
+        seen.add(area)
+        real = (actual.get((family, "F"), 0), actual.get((family, "W"), 0))
+        if stated[:2] != real or stated[2] != sum(real):
+            fail(rel(root, path), f"says {area} has {stated[0]} FAIL and {stated[1]} WARNING "
+                 f"rules ({stated[2]} total); the tables define {real[0]} and {real[1]} "
+                 f"({sum(real)})")
+        tot_f, tot_w = tot_f + real[0], tot_w + real[1]
+
+    for area in sorted(set(_SUMMARY_AREAS) - seen):
+        fail(rel(root, path), f"defines {_SUMMARY_AREAS[area]}-* rules and the Quantitative "
+             f"Summary has no {area} row — a section nobody totals is a section nobody recounts")
+
+    # The one number outside the catalog that restates it. It is the line a
+    # reader of `ddw/rules/` meets first, and it was wrong for the same reason.
+    readme = os.path.join(root, "ddw/rules/README.md")
+    body = read(readme)
+    for m in re.finditer(r"\bThe (\d+) validation rules\b", body):
+        if int(m.group(1)) != tot_f + tot_w:
+            fail(f"{rel(root, readme)}:{body[:m.start()].count(chr(10)) + 1}",
+                 f"says {m.group(1)} validation rules; the catalog defines {tot_f + tot_w}")
 
 
 def check_commit_granularity(root):
@@ -641,6 +733,7 @@ def main():
     check_context_headings(root)
     check_rationale(root)
     check_rule_ranges(root)
+    check_rule_counts(root)
     check_commit_granularity(root)
     check_phase_names(root, graph)
     check_compaction_envelopes(root)

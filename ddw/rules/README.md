@@ -199,7 +199,7 @@ rule and `scripts/check_versions.py` enforces it.
 - **Architecture conventions** — defined in the target project's `AGENTS.md` (not a DDW file; the
   user fills it in)
 - [state.instructions.md](state.instructions.md) — The `.ddw-state.json` schema and how to write it
-- [validation-rules.instructions.md](validation-rules.instructions.md) — The 84 validation rules
+- [validation-rules.instructions.md](validation-rules.instructions.md) — The 80 validation rules
 - [testing.instructions.md](testing.instructions.md) — Testing and coverage conventions
 - [commits.instructions.md](commits.instructions.md) — Gitmoji + Conventional Commits and PRs
 - [security.instructions.md](security.instructions.md) — Security practices and SAST

@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=525
+EXPECT_CHECKS=532
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=393
+EXPECT_MUTATIONS=404
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1499,6 +1499,50 @@ case "$VSEOUT" in
   *"❌ F-SAST-19"*) ok "and a suppression past its review date is refused — six months is the catalog's number" ;;
   *) bad "a suppression that expired seven months ago still opened the gate" ;;
 esac
+
+# …and the day that rule is measured against is the CALLER'S to choose. `--today`
+# decides which suppressions have expired, and nothing recorded the answer: a
+# report whose reviews lapsed months ago passed by naming a day they were still
+# fresh, and left a receipt byte-identical to one earned this morning. The tier
+# had exactly this shape and was closed the same way — the receipt records the
+# clock, and the gate asks.
+python3 - "$SELF" "$VTM/sast-FEAT-001.md" <<'PYASOF' && ok "the SAST receipt records the clock its suppressions were aged against, and the gate refuses one earned against another day" || bad "the day the suppressions were judged against is the caller's to pick and nothing records it"
+import datetime, importlib.util, json, os, shutil, subprocess, sys, tempfile
+src, fixture = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec); spec.loader.exec_module(vt)
+
+repo = tempfile.mkdtemp(dir=os.environ["WORK"])
+subprocess.run(["git", "init", "-q", repo], check=True)
+os.makedirs(os.path.join(repo, "docs/ddw/security"))
+report = os.path.join(repo, "docs/ddw/security/sast-T-1.md")
+shutil.copyfile(fixture, report)
+state = {"phase": "CODE", "ticket": "T-1", "tier": "FEATURE", "gates": {}, "history": []}
+
+
+def validate(*extra):
+    return subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/validate_sast.py"),
+                           report, "--tier", "FEATURE", *extra],
+                          capture_output=True, text=True, cwd=repo)
+
+
+other_day = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+r = validate("--today", other_day)
+assert r.returncode == 0, "the fixture report no longer passes: " + (r.stdout + r.stderr)[-300:]
+receipts = [f for f in os.listdir(os.path.join(repo, ".ddw-sessions")) if f.startswith("sast-")]
+assert receipts, "no receipt was written, so there is nothing to ask about"
+body = open(os.path.join(repo, ".ddw-sessions", receipts[0]), encoding="utf-8").read()
+assert "asof: %s" % other_day in body, "the receipt does not record the clock it used: " + body
+
+reason = vt.gate_evidence_missing(repo, state, ["sast"])
+assert reason and other_day in reason, \
+    ("a receipt earned against another day opened the sast gate — %r" % reason)
+
+# …and re-running it today, which is what the refusal asks for, is what fixes it.
+assert validate().returncode == 0, "the report no longer passes under today's clock"
+assert vt.gate_evidence_missing(repo, state, ["sast"]) is None, \
+    "re-validating under today's clock does not open the gate — the refusal asks for a move that does not work"
+PYASOF
 
 
 # The mutation run has to ask whether its own faults still apply BEFORE it starts
@@ -3102,6 +3146,43 @@ for skill, after, validator, doc in (
         % (validator, os.path.basename(os.path.dirname(skill)), "\n".join(refused[:4]) or r.stderr[-200:]))
 PYSHAPES
 
+# The third document with the same defect, and the last one that had no worked
+# shape: a fix-plan written exactly as the FIX template teaches was refused by
+# F-SPEC-10 for its layout. The template put the error handling in prose; the
+# validator counts errors as a list, because F-SPEC-16 pairs each one with the
+# test that names it, and prose counts as none. The user's reading was "your
+# plan documents no error handling" about a plan that documented it.
+python3 - "$SELF" <<'PYFIXPLAN' && ok "a fix-plan written the way ddw-create-spec teaches passes validate_spec --tier FIX" || bad "the fix-plan template and the validator that reads it disagree about what documented error handling looks like"
+import os, re, subprocess, sys, tempfile
+src = sys.argv[1]
+skill = os.path.join(src, "skills/ddw-create-spec/SKILL.md")
+text = open(skill, encoding="utf-8").read()
+
+# The skeleton has to TEACH the shape, not only carry a worked copy of it: the
+# errors are a list, and the one below is what a reader copies.
+at = text.index("## Fix-Plan Template (FIX) — canonical")
+skeleton = re.search(r"```markdown\n(.*?)```", text[at:], re.S)
+assert skeleton, "the canonical fix-plan template is gone"
+errors = re.search(r"^## Error handling\n(.*?)(?=^## |\Z)", skeleton.group(1), re.S | re.M)
+assert errors and re.search(r"^\s*[-*]\s+\S", errors.group(1), re.M), \
+    ("the canonical fix-plan template writes its error handling as prose; the validator counts "
+     "errors as a list and reads prose as none: " + (errors.group(1) if errors else "no section")[:160])
+
+at = text.index("### The fix-plan, in the shape the validator reads")
+m = re.search(r"```markdown\n(.*?)```", text[at:], re.S)
+assert m, "ddw-create-spec no longer carries a worked fix-plan"
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
+os.makedirs(os.path.join(d, "docs/ddw/specs"))
+path = os.path.join(d, "docs/ddw/specs/spec-T-9.md")
+open(path, "w", encoding="utf-8").write(m.group(1).replace("{ticket}", "T-9"))
+r = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/validate_spec.py"), path,
+                    "--tier", "FIX"], capture_output=True, text=True, cwd=d)
+refused = [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+assert r.returncode == 0 and not refused, (
+    "validate_spec refuses the fix-plan ddw-create-spec tells the model to write:\n"
+    + ("\n".join(refused[:4]) or r.stderr[-200:]))
+PYFIXPLAN
+
 # A plugin install writes NOTHING into the repo, so it leaves no AGENTS.md — and
 # AGENTS.md is where the stack is read from. CLASSIFY had two branches, both
 # assuming the file exists, so the third case (the ordinary one under a plugin)
@@ -4341,6 +4422,66 @@ r = run("--claim", "commit", "--to", "IDLE", "--action", "x")
 assert r.returncode == 2, "--claim and a transition in one run — two writes wearing one"
 PYCLAIM
 
+# Two refusals that sent the reader in a circle. Both hints were written for one
+# state and printed for every state that reached the same branch.
+python3 - "$SELF" <<'PYHINTS' && ok "an edge to IDLE that does not exist says which phase closes a ticket, instead of prescribing gates that change nothing" || bad "a refused edge to IDLE still prescribes a claim that succeeds and leaves the same refusal in place"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+tr = os.path.join(src, "ddw/scripts/transition.py")
+graph = os.path.join(src, "ddw/rules/transition-graph.json")
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+state = os.path.join(work, "mid.json")
+open(state, "w", encoding="utf-8").write(json.dumps({
+    "phase": "CODE", "ticket": "T-1", "tier": "FEATURE",
+    "gates": {"define": True, "spec": True, "threat": True},
+    "history": [{"from": "IDLE", "to": "CLASSIFY", "action": "c", "ticket": "T-1"}]}))
+r = subprocess.run([sys.executable, tr, "--state", state, "--graph", graph,
+                    "--to", "IDLE", "--action", "done"], capture_output=True, text=True, cwd=work)
+assert r.returncode == 2, "CODE->IDLE was accepted"
+assert "CLOSEOUT" in r.stderr, "the refusal never says which phase closes a ticket: " + r.stderr[-300:]
+assert "--claim commit" not in r.stderr, \
+    ("the refusal prescribes claiming gates on an edge that does not exist — from CODE both "
+     "claims exit 0 and the retry prints this same sentence: " + r.stderr[-300:])
+PYHINTS
+
+python3 - "$SELF" <<'PYRESUME' && ok "out of IDLE, a paused ticket is pointed at the resume that works — and a state with nothing paused is still sent to CLASSIFY" || bad "the way out of IDLE is described by a hint the state contradicts"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+tr = os.path.join(src, "ddw/scripts/transition.py")
+graph = os.path.join(src, "ddw/rules/transition-graph.json")
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+
+def run(state, *args):
+    return subprocess.run([sys.executable, tr, "--state", state, "--graph", graph, *args],
+                          capture_output=True, text=True, cwd=work)
+
+def write(name, obj):
+    path = os.path.join(work, name)
+    open(path, "w", encoding="utf-8").write(json.dumps(obj))
+    return path
+
+paused = write("paused.json", {
+    "phase": "IDLE", "ticket": "T-2", "tier": None, "gates": {},
+    "history": [{"from": "CODE", "to": "IDLE", "action": "pause: review", "ticket": "T-2"}]})
+r = run(paused, "--to", "CODE", "--action", "keep going")
+assert r.returncode == 2 and "resume" in r.stderr, \
+    "a paused ticket is not told that the way back is a resume: " + r.stderr[-300:]
+assert "only transition" not in r.stderr, \
+    ("the refusal says CLASSIFY is the only way out of IDLE, which for this state means "
+     "throwing the ticket away: " + r.stderr[-300:])
+# The sentence it prints has to be true: the edge it points at is legal.
+r = run(paused, "--to", "CODE", "--action", "resume: back to it")
+assert r.returncode == 0, "the resume the hint prescribes is itself refused: " + r.stderr[-300:]
+r = run(paused, "--to", "DEFINE", "--action", "resume: wrong phase")
+assert r.returncode == 2 and "CODE" in r.stderr, \
+    "a resume into a phase this ticket was never paused in does not name the one it was: " + r.stderr[-300:]
+# And with nothing paused, CLASSIFY really is the only way out.
+fresh = write("fresh.json", {"phase": "IDLE", "ticket": None, "tier": None, "gates": {}, "history": []})
+r = run(fresh, "--to", "CODE", "--action", "straight to work")
+assert r.returncode == 2 and "CLASSIFY" in r.stderr, \
+    "an IDLE state with no pause behind it is not sent to CLASSIFY: " + r.stderr[-300:]
+PYRESUME
+
 # Four rules the mutation run found uncovered: a tool nobody mapped, the pr
 # gate's `list` vs `view`, the tier chain's direction, and a skill named in the
 # prose that does not exist.
@@ -4383,6 +4524,88 @@ r = subprocess.run([sys.executable, os.path.join(repo, "scripts/lint_method.py")
 assert r.returncode != 0 and "ddw-does-not-exist" in (r.stdout + r.stderr), \
     "a skill named in a SKILL.md that does not exist went uncaught: " + (r.stdout + r.stderr)[-300:]
 PYFOUR
+
+# The catalog's Quantitative Summary said 69 FAIL rules and 84 total where its
+# tables define 65 and 80, and `ddw/rules/README.md` repeated the 84. Nobody
+# mis-typed it: rules were merged and removed over three rounds and the summary
+# was never recounted. The number the method is FOR was the one number nothing
+# checked.
+python3 - "$SELF" <<'PYRULECOUNT' && ok "the catalog's summary is counted against the rules the catalog defines, and so is the README line that restates it" || bad "the rule catalog can go back to summarising a count of rules it does not contain"
+import os, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+subprocess.run(["cp", "-r", src, os.path.join(work, "repo")], check=True)
+repo = os.path.join(work, "repo")
+
+def lint():
+    r = subprocess.run([sys.executable, os.path.join(repo, "scripts/lint_method.py")],
+                       capture_output=True, text=True, cwd=repo)
+    return r.returncode, r.stdout + r.stderr
+
+def rewrite(rel, old, new):
+    path = os.path.join(repo, rel)
+    text = open(path, encoding="utf-8").read()
+    assert old in text, "%s no longer contains %r" % (rel, old)
+    open(path, "w", encoding="utf-8").write(text.replace(old, new, 1))
+
+code, out = lint()
+assert code == 0, "the shipped tree does not lint clean, so nothing below means anything: " + out[-300:]
+
+# One area row overstated by one, exactly the shape the drift took.
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 9 | 5 | 14 |", "| PRD | 10 | 5 | 15 |")
+code, out = lint()
+assert code != 0 and "PRD" in out and "9" in out, \
+    "an area row that overcounts its own rules passed: " + out[-300:]
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 10 | 5 | 15 |", "| PRD | 9 | 5 | 14 |")
+
+# The total alone, with every row correct — the arithmetic nobody redid.
+rewrite("ddw/rules/validation-rules.instructions.md",
+        "| **Total** | **65** | **15** | **80** |", "| **Total** | **69** | **15** | **84** |")
+code, out = lint()
+assert code != 0 and "65" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
+rewrite("ddw/rules/validation-rules.instructions.md",
+        "| **Total** | **69** | **15** | **84** |", "| **Total** | **65** | **15** | **80** |")
+
+# And the restatement outside the catalog, which is the line a reader of
+# `ddw/rules/` meets first.
+rewrite("ddw/rules/README.md", "The 80 validation rules", "The 84 validation rules")
+code, out = lint()
+assert code != 0 and "80" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
+rewrite("ddw/rules/README.md", "The 84 validation rules", "The 80 validation rules")
+
+code, out = lint()
+assert code == 0, "the probe was not restored: " + out[-300:]
+PYRULECOUNT
+
+# `check_rule_ranges` demanded whitespace straight after `-01`, and every rule ID
+# in this method's prose is written as code — so the one shape the files
+# actually use was the one shape it could not see. It ran green over ranges that
+# were all correct while `code.instructions.md` asked for F-TEST-01 to -06 with
+# 07 and 08 implemented and never applied.
+python3 - "$SELF" <<'PYRANGE' && ok "a rule range is read the way the method writes it — in backticks, in a skill as well as a rule file" || bad "a stale rule range written as code goes unseen, and the rules past its end are never applied"
+import os, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+subprocess.run(["cp", "-r", src, os.path.join(work, "repo")], check=True)
+repo = os.path.join(work, "repo")
+
+def lint():
+    r = subprocess.run([sys.executable, os.path.join(repo, "scripts/lint_method.py")],
+                       capture_output=True, text=True, cwd=repo)
+    return r.returncode, r.stdout + r.stderr
+
+for rel in ("ddw/rules/code.instructions.md", "skills/ddw-test/SKILL.md"):
+    path = os.path.join(repo, rel)
+    text = open(path, encoding="utf-8").read()
+    open(path, "a", encoding="utf-8").write("\n\nApply `F-VER-01` to `F-VER-04`.\n")
+    code, out = lint()
+    open(path, "w", encoding="utf-8").write(text)
+    assert code != 0 and "F-VER" in out, \
+        "a backticked range stopping short of the catalog passed in %s: %s" % (rel, out[-300:])
+
+code, out = lint()
+assert code == 0, "the probe was not restored: " + out[-300:]
+PYRANGE
 
 # Reconstructing the state from an Edit whose old_string appears more than once
 # means guessing which occurrence was meant — and the guess decides what gets
@@ -4813,16 +5036,25 @@ cases = [("validate_prd.py", "docs/ddw/prd/prd-FEAT-001.md"),
          ("validate_verify.py", "docs/ddw/reports/verify-FEAT-001.md"),
          ("validate_sast.py", "docs/ddw/security/sast-FEAT-001.md"),
          ("validate_tests.py", "docs/ddw/reports/tests-FEAT-001.md")]
-missing = []
+missing, examined, skipped = [], [], []
 for script, artifact in cases:
     path = os.path.join(repo, artifact)
     if not os.path.exists(path):
-        continue                      # fixture not built in this section; not this check's job
+        skipped.append(artifact)      # fixture not built in this section
+        continue
+    examined.append(script)
     out = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts", script), path,
                           "--tier", "FEATURE"], capture_output=True, text=True)
     if DEMAND not in out.stdout:
         missing.append(script)
-assert cases, "no validators to check"
+# `assert cases` was the guard here, over a list literal three lines up: it can
+# only ever be true. Every fixture could be absent, every validator skipped, and
+# the check went green having run none of them — which is the shape of a suite
+# that measures nothing while reporting a pass. What has to be true is that the
+# validators were actually asked.
+assert not skipped, ("these fixtures are not on disk, so their validator was never asked whether "
+                     "it prints the demand: " + ", ".join(skipped))
+assert len(examined) == len(cases), "expected %d validators, examined %d" % (len(cases), len(examined))
 assert not missing, ("these validators printed a checklist and nothing telling the user it has to "
                      "be shown: " + ", ".join(missing))
 PYDEMAND
@@ -5532,6 +5764,62 @@ with tempfile.TemporaryDirectory() as repo:
     assert rc == 0, ("a corrupt state refuses a write outside the repository, which is the one "
                      f"recovery the refusal itself prescribes (exit {rc})")
 PYEOF
+
+# A session marker expires after two hours, and only the Claude adapter had a
+# second PreToolUse shim to refresh it from. In the other five tools it was
+# written once at session start and swept — so a session long enough to collide
+# with someone stopped being counted, and the concurrency warning went quiet
+# for exactly the sessions worth warning about. The gate every tool runs says
+# "still here" now, which is the one place all six share.
+python3 - "$SELF" <<'PYLIVE' && ok "the write gate keeps this session's liveness marker fresh, so the concurrency guard survives a session longer than two hours" || bad "a session's marker still expires under every tool but one, and the guard goes quiet for long sessions"
+import importlib.util, json, os, subprocess, sys, tempfile, time
+src = sys.argv[1]
+gate = os.path.join(src, "ddw", "scripts", "hook-gate.py")
+graph = os.path.join(src, "ddw", "rules", "transition-graph.json")
+spec = importlib.util.spec_from_file_location("sb", os.path.join(src, "ddw/scripts/session-boot.py"))
+sb = importlib.util.module_from_spec(spec); spec.loader.exec_module(sb)
+
+repo = tempfile.mkdtemp(dir=os.environ["WORK"])
+subprocess.run(["git", "init", "-q", repo], check=True)
+state = os.path.join(repo, ".ddw-state.json")
+json.dump({"phase": "CODE", "ticket": "T-1", "tier": "FEATURE",
+           "gates": {"define": True, "spec": True, "threat": True}, "history": []},
+          open(state, "w", encoding="utf-8"))
+marker = os.path.join(repo, ".ddw-sessions", "live", "sess-A")
+os.makedirs(os.path.dirname(marker))
+open(marker, "w", encoding="utf-8").write("0")
+aged = time.time() - (sb.STALE_SECONDS + 600)
+os.utime(marker, (aged, aged))
+# Before: this session is old enough that the next sweep deletes it.
+assert time.time() - os.stat(marker).st_mtime > sb.STALE_SECONDS, "the fixture is not aged"
+
+ev = json.dumps({"session_id": "sess-A", "tool_name": "Write",
+                 "tool_input": {"file_path": os.path.join(repo, "src.py"), "content": "x = 1\n"}})
+r = subprocess.run([sys.executable, gate, "--dialect", "standard", "--mode", "pre",
+                    "--state", state, "--graph", graph, "--repo", repo],
+                   input=ev, capture_output=True, text=True)
+assert r.returncode == 0, "the fixture write was refused, so nothing here was driven: " + r.stderr[-200:]
+assert time.time() - os.stat(marker).st_mtime < sb.STALE_SECONDS, \
+    "the gate ran and the marker is still stale — every session over two hours vanishes from the count"
+
+# …and the count sees it: a second session finds one other, not zero.
+others, _ = sb.other_live_sessions(repo, "sess-B")
+assert others == 1, "the refreshed session is not counted as live: %r" % others
+
+# No id in the envelope, no marker invented: a pid is not a session, and one
+# marker per write is how the guard came to warn about twelve people in a
+# directory holding one.
+before = set(os.listdir(os.path.dirname(marker)))
+r = subprocess.run([sys.executable, gate, "--dialect", "standard", "--mode", "pre",
+                    "--state", state, "--graph", graph, "--repo", repo],
+                   input=json.dumps({"tool_name": "Write",
+                                     "tool_input": {"file_path": os.path.join(repo, "src.py"),
+                                                    "content": "x = 2\n"}}),
+                   capture_output=True, text=True)
+assert r.returncode == 0, "the second fixture write was refused: " + r.stderr[-200:]
+assert set(os.listdir(os.path.dirname(marker))) == before, \
+    "a write with no session id in the envelope invented a marker anyway"
+PYLIVE
 
 python3 - "$SELF" <<'PYEOF' && ok "and nothing inside the repository got easier while that door opened" || bad "the outside-the-repo exit softened the corrupt-state rule for the repo itself"
 import json, os, subprocess, sys, tempfile
@@ -6434,8 +6722,9 @@ open(victim, "a", encoding="utf-8").write("\n\nSee F-MADEUP-RULE for the details
 r = subprocess.run([sys.executable, os.path.join(probe, "scripts/lint_method.py")],
                    capture_output=True, text=True, cwd=probe)
 assert r.returncode != 0 and "F-MADEUP-RULE" in (r.stdout + r.stderr), \
-    "the linter no longer notices a rule ID the catalog does not define — a word-suffixed ID "
-assert True
+    ("the linter no longer notices a rule ID the catalog does not define — a word-suffixed ID "
+     "is excused by its pattern again, which is how F-SAST-COVERAGE went uncatalogued: "
+     + (r.stdout + r.stderr)[-200:])
 PYSIX
 
 # ── Two hooks at once, and a ticket that outlives lunch ──────────────────────
@@ -7178,7 +7467,7 @@ PYUPGRADE
 # going red, because weakening a CHECK does not make the suite fail. Read as
 # source, which is the only place the question can be asked.
 python3 - "$SELF" <<'PYMETA' && ok "the suite's own guards against measuring nothing are still in place, and --cover still refuses a job that cannot fail" || bad "a check that measures nothing, or a coverage number that counts a job which never runs"
-import os, re, shutil, subprocess, sys, tempfile
+import importlib.util, os, re, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 suite = open(os.path.join(src, "scripts/verify_install.sh"), encoding="utf-8").read()
 
@@ -7186,6 +7475,13 @@ suite = open(os.path.join(src, "scripts/verify_install.sh"), encoding="utf-8").r
 # reads has been deleted from every recipe.
 assert re.search(r"^assert checked >= 2,", suite, re.M), \
     "the trust_note check lost the guard that stops it iterating zero times"
+# The same shape one section down, and it was live: the check that every
+# validator prints the demand skipped any fixture not on disk and then guarded
+# itself with `assert cases` — a list literal three lines above it, true by
+# construction. Every fixture could be missing, every validator unasked, and the
+# check went green having run none of them.
+assert re.search(r"^assert not skipped, \(", suite, re.M), \
+    "the demand check lost the guard that stops it passing without asking a single validator"
 # The pinned totals are constants of this file, not knobs. Read as source
 # because the run cannot see the difference: `EXPECT_CHECKS=${EXPECT_CHECKS:-N}`
 # behaves identically until someone sets it, and then a run of 43 of 523 checks
@@ -7261,6 +7557,29 @@ assert r.returncode != 0 and "unparseable" in r.stdout, \
     "--check-anchors accepted a mutation that leaves the file it edits unable to parse: " + \
     (r.stdout + r.stderr)[-200:]
 
+# And a mutation duplicated in the list is one fault counted twice: two entries
+# injecting the same edit move the denominator and try nothing new. A pair
+# shipped that way, and neither run could see it — both were killed by the same
+# check, which is how a duplicate hides.
+dup = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "method")
+shutil.copytree(src, dup, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+mut = os.path.join(dup, "scripts/mutate.py")
+text = open(mut, encoding="utf-8").read()
+anchor = "MUTATIONS = [\n"
+assert anchor in text, "the mutation list no longer starts where this check looks"
+twin = ('    ("one fault, written down twice",\n'
+        '     edit("ddw/scripts/session-boot.py", "def safe_id(", "def safe_id_RENAMED(")),\n')
+open(mut, "w", encoding="utf-8").write(text.replace(anchor, anchor + twin + twin, 1))
+r = subprocess.run([sys.executable, mut, "--check-anchors"], capture_output=True, text=True)
+assert r.returncode != 0 and "twice" in r.stdout, \
+    "--check-anchors accepted the same edit listed as two mutations: " + (r.stdout + r.stderr)[-200:]
+# …and the `exists` constructors that legitimately share a file are not reported
+# as duplicates by it: the shipped list has six such groups and passes.
+r = subprocess.run([sys.executable, os.path.join(src, "scripts/mutate.py"), "--check-anchors"],
+                   capture_output=True, text=True)
+assert r.returncode == 0, \
+    "the duplicate guard fires on the shipped list: " + (r.stdout + r.stderr)[-300:]
+
 # The same fabricated measurement one layer down: `run_one` reads a non-zero
 # exit as "the suite caught the fault", and a suite that was ALREADY red — a
 # tool the preflight refuses over, a signing config this machine cannot satisfy,
@@ -7323,7 +7642,18 @@ assert r.returncode != 0 and "more than once" in r.stdout, \
 # ways to name nothing, and they are caught by three different guards — the one
 # that matters most is the LAST, where the arguments are individually valid and
 # the intersection is still empty.
-for argv in (["--only", "999999"], ["--only"], ["--shard", "400/400"]):
+#
+# The empty shard is DERIVED, and that is not neatness. It was written as
+# `400/400` when the list held 393, and the day the list passed four hundred
+# that shard stopped naming nothing: this check ran a real mutation, the
+# mutation ran the suite, the suite reached this line again — a recursion that
+# forks until the machine gives up, from a check whose whole subject is a
+# selection that matches no mutation. Past the end of the list is a fact about
+# the list.
+_mspec = importlib.util.spec_from_file_location("ddw_mut", os.path.join(src, "scripts/mutate.py"))
+_mut = importlib.util.module_from_spec(_mspec); _mspec.loader.exec_module(_mut)
+_past_end = "%d/%d" % (len(_mut.MUTATIONS) + 1, len(_mut.MUTATIONS) + 1)
+for argv in (["--only", "999999"], ["--only"], ["--shard", _past_end]):
     r = subprocess.run([sys.executable, os.path.join(src, "scripts/mutate.py"), *argv],
                        capture_output=True, text=True)
     assert r.returncode != 0, \

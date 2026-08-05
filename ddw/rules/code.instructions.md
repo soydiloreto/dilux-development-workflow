@@ -188,10 +188,11 @@ Invoke `Skill(skill="ddw-test")` (the whole suite, not just the new tests).
 - If it FAILS → fix. Do not advance. Max 3 attempts.
 - If it PASSES → **write the run report** to `docs/ddw/reports/tests-{ticket}.md` and validate it:
   `python3 .ddw/scripts/validate_tests.py docs/ddw/reports/tests-{ticket}.md --tier <tier>`.
-  The rules are `F-TEST-01` to `F-TEST-06` and `W-TEST-01` in
+  The rules are `F-TEST-01` to `F-TEST-08` and `W-TEST-01` in
   `.ddw/rules/validation-rules.instructions.md` §6: the runner and the exact command, counts that
   add up, every failure named, three coverage numbers against a floor quoted from the project, every
-  skip explained. A PASSED run writes the receipt the `tests` gate demands.
+  skip explained, one run per report, and zero failures. A PASSED run writes the receipt the `tests`
+  gate demands.
 - `gates.tests` = `true` only with that receipt on disk. DDW does not run your suite and the receipt
   does not say it did — it says the report of the run you did is complete enough to be read and
   re-run by someone else.

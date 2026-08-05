@@ -417,23 +417,74 @@ def main():
         # context the helper ALREADY knows (phase on disk, --to, --tier). The
         # cryptic "is not in the graph" alone does not tell the model what to do.
         disk_phase = old_state.get("phase", "IDLE")
+        history = old_state.get("history") or []
+        action_kind = (args.action or "").strip().lower().split(":", 1)[0].strip()
         if disk_phase == "IDLE" and args.to != "CLASSIFY":
-            hint = (
-                "From IDLE the only transition is --to CLASSIFY. Run that first, then "
-                "--to <phase> (one run per edge; a direct IDLE→DEFINE does not exist)."
-            )
+            # "The only transition out of IDLE is CLASSIFY" is false, and the
+            # suite's own happy path is the counterexample: a paused ticket
+            # re-enters the phase it was paused in, and `--to DEFINE --action
+            # "resume: …"` exits 0 over the very state this hint was printed
+            # for. A reader who believed it would abandon a ticket that was one
+            # flag away from continuing — which is the advice the pause exists
+            # to make unnecessary.
+            paused_at = vt._paused_at(history, len(history), old_state.get("ticket"))
+            if paused_at == args.to and action_kind != "resume":
+                hint = (
+                    "This ticket was paused in %s, so the edge you want exists — as a resume, "
+                    "and only the action says so: --action \"resume: <why now>\"." % paused_at
+                )
+            elif paused_at:
+                hint = (
+                    "Out of IDLE there are two edges, and %s is neither: --to CLASSIFY starts a "
+                    "ticket, and the paused ticket in this history goes back to where it stopped "
+                    "(--to %s --action \"resume: <why now>\")." % (args.to, paused_at)
+                )
+            else:
+                hint = (
+                    "From IDLE the only transition is --to CLASSIFY: a resume is proven by the "
+                    "pause it picks up, and nothing in this history is paused. Run CLASSIFY "
+                    "first, then --to <phase> (one run per edge)."
+                )
         elif args.to == "IDLE":
             # Closing the ticket wipes the gates, so `new_state["tier"]` is
             # ALWAYS None here and the tier hint below fired on every refused
             # closeout — sending the reader to a flag this edge ignores. What is
             # actually missing is a gate, and it is claimed before the edge, not
             # on it.
-            hint = (
-                "Gates are earned in the phase that owns them, not on the edge out of it: "
-                "`--gate` is not read on --to IDLE, because reaching IDLE clears the gates. "
-                "Run `--claim commit --claim pr` first (one run, no phase change), then take "
-                "this edge."
-            )
+            #
+            # But "run --claim commit --claim pr first" was pasted onto EVERY
+            # refused edge to IDLE, including the ones where no such edge
+            # exists. From CODE both claims succeed, exit 0, and the retry
+            # prints this same refusal word for word: a fixed point, and the
+            # only conclusion left to the reader is that the tool is broken. The
+            # gates are the answer where the graph asks for them, and the graph
+            # is where that is written.
+            owed = list(_cfg.get("gates") or [])
+            if action_kind in ("pause", "abandon"):
+                # A pause and an abandon reach IDLE without an edge, and every
+                # way they are refused — `no_walkaway`, a pause with nothing
+                # committed — is refused by a message that already names its own
+                # way out.
+                hint = ""
+            elif owed:
+                hint = (
+                    "Gates are earned in the phase that owns them, not on the edge out of it: "
+                    "`--gate` is not read on --to IDLE, because reaching IDLE clears the gates. "
+                    "Run `--claim %s` first (one run, no phase change), then take this edge."
+                    % " --claim ".join(owed)
+                )
+            else:
+                froms = sorted({p.split("->", 1)[0] for p in _edges if p.endswith("->IDLE")})
+                closes = ", ".join(froms) if froms else "no phase in this tier"
+                # The tier comes from the flag or from disk, never from
+                # `new_state`: reaching IDLE clears it, so the state being built
+                # here has none by construction.
+                tier = args.tier or old_state.get("tier")
+                hint = (
+                    "There is no %s→IDLE edge%s — the closeout is taken from %s. Claiming gates "
+                    "here changes nothing: it is the edge that is missing, not the evidence."
+                    % (disk_phase, " in tier %s" % tier if tier else "", closes)
+                )
         elif new_state.get("tier") is None and args.tier is None:
             hint = (
                 "The tier is missing: pass --tier <" + "|".join(_TIERS) + "> (it is set on the "
