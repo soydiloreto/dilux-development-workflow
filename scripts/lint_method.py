@@ -677,6 +677,39 @@ def check_tiers_documented(root, graph):
                     else "not " + missing[0]))
 
 
+def check_blocked_marks_enforcement(root):
+    """A router's Blocked line says which half of it a hook actually refuses.
+
+    The lists mixed the two: `source code` (refused by the gate, in the gate's
+    own wording) sat beside `modifying the PRD` and `writing outside
+    docs/ddw/discovery/` (nobody's hook refuses those — nothing under `docs/` is
+    refused in any phase). A reader cannot tell them apart by looking, and this
+    whole framework is the argument that the difference matters: "the agent
+    politely declines" and "the write is rejected" mean opposite things.
+
+    So every phase whose rules forbid product source marks it, and the legend
+    that explains the mark has to be there to be read.
+    """
+    orch = os.path.join(root, "ddw/orchestrator.md")
+    text = read(orch)
+    if "🔒" not in text:
+        fail("ddw/orchestrator.md",
+             "no Blocked line marks what the hook refuses, so every line reads as enforcement")
+        return
+    if "refused by the hook" not in text:
+        fail("ddw/orchestrator.md",
+             "the 🔒 mark is used and never explained — a symbol nobody defines is decoration")
+    for m in re.finditer(r"^## Router: Phase `([A-Z-]+)`\n(.*?)(?=^## |\Z)", text, re.M | re.S):
+        phase, body = m.group(1), m.group(2)
+        if phase in ("CODE", "CLOSEOUT", "FREE", "IDLE"):
+            continue                      # source is allowed here, or the phase has no gate to state
+        blocked = re.search(r"^- \*\*Blocked:\*\*(.*)$", body, re.M)
+        if blocked and "source" in blocked.group(1).lower() and "🔒" not in blocked.group(1):
+            fail(f"{rel(root, orch)}:{text[:m.start()].count(chr(10)) + 1}",
+                 f"{phase} blocks source code and does not mark it as the hook's — it reads like "
+                 "the same kind of rule as the ones nothing enforces")
+
+
 def check_phase_names(root, graph):
     """A phase named in a router must be a phase the graph knows."""
     phases = known_phases(graph) | {"DISCOVERY"}
@@ -793,6 +826,7 @@ def main():
     check_rule_counts(root)
     check_commit_granularity(root)
     check_phase_names(root, graph)
+    check_blocked_marks_enforcement(root)
     check_tiers_documented(root, graph)
     check_compaction_envelopes(root)
     check_ticket_retarget(root)
