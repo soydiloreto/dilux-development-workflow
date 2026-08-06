@@ -388,6 +388,33 @@ def check_context_reaches_agents(root):
                  "reach the model")
 
 
+def check_template_sections_known(root):
+    """Every section the context TEMPLATE ships is one `ddw-context-check` looks for.
+
+    `check_context_headings` walks one direction — a heading the method cites has
+    to be one the skill knows about. This is the other, and it was open: the
+    template shipped `## What this project is` and the skill never named it, so a
+    repository missing that section was reported as complete. And the two skills
+    that ask for a coverage floor cite `AGENTS.md, "Testing"` in the documents
+    they teach, against a template that had no Testing section at all — the
+    method telling every project to quote a heading its own installer does not
+    create.
+    """
+    tpl = os.path.join(root, "ddw/AGENTS.template.md")
+    skill = os.path.join(root, "skills/ddw-context-check/SKILL.md")
+    if not (os.path.exists(tpl) and os.path.exists(skill)):
+        return
+    known = read(skill)
+    for m in re.finditer(r"^##\s+(.+?)\s*$", read(tpl), re.M):
+        heading = m.group(1).strip()
+        if heading.lower() in ("language",):
+            continue                      # the template's own instructions, not a section DDW reads
+        if heading not in known:
+            fail("ddw/AGENTS.template.md",
+                 f"ships a `## {heading}` section that ddw-context-check never looks for — a "
+                 "repository missing it is reported as complete")
+
+
 def check_context_headings(root):
     """A section of AGENTS.md the method reads must be one the skill checks for.
 
@@ -760,6 +787,7 @@ def main():
     check_internal_links(root)
     check_context_reaches_agents(root)
     check_context_headings(root)
+    check_template_sections_known(root)
     check_rationale(root)
     check_rule_ranges(root)
     check_rule_counts(root)

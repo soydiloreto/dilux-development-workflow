@@ -73,6 +73,8 @@ there is a lookup that silently finds nothing:
 | `## Code conventions` | `ddw-arch-auditor` |
 | `## What NOT to do in this project` | `ddw-arch-auditor` |
 | `## Domain glossary` | DEFINE, PLAN |
+| `## Testing` | `ddw-test`, `ddw-verify-module` — the coverage floor and where it came from |
+| `## What this project is` | CLASSIFY, `ddw-create-prd` — what the work is FOR, when the request does not say |
 
 `AGENTS.md` is copied from DDW's template **once**, when the installer finds none. Three situations
 leave it without these, and all three are ordinary:
