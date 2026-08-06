@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=544
+EXPECT_CHECKS=547
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=428
+EXPECT_MUTATIONS=433
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5049,6 +5049,168 @@ assert land("2026-08-06T10:00:00Z") is None, \
     "two entries stamped in the same second are refused — that is an ordinary run"
 assert land("2026-08-06T10:00:01Z") is None, "an entry one second later is refused"
 PYCLOCK
+
+# `adapters-parity`: the suite asserts what reaches the gate for Cursor, for
+# OpenCode and for Copilot (whose hook has no matcher at all, which is why the
+# gate does the filtering). Codex and Gemini had none — and they are the two
+# whose matchers a reviewer already had to reason about once, because a proposed
+# "fix" to Codex's would have deleted the only shell matcher that tool
+# recognises. What nothing asserted, nothing was holding.
+#
+# The shape is the same question in both: does a WRITE reach the pre hook, and
+# does a SHELL reach the post one. The pre hook is what refuses; the post hook is
+# what catches a state rewritten behind it, which is the documented limit of
+# every pre matcher there is.
+python3 - "$SELF" <<'PYPARITY' && ok "Codex and Gemini declare a write matcher on the gate and a shell matcher on the net, like the adapters that were already asserted" || bad "an adapter's matcher lets a write past the gate or a shell past the net, and no check was looking"
+import json, os, sys
+src = sys.argv[1]
+
+
+def hooks_of(rel):
+    """The hook table, whichever level the file keeps it at."""
+    d = json.load(open(os.path.join(src, rel), encoding="utf-8"))
+    return d.get("hooks", d)
+
+
+# developers.openai.com/codex/hooks: shell commands match as `Bash`; edits made
+# through apply_patch match `apply_patch`, `Edit` or `Write`. There is no tool
+# called `shell`, which is what makes the Bash matcher the right one.
+codex = hooks_of("adapters/codex/hooks.json")
+pre = codex["PreToolUse"][0].get("matcher", "")
+post = codex["PostToolUse"][0].get("matcher", "")
+assert "apply_patch" in pre and "Write" in pre, \
+    "codex PreToolUse matcher %r does not cover the ways that tool writes a file" % pre
+assert "Bash" in post, \
+    "codex PostToolUse matcher %r has no Bash: a state rewritten by a shell is what the net is for" % post
+assert "Bash" not in pre, \
+    "codex PreToolUse now matches Bash — the gate judges paths, and a shell command has none"
+
+# gemini-cli docs: the write tools are `write_file` and `replace`; the shell is
+# `run_shell_command`.
+gemini = hooks_of("adapters/gemini/settings.json")
+before = gemini["BeforeTool"][0].get("matcher", "")
+after = gemini["AfterTool"][0].get("matcher", "")
+assert "write_file" in before and "replace" in before, \
+    "gemini BeforeTool matcher %r does not cover both of that tool's write verbs" % before
+assert "run_shell_command" in after, \
+    "gemini AfterTool matcher %r has no run_shell_command: nothing catches a state written by a shell" % after
+
+# And both boot: a session that never loads the orchestrator enforces the parts
+# that live in prose, which is none of them.
+for name, h in (("codex", codex), ("gemini", gemini)):
+    assert any(k.lower().startswith("session") for k in h), \
+        "%s wires no session-start hook, so the pipeline never reaches the model" % name
+PYPARITY
+
+# `suite-inert`: a rule asserted in one direction only. Both warnings were
+# checked for NOT firing — the lint result under its own heading, the block whose
+# FR is in the coverage table — because both had been false positives once. That
+# is half a check: delete the rule from the validator and both stay green, which
+# is the same shape as an assertion over a list literal, one file further in.
+python3 - "$SELF" <<'PYWARNPOS' && ok "the two warnings fire when they should, not only stay quiet when they should" || bad "a warning rule can be deleted outright and the suite goes green — it was only ever checked for silence"
+import os, subprocess, sys, tempfile
+src = sys.argv[1]
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
+os.makedirs(os.path.join(d, "docs/ddw/reports"))
+os.makedirs(os.path.join(d, "docs/ddw/specs"))
+os.makedirs(os.path.join(d, "docs/ddw/prd"))
+
+
+def run(script, doc, *extra):
+    r = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts", script), doc,
+                        "--tier", "FEATURE", *extra], capture_output=True, text=True, cwd=d)
+    return r.stdout + r.stderr
+
+
+# W-TEST-01: a complete report that says nothing about a linter has to say so.
+report = os.path.join(d, "docs/ddw/reports/tests-T-1.md")
+open(report, "w", encoding="utf-8").write(
+    "# Test run T-1\n\n| Field | Value |\n|---|---|\n| Runner | pytest 8.2 |\n"
+    "| Command | `pytest -q` |\n| Total | 12 |\n| Passed | 12 |\n| Failed | 0 |\n"
+    "| Skipped | 0 |\n| Line coverage | 91% |\n| Branch coverage | 88% |\n"
+    "| Function coverage | 93% |\n| Coverage floor | 80% (AGENTS.md) |\n\n"
+    "## Failures\nNone.\n")
+out = run("validate_tests.py", report)
+assert "W-TEST-01" in out, \
+    "a report with no lint or type-check result did not raise W-TEST-01, so the rule is only " \
+    "ever checked for staying quiet:\n" + out[-400:]
+
+# W-SPEC-01: a block that traces to no FR, with no coverage row carrying it.
+prd = os.path.join(d, "docs/ddw/prd/prd-T-2.md")
+open(prd, "w", encoding="utf-8").write(
+    "# PRD T-2\n\n## Functional Requirements\n- FR-01: the form\n\n"
+    "## Acceptance Criteria\n- AC-01 (FR-01): WHEN a visitor opens it, THE system SHALL render it.\n")
+spec = os.path.join(d, "docs/ddw/specs/spec-T-2.md")
+open(spec, "w", encoding="utf-8").write(
+    "# Spec T-2\n\n| Field | Value |\n|---|---|\n| Ticket | T-2 |\n\n"
+    "## Block 1 — something nobody traced\n\n**Files**\n- `src/app.py`\n\n"
+    "**Required tests**\n- [ ] test_it_renders — validates AC-01\n\n"
+    "**Error handling**\n- the form is empty — 400 with the field named\n\n"
+    "**Completion criterion**\nIt renders.\n")
+out = run("validate_spec.py", spec, "--prd", prd)
+assert "W-SPEC-01" in out, \
+    "a block tracing to no FR did not raise W-SPEC-01:\n" + out[-400:]
+PYWARNPOS
+
+# `lifecycle-install`: the installer run against repositories built into the
+# states nobody builds by hand. Eight of them; one bit. `.claude` as a FILE —
+# a stray note, a redirect that went to the wrong name — reached `os.makedirs`
+# halfway through and came out as a NotADirectoryError with the method already
+# copied, no manifest and no hooks: a repository that looks installed, is not,
+# and whose drift detector is off for good. The settings merge and the context
+# file were both fixed for that shape; this was the third door into it.
+#
+# The refusal is asked BEFORE anything lands, and that is not tidiness either:
+# the first version of this check ran after the method was copied and said
+# "nothing was written", which was false as it printed.
+python3 - "$SELF" <<'PYLIFECYCLE' && ok "an install refuses a path it needs and cannot have, before writing anything, and says which one" || bad "the installer crashes on a repo shaped oddly, or leaves a half-install behind while claiming it did not"
+import os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+
+
+def repo(name):
+    p = os.path.join(work, name)
+    os.makedirs(p)
+    subprocess.run(["git", "-C", p, "init", "-q"], check=True)
+    return p
+
+
+def install(p):
+    return subprocess.run(["bash", os.path.join(src, "install.sh"), p, "--target", "claude"],
+                          capture_output=True, text=True, timeout=180)
+
+
+# The wiring directory, occupied by a file.
+p = repo("claude-is-a-file")
+open(os.path.join(p, ".claude"), "w", encoding="utf-8").write("not a directory\n")
+before = sorted(os.listdir(p))
+r = install(p)
+out = r.stdout + r.stderr
+assert "Traceback" not in out, "the installer answered a file named `.claude` with a stack:\n" + out[-400:]
+assert r.returncode != 0, "the installer reported success on a repo it could not install into"
+assert ".claude" in out and "directory" in out, \
+    "the refusal does not name the path it needs: " + out[-300:]
+assert sorted(os.listdir(p)) == before, (
+    "the refusal says nothing has been written and something was: %s appeared"
+    % sorted(set(os.listdir(p)) - set(before)))
+
+# …and the ordinary repo still installs, or the guard has eaten the product.
+ok_repo = repo("ordinary")
+r = install(ok_repo)
+assert r.returncode == 0, "a clean repo no longer installs: " + (r.stdout + r.stderr)[-300:]
+assert os.path.isdir(os.path.join(ok_repo, ".claude", "skills")), "the wiring did not land"
+
+# Two more shapes a real project arrives in, neither of which may end in a stack.
+for name, build in (("gitignore-is-a-dir", lambda p: os.makedirs(os.path.join(p, ".gitignore"))),
+                    ("manifest-is-a-list",
+                     lambda p: open(os.path.join(p, ".ddw-installed.json"), "w").write("[1,2]"))):
+    p = repo(name)
+    build(p)
+    out = install(p)
+    assert "Traceback" not in (out.stdout + out.stderr), \
+        "%s ends in a stack:\n%s" % (name, (out.stdout + out.stderr)[-300:])
+PYLIFECYCLE
 
 # `check_rule_ranges` demanded whitespace straight after `-01`, and every rule ID
 # in this method's prose is written as code — so the one shape the files

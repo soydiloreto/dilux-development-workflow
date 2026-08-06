@@ -163,6 +163,18 @@ done
 }
 echo
 
+# ── 0. Can this land at all? ─────────────────────────────────────────────────
+#
+# Asked before a single byte is written, for every target at once. A path the
+# install needs as a directory and finds occupied — `.claude` as a file — used to
+# surface as a NotADirectoryError halfway through, with the method already copied
+# and no wiring: a repo that looks installed and is not. A refusal that says
+# "nothing has been written" has to be true when it says it, which means asking
+# here rather than after step 1.
+for t in $TARGETS; do
+  python3 "$SELF/scripts/install_target.py" --self "$SELF" --target "$TARGET" --id "$t" --preflight || exit 1
+done
+
 # ── 1. THE METHOD (identical for every tool) ─────────────────────────────────
 mkdir -p "$TARGET/.ddw"
 # Skills and agents are the adapters' business, not the method payload's: they
