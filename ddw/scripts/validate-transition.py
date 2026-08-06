@@ -768,6 +768,35 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     for entry in appended:
         _check_entry_shape(entry)
 
+    # Time moves forward, or the record cannot be read in the order it happened.
+    #
+    # The shape was validated and the VALUE was not, so a new entry could be
+    # dated six years before the one above it and land without a word. Two ways
+    # that happens for real: a machine whose clock is wrong — a container, a VM
+    # resumed from a snapshot — and somebody editing the file by hand. Both
+    # produce the same thing, which is the one artefact this method promises will
+    # still make sense in six months: a history that says a ticket was defined
+    # before it was classified.
+    #
+    # Compared as strings on purpose. The format is already pinned to
+    # `YYYY-MM-DDThh:mm:ssZ` by the check above, and in that format lexical order
+    # IS chronological order — no parsing, no timezone arithmetic, nothing that
+    # can raise on the way to a verdict. Equal timestamps are allowed: two
+    # transitions inside the same second are ordinary, and a clock with
+    # one-second resolution is not evidence of anything.
+    _prev = [e for e in old_h if isinstance(e, dict) and isinstance(e.get("timestamp"), str)]
+    _last = _prev[-1]["timestamp"] if _prev else ""
+    for entry in appended:
+        if _last and entry["timestamp"] < _last:
+            raise Block(
+                "history goes backwards in time: this entry is stamped %s and the one before it "
+                "%s. The history is the record somebody reads six months from now; one that "
+                "cannot be read in order is not one. If this machine's clock is wrong, fix the "
+                "clock — the entry cannot be written as if it were not."
+                % (entry["timestamp"], _last)
+            )
+        _last = entry["timestamp"]
+
     # Internal contiguity.
     for a, b in zip(appended, appended[1:]):
         if a["to"] != b["from"]:

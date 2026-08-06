@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=543
+EXPECT_CHECKS=544
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=427
+EXPECT_MUTATIONS=428
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5010,6 +5010,45 @@ for path in sorted(glob.glob(os.path.join(src, "ddw/scripts/*.py"))):
 assert not offenders, ("these patterns anchor with `^\\s*` under MULTILINE, which is the shape "
                        "that hung: " + ", ".join(offenders))
 PYSLOWRE
+
+# `clock-time`, the second of the three findings that lost their verdict with the
+# disk. The timestamp's SHAPE was checked and its VALUE was not, so an entry
+# could be dated six years before the one above it and land without a word. The
+# history is the one artefact this method promises will still make sense in six
+# months, and a record that cannot be read in the order it happened is not one.
+python3 - "$SELF" <<'PYCLOCK' && ok "the history cannot go backwards in time, and two transitions in the same second still can" || bad "an entry dated before the one above it lands, so the audit record cannot be read in order"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec); spec.loader.exec_module(vt)
+graph = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json"), encoding="utf-8"))
+FIRST = {"timestamp": "2026-08-06T10:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a",
+         "tier": "FEATURE", "ticket": "T-1"}
+
+
+def land(ts):
+    nxt = {"timestamp": ts, "from": "CLASSIFY", "to": "DEFINE", "action": "b",
+           "tier": "FEATURE", "ticket": "T-1"}
+    old = {"phase": "CLASSIFY", "ticket": "T-1", "tier": "FEATURE", "gates": {}, "history": [FIRST]}
+    new = {"phase": "DEFINE", "ticket": "T-1", "tier": "FEATURE", "gates": {}, "history": [FIRST, nxt]}
+    try:
+        vt.validate(old, new, graph)
+        return None
+    except vt.Block as exc:
+        return str(exc)
+
+
+why = land("2020-01-01T00:00:00Z")
+assert why, "an entry dated six years before the one above it was accepted"
+assert "backwards" in why and "clock" in why, \
+    "the refusal does not say what is wrong or what to do about it: " + why
+
+# Equal is not backwards: two transitions inside one second are ordinary, and a
+# clock with one-second resolution is not evidence of anything.
+assert land("2026-08-06T10:00:00Z") is None, \
+    "two entries stamped in the same second are refused — that is an ordinary run"
+assert land("2026-08-06T10:00:01Z") is None, "an entry one second later is refused"
+PYCLOCK
 
 # `check_rule_ranges` demanded whitespace straight after `-01`, and every rule ID
 # in this method's prose is written as code — so the one shape the files
