@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=425
+EXPECT_MUTATIONS=426
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -8173,6 +8173,33 @@ _job = _wf["jobs"]["mutations"]
 _shards = len(_job["strategy"]["matrix"]["shard"])
 _ceiling = int(_job["timeout-minutes"])
 _per_shard = math.ceil(len(_mut.MUTATIONS) / _shards) + 1
+# …and the OTHER ceiling, which is not ours and has no error message: this plan
+# runs twenty jobs at once. Twenty-four shards plus the four suites asked for
+# twenty-eight, so eight of them sat in a queue with the wall clock running —
+# invisible in every log, because a queued job looks exactly like a slow one.
+# Counted across both workflows, since they are triggered by the same events and
+# compete for the same twenty.
+_CONCURRENT = 20
+_verify = yaml.safe_load(open(os.path.join(src, ".github/workflows/verify.yml"), encoding="utf-8"))
+
+
+def _fanout(wf):
+    total = 0
+    for job in wf.get("jobs", {}).values():
+        m = ((job.get("strategy") or {}).get("matrix") or {})
+        dims = [len(v) for v in m.values() if isinstance(v, list)]
+        n = 1
+        for d in dims:
+            n *= d
+        total += n
+    return total
+
+
+_jobs = _fanout(_wf) + _fanout(_verify)
+assert _jobs <= _CONCURRENT, (
+    "the two workflows ask for %d jobs at once and this plan runs %d — the rest queue, and a "
+    "queued job is indistinguishable from a slow one in every log there is" % (_jobs, _CONCURRENT))
+
 assert _per_shard * 2 < _ceiling, (
     "a shard runs %d suite runs (%d faults over %d shards, plus the baseline), which is about "
     "%d minutes against a timeout of %d. It will be killed and reported as cancelled. Add "
