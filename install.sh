@@ -41,6 +41,14 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "--target needs a value (a tool id, several comma-separated, or 'all')." >&2; exit 1; }
       TARGETS="$2"; shift 2 ;;
     --target=*) TARGETS="${1#*=}"; shift ;;
+    # The method and nothing else. This is what `/ddw-eject` needs and could not
+    # have: the skill told the model to copy the plugin's method into `.ddw/`,
+    # and every write to `.ddw/` is refused in every phase — that seal is what
+    # stops a pipeline editing the rules that stop it, and it does not know the
+    # difference between disarming the method and installing it. So ejecting is
+    # what installing and uninstalling already are: something the user runs,
+    # outside the ticket, with the hooks looking on.
+    --method-only) METHOD_ONLY=1; shift ;;
     -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) TARGET_DIR="$1"; shift ;;
   esac
@@ -166,6 +174,17 @@ rsync -a --exclude 'skills/' --exclude 'agents/' --exclude '__pycache__/' \
   find "$TARGET/.ddw" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 }
 echo "  ✓ .ddw/                  the method: orchestrator, rules, graph, scripts"
+
+if [ -n "${METHOD_ONLY:-}" ]; then
+  # Recorded, or the drift detector cannot see a shell rewriting what was just
+  # ejected — and an ejected method is precisely the one people go on to edit.
+  python3 "$SELF/scripts/install_target.py" --self "$SELF" --target "$TARGET" --method-only >/dev/null
+  echo
+  echo "The method is now in .ddw/ and this repo runs ITS copy: every hook resolves"
+  echo "the repo first and the plugin second. The wiring stayed where it was."
+  echo "Commit it — a method sitting uncommitted is taken by the next checkout."
+  exit 0
+fi
 
 # ── 2. AGENTS.md: the PROJECT's context (the user fills it in) ───────────────
 if [ -f "$TARGET/AGENTS.md" ]; then
