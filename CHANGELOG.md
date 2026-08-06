@@ -19,6 +19,47 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.19.0] — Unreleased
+
+The round that went looking in the places nobody had looked: the agents, the
+skills nobody validates, and the price of the measurement itself.
+
+### Fixed
+
+- **`/ddw-eject` told the model to do what the hook refuses.** The skill copies
+  the method out of the plugin and into `.ddw/`, and every write to `.ddw/` is
+  refused in every phase — the seal that stops a pipeline editing the rules that
+  stop it, which cannot tell installing the method apart from disarming it. The
+  model did exactly what it was told, mid-ticket, with the panel already shown.
+  Ejecting is now what installing and uninstalling already are: a command the
+  user runs (`install.sh --method-only`), which lands the method, records it in
+  the manifest — an ejected method nothing records is invisible to the drift
+  check, and it is the one people go on to edit — and touches no wiring.
+- **The agents' tool lists were nobody's business.** Four of the five exist to
+  look and report, each spawned to judge something a gate will rest on, and the
+  only thing keeping them from editing what they judge is one line of
+  frontmatter that nothing read.
+
+### Changed
+
+- **The mutation run stops paying a full pass per fault.** `mutate.py` asks
+  whether the suite went red; `DDW_STOP_ON_FIRST_FAILURE` lets it stop there.
+  Read from `bad` and nowhere else, and it exits 1 — no value of it turns a red
+  run green. The baseline run does not use it, because that one has to be able
+  to say "the suite passes", which is a statement about every check.
+- **A pull request runs the faults its diff can speak to.** `--changed BASE`
+  selects the mutations whose file the diff touches — five of four hundred for a
+  change to one validator — and everything when the diff touches the suite or
+  the runner. The shards keep their names, so the required checks do not move;
+  `main` and the weekly schedule run the list whole, and that run is the
+  coverage figure.
+
+### Added
+
+- **`install.sh --method-only`** — the method, recorded, without the wiring.
+
+---
+
 ## [0.18.0] — Unreleased
 
 A pre-merge audit: twelve specialists, each given a subsystem and told to run it
