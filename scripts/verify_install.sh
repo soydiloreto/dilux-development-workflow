@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=538
+EXPECT_CHECKS=540
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=418
+EXPECT_MUTATIONS=421
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -187,6 +187,93 @@ for path in files:
         assert d.get(k), f"{path}: missing {k}"
     assert d["name"] == os.path.basename(path)[:-3], f"{path}: name != filename"
 PYEOF
+
+# WHICH tools, and not merely that the field is there. Four of the five agents
+# exist to look and report — the security auditor, the architecture auditor, the
+# impact scanner and the module verifier — and every one of them is spawned to
+# JUDGE something: the code, the reports, the verdict a gate will rest on. A
+# judge that can edit what it is judging is not a judge, and the only thing
+# standing between the two is a line of frontmatter that nothing read. Add
+# `Write` to the security auditor and no check in this repository goes red.
+#
+# The implementer is the exception and the reason the list is spelled out rather
+# than inferred: it writes code, that IS its job, and what stops it from writing
+# DDW's own files is the hook rather than its tool list.
+python3 - "$SELF" <<'PYAGENTTOOLS' && ok "the four agents that only judge cannot write, and the one that implements is the only one that can" || bad "an agent spawned to audit something carries a tool that edits it"
+import glob, os, sys, yaml
+root = sys.argv[1]
+WRITERS = {"ddw-implementer"}
+FORBIDDEN = {"write", "edit", "notebookedit", "multiedit", "apply_patch", "patch"}
+seen = set()
+for path in sorted(glob.glob(os.path.join(root, "agents", "*.md"))):
+    d = yaml.safe_load(open(path, encoding="utf-8").read().split("---\n", 2)[1])
+    name = d["name"]
+    seen.add(name)
+    tools = {t.strip().lower() for t in str(d["tools"]).split(",") if t.strip()}
+    writes = sorted(tools & FORBIDDEN)
+    if name in WRITERS:
+        assert writes, "%s is the agent that implements and carries no writing tool" % name
+        continue
+    assert not writes, (
+        "%s is spawned to judge and carries %s. It can edit the thing it was asked to report on."
+        % (name, ", ".join(writes)))
+assert WRITERS <= seen, "the implementer is gone from agents/, so this check is judging nothing"
+assert len(seen - WRITERS) >= 3, \
+    "fewer than three read-only agents remain (%s) — this check was written for four" % sorted(seen)
+PYAGENTTOOLS
+
+# `/ddw-eject` told the model to copy the plugin's method into `.ddw/`, and every
+# write to `.ddw/` is refused in every phase — the seal that stops a pipeline
+# editing the rules that stop it, which cannot tell installing the method apart
+# from disarming it. A painted door: the model does exactly what the skill says
+# and is refused, in any phase, with the ticket open. So the skill hands over a
+# command instead, and the command has to exist and work.
+python3 - "$SELF" <<'PYEJECTCMD' && ok "/ddw-eject prescribes a command the user runs, and that command lands the method and records it" || bad "the eject skill orders a write its own enforcement refuses, or prescribes a command that does not work"
+import json, os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+skill = open(os.path.join(src, "skills/ddw-eject/SKILL.md"), encoding="utf-8").read()
+assert "--method-only" in skill, "the eject skill no longer names the command that does the work"
+
+# The refusal is real, and it is what the skill has to route around: a write to
+# `.ddw/` mid-ticket, judged by the gate every tool runs.
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+plug = os.path.join(work, "plugin")
+shutil.copytree(src, plug, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+repo = os.path.join(work, "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+state = os.path.join(repo, ".ddw-state.json")
+json.dump({"phase": "CODE", "ticket": "T-1", "tier": "FEATURE",
+           "gates": {"define": True, "spec": True, "threat": True},
+           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY",
+                        "action": "a"},
+                       {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE",
+                        "action": "b", "tier": "FEATURE", "ticket": "T-1"}]},
+          open(state, "w", encoding="utf-8"))
+ev = json.dumps({"tool_name": "Write",
+                 "tool_input": {"file_path": os.path.join(repo, ".ddw/rules/code.instructions.md"),
+                                "content": "x"}})
+r = subprocess.run([sys.executable, os.path.join(plug, "ddw/scripts/hook-gate.py"),
+                    "--dialect", "standard", "--mode", "pre", "--state", state,
+                    "--graph", os.path.join(plug, "ddw/rules/transition-graph.json"),
+                    "--repo", repo, "--method", os.path.join(plug, "ddw")],
+                   input=ev, capture_output=True, text=True)
+assert r.returncode == 2, \
+    "a write into `.ddw/` was allowed — the seal this skill has to route around is gone"
+
+# And the way around it lands the method AND records it: an ejected method the
+# drift detector cannot see is the one people go on to edit.
+r = subprocess.run(["bash", os.path.join(plug, "install.sh"), repo, "--method-only"],
+                   capture_output=True, text=True)
+assert r.returncode == 0, "install.sh --method-only failed: " + (r.stdout + r.stderr)[-300:]
+assert os.path.isfile(os.path.join(repo, ".ddw/rules/transition-graph.json")), \
+    "the method did not land in .ddw/"
+manifest = json.load(open(os.path.join(repo, ".ddw-installed.json"), encoding="utf-8"))
+assert [k for k in manifest if k.startswith("method:")], \
+    "the ejected method is in no manifest, so no drift check can see it change"
+assert not os.path.exists(os.path.join(repo, ".claude")), \
+    "--method-only touched the wiring; the skill promises it does not"
+PYEJECTCMD
 
 python3 - "$SELF" <<'PY' && ok "every skills/*/SKILL.md has name matching its directory" || bad "skill frontmatter"
 import re, sys, os, glob

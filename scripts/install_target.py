@@ -430,8 +430,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--self", required=True, help="the DDW repo root")
     ap.add_argument("--target", required=True, help="the repo being installed into")
-    ap.add_argument("--id", required=True, help="the adapter id (a directory under adapters/)")
+    ap.add_argument("--id", help="the adapter id (a directory under adapters/)")
+    ap.add_argument("--method-only", action="store_true",
+                    help="record an already-copied .ddw/ in the manifest and do nothing else "
+                         "(what `install.sh --method-only` needs, for /ddw-eject)")
     args = ap.parse_args()
+
+    if args.method_only:
+        # The copy is the shell's; what belongs here is the RECORD of it. An
+        # ejected method with no manifest entries is a method the drift detector
+        # cannot see — and an ejected method is the one people go on to edit,
+        # which is the whole reason they ejected it.
+        manifest = load_manifest(args.target)
+        record_method(args.target, manifest)
+        save_manifest(args.target, manifest)
+        print("  ✓ .ddw/                  recorded in the manifest")
+        return 0
+    if not args.id:
+        die("--id is required unless --method-only is given")
 
     adapter_dir = os.path.join(args.self, "adapters", args.id)
     recipe_path = os.path.join(adapter_dir, "adapter.json")

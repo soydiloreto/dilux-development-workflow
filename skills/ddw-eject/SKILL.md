@@ -62,11 +62,20 @@ it up here — see the trade below.
    │  Go ahead?                                               │
    └─────────────────────────────────────────────────────────┘
    ```
-3. **Copy** the method to `.ddw/`. Nothing else moves: the wiring stays with the plugin, and the
-   context file is untouched.
-4. **Commit it** with `Skill(skill="ddw-commit")` as a `🔧 chore`. A method sitting uncommitted is
-   the one thing worse than not having ejected — the next `git checkout` takes it and nobody knows
-   why the pipeline changed.
+3. **Hand them the command. You do not write `.ddw/` yourself, and you cannot:** every write to
+   `.ddw/` is refused in every phase, because that seal is what stops a pipeline editing the rules
+   that stop it — and it cannot tell installing the method apart from disarming it. Ejecting is what
+   installing and uninstalling already are: something the user runs, outside the ticket.
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/install.sh" . --method-only
+   ```
+
+   (the equivalent plugin path for your tool; `--method-only` copies the method and records it in
+   the manifest, and touches no wiring.)
+4. **Once they have run it**, commit it with `Skill(skill="ddw-commit")` as a `🔧 chore`. A method
+   sitting uncommitted is the one thing worse than not having ejected — the next `git checkout`
+   takes it and nobody knows why the pipeline changed.
 5. **Report** where it landed and what to read first: `.ddw/rules/` for the phases,
    `.ddw/rules/transition-graph.json` for what movements are legal.
 
