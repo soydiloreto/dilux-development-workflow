@@ -38,7 +38,23 @@ _REPO = os.path.dirname(_DDW)                        # <repo>        (the root)
 _VALIDATOR = os.path.join(_HERE, "validate-transition.py")
 _DEFAULT_GRAPH = os.path.join(_DDW, "rules", "transition-graph.json")
 
-_TIERS = ("QUICK-FIX", "FIX", "FEATURE", "DISCOVERY")
+def _tiers(graph=None):
+    """The tiers that exist, read from the graph that defines them.
+
+    Typed here once, as a tuple, while `ddw_receipt` derived the same list from
+    the graph — two sources of truth for the same fact, and the day a tier was
+    added to the graph the validators accepted it and this helper refused it
+    with "invalid choice", from the sanctioned path, naming the four it knew.
+    The graph is the authority for which tiers exist, as it is for every edge
+    between them.
+    """
+    if graph is None:
+        try:
+            with open(_DEFAULT_GRAPH, encoding="utf-8") as fh:
+                graph = json.load(fh)
+        except (OSError, ValueError):
+            return ("QUICK-FIX", "FIX", "FEATURE", "DISCOVERY", "FREE")
+    return tuple(sorted(graph.get("tiers", {})))
 
 
 def _default_state():
@@ -285,7 +301,7 @@ def main():
     ap.add_argument("--clear-gate", dest="clear_gates", action="append", default=[],
                     help="Gate to drop (repeatable). The corrective loop VERIFY->CODE clears "
                          "tests and sast: the fix has to re-earn them.")
-    ap.add_argument("--tier", choices=_TIERS, default=None,
+    ap.add_argument("--tier", choices=_tiers(), default=None,
                     help="Tier of the work (enum). The only metadata the FSM needs to route the graph.")
     ap.add_argument("--ticket", default=None,
                     help="The ticket this run belongs to. Set it on the edge that classifies the "
@@ -487,7 +503,7 @@ def main():
                 )
         elif new_state.get("tier") is None and args.tier is None:
             hint = (
-                "The tier is missing: pass --tier <" + "|".join(_TIERS) + "> (it is set on the "
+                "The tier is missing: pass --tier <" + "|".join(_tiers(graph)) + "> (it is set on the "
                 "CLASSIFY→DEFINE/DISCOVERY transition)."
             )
         elif str(exc).startswith("gate "):

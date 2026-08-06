@@ -19,6 +19,44 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.20.0] — Unreleased
+
+### Changed — BREAKING
+
+- **Product source cannot be written at `IDLE`.** The source guard covered every
+  phase whose rules forbid code except the one every session starts in, so an
+  agent that never classified wrote code with both hooks green, no ticket and no
+  record. Measured in a real session: asked plainly, the model classified and
+  refused; told "no ticket, just write it", it wrote the file. Every other hole
+  this repository has closed needed a trick — a symlink, a placeholder, a
+  backdated clock. This one needed somebody to say no. What a repository at rest
+  needs stays writable: `docs/`, the context files, the CHANGELOG, each tool's
+  wiring.
+
+### Added
+
+- **Tier `FREE` — working without the pipeline, on the record.** Because a
+  pipeline that cannot be opted out of is one people uninstall. Entered through
+  `CLASSIFY` like any other tier, left to `IDLE`, no gates and no artifacts, and
+  every session start says `ESTÁS TRABAJANDO SIN WORKFLOW` with the way out on
+  the same line. It is not a way out of a ticket in flight — no working phase has
+  an edge into it and the tier cannot change outside `CLASSIFY` — and it is not a
+  licence to disarm DDW: the method, the journal and the state are as sealed in
+  `FREE` as anywhere else. RATIONALE 20 has the reasoning and the cost.
+
+### Fixed
+
+- **The helper had its own list of tiers** while the validators derived theirs
+  from the graph, so a tier added to the graph was accepted by every validator
+  and refused by the sanctioned path with "invalid choice". The graph is the
+  authority for which tiers exist, as it is for every edge between them.
+- **A comment inside a tier became an edge.** The graph carries prose at the top
+  level, so a tier is the obvious place to write the next one — at which point
+  `_note` was read as an edge whose gates are a string, and the first function to
+  ask that tier what it owes died on it.
+
+---
+
 ## [0.19.0] — Unreleased
 
 The round that went looking in the places nobody had looked: the agents, the

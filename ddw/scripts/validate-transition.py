@@ -145,9 +145,16 @@ def _effective_edges(graph, tier):
     if cur is not None and cur not in tiers and cur is not tier:
         raise Block(f"the graph's tier {chain[-1]!r} extends {cur!r}, which does not exist")
 
-    edges = dict(graph.get("common", {}))
+    # `extends` is not an edge, and neither is a comment. The graph carries prose
+    # at the top level (`_note`, `_resume_note`, `_backward_note`) and a tier is
+    # the obvious place to write the next one — at which point `_note` became an
+    # edge named `_note` whose "gates" are a string, and the first function to
+    # ask a tier what it owes died on it. A key that starts with `_` is for the
+    # reader.
+    edges = {k: v for k, v in graph.get("common", {}).items() if not k.startswith("_")}
     for name in reversed(chain):          # ancestors first, so the tier wins
-        edges.update({k: v for k, v in tiers[name].items() if k != "extends"})
+        edges.update({k: v for k, v in tiers[name].items()
+                      if k != "extends" and not k.startswith("_")})
     return edges
 
 
@@ -977,8 +984,30 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
 # pipeline exists to guarantee — collapses into a line in a prompt.
 #
 # Phases whose rules forbid touching product source. CLOSEOUT is not here: it
-# writes the CHANGELOG and its own gates already close it.
-NO_SOURCE_PHASES = frozenset({"CLASSIFY", "DEFINE", "PLAN", "VERIFY", "DISCOVERY"})
+# writes the CHANGELOG and its own gates already close it. FREE is not here
+# either, and that is the whole point of FREE.
+#
+# IDLE IS here now, and its absence was the hole the paragraph above predicts,
+# one phase further out. "An agent that never bothers to transition can write
+# code from PLAN" — and an agent that never CLASSIFIES writes it from where
+# every session already starts, which needs no transition at all. Measured in a
+# real session: asked plainly, the model classified and refused to code; told
+# "no ticket, just write it", it wrote the file, both hooks green, the state
+# still IDLE and no record anywhere that a line of product code had been
+# written. Every other hole this repository has closed took a trick — a symlink,
+# a placeholder, a backdated clock. This one took nothing.
+#
+# The point is not that the code was written. It is that it was written with
+# nobody having decided to. Which is why the way out is not a loophole but a
+# tier: `--tier FREE` is a transition, in the history, with a timestamp and a
+# reason, and the session says ESTÁS TRABAJANDO SIN WORKFLOW for as long as it
+# lasts. A user who wants no pipeline gets exactly that, on the record.
+#
+# What stays writable at IDLE is what a repo at rest legitimately needs: the
+# context files and the CHANGELOG, each tool's wiring, and everything under
+# `docs/` — so installing, ejecting, reading and writing documents need no
+# ticket.
+NO_SOURCE_PHASES = frozenset({"IDLE", "CLASSIFY", "DEFINE", "PLAN", "VERIFY", "DISCOVERY"})
 
 # What those phases MAY still write. An allowlist, not a blocklist: a blocklist
 # of source extensions is a guess about someone else's stack, and every guess it
@@ -1220,8 +1249,17 @@ def source_write_denied(target, root, phase):
     if any(rel.startswith(pre) for pre in ALLOWED_DIR_PREFIXES):
         return None
 
-    unlock = ("Finish this phase and take the transition — its gates are what unlock CODE, "
-              "which is the phase that writes source. " if phase != "CODE" else "")
+    if phase == IDLE:
+        # From IDLE there is no phase to finish and no ticket to finish it for,
+        # so the two real answers are: start one, or say out loud that you are
+        # not going to.
+        unlock = ("Nothing is open here. Either classify the work — `--to CLASSIFY`, and the "
+                  "tier decides what it owes before CODE — or, if you genuinely want no "
+                  "pipeline for this, take `--to CLASSIFY --tier FREE` and then `--to FREE`: "
+                  "no gates, no artifacts, and a line in the history saying so. ")
+    else:
+        unlock = ("Finish this phase and take the transition — its gates are what unlock CODE, "
+                  "which is the phase that writes source. " if phase != "CODE" else "")
     return (
         f"the {phase} phase does not write product source, and `{rel}` is not one of its "
         f"artifacts. This is the pipeline's core promise being kept: no approved spec, no code. "

@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=540
+EXPECT_CHECKS=541
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=421
+EXPECT_MUTATIONS=425
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -6412,8 +6412,14 @@ state = os.path.join(repo, ".ddw-state.json")
 ddw = os.path.join(repo, ".ddw")
 assert not os.path.exists(os.path.join(repo, ".ddw-journal.jsonl")), \
     "a fresh install now has a journal, which changes what 'nothing recorded' means here"
+# A document, not product source. This check is about the ERASED-STATE guard —
+# whether an empty state reads as "somebody wiped this" or "nobody has begun" —
+# and it used `src/app.ts` as its example of a first write. Product source at
+# IDLE is refused now, by a different rule and on purpose, so the example had to
+# stop carrying an argument it was never making. The source rule is driven
+# separately, below.
 event = json.dumps({"tool_name": "Write",
-                    "tool_input": {"file_path": os.path.join(repo, "src", "app.ts"),
+                    "tool_input": {"file_path": os.path.join(repo, "docs", "notes.md"),
                                    "content": "x"}})
 
 
@@ -6436,6 +6442,66 @@ assert r.returncode == 0, \
     "an empty state file with an empty journal is refused as an erased run — that is a repo " \
     "nobody has started: " + (r.stdout + r.stderr)[:200]
 PYEMPTYFRESH
+
+# The hole every other one of these took a trick to reach, and this one took
+# nothing: at IDLE the source guard was not applied, so an agent that never
+# classifies wrote product code with both hooks green, no ticket, and no record
+# that it had happened. Measured in a real session — asked plainly the model
+# classified and refused to code; told "no ticket, just write it", it wrote the
+# file. The prose held against forgetting and not against deciding, which is the
+# difference between a guarantee and a convention.
+#
+# The answer is not to make it impossible — a tool that cannot be opted out of
+# gets uninstalled — but to make opting out a DECISION: tier FREE, entered
+# through CLASSIFY like any other, recorded at both ends, and announced at every
+# session start for as long as it lasts.
+python3 - "$SELF" <<'PYFREE' && ok "product source is refused at IDLE, allowed in FREE, and FREE is reachable only by classifying into it — never out of a ticket in flight" || bad "code can be written with no ticket and no record, or FREE is a way to walk out of the gates a ticket already owes"
+import importlib.util, json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location("vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec); spec.loader.exec_module(vt)
+graph = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json"), encoding="utf-8"))
+repo = tempfile.mkdtemp(dir=os.environ["WORK"])
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+
+
+def denied(rel, phase):
+    return vt.source_write_denied(os.path.join(repo, rel), repo, phase)
+
+
+# 1. No ticket, no product source — and the refusal names both ways out.
+why = denied("src/app.py", "IDLE")
+assert why, "product source is writable at IDLE: no ticket, no gates, no record"
+assert "CLASSIFY" in why and "FREE" in why, \
+    "the refusal at IDLE names neither way out, which is how a guard gets routed around: " + why
+
+# 2. …and what a repo at rest legitimately needs is still writable, or the guard
+#    stops the install, the eject and every document.
+for rel in ("docs/ddw/prd/prd-T-1.md", "AGENTS.md", "CHANGELOG.md", ".claude/settings.json"):
+    assert not denied(rel, "IDLE"), "%s is refused at IDLE, and a repo at rest needs it" % rel
+
+# 3. FREE is the phase where none of this is asked. That IS the escape hatch.
+assert not denied("src/app.py", "FREE"), \
+    "FREE refuses product source, so the sanctioned way to work without a pipeline is a wall"
+
+# 4. But FREE is reachable only by classifying into it, and leads only back to
+#    IDLE. A ticket in flight cannot become FREE — otherwise the gates it has
+#    already been asked for are one transition away from being forgotten.
+edges = vt._effective_edges(graph, "FREE")
+assert "CLASSIFY->FREE" in edges and "FREE->IDLE" in edges, \
+    "the FREE tier no longer has its two edges: %s" % sorted(edges)
+assert not [e for e in edges if e.endswith("->FREE") and not e.startswith("CLASSIFY")], \
+    "something other than CLASSIFY leads into FREE: %s" % sorted(edges)
+for tier in ("FEATURE", "QUICK-FIX", "FIX", "DISCOVERY"):
+    assert not [e for e in vt._effective_edges(graph, tier) if e.endswith("->FREE")], \
+        "tier %s has an edge into FREE — a ticket can walk out of its gates" % tier
+assert not vt._gate_owners(graph, "FREE"), \
+    "FREE asks for a gate, which is not what the user asked for when they asked for no pipeline"
+
+# 5. And FREE is not a licence to disarm DDW itself.
+assert vt.enforcement_write_denied(os.path.join(repo, ".ddw/rules/code.instructions.md"), repo), \
+    "the method is writable in FREE — turning the pipeline off must not hand over what turns it off for good"
+PYFREE
 
 python3 - "$SELF" <<'PYEOF' && ok "and it says the whole finding once, not on every tool call" || bad "the same corrupt state is re-reported in full forever — see above"
 import json, os, subprocess, sys, tempfile

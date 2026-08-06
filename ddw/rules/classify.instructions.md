@@ -151,6 +151,24 @@ Meets ANY of these criteria:
 **Difference from FEATURE:** FEATURE will implement code. DISCOVERY only produces documentation
 (concept + PRDs). DISCOVERY's PRDs can later be executed as individual FEATURE tickets.
 
+### FREE
+
+**Only when the user asks for it, in as many words.** Never propose it, never route to it because
+the request is small, and never offer it as a way out of a refusal you just gave.
+
+- The user says they want to work without the pipeline: "sin ticket", "no me armes workflow",
+  "quiero probar algo", "es una prueba".
+- What it means: no gates, no artifacts, no validations. Code can be written from the first turn.
+- What it does NOT mean: DDW's own files stay sealed, the journal stays append-only, and the state
+  is still the state.
+- What it costs: nothing about that work is recorded except that it happened without a pipeline —
+  no PRD, no spec, no threat model, no test report, no verdict.
+
+Entering is a transition like any other (`CLASSIFY→FREE`), so the history says when it started and
+why. Leaving is `FREE→IDLE`. A ticket already in flight cannot become FREE: there is no edge into
+it from any working phase, and the tier cannot change outside CLASSIFY — otherwise FREE would be a
+way to walk out of the gates a ticket has already been asked for.
+
 ### When in doubt
 Ask the user: "Does this change what the user sees or how they interact with the system? Is it
 urgent because of production impact? Does it change the architecture? Or are you exploring an idea
