@@ -585,6 +585,16 @@ def main():
     # First, above everything: if the enforcement itself was changed, nothing
     # below it means what it says.
     lines += enforcement_drift(repo)
+    # FREE is the pipeline turned off, on the record, and the record is only half
+    # of it: the other half is that nobody forgets they are in it. Said at every
+    # session start, before anything else, with the way out on the same line —
+    # a mode you cannot see is a mode you stay in by accident.
+    if phase == "FREE":
+        lines += [
+            "⚠️ ESTÁS TRABAJANDO SIN WORKFLOW (tier FREE): no gates, no artifacts, nothing is",
+            "   being asked of this work. To come back: python3 .ddw/scripts/transition.py",
+            '   --to IDLE --action "exit free: <why>" --write',
+        ]
     if others:
         lines += [
             f"⚠️ DDW: {others} other session(s) are working in THIS SAME directory.",

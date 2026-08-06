@@ -638,6 +638,47 @@ fixture that claims a gate it did not earn is a fixture testing the forgery rath
 
 ---
 
+## 20. Opting out is a tier, not a hole
+
+**The decision.** Product source cannot be written at `IDLE` — the phase every session starts in and
+the phase a repository with no ticket sits in. Work that genuinely wants no pipeline gets a tier of
+its own, `FREE`: entered through `CLASSIFY` like any other, left to `IDLE`, no gates, no artifacts,
+and a warning at every session start saying so. It cannot be entered from a working phase.
+
+**Why it was wrong, precisely.** The source guard covered `CLASSIFY`, `DEFINE`, `PLAN`, `VERIFY` and
+`DISCOVERY`, and its own comment explains why it exists: "an agent that never bothers to transition
+can write code from PLAN, and *no approved spec, no code* — the one rule this pipeline exists to
+guarantee — collapses into a line in a prompt." The same sentence answers itself one phase further
+out. An agent that never CLASSIFIES writes code from where every session already begins, and that
+takes no transition at all.
+
+Measured, in a real session with the orchestrator loaded: asked plainly for a file, the model
+classified the request and refused to write it — the prose held. Told *"no ticket, no pipeline, just
+write it"*, it wrote the file, both hooks green, the state still `IDLE`, and nothing anywhere
+recording that a line of product code had been written. Every other hole this repository has closed
+needed a trick — a symlink, a placeholder, a backdated clock. This one needed somebody to say no.
+
+**Why a tier and not a wall.** A pipeline that cannot be opted out of is a pipeline people uninstall,
+and an uninstalled pipeline enforces nothing at all. The problem was never that code gets written
+without gates; it is that it was written without anyone DECIDING to. `FREE` makes the decision
+explicit and cheap: two transitions, both in the history with a timestamp and a reason, and a line at
+every session start that says `ESTÁS TRABAJANDO SIN WORKFLOW`. What a repository at rest legitimately
+needs — `docs/`, the context files, the CHANGELOG, each tool's wiring — stays writable at `IDLE`, so
+installing, ejecting and writing documents never require a ticket.
+
+**What FREE is not.** It is not a way out of a ticket already in flight: no working phase has an edge
+into it, and the tier cannot change outside `CLASSIFY`, so the gates a ticket has been asked for
+cannot be walked away from by relabelling the work. And it is not a licence to disarm the pipeline:
+DDW's own files, the journal and the state are exactly as sealed in `FREE` as anywhere else. `FREE`
+turns the pipeline off; it does not hand over the thing that would turn it off for good.
+
+**The cost.** Touching one line of product code now requires either a ticket or an explicit
+`FREE`. For a one-character fix that is real friction, and the honest mitigation is that `QUICK-FIX`
+exists and costs about two minutes. The alternative was a guarantee that anyone could decline by
+saying so, which is not a guarantee.
+
+---
+
 ## Disagreeing
 
 If one of these is wrong, the useful form of the argument is: which entry, what does it cost that is

@@ -385,6 +385,21 @@ any other section.
 
 ---
 
+## Router: Phase `FREE`
+
+- **Load:** nothing. There is no pipeline here — that is what the user asked for.
+- **Skills:** `/ddw-status`, `/ddw-commit`, `/ddw-help`. Everything else belongs to a pipeline
+  that is not running.
+- **Blocked:** DDW's own files, exactly as everywhere else. FREE turns the pipeline off; it does
+  not hand over the thing that would turn it off for good.
+- **Status line:** `⚠️ SIN WORKFLOW (FREE) · {action}`
+- **Say it every turn, not once.** The first line of every response while the phase is FREE says
+  that no gates, no artifacts and no reviews are being asked of this work. A mode nobody is
+  reminded of is a mode people stay in by accident, and this one has no other guard.
+- **Leaving:** `--to IDLE --action "exit free: <why>"`. Offer it whenever the work starts looking
+  like something that deserves a record — a second file, a change to a public interface, anything
+  going to production.
+
 ## Router: Phase `DISCOVERY`
 
 - **Load:** `.ddw/rules/discovery.instructions.md`, `.ddw/rules/validation-rules.instructions.md`

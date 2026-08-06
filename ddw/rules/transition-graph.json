@@ -122,6 +122,15 @@
           "pr"
         ]
       }
+    },
+    "FREE": {
+      "_note": "No pipeline at all, on the record. Entered from CLASSIFY like any other tier and left to IDLE, so both ends are history entries with a timestamp and a reason. Nothing is gated here — that is the point — and what stays enforced is DDW itself: the method, the journal and the state are as sealed in FREE as anywhere else. FREE turns the pipeline off; it does not hand over the thing that would turn it off for good.",
+      "CLASSIFY->FREE": {
+        "gates": []
+      },
+      "FREE->IDLE": {
+        "gates": []
+      }
     }
   },
   "_resume_note": "Resuming a paused ticket re-enters the phase it was paused in. There is no list of resumable phases: the proof is the pause itself. The entry before the resume must be a `pause:` ending at IDLE, and the phase it paused FROM is the only one the resume may re-enter. A list would have been a second, weaker way to say the same thing — and one more place to forget to update.",
