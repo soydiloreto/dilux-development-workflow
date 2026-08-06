@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=542
+EXPECT_CHECKS=543
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=426
+EXPECT_MUTATIONS=427
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -4968,6 +4968,48 @@ for tier in tiers:
 code, out = lint()
 assert code == 0, "the probe was not restored: " + out[-300:]
 PYTIERDOC
+
+# `\s` includes the newline, so `^\s*` under `re.MULTILINE` can swallow the rest
+# of the file from every line start and give it back one character at a time.
+# Twenty patterns across the six validators were written that way, and the one
+# in `validate_tests.py` — asked once per field, and there are ten — turned a
+# report of blank lines into more than a minute of CPU. Fifty thousand blank
+# lines is what a mis-piped `printf` leaves behind, and the failure mode was the
+# worst one available: not a refusal, a hang. A hook that hangs is not a hook
+# that refused.
+#
+# Driven with a clock, because that is the only thing that tells the two apart.
+python3 - "$SELF" <<'PYSLOWRE' && ok "a document made of blank lines is judged in seconds, not left to backtrack — and every validator is held to it" || bad "a validator can be hung by whitespace, which is a refusal nobody receives"
+import glob, os, re, subprocess, sys, tempfile, time
+src = sys.argv[1]
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
+report = os.path.join(d, "blank.md")
+open(report, "w", encoding="utf-8").write("\n" * 20000)
+
+for v in sorted(glob.glob(os.path.join(src, "ddw/scripts/validate_*.py"))):
+    began = time.time()
+    try:
+        r = subprocess.run([sys.executable, v, report, "--tier", "FEATURE"],
+                           capture_output=True, text=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        raise AssertionError("%s did not answer in twenty seconds about a file of blank lines"
+                             % os.path.basename(v))
+    took = time.time() - began
+    assert took < 10, "%s took %.1fs on twenty thousand blank lines" % (os.path.basename(v), took)
+    assert "Traceback" not in (r.stdout + r.stderr), \
+        "%s crashed on a file of blank lines: %s" % (os.path.basename(v), (r.stdout + r.stderr)[-200:])
+
+# …and the shape that caused it does not come back. `^\s*` at the start of a
+# pattern is the tell: under MULTILINE it is an invitation to scan the file from
+# every line, and what it always means is the indentation of one line.
+offenders = []
+for path in sorted(glob.glob(os.path.join(src, "ddw/scripts/*.py"))):
+    body = open(path, encoding="utf-8").read()
+    for m in re.finditer(r"""r f?["']\^\\s\*""".replace(" ", ""), body):
+        offenders.append("%s:%d" % (os.path.basename(path), body[:m.start()].count("\n") + 1))
+assert not offenders, ("these patterns anchor with `^\\s*` under MULTILINE, which is the shape "
+                       "that hung: " + ", ".join(offenders))
+PYSLOWRE
 
 # `check_rule_ranges` demanded whitespace straight after `-01`, and every rule ID
 # in this method's prose is written as code — so the one shape the files

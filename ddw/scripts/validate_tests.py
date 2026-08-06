@@ -39,7 +39,7 @@ def _field(text, *names):
         # `| Total | 42 |`, `Total: 42`, `- Total: 42`, `**Total:** 42`. The
         # bullet form was rejected, and `ddw-test`'s skill gives no table
         # template, so a first draft in bullets failed four rules at once.
-        m = re.search(rf"^\s*(?:[-*]\s*)?\|?\s*\*{{0,2}}{name}\*{{0,2}}\s*[:|]\s*(.+?)\s*\|?\s*$",
+        m = re.search(rf"^[ \t]*(?:[-*][ \t]*)?\|?[ \t]*\*{{0,2}}{name}\*{{0,2}}[ \t]*[:|][ \t]*(.+?)[ \t]*\|?[ \t]*$",
                       text, re.IGNORECASE | re.MULTILINE)
         if m:
             val = m.group(1).strip().strip("`*|").strip()
@@ -84,7 +84,7 @@ def main():
     # was read as the unit suite alone: 12 tests, 0 failures, 91% coverage, and
     # five failures on the page nobody counted.
     dupes = [n for n in ("Total", "Passed", "Failed", "Line coverage")
-             if len(re.findall(rf"^\s*(?:[-*]\s*)?\|?\s*\*{{0,2}}{n}\*{{0,2}}\s*[:|]",
+             if len(re.findall(rf"^[ \t]*(?:[-*][ \t]*)?\|?[ \t]*\*{{0,2}}{n}\*{{0,2}}[ \t]*[:|]",
                                text, re.IGNORECASE | re.MULTILINE)) > 1]
 
     rows, fails, warns = [], 0, 0
@@ -164,7 +164,7 @@ def main():
     # NAME — which is what most runners print and what a person writes down.
     # Requiring the fully qualified form refused a report that named every
     # failure the fix loop needs, for punctuation the runner never produced.
-    named = re.findall(r"^\s*[-*|]\s*(?:❌\s*)?`?([\w./:\[\]-]+::[\w.\[\]-]+|[\w./-]+\.\w+::?[\w.\[\]-]*"
+    named = re.findall(r"^[ \t]*[-*|]\s*(?:❌\s*)?`?([\w./:\[\]-]+::[\w.\[\]-]+|[\w./-]+\.\w+::?[\w.\[\]-]*"
                        r"|(?:test|it|should|spec)[_A-Z][\w.\[\]-]*|[\w.\[\]-]+_(?:test|spec)\b)",
                        scope, re.MULTILINE)
     if failed is None:
@@ -229,7 +229,7 @@ def main():
     # is the cheapest way to make a suite green.
     # One reason per skip, not one word anywhere. "For that reason the integration
     # suite was not touched" used to clear seven silent skips at once.
-    reasons = len(re.findall(r"^\s*[-*|].*\b(?:reason|motivo|porque|because)\b", text,
+    reasons = len(re.findall(r"^[ \t]*[-*|].*\b(?:reason|motivo|porque|because)\b", text,
                              re.IGNORECASE | re.MULTILINE))
     if skipped and reasons < skipped:
         fail("F-TEST-06", f"{skipped:.0f} skipped test(s) and {reasons} line(s) giving a reason. A "

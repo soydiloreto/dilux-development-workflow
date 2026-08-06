@@ -148,7 +148,7 @@ def _suppressions(text):
 def _field(body, names):
     """The value of a `| Field | Value |` row, under any of its names."""
     for name in ((names,) if isinstance(names, str) else names):
-        m = re.search(rf"^\s*\|\s*{name}\s*\|\s*(.*?)\s*\|", body,
+        m = re.search(rf"^[ \t]*\|\s*{name}\s*\|\s*(.*?)\s*\|", body,
                       re.IGNORECASE | re.MULTILINE)
         val = (m.group(1) if m else "").strip()
         if val and val not in ("-", "—", "N/A", "TBD") and not val.startswith("["):
@@ -247,9 +247,9 @@ def main():
     # (`— [PASSED | BLOCKED]`, copied verbatim) or a Spanish "no bloqueado"
     # satisfied it — and the row then told the reader the contradiction had been
     # checked, which is worse than not checking it.
-    says_blocked = re.search(r"^\s*(?:Result|Resultado)\s*:?\s*\**\s*(?:BLOCKED|BLOQUEAD\w*)",
+    says_blocked = re.search(r"^[ \t]*(?:Result|Resultado)\s*:?\s*\**\s*(?:BLOCKED|BLOQUEAD\w*)",
                              text, re.IGNORECASE | re.MULTILINE)
-    says_passed = re.search(r"^\s*(?:Result|Resultado)\s*:?\s*\**\s*PASSED", text,
+    says_passed = re.search(r"^[ \t]*(?:Result|Resultado)\s*:?\s*\**\s*PASSED", text,
                             re.IGNORECASE | re.MULTILINE)
     # ONE condition, not two overlapping ones. Written as `if says_passed: … elif
     # not says_blocked: …` the branches caught the same report, so disabling
@@ -357,7 +357,7 @@ def main():
     lows = [m for m in re.finditer(r"\b(?:low|informational|informativ\w*)\b",
                                    text, re.IGNORECASE)
             if not re.search(r"(?:^|[\s|(])0\s*$", text[max(0, m.start() - 12):m.start()])
-            and not re.search(r"^\s*:?\s*0\b", text[m.end():m.end() + 8])]
+            and not re.search(r"^[ \t]*:?\s*0\b", text[m.end():m.end() + 8])]
     if lows and not re.search(r"\b(?:documented|documentad|noted|registrad)\w*", text, re.IGNORECASE):
         warn("W-SAST-01", f"{len(lows)} Low/Informational mention(s) with nothing saying they were "
                           "documented")

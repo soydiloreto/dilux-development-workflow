@@ -293,10 +293,10 @@ def main():
     # F-TM-02: the crossings.
     boundaries = _section(sections, "trust boundaries", "fronteras de confianza", "l[ií]mites")
     declared = [ln for ln in boundaries.splitlines()
-                if re.match(r"^\s*[-*|]\s*\S", ln) and not _unfilled(ln.lstrip(" -*|"))]
+                if re.match(r"^[ \t]*[-*|]\s*\S", ln) and not _unfilled(ln.lstrip(" -*|"))]
     if declared:
         ok("F-TM-02", "trust boundaries are declared")
-    elif re.search(r"^\s*[-*|]\s*\S", boundaries, re.MULTILINE):
+    elif re.search(r"^[ \t]*[-*|]\s*\S", boundaries, re.MULTILINE):
         fail("F-TM-02", "the trust boundaries are the template's placeholders: `[zone A] → "
                         "[zone B]` names no crossing of this design")
     else:

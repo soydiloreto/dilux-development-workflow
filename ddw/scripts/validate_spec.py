@@ -93,12 +93,12 @@ def _part(block_body, label):
     Returns "" when the label is absent, which is what every completeness rule
     below is really asking about.
     """
-    m = re.search(r"^\s*\*\*" + re.escape(label) + r"\*\*.*$", block_body,
+    m = re.search(r"^[ \t]*\*\*" + re.escape(label) + r"\*\*.*$", block_body,
                   re.MULTILINE | re.IGNORECASE)
     if not m:
         return ""
     rest = block_body[m.end():]
-    nxt = re.search(r"^\s*\*\*(?:" + "|".join(re.escape(x) for x in LABELS) + r")\*\*",
+    nxt = re.search(r"^[ \t]*\*\*(?:" + "|".join(re.escape(x) for x in LABELS) + r")\*\*",
                     rest, re.MULTILINE | re.IGNORECASE)
     return (rest[:nxt.start()] if nxt else rest).strip()
 
@@ -189,7 +189,7 @@ LOOP_CEILING = 3
 
 
 def _loop_count(text, label):
-    m = re.search(rf"^\s*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
+    m = re.search(rf"^[ \t]*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else 0
 
 
@@ -198,7 +198,7 @@ def _loops_since_human(text):
     is about. Absent, it falls back to the running total — an older document has
     no second number, and reading its total is the safe direction to be wrong
     in: it stops sooner, never later."""
-    m = re.search(r"^\s*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
+    m = re.search(r"^[ \t]*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
                   text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else None
 
@@ -382,7 +382,7 @@ def main():
         # says `Block 3`, never `Block 3 (the retry queue)`.
         num = re.match(r"Block (\d+)", label or "")
         covered_here = num and re.search(
-            r"^\s*\|\s*FR-\d+\s*\|[^|\n]*\bBlock\s*%s\b" % num.group(1),
+            r"^[ \t]*\|\s*FR-\d+\s*\|[^|\n]*\bBlock\s*%s\b" % num.group(1),
             text, re.MULTILINE)
         if not is_fix and not re.search(r"\bFR-\d+\b", body) and not covered_here:
             no_fr.append(label)

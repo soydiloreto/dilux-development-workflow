@@ -213,7 +213,7 @@ def main():
         else:
             ok("F-VER-02", f"all {len(blocks)} spec block(s) are accounted for")
 
-        promised = re.findall(r"^\s*[-*]\s+(?:\[[ x]\]\s*)?(test[\w./:-]*)", spec_text,
+        promised = re.findall(r"^[ \t]*[-*]\s+(?:\[[ x]\]\s*)?(test[\w./:-]*)", spec_text,
                               re.MULTILINE | re.IGNORECASE)
         absent = [t for t in dict.fromkeys(promised) if t not in text]
         if absent:

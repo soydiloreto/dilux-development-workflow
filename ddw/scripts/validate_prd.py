@@ -114,7 +114,7 @@ def _after_id(item_id, text):
     content — `NFR-01` carries digits, `FR-03` carries digits, and a rule looking
     for a number found the label every time.
     """
-    return re.sub(r"^\s*[-*]\s+\**" + re.escape(item_id) + r"\**\s*[:.(]?", "", text, count=1)
+    return re.sub(r"^[ \t]*[-*]\s+\**" + re.escape(item_id) + r"\**\s*[:.(]?", "", text, count=1)
 
 
 def _repo_relative(path):
@@ -163,7 +163,7 @@ LOOP_CEILING = 3
 
 
 def _loop_count(text, label):
-    m = re.search(rf"^\s*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
+    m = re.search(rf"^[ \t]*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else 0
 
 
@@ -172,7 +172,7 @@ def _loops_since_human(text):
     is about. Absent, it falls back to the running total — an older document has
     no second number, and reading its total is the safe direction to be wrong
     in: it stops sooner, never later."""
-    m = re.search(r"^\s*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
+    m = re.search(r"^[ \t]*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
                   text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else None
 
@@ -275,7 +275,7 @@ def main():
         # F-PRD-04: Out of Scope non-empty (FEATURE).
         if args.tier == "FEATURE":
             oos = _section_body(text, ("out of scope", "fuera de alcance"))
-            if re.search(r"^\s*[-*]\s+\S", oos, re.MULTILINE):
+            if re.search(r"^[ \t]*[-*]\s+\S", oos, re.MULTILINE):
                 ok("F-PRD-04", "Out of Scope has explicit items")
             else:
                 fail("F-PRD-04", "Out of Scope is missing or has no explicit items")
