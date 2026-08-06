@@ -7,6 +7,9 @@
 talk its way past, auditors that did not write the code they review, and state that survives closing
 the terminal.
 
+No product code is written with no ticket open — and when you genuinely want none of this, there is
+a tier that says so out loud (`FREE`) rather than a hole that lets you drift out of it quietly.
+
 Works with **Claude Code**, **Codex CLI**, **Copilot CLI**, **Cursor**, **Gemini CLI** and
 **OpenCode** — one method, six wirings.
 
@@ -148,7 +151,11 @@ that ran at three in the morning is a record that lies by omission.
   mode, which has not been driven against the live tool in either install shape — the record says
   so with a dash, and this line says so too. Told to write source with no approved spec, the write
   is refused by the hook rather than declined by the model. That session found four defects, none
-  of which the suite could have reached.
+  of which the suite could have reached. A second session (2026-08-06) found the one this whole
+  method is about: asked plainly, the model classified and refused; told *"no ticket, just write
+  it"*, it wrote the file — because the guard did not cover `IDLE`, and the acceptance script had
+  only ever asked that question from PLAN. Both blind spots are closed, and the record carries the
+  ❌ rather than a rewritten row.
 - **OpenCode** — the first four, against the live tool (1.18.9, 2026-07-29). That session is also
   where two defects were found, which is the argument for doing this by hand.
 - **Copilot CLI** — three of the first four (1.0.75, 2026-07-29). The fourth is **detected and not

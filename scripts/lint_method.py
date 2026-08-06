@@ -621,6 +621,35 @@ def check_commit_granularity(root):
                      "ddw/rules/commits.instructions.md")
 
 
+def check_tiers_documented(root, graph):
+    """Every tier the graph defines is explained where a person will look.
+
+    The graph is the authority for which tiers exist, and adding one there is
+    one line. What it costs is the part nobody remembers: CLASSIFY has to say
+    when to choose it, the state schema has to list it as a legal value, and the
+    router has to know what to load when the phase carrying its name comes up.
+    `FREE` was added and all three were missed on the first pass — the pipeline
+    worked and the method described a product with one fewer tier than it had.
+
+    Checked against the two files a reader and a model actually consult, not
+    against every mention: the classification rules, and the schema of the file
+    the tier is written into.
+    """
+    tiers = set(graph.get("tiers", {}))
+    if not tiers:
+        fail("ddw/rules/transition-graph.json", "defines no tier at all")
+        return
+    for rel_path in ("ddw/rules/classify.instructions.md", "ddw/rules/state.instructions.md"):
+        text = read(os.path.join(root, rel_path))
+        missing = sorted(t for t in tiers if t not in text)
+        if missing:
+            fail(rel_path, "the graph defines %s and this file explains %s — a tier nobody "
+                           "documents is one the model cannot choose on purpose"
+                 % (", ".join(sorted(tiers)), "none of them" if len(missing) == len(tiers)
+                    else "neither " + " nor ".join(missing) if len(missing) > 1
+                    else "not " + missing[0]))
+
+
 def check_phase_names(root, graph):
     """A phase named in a router must be a phase the graph knows."""
     phases = known_phases(graph) | {"DISCOVERY"}
@@ -736,6 +765,7 @@ def main():
     check_rule_counts(root)
     check_commit_granularity(root)
     check_phase_names(root, graph)
+    check_tiers_documented(root, graph)
     check_compaction_envelopes(root)
     check_ticket_retarget(root)
 

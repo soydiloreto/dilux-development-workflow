@@ -11,8 +11,21 @@ Two ways in, and the difference is **where the method lives**.
 | Your teammates | install the plugin too | get it on clone |
 
 **Start with the plugin.** Drop-in is the right answer once you want to change how the method
-works — and `/ddw-eject` copies it in when that day comes, after which plugin updates stop reaching
-that repo. That is the trade.
+works — and `/ddw-eject` walks you through it when that day comes, after which plugin updates stop
+reaching that repo. That is the trade.
+
+The eject itself is a command **you** run, not something the agent does for you:
+
+```bash
+bash "<plugin root>/install.sh" . --method-only
+```
+
+Not a limitation of the skill — a consequence of the rule underneath it. Every write into `.ddw/` is
+refused in every phase, because that seal is what stops a pipeline editing the rules that stop it,
+and it cannot tell installing the method apart from disarming it: a fresh `.ddw/` with weaker rules
+is the same write. So ejecting is what installing and uninstalling already are — something done from
+outside the ticket, with the hooks looking on. `--method-only` copies the method, records it in the
+manifest so the drift check can see it change afterwards, and touches no wiring.
 
 ---
 

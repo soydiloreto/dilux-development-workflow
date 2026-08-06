@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=541
+EXPECT_CHECKS=542
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=425
+EXPECT_MUTATIONS=426
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -4925,6 +4925,49 @@ rewrite("ddw/rules/README.md", "The 84 validation rules", "The 80 validation rul
 code, out = lint()
 assert code == 0, "the probe was not restored: " + out[-300:]
 PYRULECOUNT
+
+# A tier is one line in the graph and four places in the method: the rules that
+# say when to choose it, the schema of the file it is written into, the router
+# that says what to load in the phase carrying its name, and the docs a person
+# reads. FREE was added and the first three were missed on the first pass — the
+# pipeline worked and the method described a product with one fewer tier than it
+# had. The graph is the authority for what exists; this is what makes the prose
+# follow it.
+python3 - "$SELF" <<'PYTIERDOC' && ok "every tier the graph defines is explained where the model and the reader look for it" || bad "a tier can be added to the graph and named nowhere — the model cannot choose on purpose what nobody described"
+import json, os, re, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+graph = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json"), encoding="utf-8"))
+tiers = sorted(graph.get("tiers", {}))
+assert len(tiers) >= 2, "the graph defines fewer than two tiers; this check has nothing to compare"
+
+probe = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
+shutil.copytree(src, probe, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+
+
+def lint():
+    r = subprocess.run([sys.executable, os.path.join(probe, "scripts/lint_method.py")],
+                       capture_output=True, text=True, cwd=probe)
+    return r.returncode, r.stdout + r.stderr
+
+
+code, out = lint()
+assert code == 0, "the shipped tree does not lint clean, so nothing below means anything: " + out[-300:]
+
+# Take one tier out of the rules that say when to choose it, and the linter has
+# to notice. Done for EVERY tier rather than one, so a check that happens to
+# name the tier that was there when it was written keeps working.
+rules = os.path.join(probe, "ddw/rules/classify.instructions.md")
+original = open(rules, encoding="utf-8").read()
+for tier in tiers:
+    open(rules, "w", encoding="utf-8").write(original.replace(tier, "REDACTED-TIER"))
+    code, out = lint()
+    open(rules, "w", encoding="utf-8").write(original)
+    assert code != 0 and tier in out, \
+        "the classification rules can stop naming %s and nothing says so: %s" % (tier, out[-300:])
+
+code, out = lint()
+assert code == 0, "the probe was not restored: " + out[-300:]
+PYTIERDOC
 
 # `check_rule_ranges` demanded whitespace straight after `-01`, and every rule ID
 # in this method's prose is written as code — so the one shape the files
