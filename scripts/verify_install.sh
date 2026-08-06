@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=536
+EXPECT_CHECKS=538
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=415
+EXPECT_MUTATIONS=418
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -59,7 +59,24 @@ CHECKS=0
 SKIPS=0
 
 ok()   { CHECKS=$((CHECKS+1)); printf '  \033[32m✓\033[0m %s\n' "$1"; }
-bad()  { CHECKS=$((CHECKS+1)); FAILS=$((FAILS+1)); printf '  \033[31m✗\033[0m %s\n' "$1"; }
+# `DDW_STOP_ON_FIRST_FAILURE` stops the run at the first ✗, and it exists for one
+# caller: `scripts/mutate.py`, which asks a yes/no question — did the suite go
+# red — four hundred times. Answering it costs a full pass today, and most faults
+# die in the first minute of one, so the run spends the rest of the pass proving
+# something nobody asked. This can only ever make a FAILING run shorter: it is
+# reached from `bad` and nowhere else, and it exits 1. There is no value of this
+# variable that turns a red run green, which is what separates it from
+# `EXPECT_CHECKS` — a knob that could soften a verdict, and therefore one this
+# file refuses to read from the environment.
+bad()  {
+  CHECKS=$((CHECKS+1)); FAILS=$((FAILS+1)); printf '  \033[31m✗\033[0m %s\n' "$1"
+  if [ -n "${DDW_STOP_ON_FIRST_FAILURE:-}" ]; then
+    printf '\n\033[31mStopped at the first failure (DDW_STOP_ON_FIRST_FAILURE), after %d checks.\033[0m\n' "$CHECKS"
+    printf 'This run answers "did the suite go red", not "how many checks pass". Unset the\n'
+    printf 'variable for the full report.\n'
+    exit 1
+  fi
+}
 skip() { CHECKS=$((CHECKS+1)); SKIPS=$((SKIPS+1)); printf "  \033[33m—\033[0m %s\n" "$1"; }   # counted, and counted SEPARATELY: a check that did not run is not a check that passed, and the verdict has to say so
 have() { [ -e "$1" ] && ok "${2:-$1}" || bad "${2:-$1} — MISSING"; }
 
@@ -1565,6 +1582,111 @@ assert not re.search(r"mutate\.py\S*\s+--check-anchors", suite), (
     "the suite INVOKES the anchor check — inside the mutated copy it goes red for the "
     "mutation's own footprint and hands it a kill it did not earn")
 PYPRE
+
+# One fault is one full run of the suite, and most faults die in the first
+# minute of a pass that then runs to the end proving something nobody asked.
+# Four hundred times, that is the difference between a measurement anyone runs
+# and a measurement people start deleting faults from — and deleting faults
+# deletes the measurement, not the cost.
+python3 - "$SELF" <<'PYFAST' && ok "the mutation runner can stop the suite at the first ✗, and that switch can only ever shorten a failing run" || bad "the suite runs to the end for a yes/no question, or the switch that shortens it could change a verdict"
+import os, re, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+suite = open(os.path.join(src, "scripts/verify_install.sh"), encoding="utf-8").read()
+
+# It is read from `bad` and nowhere else. Anywhere else it could skip a check
+# rather than end a run that has already failed, which is the difference between
+# a shortcut and a softened verdict — `EXPECT_CHECKS` is the cautionary tale, and
+# it is refused from the environment for exactly this reason.
+# The needle is built rather than written, so this check does not count itself.
+needle = "${" + "DDW_STOP_ON_FIRST_FAILURE:-}"
+assert suite.count(needle) == 1, \
+    "the stop switch is read in %d places; it belongs in `bad` alone" % suite.count(needle)
+body = suite[suite.index("bad()  {"):]
+body = body[:body.index("\nskip()")]
+assert needle in body and "exit 1" in body, \
+    "the stop switch is not in `bad`, or no longer exits non-zero from it:\n" + body
+
+# Driven: a copy whose first check fails, run with the switch on. It has to end
+# straight away, non-zero, saying which question it answered.
+probe = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "method")
+shutil.copytree(src, probe, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+victim = os.path.join(probe, "scripts/verify_install.sh")
+text = open(victim, encoding="utf-8").read()
+anchor = "section() {"
+assert anchor in text, "the suite no longer defines section() where this check looks"
+at = text.index(anchor)
+end = text.index("\n", text.index("}", at))
+open(victim, "w", encoding="utf-8").write(
+    text[:end + 1] + '\nbad "a failure planted by the suite\'s own check on the stop switch"\n'
+    + text[end + 1:])
+r = subprocess.run(["bash", victim], capture_output=True, text=True, cwd=probe,
+                   env=dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1"), timeout=300)
+assert r.returncode != 0, "a run with a planted failure exited 0 under the stop switch"
+assert "Stopped at the first failure" in r.stdout, \
+    "the run did not say it had stopped early: " + r.stdout[-300:]
+ran = len([ln for ln in r.stdout.splitlines() if "✓" in ln or "✗" in ln])
+assert ran < 20, \
+    "the run kept going for %d checks after the first failure — the switch did nothing" % ran
+PYFAST
+
+# And the other half of the same cost: a pull request does not have to ask
+# whether the suite can fail EVERYWHERE, only whether it can still fail where
+# the diff went. The whole list stays whole and runs on main and on the weekly
+# schedule; that run is the coverage figure and this one is not.
+python3 - "$SELF" <<'PYCHANGED' && ok "a diff selects the mutations that name its files, the suite and the runner select all of them, and a narrowed run says so" || bad "the pull request's mutation run silently measures a subset, or a diff touching the instrument narrows anything at all"
+import importlib.util, os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+work = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "method")
+shutil.copytree(src, work, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+subprocess.run(["git", "-C", work, "init", "-q"], check=True)
+for k, v in (("user.email", "t@e.st"), ("user.name", "t"), ("commit.gpgsign", "false")):
+    subprocess.run(["git", "-C", work, "config", k, v], check=True)
+subprocess.run(["git", "-C", work, "add", "-A"], check=True, capture_output=True)
+subprocess.run(["git", "-C", work, "commit", "-qm", "base"], check=True, capture_output=True)
+base = subprocess.run(["git", "-C", work, "rev-parse", "HEAD"],
+                      capture_output=True, text=True).stdout.strip()
+
+spec = importlib.util.spec_from_file_location("mut", os.path.join(work, "scripts/mutate.py"))
+mut = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mut)
+total = len(mut.MUTATIONS)
+
+
+def after_touching(rel):
+    path = os.path.join(work, rel)
+    open(path, "a", encoding="utf-8").write("\n")
+    subprocess.run(["git", "-C", work, "commit", "-qam", "touch " + rel],
+                   check=True, capture_output=True)
+    return mut.changed_mutations(base)
+
+
+# A validator: only the faults that name it.
+picked = after_touching("ddw/scripts/validate_threat.py")
+assert 0 < len(picked) < total, \
+    "touching one validator selected %d of %d mutations" % (len(picked), total)
+assert all(mut.MUTATIONS[i - 1][1].probe[1] == "ddw/scripts/validate_threat.py"
+           for i in picked if getattr(mut.MUTATIONS[i - 1][1], "probe", None)), \
+    "the selection includes faults that name another file"
+
+# The suite itself: every fault, because the answer for all of them may have moved.
+assert len(after_touching("scripts/verify_install.sh")) == total, \
+    "a diff touching the suite narrowed the run — the one file whose change can flip any fault"
+
+# And a diff no mutation names at all — a docs-only change, the ordinary case —
+# has to SAY that it injected nothing. A run that prints a percentage over an
+# empty selection, or prints nothing and exits 0, is the quiet cap this file
+# refuses everywhere else.
+subprocess.run(["git", "-C", work, "checkout", "-q", "-b", "docs-only", base], check=True)
+open(os.path.join(work, "SECURITY.md"), "a", encoding="utf-8").write("\n")
+subprocess.run(["git", "-C", work, "commit", "-qam", "docs"], check=True, capture_output=True)
+r = subprocess.run([sys.executable, os.path.join(work, "scripts/mutate.py"), "--changed", base],
+                   capture_output=True, text=True, cwd=work, timeout=120)
+assert r.returncode == 0, "a docs-only diff failed the mutation run: " + (r.stdout + r.stderr)[-300:]
+assert "injects nothing" in r.stdout, \
+    "the run said nothing about having injected nothing: " + r.stdout[-300:]
+assert "faults caught" not in r.stdout, \
+    "an empty selection printed a percentage: " + r.stdout[-300:]
+PYCHANGED
 
 # The state a session materialises has to carry the field, or the mode has
 # nowhere to live: `session-boot.py` writes the first state every repo ever gets.
@@ -7842,8 +7964,16 @@ skipped = real.replace("    strategy:", "    if: false\n    strategy:", 1)
 r = cover(skipped, "skipped.yml")
 assert r.returncode != 0 and "conditional" in r.stdout, \
     "a mutation job that never runs was counted as full coverage: " + r.stdout[-200:]
-swallowed = real.replace("      - run: python3 scripts/mutate.py --shard",
-                         "      - continue-on-error: true\n        run: python3 scripts/mutate.py --shard", 1)
+# The shard step's own shape, whatever it is: the anchor used to be the single
+# `- run:` line that carried the command, and when the step grew a body the
+# replacement quietly matched nothing — the probe built an identical file, the
+# cover check passed it, and this assertion was asking about a workflow that was
+# never modified. Anchored on the job instead, which is what the question is
+# about.
+_at = real.index("  mutations:")
+_run = real.index("      - run:", _at)
+swallowed = real[:_run] + "      - continue-on-error: true\n" + real[_run:]
+assert "continue-on-error" in swallowed, "the shard step no longer has a run step to swallow"
 r = cover(swallowed, "swallowed.yml")
 assert r.returncode != 0 and "continue-on-error" in r.stdout, \
     "a shard whose failure is swallowed was counted as coverage: " + r.stdout[-200:]

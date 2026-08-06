@@ -69,6 +69,10 @@ jobs:
                 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     steps:
       - uses: actions/checkout@v7
+        with:
+          # `--changed` diffs against the base branch, and a shallow clone has
+          # no merge base to diff against.
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -89,7 +93,19 @@ jobs:
       # Every mutation here is a defect that actually shipped once; a surviving
       # one is a check that does not exist. This job must not be made "faster"
       # by deleting mutations — that is deleting the measurement, not the cost.
-      - run: python3 scripts/mutate.py --shard ${{ matrix.shard }}/24
+      # On a pull request, the slice is narrowed to the faults whose file the
+      # diff touches — the question a PR actually asks is whether the suite can
+      # still fail WHERE THIS CHANGE WENT, and answering the wider one costs
+      # four hundred full runs of the suite on every push. The shards stay, so
+      # the required checks keep their names and a docs-only change comes back
+      # in seconds saying it injected nothing. On main and on the weekly
+      # schedule there is no `--changed`, and that run is the coverage figure.
+      - run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python3 scripts/mutate.py --shard ${{ matrix.shard }}/24 --changed "origin/${{ github.base_ref }}"
+          else
+            python3 scripts/mutate.py --shard ${{ matrix.shard }}/24
+          fi
 
   coverage:
     name: did every fault get injected?

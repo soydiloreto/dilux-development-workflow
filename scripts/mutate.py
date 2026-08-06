@@ -1313,8 +1313,10 @@ MUTATIONS = [
           "          true")),
     ("a mutation shard's failure stops failing the workflow",
      edit(".github/workflows/mutations.yml",
-          "      - run: python3 scripts/mutate.py --shard",
-          "      - continue-on-error: true\n        run: python3 scripts/mutate.py --shard")),
+          '      - run: |\n        if [ "${{ github.event_name }}" = "pull_request" ]; then'.replace(
+              "        if", "          if"),
+          '      - continue-on-error: true\n        run: |\n'
+          '          if [ "${{ github.event_name }}" = "pull_request" ]; then')),
     ("a gate reads one document path and its skill documents another",
      edit("skills/ddw-security-sast/SKILL.md",
           "docs/ddw/security/sast-", "docs/ddw/sast/sast-")),
@@ -1675,11 +1677,11 @@ MUTATIONS = [
           "        _odd = _not_a_regular_file(_path)\n        if _odd:\n            raise Block(_odd)\n",
           "")),
     ("the mutation count goes back to being pinned nowhere",
-     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=415", "EXPECT_MUTATIONS=0")),
+     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=418", "EXPECT_MUTATIONS=0")),
     ("the check total goes back to being unpinned, which used to print as a pass",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=536", "EXPECT_CHECKS=0")),
+     edit("scripts/verify_install.sh", "EXPECT_CHECKS=538", "EXPECT_CHECKS=0")),
     ("the check total becomes a knob the environment can turn again",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=536", "EXPECT_CHECKS=${EXPECT_CHECKS:-536}")),
+     edit("scripts/verify_install.sh", "EXPECT_CHECKS=538", "EXPECT_CHECKS=${EXPECT_CHECKS:-538}")),
     ("the sealed names are judged only after symlinks are followed again",
      edit("ddw/scripts/validate-transition.py",
           "        if lexical != target:\n            reason = enforcement_write_denied(lexical, root)\n"
@@ -1761,6 +1763,18 @@ MUTATIONS = [
      edit("skills/ddw-create-prd/SKILL.md",
           "- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].",
           "- AC-03 (FR-02): ...")),
+    ("the runner stops asking the suite to stop early, and pays a full pass per fault",
+     edit("scripts/mutate.py",
+          '        env = dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1")\n', "", last=True)),
+    ("a diff touching the suite itself narrows the mutation run instead of running it whole",
+     edit("scripts/mutate.py",
+          '    if files & {"scripts/verify_install.sh", "scripts/mutate.py"}:\n'
+          "        return set(range(1, len(MUTATIONS) + 1))\n", "", last=True)),
+    ("a diff that names no fault reports it as a run instead of saying it injected nothing",
+     edit("scripts/mutate.py",
+          '        print("Nothing in this diff is named by a mutation, so this run injects nothing. "',
+          '        (lambda *a: None)("Nothing in this diff is named by a mutation, so this run injects nothing. "',
+          last=True)),
     ("the shard timeout goes back under what a shard actually takes",
      edit(".github/workflows/mutations.yml", "    timeout-minutes: 75", "    timeout-minutes: 30")),
     ("a word ending in `dos` answers for the denial-of-service category again",
@@ -1842,6 +1856,11 @@ def baseline():
     with tempfile.TemporaryDirectory() as tmp:
         repo = os.path.join(tmp, "ddw")
         shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        # NOT stopped at the first failure, and that is the difference between
+        # the two questions. This one has to be able to say "the suite passes",
+        # which is a statement about every check — and the run that answers it
+        # yes costs the same either way, because a passing run never reaches the
+        # branch that stops.
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                            capture_output=True, text=True, cwd=repo)
         if r.returncode == 0:
@@ -1862,8 +1881,15 @@ def run_one(index, label, mutate):
         problem = mutate(repo)
         if problem:
             return None, problem
+        # Stop at the first ✗. The question here is "did the suite go red", not
+        # "how many checks pass", and most faults die early in a pass that then
+        # runs to the end proving something nobody asked — four hundred times.
+        # It cannot change a verdict: the variable is read from `bad` and
+        # nowhere else, so a run with nothing to report never sees it, and a run
+        # that does exits non-zero either way.
+        env = dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1")
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
-                           capture_output=True, text=True, cwd=repo)
+                           capture_output=True, text=True, cwd=repo, env=env)
         return r.returncode != 0, None
 
 
@@ -1880,6 +1906,41 @@ def slice_of(spec, count):
     if not 1 <= i <= n:
         raise SystemExit(f"--shard {spec}: I has to be between 1 and N")
     return [k for k in range(1, count + 1) if (k - 1) % n == i - 1]
+
+
+def changed_mutations(base):
+    """The mutations whose file this diff touches, as a set of 1-based indexes.
+
+    A pull request asks a narrower question than main does: not "can the suite
+    fail anywhere", which is four hundred full runs of it, but "can it still
+    fail where this diff went". Running the whole list on every push made the
+    honest measurement so expensive that the temptation is always to delete
+    faults from it, and deleting faults deletes the measurement rather than the
+    cost. So the list stays whole, and the PULL REQUEST runs the part of it that
+    can say anything about this change.
+
+    Every probe names its file, which is what makes this possible without a
+    second source of truth. A mutation whose constructor carries no probe is
+    included: unknown is not the same as unaffected, and this must not be the
+    thing that quietly drops a fault.
+    """
+    r = subprocess.run(["git", "diff", "--name-only", "%s...HEAD" % base],
+                       capture_output=True, text=True, cwd=ROOT)
+    if r.returncode != 0:
+        raise SystemExit("--changed %s: git could not diff against it (%s). Fetch the base "
+                         "branch first: a shallow clone has no merge base to compare to."
+                         % (base, (r.stderr or "").strip()[:120]))
+    files = {ln.strip() for ln in r.stdout.splitlines() if ln.strip()}
+    # The suite and the runner are load-bearing for every fault: touch either and
+    # the answer for all of them may have changed.
+    if files & {"scripts/verify_install.sh", "scripts/mutate.py"}:
+        return set(range(1, len(MUTATIONS) + 1))
+    out = set()
+    for i, (_label, mutate) in enumerate(MUTATIONS, 1):
+        probe = getattr(mutate, "probe", None)
+        if probe is None or probe[1] in files:
+            out.add(i)
+    return out
 
 
 def check_anchors():
@@ -2043,6 +2104,9 @@ def main():
                     help="check that workflow's shards cover every mutation, then exit")
     ap.add_argument("--check-anchors", action="store_true",
                     help="check every mutation still finds what it breaks, then exit")
+    ap.add_argument("--changed", metavar="BASE",
+                    help="only the mutations whose file the diff against BASE touches "
+                         "(a pull request's question); the whole list still runs on main")
     args = ap.parse_args()
 
     if args.list:
@@ -2058,6 +2122,10 @@ def main():
 
     if args.only and args.shard:
         raise SystemExit("--only and --shard both pick what runs; use one")
+
+    touched = None
+    if args.changed:
+        touched = changed_mutations(args.changed)
 
     # What was asked for is settled FIRST, before any tree is copied or any suite
     # is run. Both checks below cost a full run of the suite each, and spending
@@ -2079,7 +2147,23 @@ def main():
     wanted = set(slice_of(args.shard, len(MUTATIONS))) if args.shard else None
     chosen = [(i, m) for i, m in enumerate(MUTATIONS, 1)
               if (not args.only or i in args.only)
-              and (wanted is None or i in wanted)]
+              and (wanted is None or i in wanted)
+              and (touched is None or i in touched)]
+    # A narrowed run says so, in the same breath as its percentage. A number
+    # that is a fraction of a subset, printed the way a number over the whole
+    # list is printed, is the kind of quiet cap this file exists to refuse.
+    if touched is not None:
+        print("--changed %s: %d of %d mutations touch what this diff changed. This is the "
+              "pull request's question.\nThe whole list runs on main and on the weekly "
+              "schedule, and that run is the coverage figure.\n"
+              % (args.changed, len(touched), len(MUTATIONS)))
+    if not chosen and touched is not None and not touched:
+        # Nothing this diff touches has a fault in the list, which is an
+        # ordinary answer for a docs-only change and not the empty selection the
+        # guard below refuses. It is still worth saying out loud.
+        print("Nothing in this diff is named by a mutation, so this run injects nothing. "
+              "The list is unchanged and main still measures it whole.")
+        return 0
     if not chosen:
         raise SystemExit("the selection matched no mutation — nothing was injected, and a run "
                          "that injects nothing has measured nothing")
