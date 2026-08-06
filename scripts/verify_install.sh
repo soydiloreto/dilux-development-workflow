@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=436
+EXPECT_MUTATIONS=437
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -8248,7 +8248,7 @@ PYUPGRADE
 # going red, because weakening a CHECK does not make the suite fail. Read as
 # source, which is the only place the question can be asked.
 python3 - "$SELF" <<'PYMETA' && ok "the suite's own guards against measuring nothing are still in place, and --cover still refuses a job that cannot fail" || bad "a check that measures nothing, or a coverage number that counts a job which never runs"
-import importlib.util, os, re, shutil, subprocess, sys, tempfile
+import importlib.util, os, re, shutil, signal, subprocess, sys, tempfile
 src = sys.argv[1]
 suite = open(os.path.join(src, "scripts/verify_install.sh"), encoding="utf-8").read()
 
@@ -8263,6 +8263,15 @@ assert re.search(r"^assert checked >= 2,", suite, re.M), \
 # check went green having run none of them.
 assert re.search(r"^assert not skipped, \(", suite, re.M), \
     "the demand check lost the guard that stops it passing without asking a single validator"
+# The probe that drives an empty selection has to kill a process GROUP. Killing
+# the process is what `subprocess.run(timeout=)` does, and it leaves everything
+# that process started running — which for this probe means the run it launched,
+# the suite that run launched, and the probe that suite reached: a recursion
+# outliving every one of its ancestors. Found still spawning hours later, inside
+# temporary trees from a version of the list that no longer existed.
+assert "start_new_session=True" in suite and "killpg" in suite, \
+    "the empty-selection probe no longer kills the process group; a timeout that kills one process "\
+    "leaves the tree it started alive, and this is the one probe whose child starts another"
 # The pinned totals are constants of this file, not knobs. Read as source
 # because the run cannot see the difference: `EXPECT_CHECKS=${EXPECT_CHECKS:-N}`
 # behaves identically until someone sets it, and then a run of 43 of 523 checks
@@ -8474,14 +8483,28 @@ for argv in (["--only", "999999"], ["--only"], ["--shard", _past_end]):
     # and a killed job reports as cancelled — the shape this repository already
     # named as not an answer, arriving this time through its own instrument.
     # Measured: shard 17 of 24, 1h15m, on the commit that reshaped the shards.
+    # In its own process group, and killed as a group. `subprocess.run(timeout=)`
+    # kills the process it started and nothing that process started — so when
+    # this probe timed out, the run it had launched went on, reached the suite,
+    # reached THIS line again and launched another. A recursion that outlives
+    # every one of its ancestors: found hours later, still spawning, inside
+    # temporary trees from a version of the list that no longer existed, with
+    # four gigabytes of /tmp behind it. The timeout was real and it was killing
+    # the wrong thing.
+    proc = subprocess.Popen([sys.executable, os.path.join(src, "scripts/mutate.py"), *argv],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
     try:
-        r = subprocess.run([sys.executable, os.path.join(src, "scripts/mutate.py"), *argv],
-                           capture_output=True, text=True, timeout=180)
+        out, err = proc.communicate(timeout=180)
+        r = subprocess.CompletedProcess(argv, proc.returncode, out, err)
     except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.communicate()
         raise AssertionError(
             "%s did not answer in three minutes. A selection that names nothing is refused from "
             "the arguments; anything that reaches the baseline from here runs the suite, which "
-            "runs this again. A hung measurement is not a measurement." % " ".join(argv))
+            "runs this again. A hung measurement is not a measurement — and the whole process "
+            "group is killed, because the run this started has started others." % " ".join(argv))
     assert r.returncode != 0, \
         "%s injected nothing and reported success — 0/0 is not a measurement" % " ".join(argv)
 PYMETA
