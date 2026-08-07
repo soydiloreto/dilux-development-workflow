@@ -436,24 +436,47 @@ def check_context_headings(root):
         return
     known = read(skill)
 
+    # Los SKILLS también, no sólo `ddw/**`. Los dos que piden un piso de
+    # cobertura citan `AGENTS.md, "Testing"` en el documento que enseñan a
+    # escribir, y con el corpus limitado a `ddw/` esa cita no se veía: se podía
+    # borrar `## Testing` de la plantilla y el lint quedaba verde. Es
+    # exactamente lo que arregló 87ae703, y nada lo sostenía.
+    corpus = sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)
+                    + glob.glob(os.path.join(root, "skills/*/SKILL.md")))
     cited = {}
-    for path in sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)):
+    for path in corpus:
         if os.path.samefile(path, skill):
             continue
         text = read(path)
         for i, line in enumerate(text.splitlines(), 1):
             if "AGENTS.md" not in line:
                 continue
-            for m in re.finditer(r'"([A-Z][^"]{2,45})"\s+section|section\s+"([A-Z][^"]{2,45})"',
-                                 line):
-                name = m.group(1) or m.group(2)
-                cited.setdefault(name, f"{rel(root, path)}:{i}")
+            # Y la forma `AGENTS.md, "Testing"`, que es como la escriben los
+            # documentos trabajados. Pidiendo la palabra `section` al lado, la
+            # cita que los skills realmente usan no contaba como cita.
+            for m in re.finditer(
+                    r'"([A-Z][^"]{2,45})"\s+section|section\s+"([A-Z][^"]{2,45})"|'
+                    r'AGENTS\.md[,\s]+\u00a7?\s*"?([A-Z][\w ]{2,45}?)"?\s*[)|]|'
+                    r'AGENTS\.md\s+\u00a7\s*([A-Z][\w ]{2,45})', line):
+                name = next((g for g in m.groups() if g), "").strip()
+                if name:
+                    cited.setdefault(name, f"{rel(root, path)}:{i}")
 
+    template = os.path.join(root, "ddw/AGENTS.template.md")
+    shipped = read(template) if os.path.exists(template) else ""
     for name, where in sorted(cited.items()):
         if f"## {name}" not in known:
             fail(where,
                  f"reads the {name!r} section of AGENTS.md, but ddw-context-check does not list "
                  "it — nothing will notice when a repo's context file has no such heading")
+        # …y que la plantilla la TRAIGA. Que el reportero sepa buscarla no la
+        # pone en el archivo: sin esto, el método le dice a cada proyecto que
+        # cite un encabezado que su propio instalador no escribe.
+        if shipped and f"## {name}" not in shipped:
+            fail(where,
+                 f"reads the {name!r} section of AGENTS.md and ddw/AGENTS.template.md ships no "
+                 f"such heading — every repo DDW installs is told to quote a section its own "
+                 f"installer never wrote")
 
 
 def check_rationale(root):

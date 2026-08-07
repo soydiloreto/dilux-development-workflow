@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=467
+EXPECT_MUTATIONS=468
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5141,6 +5141,21 @@ code, out = lint()
 assert code != 0 and "Deployment topology" in out, \
     "the template shipped a section nothing looks for and linted clean: " + out[-300:]
 open(tpl, "w", encoding="utf-8").write(text)
+
+# El encabezado que los skills mandan CITAR tiene que estar en la plantilla que
+# el instalador escribe. Los dos skills que piden un piso de cobertura citan
+# `AGENTS.md, "Testing"` en el documento que enseñan, y el barrido del linter
+# sólo miraba `ddw/**`: se podía borrar la sección de la plantilla y el lint
+# quedaba verde. Es lo que arregló 87ae703, y no lo sostenía nada.
+tpl2 = os.path.join(repo, "ddw/AGENTS.template.md")
+text = open(tpl2, encoding="utf-8").read()
+cut = re.sub(r"^## Testing.*?(?=^## )", "", text, flags=re.M | re.S)
+assert cut != text, "la plantilla ya no trae `## Testing`, así que no hay caso que plantar"
+open(tpl2, "w", encoding="utf-8").write(cut)
+code, out = lint()
+assert code != 0 and "Testing" in out and "installer" in out, \
+    "la plantilla perdió una sección que los skills mandan citar y el lint pasó: " + out[-300:]
+open(tpl2, "w", encoding="utf-8").write(text)
 
 code, out = lint()
 assert code == 0, "the tree was not put back the way it was found: " + out[-300:]

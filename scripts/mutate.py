@@ -1831,6 +1831,10 @@ MUTATIONS = [
           "        unwritten = [pretty for pretty, names in SECTIONS\n"
           "                     if pretty not in missing and _unfilled(_section_body(text, names))]",
           "        unwritten = []")),
+    ("the method tells every project to quote a heading its own installer never writes",
+     edit("scripts/lint_method.py",
+          '        if shipped and f"## {name}" not in shipped:',
+          "        if False:")),
     ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
           "    damaged = _journal_undecodable(state_path)",
@@ -2217,8 +2221,23 @@ def flake_check(rounds, jobs):
             shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
             r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                                capture_output=True, text=True, cwd=repo)
-            bad_lines = [re.sub(r"\x1b\[[0-9;]*m", "", ln).replace("✗", "").strip()
-                         for ln in r.stdout.splitlines() if "✗" in ln]
+            # El ✗ como MARCADOR, no en cualquier lado de la línea: hay un check
+            # cuyo propio mensaje lleva un ✗ («…can stop the suite at the first
+            # ✗…»), y buscarlo en cualquier posición reportaba ese check verde
+            # como ruido en 24 de 24 corridas. El mismo defecto que este modo
+            # existe para medir, cometido por el modo.
+            bad_lines = []
+            for ln in r.stdout.splitlines():
+                clean = re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                if clean.lstrip().startswith("✗"):
+                    bad_lines.append(clean.strip().lstrip("✗").strip())
+            # Guardada, no descartada: el nombre del check dice CUÁL falló y no
+            # dice por qué, y el árbol se borra al salir del `with`. Sin esto
+            # cada rojo hay que volver a cazarlo.
+            if r.returncode != 0:
+                keep = os.path.join(tempfile.gettempdir(), "ddw-flake-%d.log" % n)
+                with open(keep, "w", encoding="utf-8") as fh:
+                    fh.write(r.stdout + "\n----- stderr -----\n" + r.stderr)
             return n, r.returncode, bad_lines
 
     seen = {}
@@ -2240,6 +2259,8 @@ def flake_check(rounds, jobs):
           f"fault es sobre sí mismos:")
     for ln, rounds_hit in sorted(seen.items(), key=lambda kv: -len(kv[1])):
         print(f"  · {len(rounds_hit)}/{rounds}  {ln[:96]}")
+    print(f"\nLa salida entera de cada corrida roja quedó en "
+          f"{os.path.join(tempfile.gettempdir(), 'ddw-flake-<n>.log')}")
     return 1
 
 

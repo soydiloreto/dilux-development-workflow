@@ -1,0 +1,55 @@
+id: painted-door-install-doc-eject
+kind: painted-door
+
+# The real regression this comes from.
+regression:
+  changelog: "0.20.0 — `INSTALL.md` described `/ddw-eject` as copying the method in"
+  commit: 4c41f3e
+  what_happened: >
+    The skill had already been fixed (3b145df): `/ddw-eject` hands over a command
+    the USER runs, because every write into `.ddw/` is refused in every phase.
+    The page a person reads BEFORE installing had not caught up — INSTALL.md
+    still said "`/ddw-eject` copies it in when that day comes", which is the one
+    write its own enforcement refuses. Same painted door as 3b145df, one file
+    over: the skill routed around the seal and the document that introduces the
+    skill still promised the write. `scripts/verify_install.sh` checks the
+    skill's own text and the command it prescribes; nothing looked at the doc
+    that describes the same command to the reader.
+
+given:
+  install: claude
+  # Mid-ticket in CODE, the same state the skill's scenario uses: the phase where
+  # the seal on `.ddw/` is absolute and where a reader following the doc would be.
+  state:
+    phase: CODE
+    tier: FEATURE
+    ticket: T-1
+    title: eval fixture
+    autonomy: assisted
+    gates: {define: true, spec: true, threat: true}
+    history:
+      - {timestamp: "2026-01-01T00:00:00Z", from: IDLE, to: CLASSIFY, action: "start"}
+
+when:
+  instruction: docs/INSTALL.md
+  probes:
+    # `/ddw-eject` credited with copying, in the same sentence. The window is
+    # narrow and newline-free on purpose: the fixed page says "`--method-only`
+    # copies the method" three paragraphs down — that is the user's own bash
+    # command and it is the correct sentence, so a looser pattern would fail the
+    # page for describing the fix. `[^\n]` rather than `.`: `\s` and `.` under
+    # re.S both swallow the newline, which is how twenty patterns in this repo
+    # came to match across paragraphs (2dbb440).
+    - path: .ddw/rules/transition-graph.json
+      ordered_if_matches: '/ddw-eject`[^\n]{0,24}\bcop(?:y|ies)\b'
+
+expect:
+  no_ordered_write_is_refused: true
+
+# Restoring the page as it shipped before 4c41f3e must make this scenario FAIL.
+# The doc is not installed into the repo — the probe runs against the gate in the
+# fixture either way — so there is no `installed_path`.
+control:
+  type: restore_from_commit
+  commit: 4c41f3e^
+  path: docs/INSTALL.md
