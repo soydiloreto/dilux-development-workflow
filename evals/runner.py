@@ -408,9 +408,26 @@ def run_router_reachability(sc, ddw_root, repo):
 
     # The refusal that prescribes them has to actually be the one being shown,
     # or this scenario is asserting about a message nobody sees any more.
+    # Quién dice el rechazo: el HOOK, con un evento de herramienta, o el HELPER,
+    # con una invocación que sale distinta de cero. Los dos hints más caros que
+    # este repo arregló —«corré `--claim commit --claim pr` primero» y «la única
+    # transición desde IDLE es `--to CLASSIFY`»— viven sólo en el `main()` de
+    # `transition.py`, y sin poder afirmar contra su stderr no había forma de
+    # escribir esos escenarios: el control salía verde porque lo único que
+    # cambió fue el texto del hint.
     trig = sc["when"].get("triggered_by")
     if trig:
-        code, reason = hook_verdict(repo, trig["event"])
+        if "event" in trig:
+            code, reason = hook_verdict(repo, trig["event"])
+        elif "transition" in trig:
+            args = [a.replace("${REPO}", str(repo)) for a in trig["transition"]]
+            r = sh([sys.executable, str(repo / ".ddw" / "scripts" / "transition.py"), *args,
+                    "--state", str(repo / ".ddw-state.json"),
+                    "--graph", str(repo / ".ddw" / "rules" / "transition-graph.json")],
+                   cwd=repo, timeout=60, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)))
+            code, reason = r.returncode, (r.stderr or r.stdout)
+        else:
+            return ERROR, "triggered_by declares neither `event` nor `transition`"
         if code == 0:
             return ERROR, ("the refusal this scenario is about no longer fires — "
                            "nothing to judge")
@@ -560,13 +577,23 @@ def apply_control(sc, ddw_root, repo, workdir):
         raise RuntimeError("scenario declares no control; it cannot be trusted")
     kind = ctl["type"]
     if kind == "restore_from_commit":
-        r = sh(["git", "show", f"{ctl['commit']}:{ctl['path']}"], cwd=ddw_root)
-        if r.returncode != 0:
-            raise RuntimeError(f"cannot read {ctl['path']} at {ctl['commit']}")
-        # patch BOTH the source tree copy the scenario reads and the installed copy
-        for dest in (ddw_root / ctl["path"], repo / ctl.get("installed_path", ctl["path"])):
-            if dest.parent.exists():
-                dest.write_text(r.stdout, encoding="utf-8")
+        # `path` o `paths`. Algunas regresiones no se pueden restaurar de a un
+        # archivo: la puerta pintada del estado corrupto vive en
+        # `validate-transition.py`, y esa versión tiene otra firma que el
+        # `hook-gate.py` de HEAD — restaurando una sola, el control se pone rojo
+        # por un TypeError y no por la regresión, o sea que no discrimina nada.
+        # Un control que se pone rojo por la razón equivocada es tan inútil como
+        # uno que no se pone rojo.
+        paths = ctl.get("paths") or [ctl["path"]]
+        for rel_path in paths:
+            r = sh(["git", "show", f"{ctl['commit']}:{rel_path}"], cwd=ddw_root)
+            if r.returncode != 0:
+                raise RuntimeError(f"cannot read {rel_path} at {ctl['commit']}")
+            # patch BOTH the source tree copy the scenario reads and the installed copy
+            installed = ctl.get("installed_paths", {}).get(rel_path, rel_path)
+            for dest in (ddw_root / rel_path, repo / installed):
+                if dest.parent.exists():
+                    dest.write_text(r.stdout, encoding="utf-8")
         return
     if kind == "patch_installed":
         dest = repo / ctl["path"]

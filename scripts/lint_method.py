@@ -733,6 +733,46 @@ def check_blocked_marks_enforcement(root):
                  "the same kind of rule as the ones nothing enforces")
 
 
+def check_free_tiers_explained_to_people(root, graph):
+    """Un tier que no pide NINGUNA compuerta tiene que estar explicado en
+    `docs/METHOD.md`.
+
+    No todos: METHOD.md delega en las tablas canónicas a propósito —«every
+    phase, every tier, every gate» vive en el catálogo— y exigirle la lista
+    entera sería pedirle que duplique lo que este repo evita duplicar. Se probó
+    y el lint pidió meter FEATURE, FIX y QUICK-FIX en un documento que decide no
+    enumerarlos. Eso no es un hallazgo, es forzar una copia.
+
+    Lo que sí: un tier SIN compuertas es el único del que no se entera nadie por
+    el camino. Los demás se anuncian solos — algo se pide, algo se rechaza. En
+    ése no se pide nada, y si el documento que le explica el método a una
+    persona no lo nombra, el producto tiene un modo sin enforcement del que sólo
+    se enteran quienes leen el grafo. Es la mitad de 4c41f3e que ningún check
+    sostenía.
+    """
+    path = os.path.join(root, "docs/METHOD.md")
+    if not os.path.exists(path):
+        return
+    text = read(path)
+    for tier in sorted(graph.get("tiers", {})):
+        # La cadena `extends`, resuelta acá: un tier que hereda pide lo que
+        # pide su padre, y leer sólo sus propias claves diría que no pide nada.
+        asks, seen, cur = set(), set(), tier
+        while cur and cur not in seen:
+            seen.add(cur)
+            spec = graph["tiers"].get(cur) or {}
+            for key, edge in spec.items():
+                if key.startswith("_") or key == "extends" or not isinstance(edge, dict):
+                    continue
+                asks |= set(edge.get("gates") or [])
+            cur = spec.get("extends")
+        if not asks and tier not in text:
+            fail("docs/METHOD.md",
+                 "the graph defines %s, which asks for no gate at all, and this file never names "
+                 "it — a mode with no enforcement is the one a reader has to be told about, "
+                 "because nothing in the run will tell them" % tier)
+
+
 def check_phase_names(root, graph):
     """A phase named in a router must be a phase the graph knows."""
     phases = known_phases(graph) | {"DISCOVERY"}
@@ -851,6 +891,7 @@ def main():
     check_phase_names(root, graph)
     check_blocked_marks_enforcement(root)
     check_tiers_documented(root, graph)
+    check_free_tiers_explained_to_people(root, graph)
     check_compaction_envelopes(root)
     check_ticket_retarget(root)
 

@@ -417,3 +417,43 @@ def test_a_spec_owes_the_order_its_blocks_run_in(tmp_path):
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-003.md", nodeps, *_prd(tmp_path))
     assert _refuses(refused, "F-SPEC-11"), \
         "una spec sin orden de ejecución declarado pasó: " + "\n".join(refused)
+
+
+# ── Tres reglas de la spec que la suite tampoco ejecuta ──────────────────────
+#
+# Del mismo mapa de cobertura: `no_criterion`, `bad_api` y `bad_model` son ramas
+# que la suite no toca ni una vez. Son las reglas que deciden si un bloque dice
+# cuándo está terminado, si un endpoint trae su contrato y si un esquema declara
+# sus restricciones — lo que separa una spec de una lista de intenciones.
+
+def test_a_block_owes_a_verifiable_completion_criterion(tmp_path):
+    """F-SPEC-05. Sin criterio, «terminado» es una opinión, y la fase que
+    implementa el bloque no tiene contra qué medirse."""
+    base = _spec()
+    r, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md", base, *_prd(tmp_path))
+    assert r.returncode == 0 and not refused, \
+        "la spec sana ya no pasa: " + ("\n".join(refused) or r.stderr[-200:])
+    cut = re.sub(r"^\*\*Completion criterion\*\*.*?(?=^\*\*|^## )", "", base, flags=re.M | re.S)
+    assert cut != base, "la spec sana ya no trae `**Completion criterion**`"
+    _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-010.md", cut, *_prd(tmp_path))
+    assert _refuses(refused, "F-SPEC-05"), \
+        "un bloque sin criterio de finalización pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_an_endpoint_owes_a_complete_contract(tmp_path):
+    """F-SPEC-07. Un contrato al que le falta el código de error o la
+    autenticación es el que se descubre en producción."""
+    base = _spec()
+    if "API contract" not in base:
+        pytest.skip("la spec sana no declara un contrato de API que recortar")
+    # La etiqueta va sola en su línea y el contenido debajo, hasta la siguiente
+    # etiqueta en negrita: reemplazar sólo la línea del rótulo no recorta nada.
+    partial = re.sub(r"(?ms)^\*\*API contract\*\*.*?(?=^\*\*|^## )",
+                     "**API contract**\n- POST /api/x — request body, response 200\n\n",
+                     base, count=1)
+    assert partial != base, "la sonda no recortó la sección de contrato"
+    _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-011.md", partial,
+                           *_prd(tmp_path))
+    assert _refuses(refused, "F-SPEC-07"), \
+        ("un contrato sin códigos de error ni autenticación pasó: "
+         + ("\n".join(refused) or "sin rechazos"))

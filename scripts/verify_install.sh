@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=469
+EXPECT_MUTATIONS=472
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5075,7 +5075,7 @@ PYFOUR
 # was never recounted. The number the method is FOR was the one number nothing
 # checked.
 python3 - "$SELF" <<'PYRULECOUNT' && ok "the catalog's summary is counted against the rules the catalog defines, and so is the README line that restates it" || bad "the rule catalog can go back to summarising a count of rules it does not contain"
-import os, re, subprocess, sys, tempfile
+import json, os, re, subprocess, sys, tempfile
 src = sys.argv[1]
 work = tempfile.mkdtemp(dir=os.environ["WORK"])
 subprocess.run(["cp", "-r", src, os.path.join(work, "repo")], check=True)
@@ -5156,6 +5156,39 @@ code, out = lint()
 assert code != 0 and "Testing" in out and "installer" in out, \
     "la plantilla perdió una sección que los skills mandan citar y el lint pasó: " + out[-300:]
 open(tpl2, "w", encoding="utf-8").write(text)
+
+# Un tier que no pide NINGUNA compuerta tiene que estar explicado donde lee una
+# persona. Los otros se anuncian solos: algo se pide, algo se rechaza. En ése no
+# se pide nada, así que si `docs/METHOD.md` no lo nombra, el producto tiene un
+# modo sin enforcement del que sólo se entera quien lee el grafo. Es la mitad de
+# 4c41f3e que no sostenía ningún check — `check_tiers_documented` mira los dos
+# archivos que lee el MODELO, y ninguno que lea una persona.
+method = os.path.join(repo, "docs/METHOD.md")
+text = open(method, encoding="utf-8").read()
+graph = json.load(open(os.path.join(repo, "ddw/rules/transition-graph.json"), encoding="utf-8"))
+def _asks(tier):
+    """Lo que pide un tier, con la cadena `extends` resuelta: leyendo sólo sus
+    claves propias, todo tier que hereda parece no pedir nada — y entonces esta
+    sonda elegía cualquiera y borrarlo de METHOD.md no cambiaba nada."""
+    out, seen, cur = set(), set(), tier
+    while cur and cur not in seen:
+        seen.add(cur)
+        spec = (graph.get("tiers") or {}).get(cur) or {}
+        for key, edge in spec.items():
+            if key.startswith("_") or key == "extends" or not isinstance(edge, dict):
+                continue
+            out |= set(edge.get("gates") or [])
+        cur = spec.get("extends")
+    return out
+
+
+free = [t for t in (graph.get("tiers") or {}) if not _asks(t)]
+assert free, "el grafo ya no define ningún tier sin compuertas, así que no hay caso que plantar"
+open(method, "w", encoding="utf-8").write(text.replace(free[0], "REDACTED"))
+code, out = lint()
+assert code != 0 and free[0] in out, \
+    "se borró de METHOD.md el único tier sin enforcement y el lint pasó: " + out[-300:]
+open(method, "w", encoding="utf-8").write(text)
 
 code, out = lint()
 assert code == 0, "the tree was not put back the way it was found: " + out[-300:]
