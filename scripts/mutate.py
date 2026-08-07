@@ -1845,9 +1845,12 @@ MUTATIONS = [
      # fault rompe este fault, y lo que se rompe es justo la comprobación de que
      # no se borraron faults. La única línea que hay que tocar al sumar uno es
      # `EXPECT_MUTATIONS`, y ninguna otra.
-     edit("scripts/verify_install.sh",
-          '[ "$MUT_N" = "$EXPECT_MUTATIONS" ] \\',
-          '[ "$MUT_N" = "$MUT_N" ] \\')),
+     # Con `edit_re`, sobre el PIN. Reanclarlo a la comparación fue un error y
+     # la corrida lo dijo: hacer la comparación trivialmente cierta APAGA el
+     # check, y un check apagado no pone nada en rojo — el fault sobrevivía.
+     # Lo que tiene que romperse es el número, para que el check hable.
+     edit_re("scripts/verify_install.sh", r"^EXPECT_MUTATIONS=\d+$", "EXPECT_MUTATIONS=0",
+             "la línea que fija el total de mutaciones")),
     ("the check total goes back to being unpinned, which used to print as a pass",
      edit_re("scripts/verify_install.sh", r"^EXPECT_CHECKS=\d+$", "EXPECT_CHECKS=0",
              "la línea que fija el total de checks")),
