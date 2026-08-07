@@ -2157,7 +2157,21 @@ def baseline():
         print("The suite does not pass on an UNMUTATED copy of this tree, so every fault "
               "below would\nbe recorded as caught without being examined. Nothing was "
               "injected. The suite said:\n")
-        tail = [ln for ln in (r.stdout + r.stderr).splitlines() if ln.strip()][-25:]
+        # Las líneas ✗ PRIMERO, y después la cola. El baseline no para en el
+        # primer fallo —tiene que poder decir «la suite pasa», que es una
+        # afirmación sobre todos los checks— así que lo que falló puede quedar a
+        # cuatrocientas líneas del final, y la cola sola dice «falló algo» sin
+        # decir qué. Eso es exactamente lo que este archivo entero está tratando
+        # de que no pase.
+        out = r.stdout + r.stderr
+        marks = [re.sub(r"\x1b\[[0-9;]*m", "", ln).strip()
+                 for ln in r.stdout.splitlines()
+                 if re.sub(r"\x1b\[[0-9;]*m", "", ln).lstrip().startswith("✗")]
+        for ln in marks:
+            print("  " + ln)
+        if marks:
+            print()
+        tail = [ln for ln in out.splitlines() if ln.strip()][-25:]
         for ln in tail:
             print("  " + ln)
         return 1

@@ -7394,8 +7394,19 @@ unset CLAUDE_PROJECT_DIR
 if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" 2>/dev/null; then
   EV_OUT="$(python3 "$SELF/evals/runner.py" --repo "$SELF" --offline 2>&1)"
   EV_RC=$?
-  EV_CTL="$(python3 "$SELF/evals/runner.py" --repo "$SELF" --offline --control 2>&1)"
-  EV_CRC=$?
+  # El CONTROL necesita la historia: cada escenario declara el commit de la
+  # regresión de la que sale, y sin `.git` no hay de dónde sacarla. Las copias
+  # que hace `mutate.py` no la llevan, así que ahí el control no se puede
+  # preguntar — y desde que un control inaplicable FALLA en vez de contarse
+  # como rojo, preguntarlo igual ponía en rojo cada copia y el runner se negaba
+  # a inyectar nada. Skip, que se cuenta aparte y no suma a un verde.
+  if git -C "$SELF" rev-parse --git-dir >/dev/null 2>&1; then
+    EV_CTL="$(python3 "$SELF/evals/runner.py" --repo "$SELF" --offline --control 2>&1)"
+    EV_CRC=$?
+  else
+    EV_CTL="(sin historia git: el control no se puede preguntar acá)"
+    EV_CRC=0
+  fi
   if [ "$EV_RC" = 0 ] && [ "$EV_CRC" = 0 ]; then
     ok "the instruction evals pass, and each one still goes red against the regression it came from"
   else
