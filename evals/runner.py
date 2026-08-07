@@ -147,8 +147,21 @@ def install_verdict_tap(repo: Path):
     return tapped
 
 
-def write_state(repo: Path, state: dict | None):
+def write_state(repo: Path, state):
+    """El estado del escenario. `null` deja el que dejó la instalación.
+
+    Una cadena se escribe TAL CUAL, sin pasar por JSON: hay una familia entera
+    de regresiones que sólo existe con el estado CORRUPTO —el mensaje de
+    recuperación es lo que se lee cuando ya salió todo mal— y no había forma de
+    expresarlo. Un escenario que quería estado corrupto terminaba con el estado
+    sano, pasaba en las dos direcciones, y su control decía que no podía
+    detectar su propia regresión. Que lo dijera es la única razón por la que se
+    encontró.
+    """
     if state is None:
+        return
+    if isinstance(state, str):
+        (repo / ".ddw-state.json").write_text(state, encoding="utf-8")
         return
     (repo / ".ddw-state.json").write_text(json.dumps(state, indent=2))
 
@@ -571,7 +584,14 @@ def judge_repo_state(sc, repo, transcript):
 # controls — the mutation that must make the scenario go red
 # --------------------------------------------------------------------------- #
 
-def apply_control(sc, ddw_root, repo, workdir):
+def apply_control(sc, ddw_root, repo, workdir, git_root=None):
+    """El control, aplicado.
+
+    `git_root` es de dónde se LEE la historia y `ddw_root` dónde se ESCRIBE: la
+    copia de trabajo no lleva `.git`, así que `git show` corrido ahí falla, y
+    con el fallo ahora contando como control roto, fallaban los seis. Antes no
+    se notaba porque esta función no la llamaba nadie para este tipo.
+    """
     ctl = sc.get("control")
     if not ctl:
         raise RuntimeError("scenario declares no control; it cannot be trusted")
@@ -586,15 +606,35 @@ def apply_control(sc, ddw_root, repo, workdir):
         # uno que no se pone rojo.
         paths = ctl.get("paths") or [ctl["path"]]
         for rel_path in paths:
-            r = sh(["git", "show", f"{ctl['commit']}:{rel_path}"], cwd=ddw_root)
+            r = sh(["git", "show", f"{ctl['commit']}:{rel_path}"], cwd=(git_root or ddw_root))
             if r.returncode != 0:
                 raise RuntimeError(f"cannot read {rel_path} at {ctl['commit']}")
             # patch BOTH the source tree copy the scenario reads and the installed copy
-            installed = ctl.get("installed_paths", {}).get(rel_path, rel_path)
+            installed = (ctl.get("installed_paths", {}).get(rel_path)
+                         or ctl.get("installed_path")
+                         or rel_path)
             for dest in (ddw_root / rel_path, repo / installed):
                 if dest.parent.exists():
                     dest.write_text(r.stdout, encoding="utf-8")
         return
+    if kind == "substitute":
+        # Un reemplazo exacto sobre HEAD, no una restauración histórica.
+        #
+        # Restaurar el archivo de antes del fix es lo más fiel, y para algunas
+        # regresiones es imposible: la versión vieja de `validate-transition.py`
+        # no acepta el `--method` que `hook-gate.py` le pasa hoy, así que el
+        # control se pone rojo con `unrecognized arguments` — un crash, no la
+        # regresión. Es el idioma que ya usa `scripts/mutate.py`, y por la misma
+        # razón: expresa el defecto sin arrastrar el resto del árbol al pasado.
+        for dest in (ddw_root / ctl["path"], repo / ctl.get("installed_path", ctl["path"])):
+            if not dest.exists():
+                continue
+            text = dest.read_text(encoding="utf-8")
+            if ctl["old"] not in text:
+                raise RuntimeError(f"the control's anchor is gone from {ctl['path']}")
+            dest.write_text(text.replace(ctl["old"], ctl.get("new", ""), 1), encoding="utf-8")
+        return
+
     if kind == "patch_installed":
         dest = repo / ctl["path"]
         dest.write_text(ctl["content"], encoding="utf-8")
@@ -610,8 +650,17 @@ def run_one(sc, ddw_root, args, control: bool):
     workdir = Path(tempfile.mkdtemp(prefix=f"ddweval-{sc['id']}-"))
     scratch_root = ddw_root
     try:
-        if control and sc.get("control", {}).get("type") == "restore_from_commit":
+        if control and sc.get("control"):
             # Never mutate the user's checkout. Work on a copy of the tree.
+            #
+            # Para CUALQUIER control, no sólo `restore_from_commit`. Con la
+            # condición atada a un tipo, el `substitute` que se agregó después
+            # caía con `scratch_root` == el checkout del usuario y le reescribía
+            # `validate-transition.py` — y quedaba así. Lo encontré porque el
+            # árbol empezó a rechazar una escritura que debía permitir y creí
+            # por veinte minutos que había encontrado un bug del producto.
+            # La regla no era «este tipo copia», era «ningún control toca el
+            # árbol de quien lo corre», y estaba escrita acá arriba.
             scratch_root = workdir / "src"
             sh(["git", "worktree", "list"], cwd=ddw_root)
             shutil.copytree(ddw_root, scratch_root,
@@ -622,18 +671,16 @@ def run_one(sc, ddw_root, args, control: bool):
         write_state(repo, sc["given"].get("state"))
 
         if control:
-            ctl = sc["control"]
-            if ctl["type"] == "restore_from_commit":
-                blob = sh(["git", "show", f"{ctl['commit']}:{ctl['path']}"], cwd=ddw_root)
-                if blob.returncode != 0:
-                    return Result(sc["id"], sc["kind"], ERROR,
-                                  f"control unavailable: {ctl['path']}@{ctl['commit']}")
-                (scratch_root / ctl["path"]).write_text(blob.stdout, encoding="utf-8")
-                ip = repo / ctl.get("installed_path", "")
-                if ctl.get("installed_path") and ip.parent.exists():
-                    ip.write_text(blob.stdout, encoding="utf-8")
-            else:
-                apply_control(sc, scratch_root, repo, workdir)
+            # UNA implementación. `apply_control` tenía soporte de `paths` y esta
+            # rama lo resolvía inline con `ctl['path']`, así que la capacidad
+            # existía en una función que nadie llamaba — y un escenario que
+            # declarara `paths` moría con `KeyError`, salía ERROR, y en modo
+            # control un ERROR contaba como «se puso rojo». Un control verde por
+            # la razón equivocada, que es peor que uno rojo.
+            try:
+                apply_control(sc, scratch_root, repo, workdir, git_root=ddw_root)
+            except Exception as exc:  # noqa: BLE001
+                return Result(sc["id"], sc["kind"], ERROR, f"control unavailable: {exc}")
 
         kind = sc["kind"]
         if kind == "painted-door-sweep":
@@ -716,7 +763,18 @@ def main():
             # answer. ERROR counts — "the skill no longer carries a canonical
             # document, so nothing can be judged" IS the pre-fix state for the
             # template family, and a run that cannot judge is red either way.
-            if r.verdict in (FAIL, ERROR):
+            #
+            # But NOT when the harness is what failed. `control unavailable:
+            # KeyError` is the control never having been applied, and reading
+            # that as "went red as it must" makes the whole mode report success
+            # for its own breakage — measured: a scenario declaring `paths`,
+            # which the driver did not support, passed its control while the
+            # regression was never put back. The control is the one instrument
+            # here whose entire job is to distrust a green.
+            if r.verdict == ERROR and r.detail.startswith("control unavailable"):
+                r = Result(r.sid, r.kind, FAIL,
+                           "the control could not be applied, so nothing was proved: " + r.detail)
+            elif r.verdict in (FAIL, ERROR):
                 r = Result(r.sid, r.kind, PASS, "control went red as it must — " + r.detail[:80])
             elif r.verdict == PASS:
                 r = Result(r.sid, r.kind, FAIL,
