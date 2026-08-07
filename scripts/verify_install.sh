@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=468
+EXPECT_MUTATIONS=469
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -7338,6 +7338,13 @@ PYNOTICKET
 # success for anything that exits 0, including a command that ran nothing —
 # replace the invocation with `true` and this line still printed that the layer
 # "passes". The count is the evidence that tests were collected and run.
+# `CLAUDE_PROJECT_DIR` se exporta tres veces más arriba y nunca se limpia, y el
+# helper la lee ANTES que el cwd: heredada, todo lo que corra después trabaja
+# sobre un repo de otra sección. Medido — un test que pasaba solo veinte veces
+# seguidas fallaba acá adentro, con un mensaje sobre gates que no tenía nada que
+# ver con lo que medía. Las dos capas de abajo levantan sus propios repos.
+unset CLAUDE_PROJECT_DIR
+
 # ── La capa de instrucciones ──────────────────────────────────────────────────
 #
 # Todo lo de arriba mide los HOOKS: dado un evento, ¿el gate contesta bien? Esto

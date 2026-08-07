@@ -554,3 +554,48 @@ def test_a_receipt_earned_for_another_document_does_not_open_this_gate(tmp_path)
     assert why, ("un recibo ganado para prd-T-1.md abrió la compuerta de prd-T-2.md — un `cp` de "
                  "un documento que toda fase puede escribir vale por una validación")
     assert "T-2" in why, f"el rechazo no nombra el documento que falta validar: {why[:200]}"
+
+
+def test_the_helper_never_stamps_an_entry_before_the_one_it_follows(tmp_path):
+    """El reloj de pared retrocede, y el pipeline se detenía sin salida.
+
+    Medido en la máquina donde se escribe esto —WSL2, que resincroniza con el
+    host— seis saltos de un segundo hacia atrás en 33.465 muestras a lo largo de
+    75 segundos bajo carga. Un salto entre dos pasos deja la entrada nueva
+    sellada antes que la anterior, y la guarda de monotonía refusa una
+    transición legal que el helper acaba de construir. Sin salida: lo único que
+    la corregiría es editar la historia, que el hook también rechaza.
+
+    La guarda no se toca — protege contra una historia reordenada a mano, que es
+    para lo que se escribió. Lo que no puede pasar es que el camino sancionado
+    produzca el caso.
+    """
+    # Desde CLASSIFY, no desde IDLE: la arista que SETEA el tier tiene sus
+    # propias reglas, y la primera versión de este test las pisaba — fallaba con
+    # un mensaje sobre el tier, no sobre el reloj, y sólo a veces. Un test que
+    # se cae por otra cosa que la que mide es ruido, que es exactamente lo que
+    # este archivo entero está tratando de sacar del instrumento.
+    repo = _repo_at(tmp_path, phase="CLASSIFY")
+    ahead = "2099-01-01T00:00:00Z"          # el último sello, en el futuro
+    with open(os.path.join(repo, ".ddw-state.json"), "w", encoding="utf-8") as fh:
+        json.dump(state("CLASSIFY", "FEATURE", "T-1", {},
+                        [dict(entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-1"),
+                              timestamp=ahead)]), fh)
+    # `CLAUDE_PROJECT_DIR` explícito: el helper resuelve el repo por esa variable
+    # ANTES que por el cwd, y la suite la exporta y no la limpia. Heredada, este
+    # subproceso trabajaba sobre un repo de otra sección: el test pasaba solo y
+    # fallaba adentro de la suite, con un mensaje sobre gates que no tenía nada
+    # que ver con lo que mide.
+    r = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "ddw/scripts/transition.py"),
+         "--to", "DEFINE", "--action", "x", "--write"],
+        capture_output=True, text=True, cwd=repo,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=repo))
+    assert r.returncode == 0, \
+        ("una transición legal fue rechazada porque el reloj retrocedió, y no hay nada que el "
+         "usuario pueda hacer: " + (r.stderr or r.stdout)[-200:])
+    history = json.load(open(os.path.join(repo, ".ddw-state.json"), encoding="utf-8"))["history"]
+    stamps = [e["timestamp"] for e in history]
+    assert stamps == sorted(stamps), f"la historia quedó desordenada igual: {stamps}"
+    assert stamps[-1] >= ahead, \
+        "el sello nuevo quedó antes que el anterior, que es lo que la guarda refusa"
