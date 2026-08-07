@@ -191,3 +191,229 @@ def test_the_report_the_skill_teaches_passes_as_written(tmp_path):
     assert r.returncode == 0 and not refused, \
         "el reporte que ddw-security-sast le dice al modelo que escriba es rechazado: " + \
         ("\n".join(refused) or r.stderr[-200:])
+
+
+# ── Las reglas que deciden si un documento vacío gana una compuerta ──────────
+#
+# Ocho de éstas sobrevivían a las 554 comprobaciones de la suite. Ninguna de las
+# reglas que nombran (F-TM-05, F-TM-06, F-TEST-05, F-TEST-06, F-SPEC-10,
+# F-SPEC-11) aparecía una sola vez en `verify_install.sh`: existen en el
+# catálogo, están implementadas, y nada probaba que se pudieran disparar.
+#
+# Cada test hace lo mismo, en este orden: comprueba que el documento SANO pasa,
+# planta UNA violación, y exige el ❌ con su ID. El primer paso no es ceremonia
+# — sin él, un documento que ya era inválido por otra razón haría pasar el test
+# sin que la regla en cuestión hubiera opinado nada.
+
+def _worked(skill, heading, ticket="T-1"):
+    text = open(os.path.join(ROOT, "skills", skill, "SKILL.md"), encoding="utf-8").read()
+    at = text.index(heading)
+    m = re.search(r"```markdown\n(.*?)```", text[at:], re.S)
+    assert m, f"{skill} ya no trae un documento trabajado bajo {heading!r}"
+    return m.group(1).replace("{ticket}", ticket)
+
+
+def _validate(tmp_path, validator, name, body, *extra):
+    path = tmp_path / name
+    path.write_text(body, encoding="utf-8")
+    r = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts", validator),
+                        str(path), "--tier", "FEATURE", *extra],
+                       capture_output=True, text=True, cwd=str(tmp_path))
+    return r, [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+
+
+def _refuses(refused, rule):
+    return any(rule in ln for ln in refused)
+
+
+# ── El modelo de amenazas ────────────────────────────────────────────────────
+
+THREAT = "### The threat model, in the shape the validator reads"
+
+
+def _spec_arg(tmp_path):
+    """El modelo de amenazas se comprueba CONTRA el diseño real; sin la spec,
+    F-TM-06 refusa por no poder leerla y el documento sano nunca pasa."""
+    path = tmp_path / "spec-T-1.md"
+    # Los componentes salen del propio modelo trabajado: una spec escrita a mano
+    # acá nombraría otros archivos, y F-TM-06 —que es justo la regla que se está
+    # midiendo— rechazaría el documento sano por no coincidir con ella.
+    worked = _worked("ddw-threat-modeling", THREAT)
+    files = re.findall(r"`([\w./-]+\.\w+)`", worked)
+    assert files, "el modelo trabajado no nombra ningún archivo"
+    blocks = "".join("## Block %d — %s\n- `%s` — the component\n- POST /api/%d\nCovers FR-0%d.\n\n"
+                     % (i, os.path.basename(f), f, i, i)
+                     for i, f in enumerate(dict.fromkeys(files), 1))
+    path.write_text("# Spec T-1\n\n| Field | Value |\n|---|---|\n| Ticket | T-1 |\n\n" + blocks,
+                    encoding="utf-8")
+    return "--spec", str(path)
+
+
+def test_a_threat_model_that_names_nothing_from_its_design_is_refused(tmp_path):
+    """F-TM-06. Un modelo que no cita ni un archivo, ni un endpoint, ni un FR de
+    su spec es una redacción sobre un sistema imaginario: puede ser impecable y
+    no decir nada sobre este código."""
+    base = _worked("ddw-threat-modeling", THREAT)
+    r, refused = _validate(tmp_path, "validate_threat.py", "threat-T-1.md", base, *_spec_arg(tmp_path))
+    assert r.returncode == 0 and not refused, \
+        "el modelo que el skill enseña ya no pasa, así que lo de abajo no mide nada: " + \
+        ("\n".join(refused) or r.stderr[-200:])
+    generic = re.sub(r"`[\w./-]+\.(py|ts|js|go|rb)`", "the public API", base)
+    assert generic != base, "la sonda no cambió nada"
+    _, refused = _validate(tmp_path, "validate_threat.py", "threat-T-2.md", generic, *_spec_arg(tmp_path))
+    assert _refuses(refused, "F-TM-06"), \
+        "un modelo que no nombra nada del diseño ganó la compuerta: " + "\n".join(refused)
+
+
+def test_a_design_handling_sensitive_data_classifies_it(tmp_path):
+    """F-TM-05. Sin la tabla, F-TM-07 dice «no PII to encrypt» y el documento
+    sale limpio: la ausencia de la clasificación se lee como ausencia de datos
+    sensibles, que es lo contrario de lo que pasó."""
+    base = _worked("ddw-threat-modeling", THREAT)
+    assert "## Data classification" in base, "el modelo trabajado ya no trae la tabla"
+    cut = re.split(r"^## Data classification\s*$", base, flags=re.M)[0]
+    tail = re.split(r"^## Risks and mitigations\s*$", base, flags=re.M)
+    body = cut + "\n## Risks and mitigations\n" + tail[1] if len(tail) > 1 else cut
+    assert "email" in body or "password" in body or "token" in body, \
+        "sin una palabra sensible en el resto del documento la regla no tiene qué mirar"
+    _, refused = _validate(tmp_path, "validate_threat.py", "threat-T-3.md", body, *_spec_arg(tmp_path))
+    assert _refuses(refused, "F-TM-05"), \
+        "un diseño con datos sensibles pasó sin clasificar ninguno: " + "\n".join(refused)
+
+
+def test_a_threat_model_written_in_spanish_is_not_told_it_skipped_a_category(tmp_path):
+    """El método manda escribir los artefactos en el idioma del usuario, así que
+    los alias existen para documentos reales. Sin ellos, un modelo completo en
+    castellano es rechazado por una categoría que analizó."""
+    base = _worked("ddw-threat-modeling", THREAT)
+    es = (base.replace("**Elevation of Privilege:**", "**Elevación de privilegios:**")
+              .replace("**Spoofing:**", "**Suplantación:**")
+              .replace("**Repudiation:**", "**Repudio:**"))
+    assert es != base, "la sonda no tradujo ninguna etiqueta"
+    r, refused = _validate(tmp_path, "validate_threat.py", "threat-T-4.md", es, *_spec_arg(tmp_path))
+    assert not _refuses(refused, "F-TM-01"), \
+        "un modelo completo escrito en castellano fue reportado como incompleto: " + \
+        "\n".join(refused)
+
+
+# ── El reporte de tests ──────────────────────────────────────────────────────
+
+TESTS_DOC = "### The report, in the shape the validator reads"
+
+
+def test_a_report_cannot_pick_a_floor_it_can_clear(tmp_path):
+    """F-TEST-05 + F-TEST-04. El piso lo fija el proyecto; un reporte que cita
+    uno más bajo que el mínimo del pipeline y se compara contra ÉSE se aprueba
+    solo. El ⚠️ queda, y un warning no detiene nada."""
+    base = _worked("ddw-test", TESTS_DOC)
+    r, refused = _validate(tmp_path, "validate_tests.py", "tests-T-1.md", base)
+    assert r.returncode == 0 and not refused, \
+        "el reporte que el skill enseña ya no pasa: " + ("\n".join(refused) or r.stderr[-200:])
+    low = re.sub(r"^\| Coverage floor \|.*$", "| Coverage floor | 20% (AGENTS.md) |",
+                 base, flags=re.M)
+    low = re.sub(r"^\| (Line|Branch|Function) coverage \|.*$",
+                 lambda m: "| %s coverage | 31%% |" % m.group(1), low, flags=re.M)
+    assert low != base, "la sonda no bajó ni el piso ni la cobertura"
+    _, refused = _validate(tmp_path, "validate_tests.py", "tests-T-2.md", low)
+    assert _refuses(refused, "F-TEST-04"), \
+        ("un reporte con 31% de cobertura se aprobó eligiendo un piso de 20%: "
+         + ("\n".join(refused) or "no refusals at all"))
+
+
+def test_a_report_that_states_no_floor_is_refused_not_given_one(tmp_path):
+    """F-TEST-05. Heredar el default del flag en silencio hace que el documento
+    quede graduado contra un número que nadie escribió en él."""
+    base = _worked("ddw-test", TESTS_DOC)
+    nofloor = re.sub(r"^\| Coverage floor \|.*\n", "", base, flags=re.M)
+    assert nofloor != base, "el reporte trabajado ya no declara un piso"
+    _, refused = _validate(tmp_path, "validate_tests.py", "tests-T-3.md", nofloor)
+    assert _refuses(refused, "F-TEST-05"), \
+        "un reporte sin piso pasó contra uno que DDW le inventó: " + "\n".join(refused)
+
+
+def test_a_skipped_test_owes_a_reason(tmp_path):
+    """F-TEST-06. Saltear es la forma más barata de poner una suite en verde, y
+    un skip sin motivo es indistinguible de uno que tapa una falla."""
+    base = _worked("ddw-test", TESTS_DOC)
+    # El reporte trabajado no saltea nada, así que el caso hay que PLANTARLO:
+    # dos tests omitidos y ni una línea que diga por qué.
+    mute = re.sub(r"^\| Skipped \|.*$", "| Skipped | 2 |", base, flags=re.M)
+    mute = re.sub(r"^\| Passed \| (\d+) \|$",
+                  lambda m: "| Passed | %d |" % (int(m.group(1)) - 2), mute, flags=re.M)
+    mute = re.sub(r"^## Skips\n\(none\)\s*$",
+                  "## Skips\n- `tests/test_auth.py::test_expiry`\n- `tests/test_auth.py::test_refresh`",
+                  mute, flags=re.M)
+    assert "## Skips\n- " in mute and "| Skipped | 2 |" in mute, \
+        "la sonda no plantó los dos skips mudos"
+    _, refused = _validate(tmp_path, "validate_tests.py", "tests-T-4.md", mute)
+    assert _refuses(refused, "F-TEST-06"), \
+        "dos tests omitidos sin una línea de motivo pasaron: " + \
+        ("\n".join(refused) or "no refusals at all")
+
+
+def test_a_real_run_of_a_thousand_tests_is_not_refused_for_its_punctuation(tmp_path):
+    """La dirección inversa, que es la que cuesta más caro: todo runner imprime
+    el separador de miles, y sin quitarlo `1,204` se lee como `1`. La compuerta
+    rechaza el documento VERDADERO, y el autor no tiene nada que corregir."""
+    base = _worked("ddw-test", TESTS_DOC)
+    big = base
+    for field, value in (("Total", "1,204"), ("Passed", "1,202"),
+                         ("Failed", "0"), ("Skipped", "2")):
+        big = re.sub(r"^\| %s \|.*$" % field, "| %s | %s |" % (field, value), big, flags=re.M)
+    assert big != base, "la sonda no cambió los conteos"
+    r, refused = _validate(tmp_path, "validate_tests.py", "tests-T-5.md", big)
+    assert not _refuses(refused, "F-TEST-02"), \
+        ("una corrida real de 1.204 tests fue rechazada por su propia puntuación: "
+         + "\n".join(refused))
+
+
+# ── La spec ──────────────────────────────────────────────────────────────────
+
+def _fixture(marker, tag):
+    """Un documento sano de la suite. El skill de spec trae una PLANTILLA con
+    placeholders, no un documento trabajado, así que el único ejemplo completo
+    que existe está ahí. Leído, no copiado: copiarlo sería una tercera versión
+    de la misma forma."""
+    suite = open(os.path.join(ROOT, "scripts/verify_install.sh"), encoding="utf-8").read()
+    at = suite.index(marker)
+    end = suite.index("\n" + tag, at)
+    return suite[suite.index("\n", at) + 1:end]
+
+
+def _spec():
+    return _fixture('cat > "$VS/spec-FEAT-001.md" <<\'SPECEOF\'', "SPECEOF")
+
+
+def _prd(tmp_path):
+    """La spec se valida CONTRA su PRD; sin él no se comprueba la cobertura y el
+    documento sano es rechazado por una razón que no es la que se está midiendo."""
+    body = _fixture('cat > "$VP/docs/ddw/prd/prd-FEAT-001.md" <<\'PRDEOF\'', "PRDEOF")
+    path = tmp_path / "prd-FEAT-001.md"
+    path.write_text(body, encoding="utf-8")
+    return "--prd", str(path)
+
+
+def test_a_spec_block_owes_what_can_go_wrong_with_it(tmp_path):
+    """F-SPEC-10. Con cero errores documentados, F-SPEC-16 tampoco tapa el
+    agujero: comparar los caminos tristes contra una lista vacía no compara
+    nada."""
+    base = _spec()
+    r, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md", base, *_prd(tmp_path))
+    assert r.returncode == 0 and not refused, \
+        "la spec sana ya no pasa: " + ("\n".join(refused) or r.stderr[-200:])
+    noerr = re.sub(r"^\*\*Error handling\*\*.*?(?=^\*\*|^## )", "", base, flags=re.M | re.S)
+    assert noerr != base, "la spec sana ya no trae `**Error handling**`"
+    _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-002.md", noerr, *_prd(tmp_path))
+    assert _refuses(refused, "F-SPEC-10"), \
+        "un bloque sin manejo de errores pasó: " + ("\n".join(refused) or "no refusals at all")
+
+
+def test_a_spec_owes_the_order_its_blocks_run_in(tmp_path):
+    """F-SPEC-11. Una sola vez para todo el documento, y sin ella el orden de
+    ejecución queda sin declarar."""
+    base = _spec()
+    nodeps = re.sub(r"^## Dependencies between blocks.*?(?=^## )", "", base, flags=re.M | re.S)
+    assert nodeps != base, "la spec sana ya no trae la sección de dependencias"
+    _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-003.md", nodeps, *_prd(tmp_path))
+    assert _refuses(refused, "F-SPEC-11"), \
+        "una spec sin orden de ejecución declarado pasó: " + "\n".join(refused)
