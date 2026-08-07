@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=553
+EXPECT_CHECKS=554
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=441
+EXPECT_MUTATIONS=457
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -4669,7 +4669,7 @@ grep -q "ddw" "$UN/.claude/settings.json" \
 # every generated slash command survived every uninstall. On OpenCode, whose
 # whole surface is commands plus one plugin file, that is most of the install.
 python3 - "$SELF" <<'PYUNINST' && ok "uninstalling leaves nothing DDW installed behind, on any of the six tools, and keeps a file you edited unless you force it" || bad "an uninstall leaves DDW files behind, or destroys a file you had changed"
-import json, os, shutil, subprocess, sys, tempfile
+import glob, json, os, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 work = tempfile.mkdtemp(dir=os.environ["WORK"])
 for target in ("claude", "codex", "copilot", "cursor", "gemini", "opencode"):
@@ -4774,6 +4774,57 @@ orphans = [h.get("command") for groups in left.get("hooks", {}).values()
 assert not orphans, \
     ("the uninstall left %d hook block(s) an older version wired: %s — every write in that "
      "repository now fails on a script the uninstall deleted" % (len(orphans), orphans[:2]))
+
+# El archivo de contexto de cada herramienta que tiene uno. `GEMINI.md` se
+# escribía y no se removía: quedaba en el repo importando `@.ddw/orchestrator.md`
+# con `.ddw/` ya borrado, y toda sesión de Gemini ahí arranca leyendo un archivo
+# que no está. Derivado de los adaptadores, no de una lista acá: una lista acá es
+# una segunda copia, y la segunda copia es la que se queda sin la herramienta que
+# se agregue mañana.
+for _recipe in sorted(glob.glob(os.path.join(src, "adapters/*/adapter.json"))):
+    _tool = os.path.basename(os.path.dirname(_recipe))
+    _ctx = (json.load(open(_recipe, encoding="utf-8")) or {}).get("context_file")
+    if not _ctx:
+        continue
+    _repo = os.path.join(work, "ctx-" + _tool)
+    os.makedirs(_repo)
+    subprocess.run(["git", "-C", _repo, "init", "-q"], check=True)
+    subprocess.run(["bash", os.path.join(src, "install.sh"), _repo, "--target", _tool],
+                   capture_output=True, text=True)
+    _path = os.path.join(_repo, _ctx)
+    assert os.path.exists(_path), \
+        "%s declara `context_file` %s y la instalación no lo escribió" % (_tool, _ctx)
+    subprocess.run(["bash", os.path.join(src, "uninstall.sh"), _repo, "--yes"],
+                   capture_output=True, text=True)
+    if os.path.exists(_path):
+        _left = open(_path, encoding="utf-8").read()
+        assert "BEGIN DDW" not in _left, \
+            ("%s quedó con el bloque de DDW después de desinstalar: importa un método que ya "
+             "no está, y cada sesión en ese repo arranca leyendo un archivo borrado" % _ctx)
+
+# Y el plan que se aprueba tiene que ser el borrado que corre. Con `--force`, el
+# plan se imprimía SIN `--force`: decía «Kept 1 file(s) … re-run with --force» y
+# a continuación borraba ese archivo. Se lee «se conserva» y se pierde el
+# archivo propio — el peor orden posible, porque el plan existe justamente para
+# ser leído antes de decir que sí.
+_pf = os.path.join(work, "plan-force")
+os.makedirs(_pf)
+subprocess.run(["git", "-C", _pf, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), _pf, "--target", "claude"],
+               capture_output=True, text=True)
+_mine = os.path.join(_pf, ".claude", "hooks", "enforce.sh")
+open(_mine, "a", encoding="utf-8").write("\n# una línea mía\n")
+_plan = subprocess.run(["bash", os.path.join(src, "uninstall.sh"), _pf, "--plan", "--force"],
+                       capture_output=True, text=True).stdout
+subprocess.run(["bash", os.path.join(src, "uninstall.sh"), _pf, "--yes", "--force"],
+               capture_output=True, text=True)
+assert "enforce.sh" in _plan, \
+    ("el plan de un `--force` no nombra el archivo editado que `--force` va a borrar: "
+     + _plan[-400:])
+assert not os.path.exists(_mine), "el `--force` no borró lo que su propio plan dijo que borraba"
+assert "Kept" not in _plan or "--force" not in _plan.split("Kept")[1][:200], \
+    ("el plan de un `--force` dice que conserva archivos y sugiere volver a correr con "
+     "`--force`, que es lo que se acaba de pedir — y después los borra: " + _plan[-400:])
 PYUNINST
 
 # The manifest is COMMITTED, so it arrives with the clone, from whoever wrote it —
@@ -5343,7 +5394,7 @@ PYWARNPOS
 # the first version of this check ran after the method was copied and said
 # "nothing was written", which was false as it printed.
 python3 - "$SELF" <<'PYLIFECYCLE' && ok "an install refuses a path it needs and cannot have, before writing anything, and says which one" || bad "the installer crashes on a repo shaped oddly, or leaves a half-install behind while claiming it did not"
-import os, shutil, subprocess, sys, tempfile
+import glob, json, os, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 work = tempfile.mkdtemp(dir=os.environ["WORK"])
 
@@ -5373,6 +5424,47 @@ assert ".claude" in out and "directory" in out, \
 assert sorted(os.listdir(p)) == before, (
     "the refusal says nothing has been written and something was: %s appeared"
     % sorted(set(os.listdir(p)) - set(before)))
+
+# La HOJA de cada wiring, ocupada, con el ancestro sano. Arriba se ocupa
+# `.claude`, que es ancestro común de las cuatro rutas que el preflight junta
+# para claude: romper una sola no cambia nada ahí, así que la comprobación
+# pasaba con el preflight mirando cualquier subconjunto. Y `commands` se leía en
+# singular donde el instalador lo escribe en plural, con lo cual el directorio
+# de los diecisiete comandos de OpenCode no se miraba nunca. Ocupado ése, el
+# rechazo que promete «nothing has been written» llegaba después de escribir
+# `.ddw/` y `AGENTS.md`, y sin manifiesto — o sea con el detector de deriva
+# apagado para siempre.
+for _rec in sorted(glob.glob(os.path.join(src, "adapters/*/adapter.json"))):
+    _tool = os.path.basename(os.path.dirname(_rec))
+    _r = json.load(open(_rec, encoding="utf-8")) or {}
+    _leaves = [w.get("to") for w in (_r.get("wiring") or [])]
+    _leaves += [(_r.get(_k) or {}).get("dir") for _k in ("skills", "agents", "commands")]
+    for _leaf in sorted({l.strip("/") for l in _leaves if l}):
+        _p = repo("leaf-%s-%s" % (_tool, _leaf.replace("/", "-")))
+        os.makedirs(os.path.join(_p, os.path.dirname(_leaf)), exist_ok=True) \
+            if os.path.dirname(_leaf) else None
+        open(os.path.join(_p, _leaf), "w", encoding="utf-8").write("mío, no un directorio\n")
+        _before = set()
+        for _dp, _dn, _fn in os.walk(_p):
+            if ".git" in _dp.split(os.sep):
+                continue
+            _before |= {os.path.relpath(os.path.join(_dp, f), _p) for f in _fn}
+        _ir = subprocess.run(["bash", os.path.join(src, "install.sh"), _p, "--target", _tool],
+                             capture_output=True, text=True, timeout=180)
+        _out = _ir.stdout + _ir.stderr
+        assert "Traceback" not in _out, \
+            "%s: `%s` ocupado contestó con un stack:\n%s" % (_tool, _leaf, _out[-400:])
+        assert _ir.returncode != 0, \
+            "%s: la instalación dijo que salió bien con `%s` ocupado por un archivo" % (_tool, _leaf)
+        _after = set()
+        for _dp, _dn, _fn in os.walk(_p):
+            if ".git" in _dp.split(os.sep):
+                continue
+            _after |= {os.path.relpath(os.path.join(_dp, f), _p) for f in _fn}
+        assert _after == _before, \
+            ("%s: el rechazo por `%s` dice que no se escribió nada y se escribió %s — "
+             "una instalación a medias, y sin manifiesto no hay nada que la detecte después"
+             % (_tool, _leaf, sorted(_after - _before)[:5]))
 
 # …and the ordinary repo still installs, or the guard has eaten the product.
 ok_repo = repo("ordinary")
@@ -7231,6 +7323,35 @@ PYNOTICKET
 # success for anything that exits 0, including a command that ran nothing —
 # replace the invocation with `true` and this line still printed that the layer
 # "passes". The count is the evidence that tests were collected and run.
+# ── La capa de instrucciones ──────────────────────────────────────────────────
+#
+# Todo lo de arriba mide los HOOKS: dado un evento, ¿el gate contesta bien? Esto
+# mide las INSTRUCCIONES: un lector obediente de las reglas tal como están
+# escritas, ¿termina donde los hooks permiten? Ningún check se pone rojo cuando
+# un skill manda hacer un write que el enforcement rechaza — el modelo
+# simplemente obedece y choca.
+#
+# Se corre acá, y con el CONTROL, por la misma razón que todo lo demás en este
+# archivo: una capa que nadie ejecuta reporta verde por no haber mirado. El
+# control aplica a cada escenario la versión histórica rota de su instrucción y
+# EXIGE que el escenario se ponga rojo; si pasa, el escenario no puede detectar
+# la regresión de la que salió y no está midiendo nada.
+if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" 2>/dev/null; then
+  EV_OUT="$(python3 "$SELF/evals/runner.py" --repo "$SELF" --offline 2>&1)"
+  EV_RC=$?
+  EV_CTL="$(python3 "$SELF/evals/runner.py" --repo "$SELF" --offline --control 2>&1)"
+  EV_CRC=$?
+  if [ "$EV_RC" = 0 ] && [ "$EV_CRC" = 0 ]; then
+    ok "the instruction evals pass, and each one still goes red against the regression it came from"
+  else
+    bad "an instruction eval fails, or one of them cannot go red — a scenario that cannot fail is not a test"
+    printf '%s\n' "$EV_OUT" | tail -8 | sed 's/^/      /'
+    printf '%s\n' "$EV_CTL" | tail -8 | sed 's/^/      /'
+  fi
+else
+  skip "pyyaml is not installed, so the instruction evals were not run"
+fi
+
 if command -v python3 >/dev/null 2>&1 && python3 -c "import pytest" 2>/dev/null; then
   PYTEST_OUT="$(python3 -m pytest "$SELF/tests" -q 2>&1)"
   # Both halves of the summary. Counting only the passes reproduces the defect
@@ -7890,7 +8011,7 @@ PYWITNESS
 # Six more the mutation run found uncovered, each a rule that exists and that
 # nothing had ever broken on purpose.
 python3 - "$SELF" <<'PYSIX' && ok "the helper fails closed, install.sh reads either manifest, uninstall takes the .gitignore it created, the hooks' comments match their code, the release step really runs, and every rule ID shown is catalogued" || bad "one of the six: a traceback instead of a verdict, an upgrade that re-asks, a leftover file, a comment that lies, a release step that is a comment, or a rule ID in no catalog"
-import glob, json, os, re, subprocess, sys, tempfile
+import glob, json, os, re, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 
 # 1. The helper answers an unexpected fault with a sentence and exit 2. Exit 1 is
@@ -7949,6 +8070,67 @@ subprocess.run(["bash", os.path.join(src, "uninstall.sh"), gi2, "--yes"],
 kept = open(os.path.join(gi2, ".gitignore"), encoding="utf-8").read()
 assert "node_modules/" in kept and "BEGIN DDW" not in kept, \
     "a .gitignore of the user's was destroyed or left with DDW's block: %r" % kept
+
+# 4b. Y ANTES que eso: que el hook rechace de verdad, ejecutado sin python3.
+#     Lo de abajo lee texto y saltea el archivo que no lo tiene («if "command -v
+#     python3" not in text: continue»), o sea que borrar el bloque entero pasa —
+#     y globea `adapters/*/hooks/**`, donde los de Copilot no viven: los suyos
+#     están en `adapters/copilot/scripts/`. Los dos hooks de Copilot que deciden
+#     escrituras salían 127 («python3: not found») donde los otros cinco salen
+#     2, y cualquier exit distinto de 2 es un error NO BLOQUEANTE: la escritura
+#     entraba sin que nada la juzgara. Medido, no leído.
+#
+#     Sobre los hooks INSTALADOS, no sobre los del árbol fuente: corridos desde
+#     acá se dan por no instalados y salen 0 con razón, y ese 0 se lee idéntico
+#     al que este check existe para prohibir.
+_bin = tempfile.mkdtemp(dir=os.environ["WORK"])
+for _tool in ("bash", "sh", "git", "env", "cat", "grep", "sed", "dirname", "basename", "mkdir"):
+    _found = shutil.which(_tool)
+    if _found:
+        os.symlink(_found, os.path.join(_bin, _tool))
+# Los que JUZGAN una escritura. `enforce.sh` corre en el mismo PreToolUse y no
+# es uno: hace housekeeping (crea el estado, refresca el marcador de sesión) y
+# salir 0 sin python3 es lo correcto ahí — no tenía nada que decir sobre el
+# write. `session-start.sh` y `pre-compact.sh` informan. La diferencia es la que
+# este check mide: quien decide, decide o rechaza; quien no, se calla.
+_DECIDERS = ("pre-tool-use.sh", "post-write.sh",
+             "validate-state-transition.sh", "validate-state-postwrite.sh")
+_open, _seen = [], 0
+for _target in ("claude", "codex", "copilot", "cursor", "gemini"):
+    _r6 = tempfile.mkdtemp(dir=os.environ["WORK"])
+    subprocess.run(["git", "-C", _r6, "init", "-q"], check=True)
+    subprocess.run(["bash", os.path.join(src, "install.sh"), _r6, "--target", _target],
+                   capture_output=True, text=True)
+    # `os.walk`, no `glob`: `**` no entra en directorios ocultos, y TODOS los
+    # hooks viven en uno — `.claude/`, `.github/`, `.cursor/`. El glob devolvía
+    # cero archivos y el check habría pasado por no encontrar nada que juzgar.
+    _found_hooks = []
+    for _dirpath, _dirnames, _files in os.walk(_r6):
+        if ".git" in _dirpath.split(os.sep):
+            continue
+        _found_hooks += [os.path.join(_dirpath, _f) for _f in _files if _f in _DECIDERS]
+    for _h in _found_hooks:
+        _seen += 1
+        _r = subprocess.run(["bash", _h],
+                            input='{"tool_name":"Write","tool_input":{"file_path":"'
+                                  + os.path.join(_r6, "src/a.py") + '"}}',
+                            capture_output=True, text=True, cwd=_r6,
+                            # Claude resuelve el repo por `CLAUDE_PROJECT_DIR` y se
+                            # calla si no está: sin esto sus tres hooks salen 0 por
+                            # no saber dónde están, y ese 0 se lee igual que el que
+                            # este check prohíbe.
+                            env={"PATH": _bin, "HOME": os.environ.get("HOME", "/tmp"),
+                                 "CLAUDE_PROJECT_DIR": _r6},
+                            timeout=30)
+        if _r.returncode != 2:
+            _open.append("%s/%s → exit %d" % (_target, os.path.basename(_h), _r.returncode))
+assert _seen >= 8, \
+    ("sólo se encontraron %d hooks de escritura instalados de los cinco adaptadores; el "
+     "barrido dejó de ver alguno, y un barrido vacío pasa este check sin juzgar nada" % _seen)
+assert not _open, \
+    ("sin python3 en el PATH estos hooks instalados no rechazan la escritura, y cualquier exit "
+     "que no sea 2 es un error no bloqueante — el write entra sin que nada lo haya juzgado: "
+     + "; ".join(_open))
 
 # 4. A comment that says the opposite of the four lines under it is worse than no
 #    comment: whoever is checking whether the guard is safe reads the sentence.

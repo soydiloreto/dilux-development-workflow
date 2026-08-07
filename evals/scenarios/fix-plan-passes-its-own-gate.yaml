@@ -1,0 +1,39 @@
+id: fix-plan-passes-its-own-gate
+kind: template-vs-gate
+
+regression:
+  changelog: "0.18.0 round three — The fix-plan template could not pass the gate it is written for"
+  commit: 7dc4369
+  what_happened: >
+    A plan written exactly as `ddw-create-spec` teaches was refused by F-SPEC-10
+    for its layout: the template put error handling in prose, and the validator
+    counts errors as a list, because F-SPEC-16 pairs each one with the test that
+    names it. The reader is told "your plan is incomplete" about a plan written
+    from the repository's own instructions, and there is no move that fixes it.
+    Third member of this family — the PRD template, the test report and the
+    verification verdict each had the same defect.
+
+given:
+  install: claude
+  state: null
+
+when:
+  instruction: skills/ddw-create-spec/SKILL.md
+  # Pull the worked document straight out of the skill the model is told to load.
+  extract_between: '###\s+The fix-plan, in the shape the validator reads.*?```markdown\n(.*?)\n```'
+  ticket: FIX-001
+  write_to: docs/ddw/specs/fix-plan-FIX-001.md
+  validator: validate_spec.py
+  validator_args: ["${ARTIFACT}", "--tier", "FIX"]
+
+expect:
+  validator_accepts_the_worked_document: true
+
+control:
+  # Before 7dc4369 the skill carried no worked fix-plan at all — "there was
+  # nothing to copy and every draft was a guess". The scenario must go red for
+  # that too: a skill with no canonical shape cannot be judged, and unjudgeable
+  # is red.
+  type: restore_from_commit
+  commit: 7dc4369^
+  path: skills/ddw-create-spec/SKILL.md

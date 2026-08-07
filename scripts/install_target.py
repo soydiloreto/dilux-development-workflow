@@ -76,7 +76,13 @@ def occupied_paths(target, recipe):
     """
     wanted = ([(recipe.get("skills") or {}).get("dir"),
                (recipe.get("agents") or {}).get("dir"),
-               (recipe.get("command") or {}).get("dir")]
+               # `commands`, en plural, que es la clave que el instalador
+               # escribe más abajo. En singular esto no leía nada: `.get` de una
+               # clave que no existe da `{}`, `{}.get("dir")` da None, y el
+               # preflight se saltaba en silencio el directorio donde caen los
+               # diecisiete comandos de OpenCode. Ocupado ese path, el refuse que
+               # promete «nothing has been written» llegaba después de escribir.
+               (recipe.get("commands") or {}).get("dir")]
               + [w.get("to") for w in recipe.get("wiring", [])]
               + [os.path.dirname((recipe.get("settings_merge") or {}).get("to", "")) or None])
     occupied = []

@@ -73,6 +73,36 @@ def edit(rel, old, new, last=False):
     return apply
 
 
+def edit_re(rel, pattern, repl, what):
+    """Como `edit`, pero el ancla es una EXPRESIÓN, no un literal.
+
+    Existe por una sola clase de fault: los que tienen que tocar una línea que
+    lleva un número que cambia solo. `EXPECT_CHECKS=553` como ancla literal
+    significa que agregar un check rompe el fault que comprueba que el total
+    está fijado — y lo que se rompe es justamente la comprobación de que nadie
+    borró checks. Pasó tres veces en una noche, con `EXPECT_MUTATIONS` y con
+    `EXPECT_CHECKS` dos veces.
+
+    `what` describe qué se espera encontrar, para que `--check-anchors` diga
+    algo accionable cuando deje de estar.
+    """
+    rx = re.compile(pattern, re.M)
+
+    def apply(repo):
+        path = os.path.join(repo, rel)
+        text = open(path, encoding="utf-8").read()
+        out, n = rx.subn(repl, text, count=1)
+        if not n:
+            return f"{what} ya no está en {rel} — actualizá esta mutación"
+        if out == text:
+            return f"{what} en {rel}: la sustitución no cambió nada"
+        open(path, "w", encoding="utf-8").write(out)
+        return None
+
+    apply.probe = ("regex", rel, pattern, repl, what)
+    return apply
+
+
 def delete(rel):
     def apply(repo):
         p = os.path.join(repo, rel)
@@ -559,8 +589,8 @@ MUTATIONS = [
           "    if False:")),
 
     ("the installer stops noticing that this repo already has DDW",
-     edit("install.sh", 'INSTALLED="$(python3 - "$TARGET" <<\'PY\' 2>/dev/null || true',
-          'INSTALLED=""; true "$(python3 - "$TARGET" <<\'PY\' 2>/dev/null || true')),
+     edit("install.sh", 'INSTALLED="$(python3 - "$TARGET" "$SELF" <<\'PY\' 2>/dev/null || true',
+          'INSTALLED=""; true "$(python3 - "$TARGET" "$SELF" <<\'PY\' 2>/dev/null || true')),
     ("an installed tool left out of the run is passed over in silence",
      edit("install.sh", 'case " $TARGETS " in *" $inst "*) ;; *) SKIPPED="$SKIPPED $inst" ;; esac',
           'case " $TARGETS " in *) ;; esac')),
@@ -1691,6 +1721,79 @@ MUTATIONS = [
     # lectura en bytes está cubierta por el guard que corre antes en TODOS los
     # caminos. El guard es la defensa viva — sin él la línea rota se descarta
     # callada y el journal queda más corto que la historia que verifica.
+    # Las tres siguientes salieron de correr la suite bajo `coverage` midiendo
+    # también los subprocesos: son líneas de enforcement que la suite no
+    # ejecutaba ni una vez. No las encontró nadie leyendo el código.
+    ("a receipt written before the corrective loop took the gate back reopens it again",
+     edit("ddw/scripts/validate-transition.py",
+          "    if written_at is not None and written_at > spent_at:\n        return None",
+          "    if True:\n        return None")),
+    ("the refusal for a phase without its entry tells an Edit to do what an Edit cannot",
+     edit("ddw/scripts/validate-transition.py",
+          '            if tool_name == "Edit":',
+          '            if False:')),
+    ("the drift warning stops naming what is missing, so a repo with no enforcement looks governed",
+     edit("ddw/scripts/session-boot.py",
+          "    if not changed and not gone:\n        return []",
+          "    if True:\n        return []")),
+    ("a security suppression goes back to being aged by a date it writes about itself",
+     edit("ddw/scripts/validate_sast.py",
+          "                if (today - made).days > 190:",
+          "                if False:")),
+    # Estos cuatro salieron de una auditoría dirigida a la instalación y los seis
+    # adaptadores. Los cuatro sobrevivían a la suite entera cuando se propusieron.
+    ("a write-deciding hook stops refusing when there is no python3 to judge with",
+     edit("adapters/copilot/scripts/pre-tool-use.sh",
+          'command -v python3 >/dev/null 2>&1 || {\n'
+          '  echo "DDW cannot enforce anything without python3 on PATH. Refusing the write." >&2\n'
+          '  exit 2\n'
+          '}\n',
+          "")),
+    ("the preflight stops looking at where the wiring goes, so `nothing was written` stops being true",
+     edit("scripts/install_target.py",
+          '              + [w.get("to") for w in recipe.get("wiring", [])]',
+          "              + []")),
+    ("the uninstall leaves Gemini importing a method that is no longer there",
+     edit("scripts/uninstall_repo.py",
+          'CONTEXT_FILES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")',
+          'CONTEXT_FILES = ("AGENTS.md", "CLAUDE.md")')),
+    ("the plan you approve stops being the removal that runs",
+     edit("uninstall.sh",
+          'python3 "$SELF/scripts/uninstall_repo.py" --repo "$TARGET" --self "$SELF" --plan $FORCE',
+          'python3 "$SELF/scripts/uninstall_repo.py" --repo "$TARGET" --self "$SELF" --plan')),
+    # Ocho de una auditoría dirigida al núcleo de enforcement. Cuatro sobrevivían
+    # a la suite entera cuando se propusieron; los otros cuatro ya morían y se
+    # agregan porque la lista es la cobertura: un check sin nada que lo mida es
+    # un check que nadie sabe si puede fallar.
+    ("a NotebookEdit writes product source with no path for any guard to see",
+     edit("ddw/scripts/validate-transition.py",
+          'PATH_KEYS = ("file_path", "notebook_path", "path", "filePath", "file", "absolute_path")',
+          'PATH_KEYS = ("file_path", "path", "filePath", "file", "absolute_path")')),
+    ("a receipt earned for another document opens this gate",
+     edit("ddw/scripts/validate-transition.py",
+          "        if not named or named == os.path.basename(path):",
+          "        if True:")),
+    ("a forged history can skip whole phases: nobody compares a.to with b.from",
+     edit("ddw/scripts/validate-transition.py",
+          '        if a["to"] != b["from"]:', "        if False:")),
+    ("the artefact allowlist stops being anchored at the start of the path",
+     edit("ddw/scripts/validate-transition.py",
+          "    if any(rel.startswith(pre) for pre in ALLOWED_DIR_PREFIXES):",
+          "    if any(pre in rel for pre in ALLOWED_DIR_PREFIXES):")),
+    ("deleting .ddw-state.json starts a clean run again",
+     edit("ddw/scripts/validate-transition.py",
+          '        raise Block(\n            f".ddw-state.json is gone, but ',
+          '        return  # noqa\n        raise Block(\n            f".ddw-state.json is gone, but ')),
+    ("the header can declare a phase no transition ever reached",
+     edit("ddw/scripts/validate-transition.py",
+          '    if appended[-1]["to"] != new_phase:', "    if False:")),
+    ("the field that takes the human out of the loop stops being checked at all",
+     edit("ddw/scripts/validate-transition.py",
+          "    _check_autonomy(old_state, new_state, appended)", "    pass")),
+    ("a write can move the phase without declaring the transition",
+     edit("ddw/scripts/validate-transition.py",
+          "    if not appended:\n        if new_phase != old_phase:",
+          "    if not appended:\n        if False:")),
     ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
           "    damaged = _journal_undecodable(state_path)",
@@ -1701,11 +1804,20 @@ MUTATIONS = [
           "        _odd = _not_a_regular_file(_path)\n        if _odd:\n            raise Block(_odd)\n",
           "")),
     ("the mutation count goes back to being pinned nowhere",
-     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=441", "EXPECT_MUTATIONS=0")),
+     # Anclado a la COMPARACIÓN, no al número: anclado al número, agregar un
+     # fault rompe este fault, y lo que se rompe es justo la comprobación de que
+     # no se borraron faults. La única línea que hay que tocar al sumar uno es
+     # `EXPECT_MUTATIONS`, y ninguna otra.
+     edit("scripts/verify_install.sh",
+          '[ "$MUT_N" = "$EXPECT_MUTATIONS" ] \\',
+          '[ "$MUT_N" = "$MUT_N" ] \\')),
     ("the check total goes back to being unpinned, which used to print as a pass",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=553", "EXPECT_CHECKS=0")),
+     edit_re("scripts/verify_install.sh", r"^EXPECT_CHECKS=\d+$", "EXPECT_CHECKS=0",
+             "la línea que fija el total de checks")),
     ("the check total becomes a knob the environment can turn again",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=553", "EXPECT_CHECKS=${EXPECT_CHECKS:-553}")),
+     edit_re("scripts/verify_install.sh", r"^EXPECT_CHECKS=(\d+)$",
+             r"EXPECT_CHECKS=${EXPECT_CHECKS:-\1}",
+             "la línea que fija el total de checks")),
     ("the sealed names are judged only after symlinks are followed again",
      edit("ddw/scripts/validate-transition.py",
           "        if lexical != target:\n            reason = enforcement_write_denied(lexical, root)\n"
@@ -1979,7 +2091,7 @@ def baseline():
         return 1
 
 
-def run_one(index, label, mutate):
+def run_one(index, label, mutate, skip_fast=False):
     with tempfile.TemporaryDirectory() as tmp:
         repo = os.path.join(tmp, "ddw")
         shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
@@ -2005,14 +2117,25 @@ def run_one(index, label, mutate):
         # The baseline pays the same question on an unmutated copy, for the same
         # reason it pays the suite: a pytest that is already red would report
         # every fault as caught without examining one.
-        fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
-                              capture_output=True, text=True, cwd=repo)
-        if fast.returncode != 0:
-            return True, None
+        if not skip_fast:
+            fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
+                                  capture_output=True, text=True, cwd=repo)
+            if fast.returncode != 0:
+                return True, None, "tests/ (capa rápida)"
         env = dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1")
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                            capture_output=True, text=True, cwd=repo, env=env)
-        return r.returncode != 0, None
+        # QUÉ check lo mató, no sólo que murió. Con la parada al primer ✗ ese es
+        # el primero que aparece. Sirve para la pregunta que ninguna otra cosa
+        # responde: qué `bad` de la suite no se dispara NUNCA — un check que no
+        # puede fallar reporta verde por no poder decir otra cosa.
+        killer = None
+        if r.returncode != 0:
+            for ln in r.stdout.splitlines():
+                if "✗" in ln:
+                    killer = re.sub(r"\x1b\[[0-9;]*m", "", ln).replace("✗", "").strip()
+                    break
+        return r.returncode != 0, None, killer
 
 
 def slice_of(spec, count):
@@ -2088,6 +2211,26 @@ def check_anchors():
         if not os.path.exists(path):
             stale.append((i, label, f"{rel} does not exist"))
             continue
+        if kind == "regex":
+            if rel not in cache:
+                cache[rel] = open(path, encoding="utf-8").read()
+            _rx = re.compile(probe[2], re.M)
+            _out, _n = _rx.subn(probe[3], cache[rel], count=1)
+            if not _n:
+                stale.append((i, label, "%s ya no está en %s" % (probe[4], rel)))
+                continue
+            if _out == cache[rel]:
+                stale.append((i, label, "%s: la sustitución no cambia nada en %s" % (probe[4], rel)))
+                continue
+            if rel.endswith(".py"):
+                try:
+                    compile(_out, rel, "exec")
+                except SyntaxError as exc:
+                    stale.append((i, label, "deja %s sin compilar (%s, línea %s)"
+                                  % (rel, exc.msg, exc.lineno)))
+                    continue
+            continue
+
         if kind == "text":
             if rel not in cache:
                 cache[rel] = open(path, encoding="utf-8").read()
@@ -2229,6 +2372,14 @@ def main():
     ap.add_argument("--jobs", type=int, default=None,
                     help="how many faults to inject at once (default: half the cores, capped at "
                          "4 — the bound is disk, not CPU)")
+    ap.add_argument("--no-fast", action="store_true",
+                    help="no preguntar a tests/ primero: cada fault paga la suite entera. "
+                         "Necesario para el mapa de kills, que pregunta QUÉ check mata a "
+                         "cada uno — un kill de la capa rápida esconde el check que también "
+                         "habría fallado.")
+    ap.add_argument("--kill-map", metavar="ARCHIVO",
+                    help="escribir qué check mató a cada fault, y listar los `bad` de la "
+                         "suite que no se disparan con ninguno")
     ap.add_argument("--changed", metavar="BASE",
                     help="only the mutations whose file the diff against BASE touches "
                          "(a pull request's question); the whole list still runs on main")
@@ -2335,6 +2486,8 @@ def main():
     jobs = args.jobs or max(1, min(8, (os.cpu_count() or 2) // 2))
     print(f"Injecting {len(chosen)} faults, {jobs} at a time{of_all}.\n")
 
+    kills = {}
+
     def report(i, label, verdict, problem):
         nonlocal killed
         if problem:
@@ -2349,7 +2502,9 @@ def main():
 
     if jobs == 1:
         for i, (label, mutate) in chosen:
-            verdict, problem = run_one(i, label, mutate)
+            verdict, problem, killer = run_one(i, label, mutate, args.no_fast)
+            if killer:
+                kills[i] = killer
             report(i, label, verdict, problem)
     else:
         # Printed in list order even though they finish out of order: a log whose
@@ -2363,7 +2518,7 @@ def main():
         # that had moved. It failed honestly, which is the only reason that was
         # a five-minute detour and not a fabricated hundred percent.
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-            futures = {pool.submit(run_one, i, label, mutate): (i, label)
+            futures = {pool.submit(run_one, i, label, mutate, args.no_fast): (i, label)
                        for i, (label, mutate) in chosen}
             done = {}
             # A line per fault as it closes, to stderr, so the run says something
@@ -2374,7 +2529,10 @@ def main():
             for n, fut in enumerate(concurrent.futures.as_completed(futures), 1):
                 i, label = futures[fut]
                 try:
-                    done[i] = (label,) + fut.result()
+                    verdict, problem, killer = fut.result()
+                    done[i] = (label, verdict, problem)
+                    if killer:
+                        kills[i] = killer
                 except Exception as exc:                          # noqa: BLE001
                     done[i] = (label, None, f"the worker died: {exc.__class__.__name__}: {exc}")
                 mark = "?" if done[i][2] else ("✓" if done[i][1] else "✗")
@@ -2398,6 +2556,33 @@ def main():
         print("\nThese mutations no longer apply — their anchor moved. Update them:")
         for i, label, why in broken:
             print(f"  {i:2d}. {label}: {why}")
+
+    if args.kill_map:
+        # Todos los `bad` que la suite sabe decir, contra los que alguna vez dijo.
+        # Un `bad` que ningún fault provoca es un check que, hasta donde esta
+        # lista sabe, no puede fallar — y un check que no puede fallar informa
+        # verde porque no sabe decir otra cosa, no porque haya mirado algo.
+        suite = open(os.path.join(ROOT, "scripts/verify_install.sh"), encoding="utf-8").read()
+        declared = set()
+        for m in re.finditer(r'\bbad\s+"((?:[^"\\]|\\.)*)"', suite):
+            declared.add(m.group(1).strip())
+        fired = set(kills.values())
+        # El texto que imprime `bad` puede llevar interpolación; se comparan por
+        # prefijo estable para no llamar "nunca disparado" a uno que sí lo fue.
+        def seen(msg):
+            head = msg.split("$")[0].strip()[:40]
+            return any(head and head in f for f in fired)
+        never = sorted(d for d in declared if not seen(d))
+        with open(args.kill_map, "w", encoding="utf-8") as fh:
+            json.dump({"kills": kills, "never_fired": never,
+                       "declared": len(declared), "fired": len(fired)}, fh, indent=2)
+        print(f"\n{'─' * 60}")
+        print(f"Mapa de kills: {len(fired)} checks distintos mataron algo; "
+              f"{len(never)} de {len(declared)} `bad` no se disparan con ningún fault.")
+        for d in never[:40]:
+            print(f"  · {d[:100]}")
+        if len(never) > 40:
+            print(f"  … y {len(never) - 40} más (la lista completa en {args.kill_map})")
     return 1 if (survived or broken) else 0
 
 

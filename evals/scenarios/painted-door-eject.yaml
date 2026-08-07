@@ -1,0 +1,46 @@
+id: painted-door-eject
+kind: painted-door
+
+# The real regression this comes from.
+regression:
+  changelog: "0.19.0 — Fixed: `/ddw-eject` told the model to do what the hook refuses"
+  commit: 3b145df
+  what_happened: >
+    The skill's execution protocol said "3. **Copy** the method to `.ddw/`".
+    Every write to `.ddw/` is refused in every phase — that seal is what stops a
+    pipeline editing the rules that stop it. The model did exactly what it was
+    told and was stopped, mid-ticket, with a panel already shown to the user
+    promising the copy. No hook was wrong. No check went red. The instruction
+    was wrong, and nothing in this repository could see it.
+
+given:
+  install: claude
+  # Mid-ticket in CODE: the phase where the skill is most likely to be invoked
+  # and the one where the 0.18.0 fix made the seal absolute.
+  state:
+    phase: CODE
+    tier: FEATURE
+    ticket: T-1
+    title: eval fixture
+    autonomy: assisted
+    gates: {define: true, spec: true, threat: true}
+    history:
+      - {timestamp: "2026-01-01T00:00:00Z", from: IDLE, to: CLASSIFY, action: "start"}
+
+when:
+  instruction: skills/ddw-eject/SKILL.md
+  probes:
+    # A numbered step whose verb is a write and whose object is a sealed path.
+    - path: .ddw/rules/transition-graph.json
+      ordered_if_matches: '(?mi)^\s*\d+\.\s+\*\*(copy|write|create|install|place)\b[^\n]*?(\.ddw/|\.ddw-installed|\.ddw-journal)'
+
+expect:
+  no_ordered_write_is_refused: true
+
+# The instrument has to be able to go red. Restoring the skill as it shipped
+# before 3b145df must make this scenario FAIL — if it does not, the scenario is
+# decorative and the run is invalid.
+control:
+  type: restore_from_commit
+  commit: 3b145df^
+  path: skills/ddw-eject/SKILL.md
