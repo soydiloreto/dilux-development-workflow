@@ -424,7 +424,14 @@ def run_router_reachability(sc, ddw_root, repo):
                 *args,
                 "--state", str(repo / ".ddw-state.json"),
                 "--graph", str(repo / ".ddw" / "rules" / "transition-graph.json"),
-                "--repo", str(repo), "--write"], cwd=repo, timeout=60)
+                "--write"], cwd=repo, timeout=60,
+               # `transition.py` no acepta `--repo`: resuelve el repo por
+               # `CLAUDE_PROJECT_DIR` y después por el cwd. Pasándoselo, argparse
+               # sale 2 y el escenario reporta «the prescribed step is itself
+               # refused» — o sea, ningún escenario `router-reachability` podía
+               # salir verde. Como no hay ninguno todavía en el árbol, el bug
+               # estaba invisible: un kind muerto al nacer.
+               env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)))
         if r.returncode != 0 and sc["expect"].get("every_step_succeeds", True):
             return FAIL, (f"the prescribed step {' '.join(args)} is itself refused: "
                           + (r.stdout + r.stderr).strip().splitlines()[0][:110])

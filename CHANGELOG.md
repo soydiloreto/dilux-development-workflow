@@ -65,6 +65,35 @@ move at different speeds. So the promise is specific:
 - **Sixteen faults** (441 → 457), and `edit_re`, so a fault that has to touch a
   line carrying a number is not anchored to that number.
 
+### Fixed — the clock
+
+- **A legal transition was refused because the wall clock stepped backwards.**
+  Measured on WSL2, which resyncs with the host: six one-second steps BACKWARDS
+  in 33,465 samples over 75 seconds under load. A step between two moves of a
+  run left the new entry stamped before the one it follows, and the monotonicity
+  guard refused a transition the helper itself had just built — with no way out,
+  because the only thing that would fix it is editing the history, which the
+  hook also refuses. The guard is unchanged; the sanctioned path can no longer
+  produce the case. Any user on a VM had this.
+- **`CLAUDE_PROJECT_DIR` leaked across sections of the suite**, and the helper
+  reads it before the cwd, so everything downstream operated on a repository
+  from another section.
+- **`## Testing` could be deleted from `ddw/AGENTS.template.md` with the linter
+  green**, undoing 87ae703. The sweep read only `ddw/**` — not the skills that
+  cite it — and only asked whether the REPORTER knew the heading, never whether
+  the template shipped it.
+
+### Added — the instruments
+
+- **`painted-door-sweep`**: every instruction file the method carries, every
+  imperative write pulled out of it, each one handed to the real gate. The four
+  painted doors this project has shipped were each closed with a scenario that
+  re-finds that one door; none of them would have found the other three.
+- **`mutate.py --flake-check N`**: the suite run UNMUTATED N times at the
+  concurrency of a real run, naming every check that fails on its own. A
+  spurious red is not lost — `run_one` reads it as a KILL, and fabricates
+  coverage. It is what found the clock.
+
 ### Note on releases
 
 This version is NOT published. It is the number the work is attached to, which
