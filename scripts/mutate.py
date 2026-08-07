@@ -1954,6 +1954,18 @@ def baseline():
         # which is a statement about every check — and the run that answers it
         # yes costs the same either way, because a passing run never reaches the
         # branch that stops.
+        # The fast layer is asked here too, because `run_one` now takes a kill
+        # from it: red on an unmutated copy and every fault reports as caught
+        # without being examined — the fabricated hundred percent, one layer
+        # further down than the one this function was written for.
+        fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
+                              capture_output=True, text=True, cwd=repo)
+        if fast.returncode != 0:
+            print("`tests/` does not pass on an UNMUTATED copy of this tree, and the runner "
+                  "takes a kill\nfrom it. Nothing was injected. pytest said:\n")
+            for ln in [l for l in (fast.stdout + fast.stderr).splitlines() if l.strip()][-15:]:
+                print("  " + ln)
+            return 1
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                            capture_output=True, text=True, cwd=repo)
         if r.returncode == 0:
@@ -1980,6 +1992,23 @@ def run_one(index, label, mutate):
         # It cannot change a verdict: the variable is read from `bad` and
         # nowhere else, so a run with nothing to report never sees it, and a run
         # that does exits non-zero either way.
+        # The fast layer first, and it is not a shortcut: the suite RUNS pytest
+        # and refuses to go green with a single failure or error in it, so a
+        # fault that reddens pytest is a fault the suite would catch — the same
+        # verdict, reached in a third of a second instead of eighty-five.
+        #
+        # Only a KILL is taken from here. pytest passing says nothing at all
+        # about the fault (it sees a fraction of the enforcement core and no
+        # hook, no install, no adapter), so that case falls through to the suite
+        # exactly as before. The measurement can only get faster, never looser.
+        #
+        # The baseline pays the same question on an unmutated copy, for the same
+        # reason it pays the suite: a pytest that is already red would report
+        # every fault as caught without examining one.
+        fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
+                              capture_output=True, text=True, cwd=repo)
+        if fast.returncode != 0:
+            return True, None
         env = dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1")
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                            capture_output=True, text=True, cwd=repo, env=env)
@@ -2299,7 +2328,11 @@ def main():
     # CPU, it is the disk: every worker copies the tree and the suite makes
     # dozens of temporary repositories inside its run, and this measurement once
     # put 38 GB into /tmp.
-    jobs = args.jobs or max(1, min(4, (os.cpu_count() or 2) // 2))
+    # Was capped at 4 when a worker meant one full suite each. Most faults are
+    # now answered by the fast layer in under a second, so the cap was costing
+    # wall clock for a disk pressure that only the minority still create. Held
+    # to half the cores, which is what /tmp survived at 6 on a 12-core machine.
+    jobs = args.jobs or max(1, min(8, (os.cpu_count() or 2) // 2))
     print(f"Injecting {len(chosen)} faults, {jobs} at a time{of_all}.\n")
 
     def report(i, label, verdict, problem):
@@ -2333,12 +2366,22 @@ def main():
             futures = {pool.submit(run_one, i, label, mutate): (i, label)
                        for i, (label, mutate) in chosen}
             done = {}
-            for fut in concurrent.futures.as_completed(futures):
+            # A line per fault as it closes, to stderr, so the run says something
+            # while it runs. It cannot go to stdout: that is the log, and a log
+            # whose lines arrive by luck is one nobody can diff against the last
+            # one. An hour of silence is what made people reach for `--only`,
+            # which is the measurement getting smaller to fit the wait.
+            for n, fut in enumerate(concurrent.futures.as_completed(futures), 1):
                 i, label = futures[fut]
                 try:
                     done[i] = (label,) + fut.result()
                 except Exception as exc:                          # noqa: BLE001
                     done[i] = (label, None, f"the worker died: {exc.__class__.__name__}: {exc}")
+                mark = "?" if done[i][2] else ("✓" if done[i][1] else "✗")
+                left = len(chosen) - n
+                print(f"  [{n}/{len(chosen)}] {mark} {i}. {label[:58]}"
+                      + (f"   ({left} left)" if left else ""),
+                      file=sys.stderr, flush=True)
             for i, _ in chosen:
                 label, verdict, problem = done[i]
                 report(i, label, verdict, problem)
