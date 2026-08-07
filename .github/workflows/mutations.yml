@@ -81,7 +81,7 @@ jobs:
           node-version: "20"
       - name: Install what the suite asserts it needs
         run: |
-          python3 -m pip install --quiet pyyaml
+          python3 -m pip install --quiet pyyaml pytest
           # Load-bearing HERE in a way it is nowhere else. The suite's preflight
           # calls `bad()` for a missing tool, so without this the suite exits
           # non-zero on every copy — and this job reads a non-zero exit as "the
@@ -117,7 +117,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python3 -m pip install --quiet pyyaml
+      - run: python3 -m pip install --quiet pyyaml pytest
       # Ten green jobs are ten green jobs, not a covered list. Drop a matrix
       # entry and every job still passes while the faults in that slice are
       # never injected — the same failure the pinned check count in

@@ -2084,6 +2084,14 @@ MUTATIONS = [
 ]
 
 
+# ¿Hay capa rápida? Preguntado una vez: sin pytest instalado el runner no la
+# usa, y el baseline no tiene que negarse por la ausencia de algo que no iba a
+# usar. El aviso sale una vez, arriba, para que nadie lea una corrida más lenta
+# como una corrida distinta.
+HAVE_PYTEST = subprocess.run([sys.executable, "-c", "import pytest"],
+                             capture_output=True).returncode == 0
+
+
 def baseline():
     """Does the suite pass on a copy nobody mutated?
 
@@ -2106,13 +2114,19 @@ def baseline():
         # which is a statement about every check — and the run that answers it
         # yes costs the same either way, because a passing run never reaches the
         # branch that stops.
-        # The fast layer is asked here too, because `run_one` now takes a kill
-        # from it: red on an unmutated copy and every fault reports as caught
-        # without being examined — the fabricated hundred percent, one layer
-        # further down than the one this function was written for.
-        fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
-                              capture_output=True, text=True, cwd=repo)
-        if fast.returncode != 0:
+        # The fast layer is asked here too, because `run_one` takes a kill from
+        # it: red on an unmutated copy and every fault reports as caught without
+        # being examined — the fabricated hundred percent, one layer further down
+        # than the one this function was written for.
+        #
+        # …but only when there IS one. Without pytest installed the runner never
+        # asks it, so a baseline that refuses over its absence refuses a run that
+        # was never going to use it. Measured in CI, which installs pyyaml and
+        # not pytest: twenty-four shards refused to inject anything.
+        fast = (subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
+                               capture_output=True, text=True, cwd=repo)
+                if HAVE_PYTEST else None)
+        if fast is not None and fast.returncode != 0:
             print("`tests/` does not pass on an UNMUTATED copy of this tree, and the runner "
                   "takes a kill\nfrom it. Nothing was injected. pytest said:\n")
             for ln in [l for l in (fast.stdout + fast.stderr).splitlines() if l.strip()][-15:]:
@@ -2157,7 +2171,7 @@ def run_one(index, label, mutate, skip_fast=False):
         # The baseline pays the same question on an unmutated copy, for the same
         # reason it pays the suite: a pytest that is already red would report
         # every fault as caught without examining one.
-        if not skip_fast:
+        if not skip_fast and HAVE_PYTEST:
             fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
                                   capture_output=True, text=True, cwd=repo)
             if fast.returncode != 0:
@@ -2524,7 +2538,11 @@ def main():
     # wall clock for a disk pressure that only the minority still create. Held
     # to half the cores, which is what /tmp survived at 6 on a 12-core machine.
     jobs = args.jobs or max(1, min(8, (os.cpu_count() or 2) // 2))
-    print(f"Injecting {len(chosen)} faults, {jobs} at a time{of_all}.\n")
+    print(f"Injecting {len(chosen)} faults, {jobs} at a time{of_all}.")
+    if not HAVE_PYTEST:
+        print("pytest is not installed, so every fault pays the whole suite: the fast layer "
+              "answers a third of them in under a second and it is not here.")
+    print()
 
     kills = {}
 
