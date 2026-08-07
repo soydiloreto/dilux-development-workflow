@@ -2192,6 +2192,57 @@ def run_one(index, label, mutate, skip_fast=False):
         return r.returncode != 0, None, killer
 
 
+def flake_check(rounds, jobs):
+    """El ruido del instrumento, medido antes de creerle.
+
+    Un rojo espurio no se pierde: se convierte en un KILL. `run_one` lee un exit
+    distinto de cero como «la suite cazó el fault», y no tiene forma de
+    distinguirlo de «la suite falló por su cuenta». Bajo la concurrencia de una
+    corrida completa eso fabrica cobertura, que es el mismo defecto que
+    `baseline` y `--check-anchors` existen para impedir, una capa más abajo.
+
+    Así que se corre la suite SIN MUTAR, tantas veces como se pida y a la misma
+    concurrencia que la corrida real, y se nombra todo check que falle. Un check
+    que falla acá no puede matar nada: lo que reporte sobre un fault es sobre sí
+    mismo.
+
+    Observado dos veces y no reproducido en cuarenta corridas dirigidas. Esto no
+    lo explica — lo hace visible, que es lo que se puede prometer.
+    """
+    print(f"Midiendo el ruido: {rounds} corridas de la suite sin mutar, {jobs} a la vez.\n")
+
+    def once(n):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "ddw")
+            shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
+                               capture_output=True, text=True, cwd=repo)
+            bad_lines = [re.sub(r"\x1b\[[0-9;]*m", "", ln).replace("✗", "").strip()
+                         for ln in r.stdout.splitlines() if "✗" in ln]
+            return n, r.returncode, bad_lines
+
+    seen = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        for fut in concurrent.futures.as_completed([pool.submit(once, n)
+                                                    for n in range(1, rounds + 1)]):
+            n, rc, bad_lines = fut.result()
+            mark = "\033[32m✓\033[0m" if rc == 0 else "\033[31m✗\033[0m"
+            print(f"  {mark} corrida {n}", file=sys.stderr, flush=True)
+            for ln in bad_lines:
+                seen.setdefault(ln, []).append(n)
+
+    print(f"\n{'─' * 60}")
+    if not seen:
+        print(f"{rounds}/{rounds} corridas verdes. Ningún check falló por su cuenta a esta "
+              f"concurrencia — lo que no prueba que no pueda, sólo que no lo hizo acá.")
+        return 0
+    print(f"{len(seen)} check(s) fallaron sobre un árbol SIN MUTAR. Lo que reporten sobre un "
+          f"fault es sobre sí mismos:")
+    for ln, rounds_hit in sorted(seen.items(), key=lambda kv: -len(kv[1])):
+        print(f"  · {len(rounds_hit)}/{rounds}  {ln[:96]}")
+    return 1
+
+
 def slice_of(spec, count):
     """The mutation numbers `--shard I/N` is responsible for.
 
@@ -2426,6 +2477,10 @@ def main():
     ap.add_argument("--jobs", type=int, default=None,
                     help="how many faults to inject at once (default: half the cores, capped at "
                          "4 — the bound is disk, not CPU)")
+    ap.add_argument("--flake-check", metavar="N", type=int,
+                    help="correr la suite SIN MUTAR N veces a la concurrencia de --jobs y "
+                         "nombrar todo check que falle: un rojo espurio no se pierde, se "
+                         "convierte en un kill")
     ap.add_argument("--no-fast", action="store_true",
                     help="no preguntar a tests/ primero: cada fault paga la suite entera. "
                          "Necesario para el mapa de kills, que pregunta QUÉ check mata a "
@@ -2449,6 +2504,10 @@ def main():
 
     if args.cover:
         return cover(args.cover, len(MUTATIONS))
+
+    if args.flake_check:
+        return flake_check(args.flake_check,
+                           args.jobs or max(1, min(8, (os.cpu_count() or 2) // 2)))
 
     if args.only and args.shard:
         raise SystemExit("--only and --shard both pick what runs; use one")

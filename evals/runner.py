@@ -48,7 +48,8 @@ except ImportError:  # fail closed: no silent degradation to "0 scenarios, all g
 PASS, FAIL, ERROR = "PASS", "FAIL", "ERROR"
 
 # Kinds that never call a model. These are the ones CI runs on every push.
-OFFLINE_KINDS = {"painted-door", "router-reachability", "template-vs-gate"}
+OFFLINE_KINDS = {"painted-door", "painted-door-sweep", "router-reachability",
+                 "template-vs-gate"}
 
 
 # --------------------------------------------------------------------------- #
@@ -205,6 +206,144 @@ def run_painted_door(sc, ddw_root, repo):
     if offenders:
         return FAIL, "; ".join(offenders)
     return PASS, f"{checked} probe(s): no ordered write is refused"
+
+
+# --------------------------------------------------------------------------- #
+# kind: painted-door-sweep
+#
+# `painted-door` pins ONE regex on ONE file: it re-finds a door that already
+# shipped. This looks for the NEXT one. It reads every instruction file the
+# method carries, pulls out every imperative write and the path it names, and
+# hands each one to the real gate in the phase whose file ordered it.
+#
+# Deliberately conservative about what counts as an order — a corpus this size
+# produces noise fast, and a sweep that cries wolf is a sweep people turn off:
+#
+#   · The verb has to be imperative and the line a step or a bullet, not prose.
+#   · A line that says the write is REFUSED, forbidden or blocked is a warning,
+#     not an order, and is skipped.
+#   · The path has to be a real one — backticked, with a separator — and not a
+#     placeholder like `<path>` or `path/to/file`.
+#
+# What it cannot do is know the phase an instruction is "for" when the file does
+# not say. Where the file names phases, each order is judged in those; where it
+# does not, it is judged in the phase the scenario declares, and the scenario
+# says which. That is a limitation, written down rather than papered over.
+# --------------------------------------------------------------------------- #
+
+WRITE_VERB = r"(?:copy|write|create|add|append|place|save|install|generate|put)"
+NOT_AN_ORDER = re.compile(
+    r"(?i)\b(refus|reject|block|forbid|denied|cannot|can't|never|do not|don't|must not|"
+    r"prohibit|instead of|rather than|used to|no longer|would be)\b")
+# Los destinos de verdad vienen templados — `docs/ddw/prd/prd-{ticket}.md` es
+# la forma en que el método los escribe. Rechazarlos por llevar llaves dejaba el
+# barrido en UNA orden sobre treinta y dos archivos, que es no barrer. Se
+# sustituyen; lo que queda con corchetes después de sustituir sí es un ejemplo.
+TEMPLATED = re.compile(r"[<{\[](ticket|TICKET|id|ID|slug|name)[>}\]]")
+PLACEHOLDER = re.compile(r"[<{\[]|path/to|your-|example|FIXME|TODO|\.\.\.")
+
+
+# Entre el verbo y la ruta: si hay una de éstas, la ruta es una REFERENCIA, no
+# el objeto de la escritura. «Write the summary following `ddw/rules/x.md`» no
+# ordena escribir esa regla. Sin esto el barrido acusaba de puerta pintada a
+# cada archivo que un skill cita — seis de seis ofensores eran citas.
+REFERENCE = re.compile(
+    r"(?i)\b(in|per|from|see|read|following|according to|documented in|described in|"
+    r"defined in|listed in|under|against|as in|like|of|by|via|using|with)\s*$")
+
+
+def _ordered_writes(text):
+    """(línea, ruta) por cada escritura que el documento MANDA hacer.
+
+    Conservador a propósito: sobre un corpus de veinte archivos de instrucción,
+    una heurística generosa produce ruido más rápido de lo que produce
+    hallazgos, y un barrido que grita lobo es un barrido que se apaga.
+    """
+    out = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not re.match(r"^(?:[-*+]|\d+\.)\s", line):
+            continue                       # prosa: no es un paso
+        verb = re.search(r"(?i)\b%s\b" % WRITE_VERB, line)
+        if not verb:
+            continue
+        if NOT_AN_ORDER.search(line):
+            continue                       # habla de una escritura, no la ordena
+        rest = line[verb.end():]
+        for m in re.finditer(r"`([^`\s]+)`", rest):
+            path = m.group(1)
+            # Un slash-command (`/ddw-create-prd`) no es una ruta, y el verbo
+            # que lo hizo entrar era el «create» de su propio nombre. Y una
+            # ruta sin extensión ni barra interna no nombra un archivo.
+            path = TEMPLATED.sub("T-1", path)
+            if PLACEHOLDER.search(path):
+                continue
+            if path.startswith("/") and "/" not in path[1:]:
+                continue
+            if path.endswith("/"):
+                # Un DIRECTORIO es un destino legítimo, y era el de la puerta
+                # pintada que empezó todo esto: «**Copy** the method to `.ddw/`».
+                # Exigir una barra interna lo rechazaba, así que el barrido no
+                # encontraba la única regresión que sí sabía reproducir — y el
+                # control lo dijo. Se le pregunta al gate por un archivo adentro,
+                # que es lo que una copia escribe.
+                path = path + "probe.txt"
+            elif not (re.search(r"[^/]/[^/]", path) and re.search(r"\.\w{1,6}$", path)):
+                continue
+            if path.startswith(("http", "-", "python3", "bash", "git")):
+                continue
+            if ":" in path:
+                continue                   # `src/x.ts:58` es una cita, no un destino
+            if REFERENCE.search(rest[:m.start()]):
+                continue                   # la ruta es dónde MIRAR, no dónde escribir
+            # `lstrip("./")` se come el punto inicial y convierte `.ddw-paused/x`
+            # en `ddw-paused/x`, que es OTRA ruta: la primera la escribe la pausa
+            # en cualquier fase, la segunda es product source. El barrido acusaba
+            # al orquestador de una puerta pintada que no existe.
+            out.append((line, path[2:] if path.startswith("./") else path))
+    return out
+
+
+def run_painted_door_sweep(sc, ddw_root, repo):
+    corpus = []
+    for pattern in sc["when"]["corpus"]:
+        corpus += sorted(ddw_root.glob(pattern))
+    if not corpus:
+        return ERROR, "the corpus matched no file — a sweep over nothing is not a sweep"
+
+    phases = sc["when"]["phases"]
+    offenders, orders = [], 0
+    for src in corpus:
+        text = src.read_text(encoding="utf-8", errors="replace")
+        for line, path in _ordered_writes(text):
+            orders += 1
+            target = repo / path
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                continue
+            for phase in phases:
+                st = dict(sc["given"]["state"], phase=phase)
+                write_state(repo, st)
+                code, reason = hook_verdict(repo, {
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(target), "content": "x"},
+                })
+                if code != 0:
+                    rel = src.relative_to(ddw_root)
+                    offenders.append(
+                        "%s orders `%s` and the gate refuses it in %s: %s"
+                        % (rel, path, phase,
+                           (reason.splitlines()[0][:80] if reason else "exit %d" % code)))
+                    break
+    if orders == 0:
+        return ERROR, ("no imperative write was found in %d instruction file(s) — the extraction "
+                       "stopped matching, and a sweep that finds nothing passes for the wrong "
+                       "reason" % len(corpus))
+    if offenders:
+        return FAIL, " | ".join(offenders[:6])
+    return PASS, "%d ordered write(s) across %d file(s): every one lands where the gate allows" % (
+        orders, len(corpus))
 
 
 # --------------------------------------------------------------------------- #
@@ -463,7 +602,12 @@ def run_one(sc, ddw_root, args, control: bool):
                 apply_control(sc, scratch_root, repo, workdir)
 
         kind = sc["kind"]
-        if kind == "painted-door":
+        if kind == "painted-door-sweep":
+            # `scratch_root`, no `ddw_root`: es la copia donde el control aplica
+            # la instrucción rota. Leyendo el árbol real, el control no vería
+            # nada y el barrido pasaría el control sin poder ponerse rojo.
+            v, d = run_painted_door_sweep(sc, scratch_root, repo)
+        elif kind == "painted-door":
             v, d = run_painted_door(sc, scratch_root, repo)
         elif kind == "template-vs-gate":
             v, d = run_template_vs_gate(sc, scratch_root, repo)
