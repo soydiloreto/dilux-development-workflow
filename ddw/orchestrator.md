@@ -197,7 +197,10 @@ the corresponding Skill.`
 - NEVER advance a phase without: (a) exit conditions met, (b) state updated, (c) explicit user
   approval — **unless `autonomy` is `"minimal"`**, in which case (a) and (b) still hold and the
   arrow does not wait. See *Autonomy* below; the exceptions there are not optional.
-- NEVER write source code in the CLASSIFY, DEFINE, PLAN or DISCOVERY phases.
+- NEVER write source code in the IDLE, CLASSIFY, DEFINE, PLAN, VERIFY or DISCOVERY
+  phases — the six the hook refuses it in. CODE writes it, CLOSEOUT may touch it, and
+  FREE is the tier where none of this is asked. This list used to name four of the six,
+  under a heading that says every phase.
 - NEVER create specs or fix-plans in the CLASSIFY, DEFINE or DISCOVERY phases.
 - NEVER fix code in the VERIFY phase. If verification fails, go back to CODE to fix it.
 - NEVER commit anything beyond the phase's OWN artifacts: DEFINE commits the PRD, PLAN the spec,
@@ -288,8 +291,9 @@ Two different things, and telling them apart is the whole point of this
 framework — so they are marked rather than blended:
 
 - **🔒 refused by the hook.** The write comes back rejected in the gate's own
-  wording, whatever the model intended. Product source outside CODE and CLOSEOUT
-  is this, and so is anything under `.ddw/`, the journal and the receipts.
+  wording, whatever the model intended. Product source outside CODE, CLOSEOUT
+  and FREE is this, and so is anything under `.ddw/`, the journal and the
+  receipts — in every phase, FREE included.
 - Everything else on a Blocked line is **the method's discipline**: writing a
   spec while in DEFINE, editing the PRD during VERIFY, straying outside
   `docs/ddw/discovery/`. Nothing under `docs/` is refused by a hook in any

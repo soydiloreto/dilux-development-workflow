@@ -105,9 +105,19 @@ able to read six months later.
 
 ### Going back
 
-**You can always step back one phase, and stepping back gives up what that phase granted.** The
-graph declares it per edge, in `clears`: `CLOSEOUT→VERIFY` gives up `verify`, `VERIFY→CODE` gives up
-`tests` and `sast`, `CODE→PLAN` gives up `spec` and `threat`, `PLAN→DEFINE` gives up `define`.
+**Where the graph declares a backward edge, taking it gives up what that phase granted** — and the
+graph is the authority for both halves. It is not "always": DEFINE has no way back in any tier, and
+FREE and DISCOVERY have none either. Under FEATURE: `PLAN→DEFINE` gives up `define`, `CODE→PLAN`
+gives up `spec` and `threat`, `VERIFY→CODE` gives up `tests` and `sast`, and `CLOSEOUT→VERIFY` gives
+up **`verify`, `commit` and `pr`** — three, because the commit and the pull request describe a world
+that moves while you are away. Under QUICK-FIX the two edges are `CODE→DEFINE` (gives up `define`)
+and `CLOSEOUT→CODE` (gives up `tests`, `sast`, `commit` and `pr`).
+
+Keeping a gate the edge clears is refused, so a write built from a shorter list than the graph's is
+rejected — this paragraph named one gate for `CLOSEOUT→VERIFY` where the graph names three, and the
+model that believed it had its write bounced with no idea why. Read `clears` from
+`transition-graph.json` rather than from here if the two ever disagree again.
+
 Stepping out of CODE backwards also clears `block` — you are not implementing one any more.
 
 To go from CLOSEOUT back to DEFINE you take four steps, and each one is a history entry saying why.

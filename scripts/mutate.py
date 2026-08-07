@@ -30,6 +30,7 @@ still green. `--cover` reads the workflow and adds the slices back up, so the
 workflow has to prove it ran the whole list rather than assert it.
 """
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -133,8 +134,8 @@ MUTATIONS = [
     # behaviour, and a mutation that cannot fail is not evidence of anything.
     ("the pre path stops capping transitions per write",
      edit("ddw/scripts/validate-transition.py",
-          "        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=1)",
-          "        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=None)")),
+          "        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=1,",
+          "        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=None,")),
     ("the gate's fail-closed wrapper becomes fail-open",
      edit("ddw/scripts/hook-gate.py",
           'deny(_d, f"DDW could not reach a verdict', 'allow(_d) or deny(_d, f"DDW could not reach a verdict')),
@@ -616,10 +617,10 @@ MUTATIONS = [
     # this injects.
     ("CLASSIFY appends its entry without being told to stamp the ticket",
      edit("ddw/rules/classify.instructions.md",
-          "(or → DISCOVERY), **stamped\n     with `ticket` and `tier`** "
+          "(or → DISCOVERY, or → FREE), **stamped\n     with `ticket` and `tier`** "
           "(see `.ddw/rules/state.instructions.md`). This is the first entry\n"
           "     that can carry a ticket — the one before it left IDLE, where there was none yet.",
-          "(or → DISCOVERY).")),
+          "(or → DISCOVERY, or → FREE).")),
     ("a phase appends to history without being told what to stamp on the entry",
      edit("ddw/rules/verify.instructions.md",
           "transition VERIFY \u2192 CLOSEOUT, **stamped with `ticket` and `tier`** "
@@ -1685,21 +1686,26 @@ MUTATIONS = [
           'repo = tempfile.mkdtemp(dir=os.environ["WORK"])', "repo = tempfile.mkdtemp()")),
     ("WORK stops being exported, so nothing can anchor to the one cleanup there is",
      edit("scripts/verify_install.sh", 'export WORK="$(mktemp -d)"', 'WORK="$(mktemp -d)"')),
-    ("one undecodable byte in the journal escapes both handlers again",
+    # Dos redacciones anteriores de este fault picaban código redundante y no
+    # las mataba nada: `UnicodeDecodeError` es subclase de `ValueError`, y la
+    # lectura en bytes está cubierta por el guard que corre antes en TODOS los
+    # caminos. El guard es la defensa viva — sin él la línea rota se descarta
+    # callada y el journal queda más corto que la historia que verifica.
+    ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
-          "        except (ValueError, UnicodeDecodeError):\n            continue",
-          "        except ValueError:\n            continue")),
+          "    damaged = _journal_undecodable(state_path)",
+          "    damaged = 0")),
     ("a FIFO where a record belongs hangs every hook again",
      edit("ddw/scripts/validate-transition.py",
           "    for _path in (journal_path(state_path), state_path):\n"
           "        _odd = _not_a_regular_file(_path)\n        if _odd:\n            raise Block(_odd)\n",
           "")),
     ("the mutation count goes back to being pinned nowhere",
-     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=437", "EXPECT_MUTATIONS=0")),
+     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=441", "EXPECT_MUTATIONS=0")),
     ("the check total goes back to being unpinned, which used to print as a pass",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=547", "EXPECT_CHECKS=0")),
+     edit("scripts/verify_install.sh", "EXPECT_CHECKS=553", "EXPECT_CHECKS=0")),
     ("the check total becomes a knob the environment can turn again",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=547", "EXPECT_CHECKS=${EXPECT_CHECKS:-547}")),
+     edit("scripts/verify_install.sh", "EXPECT_CHECKS=553", "EXPECT_CHECKS=${EXPECT_CHECKS:-553}")),
     ("the sealed names are judged only after symlinks are followed again",
      edit("ddw/scripts/validate-transition.py",
           "        if lexical != target:\n            reason = enforcement_write_denied(lexical, root)\n"
@@ -1733,7 +1739,7 @@ MUTATIONS = [
           '  --repo "${CLAUDE_PROJECT_DIR}"')),
     ("a write to the method itself is judged only when the method is inside the repo",
      edit("ddw/scripts/validate-transition.py",
-          "        denied = _method_write_denied(target, method)", "        denied = None")),
+          "        denied = _method_write_denied(target, method, repo)", "        denied = None")),
     ("`mkdir .ddw` picks the method again, and every Claude hook bows out",
      edit("adapters/claude/hooks/lib/guard.sh",
           '  if [ -f "${CLAUDE_PROJECT_DIR:-}/.ddw/scripts/hook-gate.py" ]; then',
@@ -1839,14 +1845,35 @@ MUTATIONS = [
      edit("ddw/scripts/validate_tests.py",
           r'rf"^[ \t]*(?:[-*][ \t]*)?\|?[ \t]*\*{{0,2}}{name}\*{{0,2}}[ \t]*[:|][ \t]*(.+?)[ \t]*\|?[ \t]*$"',
           r'rf"^\s*(?:[-*]\s*)?\|?\s*\*{{0,2}}{name}\*{{0,2}}\s*[:|]\s*(.+?)\s*\|?\s*$"')),
+    ("the fast layer over the enforcement core stops being run, so it rots unnoticed",
+     edit("scripts/verify_install.sh",
+          '  PYTEST_OUT="$(python3 -m pytest "$SELF/tests" -q 2>&1)"',
+          '  PYTEST_OUT="$(true)"')),
+    ("a run that owes evidence and names no ticket is read as owing nothing again",
+     edit("ddw/scripts/validate-transition.py",
+          '            raise Block(\n                "this run takes %d transition(s) that owe evidence',
+          '            pass\n        if False:\n            raise Block(\n                "this run takes %d transition(s) that owe evidence')),
+    ("a pause invented in the state file is enough to resume into any phase again",
+     edit("ddw/scripts/validate-transition.py",
+          "            if state_path:\n                _resume_needs_a_recorded_pause(state_path, entry, dst)",
+          "            if False:\n                _resume_needs_a_recorded_pause(state_path, entry, dst)")),
+    ("the plugin seal shrinks back to the method, leaving the hook that runs the gate writable",
+     edit("ddw/scripts/validate-transition.py",
+          "        if outside:\n            # The plugin root:",
+          "        if False:\n            # The plugin root:")),
     ("a tier can be added to the graph and explained nowhere",
      edit("scripts/lint_method.py", "    check_tiers_documented(root, graph)\n", "")),
     ("the shard timeout goes back under what a shard actually takes",
      edit(".github/workflows/mutations.yml", "    timeout-minutes: 75", "    timeout-minutes: 30")),
-    ("a word ending in `dos` answers for the denial-of-service category again",
+    # Era `\bdos\b` contra `dos\b`, y no la mata nada: `_entry_after` ya exige que
+    # el match SEA la etiqueta, así que el boundary quedó redundante cuando llegó
+    # el guard de posición. Un fault que ninguna comprobación puede ver no mide
+    # una defensa — mide que había dos. Ésta es la que queda viva, y cubre las
+    # seis categorías, no sólo la que termina en `dos`.
+    ("a category word inside somebody else's sentence answers for the category again",
      edit("ddw/scripts/validate_threat.py",
-          '    "Denial of Service": (r"denial of service|\\bdos\\b|denegaci[o\u00f3]n de servicio"),',
-          '    "Denial of Service": (r"denial of service|dos\\b|denegaci[o\u00f3]n de servicio"),')),
+          '        if m and re.fullmatch(r"[\\s*_`\\-\u2014\u2013|>]*", ln[:m.start()]):',
+          '        if m:')),
     ("the threat validator goes back to counting a bracketed placeholder as an answer",
      edit("ddw/scripts/validate_threat.py",
           '    return not re.search(r"[0-9A-Za-z\u00c0-\u00ff]", re.sub(r"\\[[^\\[\\]]*\\]", "", v))',
@@ -2170,6 +2197,9 @@ def main():
                     help="check that workflow's shards cover every mutation, then exit")
     ap.add_argument("--check-anchors", action="store_true",
                     help="check every mutation still finds what it breaks, then exit")
+    ap.add_argument("--jobs", type=int, default=None,
+                    help="how many faults to inject at once (default: half the cores, capped at "
+                         "4 — the bound is disk, not CPU)")
     ap.add_argument("--changed", metavar="BASE",
                     help="only the mutations whose file the diff against BASE touches "
                          "(a pull request's question); the whole list still runs on main")
@@ -2258,9 +2288,22 @@ def main():
     # Name the slice in the output. A shard's log is a full green run to anyone
     # skimming it, and "193/193" is the only number worth reporting.
     of_all = f" — shard {args.shard} of the {len(MUTATIONS)}" if args.shard else ""
-    print(f"Injecting {len(chosen)} faults, one at a time{of_all}.\n")
-    for i, (label, mutate) in chosen:
-        verdict, problem = run_one(i, label, mutate)
+    # In parallel, and the only thing that changes is the wall clock. Each fault
+    # still gets a private copy of the tree and a full run of the suite over it:
+    # `run_one` allocates its own TemporaryDirectory and the suite anchors every
+    # scratch path to a `mktemp -d` of its own, so two faults share nothing —
+    # measured before writing this, along with the fact that nothing here writes
+    # `$HOME` or `git config --global`.
+    #
+    # The default is deliberately below the core count. The bound here is not
+    # CPU, it is the disk: every worker copies the tree and the suite makes
+    # dozens of temporary repositories inside its run, and this measurement once
+    # put 38 GB into /tmp.
+    jobs = args.jobs or max(1, min(4, (os.cpu_count() or 2) // 2))
+    print(f"Injecting {len(chosen)} faults, {jobs} at a time{of_all}.\n")
+
+    def report(i, label, verdict, problem):
+        nonlocal killed
         if problem:
             broken.append((i, label, problem))
             print(f"  \033[33m?\033[0m  {i:2d}. {label}\n         {problem}")
@@ -2270,6 +2313,35 @@ def main():
         else:
             survived.append((i, label))
             print(f"  \033[31m✗\033[0m  {i:2d}. {label}  ← SURVIVED")
+
+    if jobs == 1:
+        for i, (label, mutate) in chosen:
+            verdict, problem = run_one(i, label, mutate)
+            report(i, label, verdict, problem)
+    else:
+        # Printed in list order even though they finish out of order: a log whose
+        # lines arrive by luck is a log nobody can diff against the last one.
+        # Threads, not processes. Every worker spends its life waiting on
+        # `bash verify_install.sh`, so the GIL is released the whole time and
+        # there is nothing to gain from separate interpreters — and something to
+        # lose: the mutations are closures over their arguments, which do not
+        # pickle. Measured: the process pool refused all four faults of a smoke
+        # test with "Can't pickle local object", and reported them as anchors
+        # that had moved. It failed honestly, which is the only reason that was
+        # a five-minute detour and not a fabricated hundred percent.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(run_one, i, label, mutate): (i, label)
+                       for i, (label, mutate) in chosen}
+            done = {}
+            for fut in concurrent.futures.as_completed(futures):
+                i, label = futures[fut]
+                try:
+                    done[i] = (label,) + fut.result()
+                except Exception as exc:                          # noqa: BLE001
+                    done[i] = (label, None, f"the worker died: {exc.__class__.__name__}: {exc}")
+            for i, _ in chosen:
+                label, verdict, problem = done[i]
+                report(i, label, verdict, problem)
 
     total = len(chosen) - len(broken)
     rate = (killed / total * 100) if total else 0

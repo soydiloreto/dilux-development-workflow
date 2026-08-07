@@ -181,7 +181,7 @@ and want to define it before implementing?"
 If the classification is **QUERY**:
 - Answer per the rule defined above.
 - **Do NOT continue to Steps 3 through 6.** Those steps only apply to the stateful tiers
-  (QUICK-FIX, FIX, FEATURE, DISCOVERY).
+  (QUICK-FIX, FIX, FEATURE, DISCOVERY, FREE).
 - Do not touch `.ddw-state.json`. Do not change phase. Done.
 
 ---
@@ -215,7 +215,7 @@ what they asked. This is a proposal, not a redirection.
 
 ### Then, for new work
 
-If the tier is stateful (QUICK-FIX, FIX, FEATURE or DISCOVERY):
+If the tier is stateful (QUICK-FIX, FIX, FEATURE, DISCOVERY or FREE):
 
 1. Ask: "Is there an associated tracker ticket? If so, which one?"
 2. **If the user provides a tracker ticket** (e.g. `PROJ-123`):
@@ -306,17 +306,18 @@ anyone to watch it.
 ## Step 6: Transition
 
 1. Update `.ddw-state.json`:
-   - `tier` → the confirmed tier (`"QUICK-FIX"`, `"FIX"`, `"FEATURE"` or
-     `"DISCOVERY"`)
+   - `tier` → the confirmed tier (`"QUICK-FIX"`, `"FIX"`, `"FEATURE"`, `"DISCOVERY"` or
+     `"FREE"`)
    - `autonomy` → `"assisted"` unless the user asked for the other one (see below)
    - `phase`:
      - For `QUICK-FIX`, `FIX`, `FEATURE` → `"DEFINE"`
      - For `DISCOVERY` → `"DISCOVERY"`
+     - For `FREE` → `"FREE"`
    - `ticket` → the tracker ID if there is one (e.g. `"PROJ-123"`), or a sequential internal ID
      (e.g. `"FIX-001"`, `"DISC-001"`)
    - `title` → the tracker ticket's title if there is one, or the generated title
    - `tracker` → the tracker ID, or `null` when the ID is internal
-   - Append a `history` entry for the transition CLASSIFY → DEFINE (or → DISCOVERY), **stamped
+   - Append a `history` entry for the transition CLASSIFY → DEFINE (or → DISCOVERY, or → FREE), **stamped
      with `ticket` and `tier`** (see `.ddw/rules/state.instructions.md`). This is the first entry
      that can carry a ticket — the one before it left IDLE, where there was none yet.
 

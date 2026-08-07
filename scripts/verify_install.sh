@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=547
+EXPECT_CHECKS=553
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=437
+EXPECT_MUTATIONS=441
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -232,7 +232,11 @@ python3 - "$SELF" <<'PYEJECTCMD' && ok "/ddw-eject prescribes a command the user
 import json, os, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 skill = open(os.path.join(src, "skills/ddw-eject/SKILL.md"), encoding="utf-8").read()
-assert "--method-only" in skill, "the eject skill no longer names the command that does the work"
+import re as _re
+assert _re.search(r"^\s*bash .*install\.sh.* --method-only", skill, _re.M), \
+    ("the eject skill no longer carries the command the user runs. Naming the flag in prose is "
+     "not the same as handing over the line to paste — and the write it used to prescribe "
+     "instead is refused by the hook in every phase.")
 
 # The refusal is real, and it is what the skill has to route around: a write to
 # `.ddw/` mid-ticket, judged by the gate every tool runs.
@@ -694,8 +698,43 @@ python3 "$TR" --to PLAN --action p --gate define --graph "$G" >/dev/null 2>&1 \
   && ok "accepts DEFINE->PLAN once the define gate is set" || bad "DEFINE->PLAN with gate failed"
 # Every tier in the graph must be reachable through the sanctioned helper. Reset
 # to a fresh CLASSIFY each time: the tier is set on the edge leaving CLASSIFY.
-for TIER in QUICK-FIX FIX FEATURE DISCOVERY; do
-  DEST=DEFINE; [ "$TIER" = "DISCOVERY" ] && DEST=DISCOVERY
+#
+# The list is DERIVED, and the sentence above is why. It was typed — QUICK-FIX,
+# FIX, FEATURE, DISCOVERY — under a comment claiming to cover the graph, and the
+# day a fifth tier was added the loop went on testing four and stayed green.
+# FREE was reachable in the graph, listed in the state schema, refused by the
+# sanctioned helper (whose own tier list was typed too), and no check noticed for
+# a day. Each tier's destination comes from the graph as well: whatever
+# `CLASSIFY->X` that tier defines.
+TIER_DESTS="$(python3 - "$G" <<'PYTIERS'
+import json, sys
+graph = json.load(open(sys.argv[1], encoding="utf-8"))
+tiers = graph.get("tiers", {})
+
+
+def edges(tier):
+    """The tier's own edges plus the ones it inherits — `extends`, walked."""
+    out = {k for k in graph.get("common", {}) if not k.startswith("_")}
+    seen, cur = set(), tier
+    while cur in tiers and cur not in seen:
+        seen.add(cur)
+        out |= {k for k in tiers[cur] if "->" in k and not k.startswith("_")}
+        cur = tiers[cur].get("extends")
+    return out
+
+
+for tier in sorted(tiers):
+    dest = [e.split("->", 1)[1] for e in sorted(edges(tier)) if e.startswith("CLASSIFY->")]
+    if dest:
+        print("%s:%s" % (tier, dest[0]))
+PYTIERS
+)"
+[ -n "$TIER_DESTS" ] || bad "no tier in the graph declares an edge out of CLASSIFY"
+# Word splitting, not a pipe: `... | while read` runs the body in a subshell, and
+# every `ok` in there increments a counter that dies with it — a loop of checks
+# that never reach the total this file pins.
+for PAIR in $TIER_DESTS; do
+  TIER="${PAIR%%:*}"; DEST="${PAIR##*:}"
   python3 "$TR" --to CLASSIFY --action req --ticket T-1 --graph "$G" > "$R/.ddw-state.json" 2>/dev/null
   if python3 "$TR" --to "$DEST" --action c --tier "$TIER" --graph "$G" >/dev/null 2>&1; then
     ok "tier $TIER: CLASSIFY->$DEST accepted"
@@ -1434,8 +1473,14 @@ python3 "$SELF/ddw/scripts/validate_threat.py" "$VTM/threat-FEAT-001.md" --tier 
 grep -v 'Repudiation' "$VTM/threat-FEAT-001.md" > "$VTM/broken.md"
 VTOUT="$(python3 "$SELF/ddw/scripts/validate_threat.py" "$VTM/broken.md" --tier FEATURE \
         --spec "$VS/spec-FEAT-001.md" 2>/dev/null || true)"
+# The refusal has to say the category is ABSENT. Asking only for the ID and the
+# name accepted the wrong diagnosis: with the missing-category branch dead the
+# validator still refused and still said "Repudiation", but as "still the
+# template's placeholder" — a category that was deleted reported as one that was
+# left unfilled. The author is told to fill in a line that is not in the file.
 case "$VTOUT" in
-  *"❌ F-TM-01"*Repudiation*) ok "and a missing STRIDE category is named — a five-sixths analysis is not one" ;;
+  *"❌ F-TM-01"*missing*Repudiation*) ok "and a missing STRIDE category is named as missing — a five-sixths analysis is not one" ;;
+  *"❌ F-TM-01"*Repudiation*) bad "a deleted STRIDE category is reported as an unfilled one: $VTOUT" ;;
   *) bad "a component analysed against five of the six STRIDE categories passed" ;;
 esac
 
@@ -1685,6 +1730,28 @@ suite = open(os.path.join(src, "scripts/verify_install.sh"), encoding="utf-8").r
 # a shortcut and a softened verdict — `EXPECT_CHECKS` is the cautionary tale, and
 # it is refused from the environment for exactly this reason.
 # The needle is built rather than written, so this check does not count itself.
+# Y el runner que la paga tiene que PEDIRLO. Sin esto cada fault corre la suite
+# entera después de haber probado lo que tenía que probar: la corrida completa
+# pasó de ~13 minutos a más de una hora, y el ahorro no se ve en ningún ✗ —
+# nada falla, sólo tarda. El baseline es la excepción y tiene que seguir
+# siéndolo: mide que la suite esté verde ENTERA, no hasta el primer problema.
+runner = open(os.path.join(src, "scripts/mutate.py"), encoding="utf-8").read()
+# Asked of the FUNCTION, not of the file. The file also holds the list of faults,
+# and one of those faults is written as the literal this looks for — so read
+# whole, the runner answers "yes" out of the description of removing it. Measured
+# live: the fault survived, found by its own text.
+_run_one = runner[runner.index("def run_one("):]
+_run_one = _run_one[:_run_one.index("\ndef ", 1)]
+assert 'DDW_STOP_ON_FIRST_FAILURE="1"' in _run_one, \
+    ("the runner no longer asks the suite to stop at the first failure, so every fault pays the "
+     "whole suite after the answer is already known — a cost that shows up as an hour of wall "
+     "clock and never as a red check")
+_base = runner[runner.index("def baseline("):]
+_base = _base[:_base.index("\ndef ", 1)]
+assert "DDW_STOP_ON_FIRST_FAILURE" not in _base, \
+    ("the baseline stops at the first failure too, so it stops being a baseline: it would report "
+     "an already-red suite as red for one reason and never see the others")
+
 needle = "${" + "DDW_STOP_ON_FIRST_FAILURE:-}"
 assert suite.count(needle) == 1, \
     "the stop switch is read in %d places; it belongs in `bad` alone" % suite.count(needle)
@@ -3334,8 +3401,27 @@ r, refused = run(filled, "FEATURE", "prd-T-1.md")
 assert r.returncode == 0 and not refused, (
     "validate_prd refuses a PRD written exactly as its own template teaches:\n" + "\n".join(refused))
 
+# Refused, and refused FOR the placeholders. `returncode != 0` was the whole
+# assertion here and it was satisfied by ONE unrelated rule: the raw template
+# fails F-PRD-03 because its NFR carries no number, and that is all it failed.
+# Fill in that single line and the twenty-line document of brackets came out
+# `PASSED — 8 passed, 0 failed` with its receipt written. A check that passes
+# because something else is broken is not checking what it says.
 r, refused = run(prd, "FEATURE", "prd-T-2.md")
 assert r.returncode != 0, "the PRD template passes unfilled — the placeholders are the document"
+assert any("F-PRD-08" in ln and "placeholder" in ln for ln in refused), \
+    "the unfilled template is refused, but not for being unfilled: " + "\n".join(refused)
+
+# And with the one rule that was doing the work satisfied, so the placeholders
+# are the only thing left to object to.
+one_field = prd.replace("- NFR-01: [performance, security, etc. — always with a number]",
+                        "- NFR-01: p95 under 200 ms.")
+r, refused = run(one_field, "FEATURE", "prd-T-5.md")
+assert r.returncode != 0, (
+    "the shipped template with a single line filled in passes and earns the `define` receipt — "
+    "a PRD whose problem, goals, requirements and criteria are all still `[like this]`")
+assert any("placeholder" in ln for ln in refused), \
+    "it is refused for something other than being unwritten: " + "\n".join(refused)
 
 # The fix-brief, which is the whole of DEFINE under QUICK-FIX.
 sessions = os.path.join(d, ".ddw-sessions")
@@ -3529,6 +3615,28 @@ dropped = re.sub(r"^- \*\*Denial of Service:.*$", "- **Tampering (continued):** 
 r, refused = run(dropped, "T-4")
 assert any("F-TM-01" in ln and "Denial of Service" in ln for ln in refused), \
     ("a model with no denial-of-service analysis passed because another line ends in `dos`: "
+     + "\n".join(refused))
+
+# 5. And the general case the boundary above is one instance of: the category's
+#    own word, spelled out, inside a line that is about something else. What
+#    names a category is the LABEL — the position, not the presence. Here the
+#    Spoofing analysis is deleted and the word "spoofing" is left in the middle
+#    of the Tampering sentence, which is how it reads in a document somebody
+#    actually wrote. Matched anywhere in the line, that sentence answers for a
+#    category nobody analysed, and what comes back as "the analysis" is the tail
+#    of a sentence about validation.
+_spoof = re.search(r"^- \*\*Spoofing:\*\*.*$", worked, re.M)
+_tamper = re.search(r"^- \*\*Tampering:\*\*.*$", worked, re.M)
+assert _spoof and _tamper, "the template's STRIDE lines are not shaped as this probe expects"
+elsewhere = worked.replace(_spoof.group(0) + "\n", "", 1)
+elsewhere = elsewhere.replace(
+    _tamper.group(0),
+    _tamper.group(0).rstrip(". ") + "; no hay spoofing posible sin identidad propia.", 1)
+assert "spoofing" in elsewhere and _spoof.group(0) not in elsewhere, \
+    "the probe did not plant the case it is about"
+r, refused = run(elsewhere, "T-5")
+assert any("F-TM-01" in ln and "Spoofing" in ln for ln in refused), \
+    ("a category answered for by its own word inside another category's sentence: "
      + "\n".join(refused))
 PYTHREAT
 
@@ -4630,6 +4738,42 @@ survivors = [d for d in (".opencode/skills", ".opencode/agent", ".opencode/comma
              if os.path.isdir(os.path.join(legacy, d)) and os.listdir(os.path.join(legacy, d))]
 assert not survivors, \
     f"a manifest written by an older install left {survivors} behind — an upgrade never gets clean"
+
+# And the settings block that older install WIRED. Byte-for-byte against what
+# this version ships answers "is this ours?" only for the version asking: rename
+# a hook script between releases and the block from before belongs to nobody, so
+# it survives the uninstall while the script it names is deleted — a repository
+# that cannot be left, failing on `command not found` at every write, with DDW
+# gone and nothing left to explain it. The manifest says what DDW installed; a
+# block naming one of those files is DDW's whichever version wired it.
+stale = os.path.join(work, "stale")
+os.makedirs(stale)
+subprocess.run(["git", "-C", stale, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), stale, "--target", "claude"],
+               capture_output=True, text=True)
+spath = os.path.join(stale, ".claude", "settings.json")
+settings = json.load(open(spath, encoding="utf-8"))
+hooks = settings.get("hooks", {})
+touched = 0
+for event, groups in hooks.items():
+    for group in groups:
+        for h in group.get("hooks", []):
+            # The same hook file, wired the way another version wrote it. Not
+            # byte-identical to anything this version ships; still DDW's.
+            if ".claude/hooks/" in h.get("command", ""):
+                h["command"] = h["command"].replace("bash ", "bash -- ", 1)
+                touched += 1
+assert touched, "the install wired no hook command, so the case cannot be planted"
+json.dump(settings, open(spath, "w", encoding="utf-8"), indent=2)
+subprocess.run(["bash", os.path.join(src, "uninstall.sh"), stale, "--yes"],
+               capture_output=True, text=True)
+left = json.load(open(spath, encoding="utf-8")) if os.path.exists(spath) else {}
+orphans = [h.get("command") for groups in left.get("hooks", {}).values()
+           for g in groups for h in g.get("hooks", [])
+           if ".claude/hooks/" in h.get("command", "")]
+assert not orphans, \
+    ("the uninstall left %d hook block(s) an older version wired: %s — every write in that "
+     "repository now fails on a script the uninstall deleted" % (len(orphans), orphans[:2]))
 PYUNINST
 
 # The manifest is COMMITTED, so it arrives with the clone, from whoever wrote it —
@@ -4880,7 +5024,7 @@ PYFOUR
 # was never recounted. The number the method is FOR was the one number nothing
 # checked.
 python3 - "$SELF" <<'PYRULECOUNT' && ok "the catalog's summary is counted against the rules the catalog defines, and so is the README line that restates it" || bad "the rule catalog can go back to summarising a count of rules it does not contain"
-import os, subprocess, sys, tempfile
+import os, re, subprocess, sys, tempfile
 src = sys.argv[1]
 work = tempfile.mkdtemp(dir=os.environ["WORK"])
 subprocess.run(["cp", "-r", src, os.path.join(work, "repo")], check=True)
@@ -4914,6 +5058,41 @@ code, out = lint()
 assert code != 0 and "65" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
 rewrite("ddw/rules/validation-rules.instructions.md",
         "| **Total** | **69** | **15** | **84** |", "| **Total** | **65** | **15** | **80** |")
+
+# Two more of the linter's checks, driven the same way. Both were added with a
+# mutation and no check: deleting the CALL left the repository linting clean,
+# because a clean repository is what a deleted check reports. What proves a
+# check runs is a planted violation it has to name.
+
+# The 🔒 mark: a phase that blocks source and does not say the hook is what
+# refuses it reads like the rules nothing enforces.
+orch = os.path.join(repo, "ddw/orchestrator.md")
+text = open(orch, encoding="utf-8").read()
+# The line has to be one the check judges: a phase that blocks source, and not
+# one of the phases where source is allowed and there is nothing to mark.
+def _unmark(m):
+    line = m.group(0)
+    return line.replace("🔒", "") if "source" in line.lower() else line
+stripped, n = re.subn(r"^- \*\*Blocked:\*\*.*🔒.*$", _unmark, text, flags=re.M)
+assert n and stripped != text, "no Blocked line marks a source refusal, so the case cannot be planted"
+open(orch, "w", encoding="utf-8").write(stripped)
+code, out = lint()
+assert code != 0 and "mark" in out.lower(), \
+    "a phase that blocks source without marking it as the hook's passed: " + out[-300:]
+open(orch, "w", encoding="utf-8").write(text)
+
+# The context template: a section it ships that `ddw-context-check` never looks
+# for means a repository missing that section is reported as complete.
+tpl = os.path.join(repo, "ddw/AGENTS.template.md")
+text = open(tpl, encoding="utf-8").read()
+open(tpl, "a", encoding="utf-8").write("\n## Deployment topology\n\nWhere this runs.\n")
+code, out = lint()
+assert code != 0 and "Deployment topology" in out, \
+    "the template shipped a section nothing looks for and linted clean: " + out[-300:]
+open(tpl, "w", encoding="utf-8").write(text)
+
+code, out = lint()
+assert code == 0, "the tree was not put back the way it was found: " + out[-300:]
 
 # And the restatement outside the catalog, which is the line a reader of
 # `ddw/rules/` meets first.
@@ -6789,6 +6968,287 @@ assert vt.enforcement_write_denied(os.path.join(repo, ".ddw/rules/code.instructi
     "the method is writable in FREE — turning the pipeline off must not hand over what turns it off for good"
 PYFREE
 
+# The other half of FREE, and the half that keeps it honest: the announcement.
+# A mode nobody is reminded of is a mode people stay in by accident, and this one
+# has no other guard — nothing is gated, so the warning IS the guard. Driven
+# through `session-boot.py`, the program every tool's session-start hook runs,
+# in both directions: it says it in FREE, and it does not say it anywhere else.
+python3 - "$SELF" <<'PYFREEWARN' && ok "a session in FREE opens by saying there is no workflow, and a session anywhere else does not" || bad "the repo can sit in FREE with nothing announcing it, which is the only thing FREE has instead of gates"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+state = os.path.join(repo, ".ddw-state.json")
+H = [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "a"},
+     {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "FREE",
+      "action": "sin pipeline, a pedido", "tier": "FREE", "ticket": "F-1"}]
+
+
+def boot(phase, tier):
+    json.dump({"phase": phase, "tier": tier, "ticket": "F-1", "gates": {}, "history": H},
+              open(state, "w", encoding="utf-8"))
+    r = subprocess.run([sys.executable, os.path.join(repo, ".ddw/scripts/session-boot.py"),
+                        "--repo", repo, "--session-id", "s-" + phase],
+                       capture_output=True, text=True, timeout=60)
+    return r.stdout + r.stderr
+
+
+said = boot("FREE", "FREE")
+assert "SIN WORKFLOW" in said, \
+    "a session opened in FREE and never said the pipeline is off:\n" + said[-400:]
+assert "exit free:" in said, \
+    "the warning does not carry the way out, so leaving takes reading the rules:\n" + said[-400:]
+
+# …and it is not printed for a repo that IS running a pipeline, or the line
+# becomes noise and the next reader learns to skip it.
+quiet = boot("CODE", "FEATURE")
+assert "SIN WORKFLOW" not in quiet, \
+    "a session in CODE is told it has no workflow:\n" + quiet[-400:]
+PYFREEWARN
+
+# Under a plugin install, the method is sealed and the FILES THE TOOL EXECUTES
+# were not. `$PLUGIN/ddw` is the rules and the validators; the hook that runs the
+# gate is `$PLUGIN/adapters/<tool>/hooks/*.sh`, wired by `plugin-hooks.json` and
+# declared in `.claude-plugin/plugin.json` — one level up, outside the method and
+# outside the repo, so every guard answered "not ours". Overwriting that one
+# shell script with `exit 0` takes a single Write, allowed in any phase, and DDW
+# stops holding in every repository using that plugin.
+python3 - "$SELF" <<'PYPLUGINROOT' && ok "a plugin install seals what the tool executes, not only the method it reads — and a drop-in still leaves the repository writable" || bad "the hook that runs the gate can be overwritten from inside a ticket, which turns DDW off everywhere it is installed"
+import json, os, shutil, subprocess, sys, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+plug = os.path.join(work, "plugin")
+os.makedirs(plug)
+for item in ("ddw", "adapters", ".claude-plugin"):
+    if os.path.exists(os.path.join(src, item)):
+        shutil.copytree(os.path.join(src, item), os.path.join(plug, item), symlinks=True)
+repo = os.path.join(work, "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+state = os.path.join(repo, ".ddw-state.json")
+json.dump({"phase": "CODE", "ticket": "T-1", "tier": "FEATURE",
+           "gates": {"define": True, "spec": True, "threat": True},
+           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY",
+                        "action": "a"},
+                       {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE",
+                        "action": "b", "tier": "FEATURE", "ticket": "T-1"}]},
+          open(state, "w", encoding="utf-8"))
+
+
+def write(path):
+    ev = json.dumps({"tool_name": "Write", "tool_input": {"file_path": path, "content": "exit 0\n"}})
+    return subprocess.run([sys.executable, os.path.join(plug, "ddw/scripts/hook-gate.py"),
+                           "--dialect", "standard", "--mode", "pre", "--state", state,
+                           "--graph", os.path.join(plug, "ddw/rules/transition-graph.json"),
+                           "--repo", repo, "--method", os.path.join(plug, "ddw")],
+                          input=ev, capture_output=True, text=True).returncode
+
+
+for rel in ("ddw/rules/transition-graph.json",
+            "adapters/claude/hooks/validate-state-transition.sh",
+            "adapters/claude/plugin-hooks.json",
+            ".claude-plugin/plugin.json",
+            "adapters/cursor/hooks/pre-tool-use.sh"):
+    path = os.path.join(plug, rel)
+    if not os.path.exists(path):
+        continue
+    assert write(path) == 2, (
+        "`%s` is writable from inside a ticket under a plugin install. It is what the tool runs, "
+        "or what tells the tool to run it — one Write and the pipeline is off in every repository "
+        "sharing this plugin." % rel)
+
+# The repository is still the user's: CODE writes its own source.
+assert write(os.path.join(repo, "src", "app.py")) == 0, \
+    "sealing the plugin root also sealed the repository — CODE cannot write source"
+
+# And a DROP-IN install must not seal the project: there the method is
+# `<repo>/.ddw`, whose parent is the repo itself.
+drop = os.path.join(work, "dropin")
+os.makedirs(drop)
+subprocess.run(["git", "-C", drop, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), drop, "--target", "claude"],
+               capture_output=True, text=True)
+json.dump({"phase": "CODE", "ticket": "T-1", "tier": "FEATURE",
+           "gates": {"define": True, "spec": True, "threat": True},
+           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY",
+                        "action": "a"},
+                       {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY", "to": "DEFINE",
+                        "action": "b", "tier": "FEATURE", "ticket": "T-1"}]},
+          open(os.path.join(drop, ".ddw-state.json"), "w", encoding="utf-8"))
+ev = json.dumps({"tool_name": "Write",
+                 "tool_input": {"file_path": os.path.join(drop, "src", "app.py"), "content": "x"}})
+r = subprocess.run([sys.executable, os.path.join(drop, ".ddw/scripts/hook-gate.py"),
+                    "--dialect", "standard", "--mode", "pre",
+                    "--state", os.path.join(drop, ".ddw-state.json"),
+                    "--graph", os.path.join(drop, ".ddw/rules/transition-graph.json"),
+                    "--repo", drop, "--method", os.path.join(drop, ".ddw")],
+                   input=ev, capture_output=True, text=True)
+assert r.returncode == 0, \
+    "a drop-in install now seals the repository itself: " + (r.stdout + r.stderr)[-200:]
+PYPLUGINROOT
+
+# The resume is the one edge in the machine that skips the graph AND the gates —
+# coming back to a paused ticket owes nothing, because pausing owed nothing. So
+# what it rests on has to be something the forger does not also write, and until
+# now it rested on the history: which lives in the state file, which is exactly
+# what a shell rewrites.
+#
+# Measured end to end: one shell write of a state whose history holds a single
+# `pause:` entry from CODE, then the SANCTIONED helper resuming into CODE. No
+# ticket, no tier, no receipt, `gates: {}` — and product source writable on the
+# next call, with both hooks green. Every gate in the pipeline skipped by
+# inventing a pause that never happened.
+python3 - "$SELF" <<'PYFAKEPAUSE' && ok "a resume has to point at a pause the journal recorded, and a real one still resumes" || bad "inventing a `pause:` entry in the state file is a key to any phase, with no gates and no ticket"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+
+
+def repo_with(history, journal):
+    repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
+    os.makedirs(repo)
+    subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+    subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+                   capture_output=True, text=True)
+    json.dump({"tier": None, "phase": "IDLE", "ticket": None, "gates": {}, "history": history},
+              open(os.path.join(repo, ".ddw-state.json"), "w", encoding="utf-8"))
+    with open(os.path.join(repo, ".ddw-journal.jsonl"), "w", encoding="utf-8") as fh:
+        for line in journal:
+            fh.write(json.dumps(line) + "\n")
+    return repo
+
+
+def resume(repo):
+    return subprocess.run(
+        [sys.executable, os.path.join(repo, ".ddw/scripts/transition.py"),
+         "--state", os.path.join(repo, ".ddw-state.json"),
+         "--graph", os.path.join(repo, ".ddw/rules/transition-graph.json"),
+         "--write", "--to", "CODE", "--action", "resume: back to it"],
+        capture_output=True, text=True, cwd=repo)
+
+
+HISTORY = [{"timestamp": "2026-08-06T09:00:00Z", "from": "IDLE", "to": "CLASSIFY",
+            "action": "classify", "tier": "FEATURE", "ticket": "T-1"},
+           {"timestamp": "2026-08-06T10:00:00Z", "from": "CODE", "to": "IDLE",
+            "action": "pause: waiting", "ticket": "T-1"}]
+REAL = [{"from": "IDLE", "to": "CLASSIFY", "action": "classify"},
+        {"from": "CODE", "to": "IDLE", "action": "pause: waiting"}]
+FORGED = [{"from": "IDLE", "to": "CLASSIFY", "action": "classify"},
+          {"from": "CLASSIFY", "to": "DEFINE", "action": "define"}]
+
+# The pause the journal saw: resuming is legal, as it has always been.
+r = resume(repo_with(HISTORY, REAL))
+assert r.returncode == 0, "a resume onto a pause the journal recorded was refused: " + r.stderr[-300:]
+
+# The same history, with a journal that never saw that pause.
+r = resume(repo_with(HISTORY, FORGED))
+assert r.returncode != 0, \
+    "a `pause:` entry written into the state file is enough to resume into any phase, with no " \
+    "gates and no ticket — the one edge that skips both"
+assert "journal" in r.stderr, \
+    "the refusal does not say which record is missing, so it reads as a bug: " + r.stderr[-300:]
+
+# A repository with no journal at all is not a forgery: it is one installed
+# before the journal existed, or one whose first transition has not landed.
+r = resume(repo_with(HISTORY, []))
+assert r.returncode == 0, \
+    "a repo with no journal cannot resume at all, which strands every ticket that predates it"
+PYFAKEPAUSE
+
+# Every receipt gate resolves its document through the ticket, and a missing
+# ticket read as a missing CLAIM — so the switch that turns the entire evidence
+# layer on was held by whoever wrote the history. Leave `ticket` off the entries
+# and post mode asks for nothing.
+#
+# Measured: a FEATURE forged in one shell write, seven transitions from IDLE to
+# IDLE, `tier` stamped so the tier-less hatch would not catch it and `ticket`
+# left off. Post mode returned 0 and the journal recorded all seven as blessed —
+# no PRD, no spec, no threat model, no test report, no SAST report, no verdict,
+# and afterwards indistinguishable from a run that earned them.
+python3 - "$SELF" <<'PYNOTICKET' && ok "a run that owes evidence and names no ticket is refused, because a run nobody can check is not one that passed" || bad "leaving `ticket` off the entries turns the whole evidence layer off — the forger holds the switch"
+import json, os, subprocess, sys, tempfile
+src = sys.argv[1]
+repo = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+               capture_output=True, text=True)
+state = os.path.join(repo, ".ddw-state.json")
+EDGES = [("IDLE", "CLASSIFY", "classify"), ("CLASSIFY", "DEFINE", "prd"),
+         ("DEFINE", "PLAN", "spec"), ("PLAN", "CODE", "code"), ("CODE", "VERIFY", "verify"),
+         ("VERIFY", "CLOSEOUT", "closeout"), ("CLOSEOUT", "IDLE", "done")]
+
+
+def post(with_ticket):
+    hist = [{"timestamp": "2026-08-06T1%d:00:00Z" % i, "from": a, "to": b, "action": c,
+             "tier": "FEATURE", **({"ticket": "T-9"} if with_ticket else {})}
+            for i, (a, b, c) in enumerate(EDGES)]
+    json.dump({"tier": None, "phase": "IDLE", "ticket": None, "gates": {}, "history": hist},
+              open(state, "w", encoding="utf-8"))
+    return subprocess.run([sys.executable, os.path.join(repo, ".ddw/scripts/hook-gate.py"),
+                           "--dialect", "standard", "--mode", "post", "--state", state,
+                           "--repo", repo, "--method", os.path.join(repo, ".ddw"),
+                           "--graph", os.path.join(repo, ".ddw/rules/transition-graph.json")],
+                          input="{}", capture_output=True, text=True)
+
+
+r = post(with_ticket=False)
+assert r.returncode == 2, (
+    "a whole FEATURE forged in one write, with no ticket on any entry, was blessed by post mode: "
+    "every receipt gate resolves its document through the ticket, so leaving it off asked for "
+    "nothing at all")
+assert "ticket" in (r.stdout + r.stderr), \
+    "the refusal does not say what is missing: " + (r.stdout + r.stderr)[-250:]
+
+# The control: the same forgery WITH a ticket is refused too, and for the older
+# reason — the documents it names are not on disk. Both roads have to be shut,
+# or the fix above is just a longer forgery.
+r = post(with_ticket=True)
+assert r.returncode == 2, "the same run with a ticket stamped was blessed with no artifacts at all"
+
+# …and the journal recorded none of it. A refused run that leaves its edges in
+# the append-only record is a forgery the next replay treats as history.
+journal = os.path.join(repo, ".ddw-journal.jsonl")
+if os.path.exists(journal):
+    lines = [json.loads(l) for l in open(journal, encoding="utf-8") if l.strip()]
+    assert not [l for l in lines if l.get("from") == "VERIFY"], \
+        "post mode refused the run and still journalled its transitions"
+PYNOTICKET
+
+# The fast layer, kept honest by the slow one.
+#
+# `tests/` asks the enforcement core directly — dictionaries in, verdict out —
+# and answers in a tenth of a second where this suite takes eighty-five. It is
+# NOT a substitute and the numbers say why: measured over the 114 faults injected
+# into `validate-transition.py`, thirty-six tests catch sixteen. What it buys is
+# the loop you use while WRITING a rule, not the measurement you publish.
+#
+# Run here so it cannot rot: a test file nobody runs is a file that stops
+# compiling and nobody finds out.
+# Read the summary rather than the exit status. `cmd && ok || bad` reports
+# success for anything that exits 0, including a command that ran nothing —
+# replace the invocation with `true` and this line still printed that the layer
+# "passes". The count is the evidence that tests were collected and run.
+if command -v python3 >/dev/null 2>&1 && python3 -c "import pytest" 2>/dev/null; then
+  PYTEST_OUT="$(python3 -m pytest "$SELF/tests" -q 2>&1)"
+  # Both halves of the summary. Counting only the passes reproduces the defect
+  # this check was written against: `1 failed, 38 passed` still reports 38, and
+  # a red layer went green because enough of it was green. Measured — two faults
+  # survived exactly here.
+  PYTEST_PASSED="$(printf '%s\n' "$PYTEST_OUT" | grep -oE '[0-9]+ passed' | head -1 | cut -d' ' -f1)"
+  PYTEST_BAD="$(printf '%s\n' "$PYTEST_OUT" | grep -coE '[0-9]+ (failed|error)')"
+  if [ -n "${PYTEST_PASSED:-}" ] && [ "$PYTEST_PASSED" -ge 30 ] 2>/dev/null && [ "$PYTEST_BAD" -eq 0 ]; then
+    ok "the fast layer over the enforcement core passes, and still compiles ($PYTEST_PASSED tests)"
+  else
+    bad "tests/ fails, collects nothing, or no longer runs — the loop used while writing a rule is broken"
+    printf '%s\n' "$PYTEST_OUT" | tail -12 | sed 's/^/      /'
+  fi
+else
+  skip "pytest is not installed, so the fast layer was not run (the suite above is the measurement)"
+fi
+
 python3 - "$SELF" <<'PYEOF' && ok "and it says the whole finding once, not on every tool call" || bad "the same corrupt state is re-reported in full forever — see above"
 import json, os, subprocess, sys, tempfile
 src = sys.argv[1]
@@ -7106,6 +7566,44 @@ out = run("sess-D")
 assert "could not write its marker" in out, f"a boot that could not register says nothing: {out[:200]}"
 counts = [int(n) for n in re.findall(r"DDW: (\d+) other session", out)]
 assert not counts, f"a boot that saw nobody still reported {counts[0]} other session(s)"
+
+# The id comes from the harness and is used as a FILENAME. Written through, one
+# shaped like a path leaves the sessions directory: `--session-id
+# ../.ddw-state.json` replaces the pipeline state with a marker and reports a
+# clean boot. Whatever the harness calls a session, on disk it is one flat name.
+# The case above left a FILE where the directory goes, and `rmtree` on a file
+# does nothing when it is told to ignore errors.
+if os.path.isdir(live):
+    shutil.rmtree(live, ignore_errors=True)
+elif os.path.exists(live):
+    os.remove(live)
+os.makedirs(live, exist_ok=True)
+state = os.path.join(repo, ".ddw-state.json")
+before = open(state, "rb").read() if os.path.exists(state) else None
+assert before is not None, "this repository has no state file, so the case cannot be planted"
+run("../../.ddw-state.json")
+assert open(state, "rb").read() == before, \
+    "a session id shaped like a path walked out of the sessions directory and overwrote the state"
+escaped = [n for n in os.listdir(os.path.dirname(live)) if n not in ("live",)]
+assert not any(n.startswith("..") for n in escaped), \
+    f"the id was written as a name that climbs: {escaped[:4]}"
+assert os.listdir(live), "the boot registered nothing at all, so nothing above was exercised"
+assert all(os.sep not in n and n not in ("..", ".") for n in os.listdir(live)), \
+    f"a session marker is not one flat name: {os.listdir(live)[:4]}"
+
+# And the count is made against those same flat names. Sanitised on the way to
+# disk and compared unsanitised, a session whose id carries one character the
+# filename cannot hold stops recognising its own marker and reports ITSELF as
+# somebody else — the concurrency warning fires at a person working alone, which
+# is the fastest way to teach them to ignore it.
+if os.path.isdir(live):
+    shutil.rmtree(live, ignore_errors=True)
+os.makedirs(live, exist_ok=True)
+out = run("sess/A")
+counts = [int(n) for n in re.findall(r"DDW: (\d+) other session", out)]
+assert not counts, \
+    f"a session alone in the repository was told about {counts[0]} other session(s) — it counted " \
+    f"its own marker, because the id is written to disk sanitised and compared raw"
 PYONESIDED
 
 # ── The guard cannot exempt its own rulebook ──────────────────────────────────
@@ -8269,9 +8767,14 @@ assert re.search(r"^assert not skipped, \(", suite, re.M), \
 # the suite that run launched, and the probe that suite reached: a recursion
 # outliving every one of its ancestors. Found still spawning hours later, inside
 # temporary trees from a version of the list that no longer existed.
-assert "start_new_session=True" in suite and "killpg" in suite, \
-    "the empty-selection probe no longer kills the process group; a timeout that kills one process "\
-    "leaves the tree it started alive, and this is the one probe whose child starts another"
+# Construido por pedazos, como el otro: escrito entero, este assert se encuentra
+# a sí mismo y la comprobación pasa aunque el código lo haya perdido. Ya me pasó
+# con `EXPECT_CHECKS` cuarenta líneas más arriba, en este mismo bloque.
+_group_kill = "start_new_" + "session=True"
+assert suite.count(_group_kill) >= 1 and "killpg" in suite, \
+    ("the empty-selection probe no longer kills the process group; a timeout that kills one "
+     "process leaves the tree it started alive, and this is the one probe whose child starts "
+     "another")
 # The pinned totals are constants of this file, not knobs. Read as source
 # because the run cannot see the difference: `EXPECT_CHECKS=${EXPECT_CHECKS:-N}`
 # behaves identically until someone sets it, and then a run of 43 of 523 checks
@@ -8364,11 +8867,27 @@ r = subprocess.run([sys.executable, mut, "--check-anchors"], capture_output=True
 assert r.returncode != 0 and "twice" in r.stdout, \
     "--check-anchors accepted the same edit listed as two mutations: " + (r.stdout + r.stderr)[-200:]
 # …and the `exists` constructors that legitimately share a file are not reported
-# as duplicates by it: the shipped list has six such groups and passes.
-r = subprocess.run([sys.executable, os.path.join(src, "scripts/mutate.py"), "--check-anchors"],
-                   capture_output=True, text=True)
-assert r.returncode == 0, \
-    "the duplicate guard fires on the shipped list: " + (r.stdout + r.stderr)[-300:]
+# as duplicates: six groups in the shipped list name one file and change
+# different things inside it.
+#
+# Asked of the LIST, in memory, and never by running `--check-anchors` here.
+# That was the first version of this line and it fabricated the measurement it
+# was meant to protect: inside a mutation run, `src` is the MUTATED copy, where
+# the fault under test has just replaced its own anchor — so `--check-anchors`
+# failed, the suite went red, and the mutation was recorded as caught without a
+# single check having noticed the defect. 372 of 437 faults destroy their own
+# anchor by construction, so 372 of them were scoring the instrument's own
+# footprint. `mutate.py` carries this exact warning about the same check having
+# lived in this file for one afternoon and fabricated 180 kills; it is the same
+# mistake, made again, four hundred lines away from the comment describing it.
+_dupe_spec = importlib.util.spec_from_file_location("ddw_mut_dupes",
+                                                    os.path.join(src, "scripts/mutate.py"))
+_dupe_mut = importlib.util.module_from_spec(_dupe_spec)
+_dupe_spec.loader.exec_module(_dupe_mut)
+_probes = [getattr(fn, "probe", None) for _, fn in _dupe_mut.MUTATIONS]
+_text_probes = [p for p in _probes if p and p[0] == "text"]
+assert len(_text_probes) == len(set(_text_probes)), \
+    "two text mutations inject the same edit — one fault counted twice in the list this file pins"
 
 # The same fabricated measurement one layer down: `run_one` reads a non-zero
 # exit as "the suite caught the fault", and a suite that was ALREADY red — a
@@ -8377,11 +8896,34 @@ assert r.returncode == 0, \
 # having examined it. The run then prints 100%. Driven by handing the runner a
 # copy whose suite cannot pass: it has to refuse before injecting anything, and
 # say which of the two it was.
-# The suite is made to FAIL without being made to disappear: every anchor stays
-# where it is, so the run gets past --check-anchors and the question actually
-# reaches the guard being driven.
+# The suite is made to FAIL without being made to disappear, and the copy is
+# given a mutation list of ONE entry whose anchor is certainly present.
+#
+# Both halves are load-bearing, and the second one was missing. `src` here is
+# whatever tree this suite is running in — and inside a mutation run that is the
+# MUTATED copy, where the fault under test has already replaced its own anchor.
+# So `--check-anchors`, which `mutate.py` asks before anything else, failed for
+# a reason that has nothing to do with the guard being driven: the assertion
+# below went red, the suite went red, and the fault was recorded as caught
+# without a single check having noticed the defect. 372 of the 437 faults
+# destroy their own anchor by construction, so that is how many were scoring the
+# instrument's own footprint rather than the product's behaviour.
+#
+# `mutate.py` carries a comment about this exact check having lived in that file
+# for one afternoon and fabricated 180 kills. This is the same mistake in the
+# other direction: not the anchors check inside the copy, but a probe that
+# depends on it passing there.
 red = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"]), "method")
 shutil.copytree(src, red, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+_redmut = os.path.join(red, "scripts/mutate.py")
+_mtext = open(_redmut, encoding="utf-8").read()
+_start = _mtext.index("MUTATIONS = [")
+_end = _mtext.index("\n]\n", _start)
+open(_redmut, "w", encoding="utf-8").write(
+    _mtext[:_start]
+    + 'MUTATIONS = [\n    ("a fault whose anchor this copy is certain to have",\n'
+    + '     edit("scripts/mutate.py", "def baseline():", "def baseline_():")),'
+    + _mtext[_end:])
 redsuite = os.path.join(red, "scripts/verify_install.sh")
 redtext = open(redsuite, encoding="utf-8").read()
 open(redsuite, "w", encoding="utf-8").write(

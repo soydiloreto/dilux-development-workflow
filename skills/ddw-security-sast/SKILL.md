@@ -122,6 +122,56 @@ catalogued category, its ID and its ✅ / ⚠️ / ❌ on that same line, and a 
 found. A prose paragraph that says the same thing is a report nothing can check — which is how
 nineteen catalogued rules went years without one of them being executed.
 
+### The report, in the shape the validator reads
+
+The console box above is what the USER sees. This is the file, and it is the only shape
+`validate_sast.py` can read: **every catalogued category on its own line, its ID and its verdict on
+that line**, because a paragraph saying the same thing is a report nothing can check. Written the
+way the box groups things — four rubrics, prose underneath — the validator answers
+`❌ F-SAST-COVERAGE: 11 categor(y/ies) with no verdict`, which reads to the user as "your scan is
+incomplete" about a scan that was not.
+
+```markdown
+# SAST {ticket}
+
+| Field | Value |
+|-------|-------|
+| Ticket | {ticket} |
+| Tools | semgrep 1.86, npm audit |
+| Date | 2026-08-06 |
+
+| Rule | Verdict | Notes |
+|---|---|---|
+| F-SAST-01 | ✅ | no embedded secrets; the key comes from `.env`, which is gitignored |
+| F-SAST-02 | ✅ | every query is parameterised |
+| F-SAST-03 | ✅ | nothing reaches exec/spawn |
+| F-SAST-04 | ✅ | no eval, no unsafe deserialisation |
+| F-SAST-05 | ✅ | no user input in file paths |
+| F-SAST-06 | ✅ | output escaped by the template engine |
+| F-SAST-07 | ✅ | no outbound fetch driven by user input |
+| F-SAST-08 | ✅ | bcrypt cost 12; no MD5/SHA1 for passwords |
+| F-SAST-09 | ✅ | debug is off in the production config |
+| F-SAST-10 | ✅ | nothing sensitive is logged |
+| F-SAST-11 | ✅ | there is no upload surface |
+| F-SAST-12 | ✅ | CSRF tokens on every state-changing form |
+| F-SAST-13 | ✅ | npm audit: 0 vulnerabilities |
+| F-SAST-14 | ✅ | input validated at the boundary |
+| F-SAST-15 | ✅ | errors return an id, not a stack |
+| F-SAST-16 | ✅ | no known CVEs in the new packages |
+| F-SAST-17 | ✅ | no dynamic code paths |
+
+## Suppressions
+None.
+
+Total: 17 clean, 0 vulnerabilities (0 critical, 0 high)
+Result: PASSED
+```
+
+A finding replaces its `✅` with `❌` and names the file and line in the Notes column — `app/config.py:9`
+— and the totals and the Result line have to agree with it: a Critical above a `PASSED` is refused by
+`F-SAST-VERDICT`, and a Critical filed under `⚠️` by `F-SAST-SEVERITY`. A Medium that is neither
+fixed nor suppressed with its seven fields is refused by `F-SAST-MEDIUM` and `F-SAST-18`.
+
 ## PASS/FAIL criteria
 - **PASSED:** 0 Critical or High vulnerabilities, and every Medium either fixed or properly
   suppressed → `gates.sast` = `true`.

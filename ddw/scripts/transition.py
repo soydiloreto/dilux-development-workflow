@@ -371,7 +371,7 @@ def main():
             print("ddw-transition: " + reason, file=sys.stderr)
             sys.exit(2)
         try:
-            vt.validate(old_state, claimed, graph)
+            vt.validate(old_state, claimed, graph, state_path=args.state)
         except vt.Block as exc:
             print("ddw-transition: %s" % exc, file=sys.stderr)
             sys.exit(2)
@@ -426,7 +426,7 @@ def main():
         sys.exit(2)
 
     try:
-        vt.validate(old_state, new_state, graph)
+        vt.validate(old_state, new_state, graph, state_path=args.state)
     except vt.Block as exc:
         # validate()'s message is the truth (single source of truth — we do not
         # duplicate the graph's logic), but we add an actionable hint from the
