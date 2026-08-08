@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=478
+EXPECT_MUTATIONS=536
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -4153,6 +4153,13 @@ for f in sorted(glob.glob(os.path.join(root, ".github/**/*.yml"), recursive=True
 sys.exit(0)
 PYEOF
 
+# Inicializada, y no es un detalle de estilo: este archivo corre con `set -u`, así
+# que la primera vez que faltaba uno de los nueve la línea de abajo mataba bash
+# en el acto — `MISSING_FRONT: unbound variable`, exit 1, y TODO lo que viene
+# después sin correr. El fault que borra `CODE_OF_CONDUCT.md` se contaba como
+# cazado sin que ningún check hubiera hablado, y los cinco que sí tenían algo que
+# decir sobre eso no llegaron a decirlo. Un kill por caída no es un kill.
+MISSING_FRONT=""
 for f in CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md LICENSE NOTICE CHANGELOG.md docs/AI-POLICY.md \
          .github/PULL_REQUEST_TEMPLATE.md .github/ISSUE_TEMPLATE/config.yml; do
   [ -f "$SELF/$f" ] || MISSING_FRONT="$MISSING_FRONT $f"
@@ -4659,7 +4666,14 @@ grep -q "node_modules/" "$UN/.gitignore" && ! grep -q "BEGIN DDW" "$UN/.gitignor
 grep -q "MY OWN HOOK" "$UN/.claude/settings.json" && grep -q '"model"' "$UN/.claude/settings.json" \
   && ok "settings.json keeps your hooks and your other settings" \
   || bad "the uninstall overwrote settings.json instead of removing only DDW's blocks"
-grep -q "ddw" "$UN/.claude/settings.json" \
+# Por el NOMBRE de los scripts, no por la cadena `ddw`. Claude es el único de los
+# seis cuyo wiring no cuelga de un subdirectorio `ddw/` —`bash
+# ${CLAUDE_PROJECT_DIR}/.claude/hooks/enforce.sh`— así que buscar «ddw» acá no
+# encontraba nada ni cuando los cinco bloques quedaban puestos apuntando a
+# scripts recién borrados. Comprobado desarmando el des-merge entero: tres checks
+# vecinos en rojo y éste informando ✓. Un check que no puede fallar informa verde
+# por no saber decir otra cosa.
+grep -qE "enforce\.sh|session-start\.sh|validate-state-transition\.sh" "$UN/.claude/settings.json" \
   && bad "DDW's hooks are still wired to scripts that were just deleted — every session fails on a missing command" \
   || ok "and DDW's own hook blocks are unwired"
 

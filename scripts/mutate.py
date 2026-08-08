@@ -43,7 +43,7 @@ SELF = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SELF)
 
 
-def edit(rel, old, new, last=False):
+def edit(rel, old, new, last=False, may_not_parse=False):
     """A mutation that swaps one exact string in one file.
 
     `last=True` swaps the LAST occurrence instead of the first, and it exists for
@@ -69,7 +69,7 @@ def edit(rel, old, new, last=False):
         return None
     # What this mutation needs to still be true of the tree, cheap enough to ask
     # about without running anything. See `--check-anchors`.
-    apply.probe = ("text", rel, old, new, last)
+    apply.probe = ("text", rel, old, new, last, may_not_parse)
     return apply
 
 
@@ -100,6 +100,29 @@ def edit_re(rel, pattern, repl, what):
         return None
 
     apply.probe = ("regex", rel, pattern, repl, what)
+    return apply
+
+
+def multi(*parts):
+    """Varias ediciones como UN fault.
+
+    Existe porque hay defectos que no viven en una línea. El bucle correctivo
+    devuelve compuertas en dos lugares —el estado en disco y la lista de aristas
+    que las devuelven— y romper uno solo lo tapa el otro: el fault sobrevive y
+    parece que el check no puede fallar, cuando lo que no puede es una edición
+    sola. Lo pidió el mapa de kills, que es donde se vio.
+
+    El probe es el del PRIMER pedazo: `--check-anchors` pregunta si el fault
+    todavía encuentra qué romper, y si el primero se movió el resto no importa.
+    Los demás igual reportan su propio problema al inyectarse.
+    """
+    def apply(repo):
+        for part in parts:
+            problem = part(repo)
+            if problem:
+                return problem
+        return None
+    apply.probe = getattr(parts[0], "probe", None)
     return apply
 
 
@@ -1879,6 +1902,295 @@ MUTATIONS = [
      delete("ddw/rules/branches.instructions.md")),
     ("an adapter disappears from the tree and the pinned count says nothing",
      delete("adapters/cursor")),
+    # ── Del mapa de kills, lista A ──────────────────────────────────────────
+    ("the user-level stand-down fires against the repo's own hook, so Copilot's post net never runs",
+         edit("adapters/copilot/scripts/post-write.sh",
+              "if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$REPO/.github/hooks/ddw/post-write.sh\" ]; then",
+              "if [ -f \"$REPO/.github/hooks/ddw/post-write.sh\" ]; then")),
+    ("the uninstall reports the block removed and writes the file back unchanged",
+         edit("scripts/uninstall_repo.py",
+              "                open(path, \"w\", encoding=\"utf-8\").write(out)",
+              "                open(path, \"w\", encoding=\"utf-8\").write(text)")),
+    ("Copilot's hook grows a matcher, so the gate stops being the only filter",
+         edit("adapters/copilot/hooks/ddw.json",
+              "    \"preToolUse\": [\n"
+              "      {\n"
+              "        \"type\": \"command\",",
+              "    \"preToolUse\": [\n"
+              "      {\n"
+              "        \"matcher\": \"write\",\n"
+              "        \"type\": \"command\",")),
+    ("DISCOVERY closes with no commit and no pull request",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["DISCOVERY"]["DISCOVERY->IDLE"].update(gates=[]))),
+    ("the installer stops recognising the block it already wrote and appends a second one",
+         edit("scripts/install_target.py",
+              "        if \"<!-- BEGIN DDW\" in existing:",
+              "        if False:")),
+    ("QUICK-FIX grows a PLAN phase, so the tier for a one-line fix costs a spec",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["QUICK-FIX"].update({"DEFINE->PLAN": {"gates": []}}))),
+    ("the wiring directory of the tool that runs the gate stops being sealed by name",
+         edit("ddw/scripts/validate-transition.py",
+              "PROTECTED_WIRING_DIRS = (\n"
+              "    \".claude/hooks/\", \".codex/hooks/ddw/\", \".cursor/hooks/ddw/\",",
+              "PROTECTED_WIRING_DIRS = (\n"
+              "    \".codex/hooks/ddw/\", \".cursor/hooks/ddw/\",")),
+    ("every event is judged as a read, so no write is judged at all",
+         edit("ddw/scripts/validate-transition.py",
+              "        if not writing:\n"
+              "            continue                      # a read cannot violate a write rule",
+              "        if True:\n"
+              "            continue                      # a read cannot violate a write rule")),
+    ("the gate reads its own Block — the corrupt-state refusal — as nothing to object to",
+         edit("ddw/scripts/hook-gate.py",
+              "    except vt.Block as exc:\n"
+              "        deny(args.dialect, f\"DDW FSM blocked the write to the state: {exc}\")",
+              "    except vt.Block as exc:\n"
+              "        allow(args.dialect)")),
+    ("the lint result under its own heading stops counting, and a complete report is warned at",
+         edit("ddw/scripts/validate_tests.py",
+              "        lint = m.group(1).strip() if m else \"\"",
+              "        lint = \"\"")),
+    ("a path key that is not a string empties the check instead of refusing the write",
+         edit("ddw/scripts/hook-gate.py",
+              "    typed_but_wrong = any(\n"
+              "        k in args and args[k] is not None and not isinstance(args[k], str)\n"
+              "        for k in vt.PATH_KEYS\n"
+              "    )",
+              "    typed_but_wrong = False")),
+    ("F-PRD-06 stops looking, so 'deberia' passes as a requirement",
+         edit("ddw/scripts/validate_prd.py",
+              "        loose = [i for i, t in frs + nfrs + acs if AMBIGUOUS.search(t)]",
+              "        loose = []")),
+    ("CODE->VERIFY stops asking for tests and sast, so the corrective loop is free",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["FEATURE"]["CODE->VERIFY"].update(gates=[]))),
+    ("a graph written before the version field existed is read as an unknown format",
+         edit("ddw/scripts/validate-transition.py",
+              "    declared = graph.get(\"format_version\")",
+              "    declared = graph.get(\"format_version\", \"0\")")),
+    ("a run that names no ticket anywhere is waved through instead of refused",
+         edit("ddw/scripts/validate-transition.py",
+              "        else:\n"
+              "            # And if NOTHING names a ticket, that is not \"nothing to check\" — it",
+              "        elif False:\n"
+              "            # And if NOTHING names a ticket, that is not \"nothing to check\" — it")),
+    ("the shared resolver leaves lib/guard.sh under another name, and every hook bows out silently",
+         edit("adapters/claude/hooks/lib/guard.sh",
+              "ddw_method() {\n  if [ -f",
+              "ddw_resolve() {\n  if [ -f")),
+    ("any action reads as a declared walkaway, so an undeclared exit to IDLE is free",
+         edit("ddw/scripts/validate-transition.py",
+              "    return first in (\"abandon\", \"abandoned\", \"pause\", \"paused\")",
+              "    return True")),
+    ("a script under scripts/ stops parsing, and nothing runs it until CI does",
+         edit("scripts/lint_method.py",
+              "        print(f\"  {where}\\n      {msg}\")",
+              "        print(f\"  {where}\\n      {msg}\"", may_not_parse=True)),
+    ("the boot cannot tell a drop-in from a plugin, and tells everyone not to install",
+         edit("ddw/scripts/session-boot.py",
+              "    if not dropped_in:",
+              "    if True:")),
+    ("the install manifest moves back inside the method",
+         edit("scripts/install_target.py",
+              "MANIFEST = \".ddw-installed.json\"\n"
+              "LEGACY_MANIFEST = os.path.join(\".ddw\", \".installed.json\")",
+              "MANIFEST = os.path.join(\".ddw\", \".installed.json\")\n"
+              "LEGACY_MANIFEST = \".ddw-installed.json\"")),
+    ("a gh that fails is read as 'the forge has none', which is a fact the guard never established",
+         edit("ddw/scripts/validate-transition.py",
+              "    if out.returncode != 0:\n"
+              "        # An error is not an answer. Offline, rate-limited, unauthenticated, a",
+              "    if False:\n"
+              "        # An error is not an answer. Offline, rate-limited, unauthenticated, a")),
+    ("the user-level Copilot hook stops standing down, so every write is judged twice",
+         edit("adapters/copilot/scripts/pre-tool-use.sh",
+              "if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$REPO/.github/hooks/ddw/pre-tool-use.sh\" ]; then",
+              "if false; then")),
+    # ── Del mapa de kills, lista B ──────────────────────────────────────────
+    ("el recipe de Claude coloca las skills dentro de .ddw/, y el método vuelve a llevar "
+     "payload de una herramienta",
+     edit("adapters/claude/adapter.json",
+          '"dir": ".claude/skills",',
+          '"dir": ".ddw/skills",')),
+    ("el snippet de Claude deja de ser un puntero y copia las instrucciones: dos copias "
+     "que mantener en paso",
+     edit("adapters/claude/CLAUDE.snippet.md",
+          "@AGENTS.md\n@.ddw/orchestrator.md\n",
+          "@AGENTS.md\n@.ddw/orchestrator.md\n\n"
+          "Before answering, read `.ddw/orchestrator.md` and run its Boot Sequence. It is a strict state\n"
+          "machine: it decides what you are allowed to do based on the phase recorded in `.ddw-state.json`.\n")),
+    ("el plugin de OpenCode deja de juzgar las escrituras antes de que ocurran",
+     edit("adapters/opencode/plugin/ddw.js",
+          '      if (!WRITE_TOOLS.has(input?.tool)) return\n'
+          '      if (!installed()) return\n'
+          '      try {\n'
+          '        runGate("pre",',
+          '      if (true) return\n'
+          '      if (!installed()) return\n'
+          '      try {\n'
+          '        runGate("pre",')),
+    ("W-SAST-01 deja de contar la palabra 'low' y sólo mira 'informational'",
+     edit("ddw/scripts/validate_sast.py",
+          '    lows = [m for m in re.finditer(r"\\b(?:low|informational|informativ\\w*)\\b",',
+          '    lows = [m for m in re.finditer(r"\\b(?:informational|informativ\\w*)\\b",')),
+    ("F-SPEC-15 aprueba un fix-plan sin plan de rollback: la sección deja de ser obligatoria",
+     edit("ddw/scripts/validate_spec.py",
+          '        rb = _section_body(text, ("rollback", "plan de rollback", "reversa"))\n'
+          '        if rb:\n',
+          '        rb = _section_body(text, ("rollback", "plan de rollback", "reversa"))\n'
+          '        if True:\n')),
+    ("DEFINE deja de medir la deriva al retomar una rama que ya existía",
+     edit("ddw/rules/define.instructions.md",
+          '**Then measure the drift** (checkpoint 2 of "Staying current" in `.ddw/rules/branches.instructions.md`):\n'
+          '`git fetch origin` and `git rev-list --count HEAD..origin/{base}`. Silent if it is 0; if the base\n'
+          'moved, report how far and offer to update. Do not rebase or merge without the user saying so.',
+          'Do not rebase or merge without the user saying so.')),
+    ("el instalador deja de decir si está instalando o actualizando",
+     edit("install.sh",
+          'if [ -n "$INSTALLED" ]; then\n'
+          '  echo "DDW → updating: $TARGET"\n'
+          'else\n'
+          '  echo "DDW → installing into: $TARGET"\n'
+          'fi\n',
+          'echo "DDW → $TARGET"\n')),
+    ("un rule file puede cambiar sin mover su propia versión",
+     edit("scripts/check_versions.py",
+          "                if m and m.group(1) == now:",
+          "                if False:")),
+    ("un recipe se queda sin label, y el instalador pierde el bloque de esa herramienta",
+     edit("adapters/opencode/adapter.json",
+          '"label": "OpenCode",',
+          '"label": "",')),
+    ("el cierre de un ticket FEATURE deja de exigir commit y PR",
+     edit("ddw/rules/transition-graph.json",
+          '      "CLOSEOUT->IDLE": {\n'
+          '        "gates": [\n'
+          '          "commit",\n'
+          '          "pr"\n'
+          '        ]\n'
+          '      },',
+          '      "CLOSEOUT->IDLE": {\n'
+          '        "gates": []\n'
+          '      },')),
+    ("el validador de tests vuelve a exigir la etiqueta larga: una tabla `| Line | 88% |` "
+     "se lee como cobertura ausente",
+     edit("ddw/scripts/validate_tests.py",
+          '    line = _number(text, "Line coverage", "Cobertura de l[ií]neas", "Lines", "Line")',
+          '    line = _number(text, "Line coverage", "Cobertura de l[ií]neas", "Lines")')),
+    ("el instalador vuelve a pisar el AGENTS.md que ya estaba con la plantilla",
+     edit("install.sh",
+          'if [ -f "$TARGET/AGENTS.md" ]; then',
+          'if false; then')),
+    ("el marketplace declara el owner con otro nombre de campo y el esquema lo rechaza",
+     edit(".claude-plugin/marketplace.json",
+          '  "owner": {',
+          '  "author": {')),
+    ("el instalador deja de reconocer sus propios archivos: toda segunda corrida los "
+     "reporta como colisión del usuario",
+     edit("scripts/install_target.py",
+          "    if _same(src_path, dst_path):\n"
+          "        manifest[rel] = _fingerprint(dst_path)\n"
+          "        return False                      # already current; nothing to do\n"
+          "    if manifest.get(rel) == _fingerprint(dst_path):\n"
+          "        return True                       # ours, untouched, superseded\n",
+          "")),
+    ("el procedimiento de desinstalación de Copilot deja de decir que hay que sacar la "
+     "clave hooks del settings de usuario",
+     edit(".github/INSTALL.md",
+          "Then remove the `hooks` key from `~/.copilot/settings.json`.",
+          "Then delete `~/.copilot/ddw/`.")),
+    ("el instalador avisa por un heading que su propia plantilla nunca escribe, así que "
+     "el aviso sale en cada corrida",
+     edit("install.sh",
+          '  for h in "## Stack" "## Architecture conventions" "## Domain glossary"; do',
+          '  for h in "## Stack" "## Architecture conventions" "## Domain glossary" "## Deployment"; do')),
+    ("el desinstalador nunca borra el manifest: el repo sigue diciendo que DDW está instalado",
+     edit("scripts/uninstall_repo.py",
+          "    if os.path.exists(mpath) and not kept:",
+          "    if False:")),
+    ("el closeout deja el modo de autonomía puesto, y el ticket siguiente hereda el "
+     "permiso de no preguntar",
+     edit("ddw/scripts/transition.py",
+          '        for key in ("ticket", "title", "tracker", "block", "discovery", "autonomy"):',
+          '        for key in ("ticket", "title", "tracker", "block", "discovery"):')),
+    ("validate_spec.py deja de refutar QUICK-FIX y acuña un recibo para una fase que ese "
+     "tier no tiene",
+     edit("ddw/scripts/validate_spec.py",
+          '    if args.tier == "QUICK-FIX":',
+          '    if False:')),
+    # ── Del mapa de kills, lista C ──────────────────────────────────────────
+    ("el desinstalador busca en .gitignore los marcadores del archivo de contexto",
+         edit("scripts/uninstall_repo.py",
+              "        out, found = strip_block(text, GI_BEGIN, GI_END)",
+              "        out, found = strip_block(text, BEGIN, END)")),
+    ("la excepción del cascarón vacío se ensancha de AGENTS.md a todo archivo de contexto",
+         edit("scripts/uninstall_repo.py",
+              '        if not out.strip() and name != "AGENTS.md":',
+              "        if not out.strip() and name not in CONTEXT_FILES:")),
+    ("FEATURE gana un atajo DEFINE->CODE y PLAN deja de ser obligatorio",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["FEATURE"].update({"DEFINE->CODE": {"gates": []}}))),
+    ("el grafo deja salir de IDLE directo a DEFINE, sin clasificar y sin ticket",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["common"].update({"IDLE->DEFINE": {"gates": []}}))),
+    ("la arista de QUICK-FIX a CODE deja de pedir el fix-brief",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["QUICK-FIX"]["DEFINE->CODE"].update({"gates": []}))),
+    ("F-SPEC-06 sigue en el catálogo y ya no mira nada: siempre dice que sí",
+         edit("ddw/scripts/validate_spec.py",
+              '    verdict("F-SPEC-06", no_tests, "every block lists at least one required test",\n'
+              '            "block with no tests")',
+              '    ok("F-SPEC-06", "every block lists at least one required test")')),
+    ("el validador de amenazas se queda con cinco categorías STRIDE",
+         edit("ddw/scripts/validate_threat.py",
+              'STRIDE = ("Spoofing", "Tampering", "Repudiation", "Information Disclosure",',
+              'STRIDE = ("Spoofing", "Tampering", "Information Disclosure",')),
+    ("el hook PreCompact de Claude vuelve a llevar su propia copia del recordatorio",
+         edit("adapters/claude/hooks/pre-compact.sh",
+              "command -v python3 >/dev/null 2>&1 || exit 0",
+              'echo "DDW POST-COMPACTION: re-read the orchestrator and .ddw-state.json before answering."\n'
+              "command -v python3 >/dev/null 2>&1 || exit 0")),
+    ("el archivo de estado se reconoce por el nombre con que se lo escribió, no por lo que resuelve",
+         edit("ddw/scripts/validate-transition.py",
+              "    if state_real in targets and writing:",
+              "    if state_real in lexicals and writing:")),
+    ("el conjunto sellado pierde el directorio de hooks de Gemini",
+         edit("ddw/scripts/validate-transition.py",
+              '    ".gemini/hooks/ddw/", ".github/hooks/", ".opencode/plugins/",',
+              '    ".github/hooks/", ".opencode/plugins/",')),
+    ("package.json apunta a un ddw.js que se movió",
+         edit("package.json",
+              '"main": "adapters/opencode/plugin/ddw.js"',
+              '"main": "adapters/opencode/ddw.js"')),
+    ("una skill queda con el `name` del frontmatter distinto de su directorio",
+         edit("skills/ddw-create-adr/SKILL.md",
+              "name: ddw-create-adr", "name: create-adr")),
+    ("el trailer de atribución sólo se busca al principio del mensaje, no línea por línea",
+         edit("scripts/check_commits.py",
+              'TRAILER = re.compile(r"^(?:AI-assisted|AI-full):\\s*yes\\s*$", re.M | re.I)',
+              'TRAILER = re.compile(r"^(?:AI-assisted|AI-full):\\s*yes\\s*$", re.I)')),
+    ("el bucle correctivo vuelve a VERIFY con los gates que había invalidado",
+         multi(  # ← primitivo que hoy no existe en mutate.py
+           json_edit("ddw/rules/transition-graph.json",
+                     lambda d: d["tiers"]["FEATURE"]["VERIFY->CODE"].pop("clears", None)),
+           edit("ddw/scripts/transition.py",
+                "        for gate in clear_gates:\n            merged.pop(gate, None)\n",
+                ""))),
+    ("el aviso de headings faltantes imprime el AGENTS.md del usuario en la salida del instalador",
+         edit("install.sh",
+              '    echo "  ⚠ AGENTS.md              is missing headings the method reads:"',
+              '    echo "  ⚠ AGENTS.md              is missing headings the method reads; it has:"\n'
+              "    grep '^##' \"$TARGET/AGENTS.md\" || true")),
+    ("la línea de arranque vuelve a nombrar un .ddw/orchestrator.md relativo",
+         edit("ddw/scripts/session-boot.py",
+              '\n    orch = os.path.join(method, "orchestrator.md")',
+              '\n    orch = ".ddw/orchestrator.md"')),
+    ("la plantilla de AGENTS.md deja de aplicarse una sola vez: -f pasa a -d y todo AGENTS.md se pisa",
+         edit("install.sh",
+              'if [ -f "$TARGET/AGENTS.md" ]; then',
+              'if [ -d "$TARGET/AGENTS.md" ]; then')),
     ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
           "    damaged = _journal_undecodable(state_path)",
@@ -2439,7 +2751,11 @@ def check_anchors():
             # a kill, and the fault it claimed to measure was never in the tree.
             # One of these shipped, and it read as covered for as long as it
             # existed. Compiled in memory: the answer is a parse, not a copy.
-            if rel.endswith(".py"):
+            # …salvo cuando NO parsear ES el defecto. Hay un check que afirma
+            # que un script de `scripts/` deja de parsear y nadie lo corre hasta
+            # el CI; el único fault que puede provocarlo es uno que rompa la
+            # sintaxis. La guarda existe para el caso accidental, no para éste.
+            if rel.endswith(".py") and not (len(probe) > 5 and probe[5]):
                 text, new, last = cache[rel], probe[3], probe[4]
                 if last:
                     head, _, tail = text.rpartition(needle)
