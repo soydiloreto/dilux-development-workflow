@@ -117,6 +117,18 @@ def never_fired(declared, fired):
     return out
 
 
+def _key(msg):
+    """La forma con la que se compara una entrada.
+
+    El archivo es markdown y las entradas van entre backticks, así que un
+    mensaje que TRAE backticks no puede escribirse tal cual — se convierten a
+    comillas simples. Leído de vuelta ya no coincide con el declarado, y siete
+    entradas aparecían a la vez como «nuevas» y como «ya medibles»: el libro se
+    contradecía consigo mismo. Se compara por esta clave, de los dos lados.
+    """
+    return msg.replace("`", "'").replace("\\", "").strip()
+
+
 def read_ledger(path):
     if not os.path.exists(path):
         return None
@@ -124,15 +136,15 @@ def read_ledger(path):
     for line in open(path, encoding="utf-8"):
         m = re.match(r"^- \[( |x)\] `(.+?)`\s*$", line.rstrip())
         if m:
-            entries.add(m.group(2))
+            entries.add(_key(m.group(2)))
     return entries
 
 
 def render(entries, previous_reasons, faults, shards):
     lines = [HEAD, "<!-- %d fault(s) across %d shard(s) -->\n" % (faults, shards)]
     for msg in sorted(entries):
-        lines.append("- [ ] `%s`\n" % msg.replace("`", "'"))
-        reason = previous_reasons.get(msg)
+        lines.append("- [ ] `%s`\n" % _key(msg))
+        reason = previous_reasons.get(_key(msg))
         lines.append("      %s\n" % (reason or "**Sin justificar.** Escribile un fault en "
                                                "`scripts/mutate.py`, o decí acá por qué no lo "
                                                "tiene."))
@@ -148,7 +160,7 @@ def reasons_from(path):
         if m:
             current = m.group(2)
         elif current and line.startswith("      "):
-            out[current] = line.strip()
+            out[_key(current)] = line.strip()
             current = None
     return out
 
@@ -186,8 +198,9 @@ def main():
               file=sys.stderr)
         return 1
 
-    new = sorted(dead - known)
-    gone = sorted(known - dead)
+    keyed = {_key(m): m for m in dead}
+    new = sorted(keyed[k] for k in set(keyed) - known)
+    gone = sorted(known - set(keyed))
     if not new and not gone:
         print("el libro de cuentas describe la suite: %d entrada(s)." % len(known))
         return 0

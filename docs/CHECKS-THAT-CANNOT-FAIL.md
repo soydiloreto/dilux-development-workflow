@@ -13,7 +13,7 @@ A check that cannot fail reports green because it has no other thing to say.
 
 <!-- 471 fault(s) across 25 shard(s) -->
 - [ ] `$TOOL is missing — the checks that need it would skip, and a skip reads as a pass`
-      **Entorno.** Sólo puede fallar si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito.
+      **Entorno.** Sólo falla si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito — y ahí un skip cuenta aparte.
 - [ ] `$label: a forged state produced no report, and its post hook cannot block either`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `.ddw/skills should NOT exist (adapters place them)`
@@ -48,9 +48,9 @@ A check that cannot fail reports green because it has no other thing to say.
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `W-SAST-01 stopped firing on a report with three undocumented Low findings`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
-- [ ] `\'mkdir .ddw\' turns every Claude hook off — one command, no privileges, and the refusal becomes exit 0`
+- [ ] `'mkdir .ddw' turns every Claude hook off — one command, no privileges, and the refusal becomes exit 0`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
-- [ ] `\'rm .ddw-installed.json\' unseals every hook script and leaves a tampered repo reading like a clean one`
+- [ ] `'rm .ddw-installed.json' unseals every hook script and leaves a tampered repo reading like a clean one`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `a FIX reached CODE with no rollback plan and nothing said so`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
@@ -68,7 +68,7 @@ A check that cannot fail reports green because it has no other thing to say.
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `a hook writes its own compaction reminder — the method's message now has a fork`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
-- [ ] `a lint result under its own \'## Lint\' heading is reported as no lint result at all`
+- [ ] `a lint result under its own '## Lint' heading is reported as no lint result at all`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `a rule file can be rewritten while its own version stands still`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
@@ -88,16 +88,16 @@ A check that cannot fail reports green because it has no other thing to say.
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `corrective loop reused cleared gates`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
-- [ ] `coverage written as \'| Line | 88% |\' — the shape every coverage tool prints — read as absent`
+- [ ] `coverage written as '| Line | 88% |' — the shape every coverage tool prints — read as absent`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `expected $EXPECT_ADAPTERS adapters, found $(n`
-      **Conteo fijado.** Sólo falla borrando un archivo del árbol, que es una mutación de forma —`delete()`— y no de contenido. Vale la pena escribirla; queda anotado.
+      **Conteo fijado.** Sólo falla borrando un archivo del árbol: es una mutación de FORMA (`delete()`), no de contenido, y la lista todavía no tiene ninguna. Queda anotado como pendiente, no como imposible.
 - [ ] `expected $EXPECT_AGENTS agents, found $(n`
-      **Conteo fijado.** Sólo falla borrando un archivo del árbol, que es una mutación de forma —`delete()`— y no de contenido. Vale la pena escribirla; queda anotado.
+      **Conteo fijado.** Sólo falla borrando un archivo del árbol: es una mutación de FORMA (`delete()`), no de contenido, y la lista todavía no tiene ninguna. Queda anotado como pendiente, no como imposible.
 - [ ] `expected $EXPECT_RULES rule files, found $(n`
-      **Conteo fijado.** Sólo falla borrando un archivo del árbol, que es una mutación de forma —`delete()`— y no de contenido. Vale la pena escribirla; queda anotado.
+      **Conteo fijado.** Sólo falla borrando un archivo del árbol: es una mutación de FORMA (`delete()`), no de contenido, y la lista todavía no tiene ninguna. Queda anotado como pendiente, no como imposible.
 - [ ] `expected $EXPECT_SKILLS skills, found $(n`
-      **Conteo fijado.** Sólo falla borrando un archivo del árbol, que es una mutación de forma —`delete()`— y no de contenido. Vale la pena escribirla; queda anotado.
+      **Conteo fijado.** Sólo falla borrando un archivo del árbol: es una mutación de FORMA (`delete()`), no de contenido, y la lista todavía no tiene ninguna. Queda anotado como pendiente, no como imposible.
 - [ ] `git pull is not ruled out, so the agent will reach for it and merge on a tree it did not check`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `graphs with no format_version are refused — that is every repo that installed DDW earlier`
@@ -115,7 +115,7 @@ A check that cannot fail reports green because it has no other thing to say.
 - [ ] `no ddw_method in lib/guard.sh — every hook resolves the method its own way again`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `node is missing — ${f#$SELF/} was NOT parsed; that is a gap, not a pass`
-      **Entorno.** Sólo puede fallar si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito.
+      **Entorno.** Sólo falla si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito — y ahí un skip cuenta aparte.
 - [ ] `one of the four: an unknown tool writes the state unexamined, 'gh pr view' takes any PR, the tier chain is inverted, or the linter stopped reading the prose`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `package.json's entry point does not resolve to a file — the npm install would hook nothing`
@@ -123,7 +123,7 @@ A check that cannot fail reports green because it has no other thing to say.
 - [ ] `python < 3.11 — the Codex TOML checks would skip in silence`
       **Entorno.** Depende de la versión del intérprete, que ninguna mutación cambia.
 - [ ] `pyyaml is missing — frontmatter is the contract every tool reads; it must be validated`
-      **Entorno.** Sólo puede fallar si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito.
+      **Entorno.** Sólo falla si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito — y ahí un skip cuenta aparte.
 - [ ] `reached IDLE off-graph without declaring the abandon`
       **Sin justificar.** Escribile un fault en `scripts/mutate.py`, o decí acá por qué no lo tiene.
 - [ ] `reports false collisions`
