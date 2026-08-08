@@ -94,8 +94,14 @@ def _longest_literal(msg):
     # tramo más largo fuera algo que no aparece nunca — y los cuatro conteos
     # fijados se contaban como nunca disparados con el kill registrado dos
     # líneas más abajo en el mismo archivo.
-    parts = re.split(r"\$\([^)]*\)|\$\(|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+|'[^']*'|\\?\"",
-                     msg)
+    # …y los tramos entre BACKTICKS. Un `bad "… \`mkdir .ddw\` …"` sin escapar
+    # es sustitución de comandos para bash: el mensaje sale impreso SIN esa
+    # parte, así que el literal declarado no puede casar con la salida. Tres
+    # entradas estaban acá por eso y no por un agujero — el propio ✗ que las
+    # dispara estaba en el mapa, con el hueco en el medio.
+    parts = re.split(
+        r"\$\([^)]*\)|\$\(|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+|'[^']*'|`[^`]*`|\\?\"",
+        msg)
     best = max((p.strip() for p in parts), key=len, default="")
     return best if len(best) >= 12 else ""
 

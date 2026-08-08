@@ -2194,6 +2194,35 @@ MUTATIONS = [
     ("the seal over DDW's own machinery stops refusing, in the one phase where nothing else does",
      edit("ddw/scripts/validate-transition.py",
           "    if rel == INSTALL_MANIFEST:", "    if False:")),
+    # Los cuatro que el libro de cuentas todavía debía.
+    ("the PRD validator skill stops naming the rule it is the only one that applies",
+     multi(
+         # Dos veces en el mismo archivo: la fila del catálogo y el rango de la
+         # cabecera. Una sola edición la tapa la otra.
+         edit("skills/ddw-validate-prd/SKILL.md",
+              "| F-PRD-09 | An AC matches none of the five EARS patterns",
+              "| F-PRD-XX | An AC matches none of the five EARS patterns"),
+         edit("skills/ddw-validate-prd/SKILL.md",
+              "F-PRD-09 (FAIL) and W-PRD-01 to W-PRD-05 (WARNING)",
+              "the FAIL rules and W-PRD-01 to W-PRD-05 (WARNING)"))),
+    ("the PRD template goes back to acceptance criteria in prose the validator cannot match",
+     edit("skills/ddw-create-prd/SKILL.md",
+          "- AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].",
+          "- AC-01 (FR-01): when [trigger] the [system] does [response].")),
+    ("the context check goes back to being able to block over somebody else's stack",
+     multi(
+         # Dos frases satisfacen el mismo `grep`, así que una edición sola la
+         # tapa la otra: es la clase de defecto para la que existe `multi`.
+         edit("skills/ddw-context-check/SKILL.md",
+              "commands DDW would otherwise run wrong. Never blocks.",
+              "commands DDW would otherwise run wrong."),
+         edit("skills/ddw-context-check/SKILL.md",
+              "it **never blocks**", "it reports"),
+         edit("skills/ddw-context-check/SKILL.md",
+              "**It never sets a gate and never blocks a",
+              "**It reports what it finds. It may set a gate and block a"))),
+    ("the context check stops being a skill, so nobody reads a repo's own commands",
+     delete("skills/ddw-context-check")),
     ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
           "    damaged = _journal_undecodable(state_path)",
