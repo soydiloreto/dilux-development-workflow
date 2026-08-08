@@ -70,19 +70,50 @@ def fired_from(parts_dir):
     return fired, seen_faults, len(files)
 
 
-def never_fired(declared, fired):
-    """Un `bad` cuenta como disparado si alguna línea ✗ empieza con su texto.
+def _longest_literal(msg):
+    """El tramo literal más largo de un mensaje declarado.
 
-    El mensaje impreso puede llevar interpolación (`$VAR`), así que se compara
-    por el prefijo estable — hasta el primer `$` — y no por igualdad. Comparar
-    por igualdad diría que casi ninguno se disparó, que es un número que suena a
-    hallazgo y mide el formateo.
+    Comparar el mensaje ENTERO no sirve, y no por las variables: el shell se
+    come pedazos. `bad "inventing a 'pause:' entry…"` sale impreso como
+    «inventing a  entry…», sin lo entrecomillado. Exigir el texto completo daba
+    ese check por nunca disparado cuando el fault 454 lo dispara — la tercera
+    vez en esta sesión que un número suena a hallazgo y mide el formateo.
+
+    El tramo más largo es distintivo sin ser frágil: sobrevive a que el shell
+    coma un pedazo por cualquiera de sus dos causas, y no es tan corto como para
+    matchear cualquier cosa.
     """
+    parts = re.split(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+|'[^']*'|\\?\"", msg)
+    best = max((p.strip() for p in parts), key=len, default="")
+    return best if len(best) >= 12 else ""
+
+
+def _as_pattern(msg):
+    """El mensaje declarado, como expresión: cada `$VAR` es lo que se interpola.
+
+    Comparar por el prefijo hasta el primer `$` parece razonable y no lo es:
+    un mensaje que EMPIEZA con una variable —«$label blocks…», y hay muchos—
+    tiene prefijo vacío, y todo mensaje de prefijo vacío contaba como nunca
+    disparado. La primera corrida real dijo 92 y una parte era eso: otro número
+    que suena a hallazgo y mide el formateo. Ahora la variable es un comodín y
+    lo que se compara es la forma entera.
+    """
+    parts = re.split(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+", msg)
+    rx = ".*".join(re.escape(p) for p in parts if p != "")
+    return re.compile(rx if rx else r"(?!x)x")   # sin literales, no matchea nada
+
+
+def never_fired(declared, fired):
+    """Los `bad` que ninguna línea ✗ observada satisface."""
     out = []
     for msg in sorted(declared):
-        head = msg.split("$")[0].strip()[:40]
-        if not head or not any(head in f for f in fired):
-            out.append(msg)
+        pat = _as_pattern(msg)
+        if any(pat.search(f) for f in fired):
+            continue
+        lit = _longest_literal(msg)
+        if lit and any(lit in f for f in fired):
+            continue
+        out.append(msg)
     return out
 
 

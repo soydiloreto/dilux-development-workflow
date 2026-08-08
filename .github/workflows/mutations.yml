@@ -182,6 +182,7 @@ jobs:
       # nuevo que no puede fallar entra en rojo hasta que alguien escriba por
       # qué, o le escriba un fault. Es el idioma de las supresiones de SAST: no
       # prohíbe, obliga a decirlo.
+      - run: python3 -m pip install --quiet pyyaml
       - run: python3 scripts/kill_map_ledger.py --parts parts --ledger docs/CHECKS-THAT-CANNOT-FAIL.md
       - uses: actions/upload-artifact@v4
         if: always()
