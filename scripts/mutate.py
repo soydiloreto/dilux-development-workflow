@@ -1853,6 +1853,21 @@ MUTATIONS = [
      edit("ddw/scripts/validate-transition.py",
           '"this at all, that is theirs to say — ASK them, and classify with the tier "',
           '"this at all, take `--to CLASSIFY --tier FREE` and then `--to FREE`. Or ask "')),
+    # Cuatro de FORMA, no de contenido: borran un archivo entero.
+    #
+    # El mapa de kills los pidió. Los cuatro conteos fijados —skills, agentes,
+    # reglas, adaptadores— eran checks que ningún fault provocaba, y no porque
+    # no pudieran fallar sino porque la lista no tenía ninguna mutación capaz de
+    # borrar un archivo. Un conteo que nada puede desmentir es un conteo que
+    # informa verde por no saber decir otra cosa.
+    ("an agent disappears from the tree and the pinned count says nothing",
+     delete("agents/ddw-arch-auditor.md")),
+    ("a skill disappears from the tree and the pinned count says nothing",
+     delete("skills/ddw-commit")),
+    ("a rule file disappears from the tree and the pinned count says nothing",
+     delete("ddw/rules/branches.instructions.md")),
+    ("an adapter disappears from the tree and the pinned count says nothing",
+     delete("adapters/cursor")),
     ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
           "    damaged = _journal_undecodable(state_path)",
