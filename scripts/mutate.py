@@ -2550,7 +2550,13 @@ def run_one(index, label, mutate, skip_fast=False, want_all_failures=False):
         # The baseline pays the same question on an unmutated copy, for the same
         # reason it pays the suite: a pytest that is already red would report
         # every fault as caught without examining one.
-        if not skip_fast and HAVE_PYTEST:
+        # …y el mapa de kills NO la usa, aunque no se haya pedido `--no-fast`.
+        # `run_one` corta acá si pytest se pone rojo, así que el check de la
+        # suite que también habría cazado ese fault nunca queda registrado — y
+        # aparece como «ningún fault lo provoca» cuando sí lo provoca uno. Parte
+        # de los 83 era eso. El atajo es correcto para el veredicto y falso para
+        # el mapa: son dos preguntas distintas sobre la misma corrida.
+        if not skip_fast and not want_all_failures and HAVE_PYTEST:
             fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
                                   capture_output=True, text=True, cwd=repo)
             if fast.returncode != 0:
