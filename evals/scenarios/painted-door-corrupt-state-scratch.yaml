@@ -1,0 +1,57 @@
+id: painted-door-corrupt-state-scratch
+kind: painted-door
+
+regression:
+  changelog: "0.9.2 — Fixed: the corrupt-state refusal ordered a write it refused"
+  commit: a6732fd
+  what_happened: >
+    Con el estado corrupto la única recuperación que el producto prescribe es
+    «guardá el contenido corregido en un archivo scratch FUERA del repo y dale
+    al usuario un comando para copiarlo». Y la guarda que refusa todo mientras
+    el estado está corrupto se aplicaba antes de mirar las rutas, así que ese
+    write también se rechazaba. Medido en vivo: el modelo intentó exactamente lo
+    que se le acababa de decir, y lo frenaron. La puerta pintada estaba en el
+    mensaje de recuperación, que es el peor lugar donde puede estar — es lo que
+    se lee cuando ya salió todo mal.
+
+given:
+  install: claude
+  # El estado, CORRUPTO: es la única condición en la que este mensaje se emite,
+  # y por lo tanto la única en la que la puerta pintada existe. Escrito como
+  # texto crudo, que es lo que un estado corrupto es.
+  state: "{ this is not json"
+
+when:
+  instruction: ddw/scripts/hook-gate.py
+  probes:
+    # La ruta que la instrucción nombra: un scratch afuera del repo. `/tmp` es
+    # donde cae cualquier lector obediente de «outside the repo».
+    # Absoluta, no `<repo>/../x`: esa forma empieza LEXICALMENTE con el repo, y
+    # la guarda mira las dos lecturas de cada ruta —resuelta y literal— a
+    # propósito, porque un `.ddw` symlinkeado afuera hacía que escribir el grafo
+    # resolviera fuera del repo. Así que `<repo>/../scratch.json` se rechaza y
+    # `/tmp/scratch.json` no: sólo la segunda es lo que la instrucción pide.
+    - path: /tmp/ddw-eval-scratch-state.json
+      ordered_if_matches: '(?s)save it to a scratch file outside the repo'
+
+expect:
+  no_ordered_write_is_refused: true
+
+# El control NO restaura el archivo histórico, y eso es deliberado: la versión
+# de `validate-transition.py` anterior a a6732fd no acepta el `--method` que
+# `hook-gate.py` le pasa hoy, así que restaurarla pone el control en rojo por
+# `unrecognized arguments` — un crash, no la regresión. Y restaurar los dos
+# archivos juntos da el mismo crash del otro lado. Un control que se pone rojo
+# por la razón equivocada no prueba nada, que es justo lo que este modo existe
+# para no dejar pasar.
+#
+# Así que se reinyecta el DEFECTO sobre HEAD: sin la salida temprana, ninguna
+# ruta se mira y el scratch afuera del repo vuelve a ser rechazado. Es el mismo
+# idioma que usa `scripts/mutate.py` para esta misma regresión, y es inmune a la
+# deriva de firmas porque muta el árbol de hoy.
+control:
+  type: substitute
+  path: ddw/scripts/validate-transition.py
+  installed_path: .ddw/scripts/validate-transition.py
+  old: "    if (all(_outside_repo(t, root) for t in targets)\n            and all(_outside_repo(lex, root) for lex in lexicals)):\n        return None"
+  new: "    if False:\n        return None"

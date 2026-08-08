@@ -197,7 +197,10 @@ the corresponding Skill.`
 - NEVER advance a phase without: (a) exit conditions met, (b) state updated, (c) explicit user
   approval — **unless `autonomy` is `"minimal"`**, in which case (a) and (b) still hold and the
   arrow does not wait. See *Autonomy* below; the exceptions there are not optional.
-- NEVER write source code in the CLASSIFY, DEFINE, PLAN or DISCOVERY phases.
+- NEVER write source code in the IDLE, CLASSIFY, DEFINE, PLAN, VERIFY or DISCOVERY
+  phases — the six the hook refuses it in. CODE writes it, CLOSEOUT may touch it, and
+  FREE is the tier where none of this is asked. This list used to name four of the six,
+  under a heading that says every phase.
 - NEVER create specs or fix-plans in the CLASSIFY, DEFINE or DISCOVERY phases.
 - NEVER fix code in the VERIFY phase. If verification fails, go back to CODE to fix it.
 - NEVER commit anything beyond the phase's OWN artifacts: DEFINE commits the PRD, PLAN the spec,
@@ -282,11 +285,36 @@ any other section.
 
 ---
 
+## What "Blocked" means in these routers
+
+Two different things, and telling them apart is the whole point of this
+framework — so they are marked rather than blended:
+
+- **🔒 refused by the hook.** The write comes back rejected in the gate's own
+  wording, whatever the model intended. Product source outside CODE, CLOSEOUT
+  and FREE is this, and so is anything under `.ddw/`, the journal and the
+  receipts — in every phase, FREE included.
+- Everything else on a Blocked line is **the method's discipline**: writing a
+  spec while in DEFINE, editing the PRD during VERIFY, straying outside
+  `docs/ddw/discovery/`. Nothing under `docs/` is refused by a hook in any
+  phase, because a phase that cannot write its own artifacts cannot work, and no
+  rule can tell "the PRD this phase owns" from "the PRD two phases back" by
+  looking at a path.
+
+An agent that ignores the second kind is not stopped; it is *recorded* —
+the history says which phase it was in, and the receipts say which documents
+were validated and when. That asymmetry is stated here rather than discovered:
+a reader who takes every Blocked line for enforcement is trusting something that
+was never promised, which is the failure this repository spends its whole suite
+refusing to ship.
+
+---
+
 ## Router: Phase `IDLE`
 
 - **Load:** nothing extra (`CLAUDE.md` is already loaded).
 - **Skills:** `/ddw-status`, `/ddw-self-check`, `/ddw-help`
-- **Blocked:** writing files, creating branches, tests, commits.
+- **Blocked:** 🔒 product source (no ticket is open). Creating branches, tests, commits.
 - **Behavior:** wait for a request. Classify per the "Behavior based on state at boot" section:
   QUERY(💬) / code→CLASSIFY / ideation→CLASSIFY(DISCOVERY).
 
@@ -296,7 +324,7 @@ any other section.
 
 - **Load:** `.ddw/rules/classify.instructions.md`
 - **Skills:** `/ddw-context-check`, `/ddw-status`, `/ddw-self-check`, `/ddw-help`
-- **Blocked:** writing code, creating the PRD, creating specs, running tests, committing.
+- **Blocked:** 🔒 writing code. Creating the PRD, creating specs, running tests, committing.
 - **Status line:** `🔍 Classifying request...`
 - **Exit:** stack read + tier classified + ticket assigned + user confirms (not under `minimal` — see § Autonomy) + branch created → state
   set per tier. Details in `.ddw/rules/classify.instructions.md`.
@@ -308,7 +336,7 @@ any other section.
 - **Load:** `.ddw/rules/define.instructions.md`, `.ddw/rules/branches.instructions.md`,
   `.ddw/rules/validation-rules.instructions.md`
 - **Skills:** `/ddw-create-prd`, `/ddw-validate-prd`, `/ddw-commit`, `/ddw-self-check`, `/ddw-status`
-- **Blocked:** source code. Specs/fix-plans. Writing outside `docs/ddw/prd/` (plus
+- **Blocked:** 🔒 source code. Specs/fix-plans. Writing outside `docs/ddw/prd/` (plus
   `docs/ddw/specs/rca-{ticket}.md` on a FIX). Committing anything but this phase's artifacts.
 - **Status line:** `📋 {TIER} · Defining PRD [1/5] | {ticket}: {title}`
 - **FIRST action:** verify the ticket's branch.
@@ -325,7 +353,7 @@ any other section.
 - **Skills:** `/ddw-create-spec`, `/ddw-validate-spec`, `/ddw-threat-modeling`, `/ddw-create-adr`,
   `/ddw-commit`, `/ddw-self-check`, `/ddw-status`
 - **Agents:** `ddw-impact-scanner`, `ddw-arch-auditor`
-- **Blocked:** source code. Modifying the PRD directly (if it needs changes → roll back to DEFINE,
+- **Blocked:** 🔒 source code. Modifying the PRD directly (if it needs changes → roll back to DEFINE,
   see `.ddw/rules/plan.instructions.md`). Writing outside `docs/ddw/specs/`, `docs/ddw/security/`
   and `docs/adr/`.
 - **Status line:** `📐 {TIER} · Planning spec [2/5] | {ticket}: {title}`
@@ -361,7 +389,7 @@ any other section.
   `.ddw/rules/testing.instructions.md`, `.ddw/rules/validation-rules.instructions.md`
 - **Skills:** `/ddw-verify-module`, `/ddw-commit`, `/ddw-self-check`, `/ddw-status`, `/ddw-help`
 - **Agents:** `ddw-module-verifier`
-- **Blocked:** writing code (if it fails → go back to CODE). Modifying the PRD. Modifying specs.
+- **Blocked:** 🔒 writing code (if it fails → go back to CODE). Modifying the PRD. Modifying specs.
   Committing anything other than this phase's own report.
 - **Status line:** `🔎 {TIER} · Verifying [4/5] | {ticket}: {title}`
 - **Sequence:** `/ddw-verify-module` → PASS (BLOCKING GATE).
@@ -405,7 +433,7 @@ any other section.
 - **Load:** `.ddw/rules/discovery.instructions.md`, `.ddw/rules/validation-rules.instructions.md`
 - **Skills:** `/ddw-create-prd`, `/ddw-validate-prd`, `/ddw-commit`, `/ddw-create-pr`,
   `/ddw-self-check`, `/ddw-status`
-- **Blocked:** source code. Specs/fix-plans. Tests. Writing outside `docs/ddw/discovery/` and
+- **Blocked:** 🔒 source code. Specs/fix-plans. Tests. Writing outside `docs/ddw/discovery/` and
   `docs/ddw/prd/`.
 - **Status line:** `📝 DISCOVERY · {action} | {ticket}: {title}`
 - **Free flow:** exploration ↔ formalization, no ordering constraints.

@@ -34,6 +34,32 @@ and DISCOVERY thinks an idea through without touching your source.
 The short lane has a guard of its own: a hook stops it the moment the change reaches a sensitive path
 or grows past ten lines, and tells you to reclassify.
 
+## And a tier for not using any of it
+
+**No product code is written with no ticket open.** That is the promise, and until 0.20.0 it was a
+promise the agent kept out of good manners: `IDLE` — where every session starts and where a
+repository with nothing open sits — was not covered by the rule that stops source writes. Asked
+plainly for a file, an agent classified the request and refused, exactly as the rules say. Told *"no
+ticket, just write it"*, it wrote the file, both hooks green, nothing recorded anywhere.
+
+Making that impossible outright would have been the wrong fix. A pipeline you cannot step out of is
+one people uninstall, and an uninstalled pipeline enforces nothing at all. The problem was never
+that code gets written without gates — it is that it was written **without anybody deciding to**.
+
+So there is a tier for deciding to: **`FREE`**. Classify into it and nothing is asked of the work —
+no gates, no artifacts, no reviews — and every session start says, in the first line it prints,
+`ESTÁS TRABAJANDO SIN WORKFLOW`, with the way back on the same line. Both ends are transitions, so
+the history says when you stepped out and why.
+
+Three things it is not. It is not a way out of a ticket already in flight: no working phase has an
+edge into it, and the tier cannot change outside CLASSIFY, so gates already asked for cannot be shed
+by relabelling the work. It is not a licence to disarm the pipeline: DDW's own files, the journal and
+the state are as sealed in `FREE` as anywhere else. And it is not quiet.
+
+What a repository at rest still writes with nothing open: everything under `docs/`, your context
+files, the CHANGELOG, and each tool's wiring — so installing, ejecting, reading and writing documents
+never need a ticket. `RATIONALE.md` decision 20 has the reasoning and what it costs.
+
 And you can always **walk away**. Abandon a ticket, or pause it for later, from any phase, owing
 nothing — as long as you say which one it is. The one exception is CLOSEOUT, where nothing is left to
 decide and only steps remain: an exit there is a closeout and owes its gates, or the word "abandon"

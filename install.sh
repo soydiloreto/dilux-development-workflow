@@ -69,7 +69,7 @@ label_of() {  # read the human label out of a recipe
 # that answered that question months ago is how a second install lands beside
 # the first instead of refreshing it — and how one tool's wiring silently stays
 # a version behind while the method in .ddw/ moves on.
-INSTALLED="$(python3 - "$TARGET" <<'PY' 2>/dev/null || true
+INSTALLED="$(python3 - "$TARGET" "$SELF" <<'PY' 2>/dev/null || true
 import json, os, sys
 keys = None
 for rel in (".ddw-installed.json", os.path.join(".ddw", ".installed.json")):
@@ -80,7 +80,18 @@ for rel in (".ddw-installed.json", os.path.join(".ddw", ".installed.json")):
         continue
 if keys is None:
     sys.exit(0)
-seen = sorted({k.split(":", 1)[0] for k in keys if ":" in k})
+# Sólo los prefijos que nombran un adaptador. El manifiesto lleva también
+# `method:.ddw/...`, que no es una herramienta: sin filtrar, un repo ya
+# instalado ofrecía "claude method", y elegir eso moría en `Unknown target:
+# method`. Con --target, avisaba de un "target" no actualizado y daba el
+# comando para incluirlo, que también sale 1. La lista de adaptadores está en
+# disco; es la que manda.
+adapters = os.path.join(sys.argv[2], "adapters") if len(sys.argv) > 2 else ""
+known = ({d for d in os.listdir(adapters)
+          if os.path.isfile(os.path.join(adapters, d, "adapter.json"))}
+         if os.path.isdir(adapters) else None)
+seen = sorted({k.split(":", 1)[0] for k in keys if ":" in k
+               if known is None or k.split(":", 1)[0] in known})
 print(" ".join(seen))
 PY
 )"
@@ -162,6 +173,18 @@ done
   echo "    To bring them along: --target $(echo "$TARGETS$SKIPPED" | tr ' ' ',' | sed 's/^,//;s/,,*/,/g')"
 }
 echo
+
+# ── 0. Can this land at all? ─────────────────────────────────────────────────
+#
+# Asked before a single byte is written, for every target at once. A path the
+# install needs as a directory and finds occupied — `.claude` as a file — used to
+# surface as a NotADirectoryError halfway through, with the method already copied
+# and no wiring: a repo that looks installed and is not. A refusal that says
+# "nothing has been written" has to be true when it says it, which means asking
+# here rather than after step 1.
+for t in $TARGETS; do
+  python3 "$SELF/scripts/install_target.py" --self "$SELF" --target "$TARGET" --id "$t" --preflight || exit 1
+done
 
 # ── 1. THE METHOD (identical for every tool) ─────────────────────────────────
 mkdir -p "$TARGET/.ddw"

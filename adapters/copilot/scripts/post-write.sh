@@ -26,6 +26,20 @@ if [ ! -f "$DDW/scripts/hook-gate.py" ]; then
     exit 0
   fi
 fi
+# Sin python3 no hay nada que juzgue esta escritura, y un hook que no puede
+# juzgar tiene que rechazar. Copilot lee cualquier exit distinto de 2 como un
+# error no bloqueante: sin este bloque el `exec` de abajo sale 127 y la
+# escritura entra. Los otros cinco adaptadores lo tenían; estos dos no, que
+# son justamente los dos que deciden escrituras.
+#
+# DESPUÉS del chequeo de alcanzabilidad, como en los otros cinco: puesto
+# antes, un repo que no tiene DDW instalado se queda sin poder escribir por
+# una herramienta que no necesita.
+command -v python3 >/dev/null 2>&1 || {
+  echo "DDW cannot enforce anything without python3 on PATH. Refusing the write." >&2
+  exit 2
+}
+
 GATE="$DDW/scripts/hook-gate.py"
 STATE="$REPO/.ddw-state.json"
 GRAPH="$DDW/rules/transition-graph.json"

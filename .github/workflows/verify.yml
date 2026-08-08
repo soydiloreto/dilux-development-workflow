@@ -50,7 +50,11 @@ jobs:
           node-version: "20"
       - name: Install what the suite asserts it needs
         run: |
-          python3 -m pip install --quiet pyyaml
+          # pytest junto a pyyaml, y por la misma razón que la nota de abajo:
+          # sin él, la capa rápida sobre el núcleo de enforcement SE SALTEA en
+          # CI, y un skip se suma a "N/N pasaron". O sea que los 54 tests que
+          # corren en la máquina de quien escribe no habían corrido nunca acá.
+          python3 -m pip install --quiet pyyaml pytest
           # The Claude CLI validates the plugin manifests against the real
           # schema. Without it those two checks used to SKIP, and a skip was
           # summed into "N/N passed" — so the manifests had never once been
@@ -92,6 +96,14 @@ jobs:
         run: |
           git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
           python3 scripts/check_commits.py --since "origin/${{ github.base_ref }}"
+
+      # La suite corre los evals además de esto. El paso aparte es para que la
+      # falla se lea: adentro de 554 comprobaciones, "un escenario no puede
+      # ponerse rojo" queda como una línea entre muchas.
+      - name: The instructions lead where the enforcement allows
+        run: |
+          python3 evals/runner.py --repo . --offline
+          python3 evals/runner.py --repo . --offline --control
 
       - name: The suite
         run: bash scripts/verify_install.sh

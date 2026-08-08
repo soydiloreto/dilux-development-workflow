@@ -19,6 +19,86 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.21.0] — Unreleased
+
+### Fixed — SECURITY
+
+- **Copilot's two write-deciding hooks failed OPEN without `python3`.** They
+  exited 127 where the other five adapters exit 2, and every exit that is not 2
+  is a non-blocking error: the write went through with nothing having judged it.
+  The check that was supposed to cover this read the hooks' text, skipped any
+  file that did not already contain the guard, and globbed
+  `adapters/*/hooks/**` — where Copilot's hooks do not live. It is now measured
+  by INSTALLING all five tools and running every write-deciding hook with a
+  `PATH` that has no `python3` on it.
+
+### Fixed
+
+- **`install.sh` with no `--target` failed on any repo that already had DDW.**
+  The manifest also carries `method:` keys, so the tool list read
+  `claude method`, and choosing it exited on `Unknown target: method`.
+- **The install preflight never looked at the commands directory.** It read
+  `command` where the installer writes `commands`, so the directory OpenCode's
+  seventeen commands land in went unchecked. Occupied by a file, the refusal
+  that promises "nothing has been written" arrived after writing `.ddw/` and
+  `AGENTS.md`, and with no manifest — the drift detector off for good.
+- **The uninstall left `GEMINI.md` importing a method that was gone**, so every
+  Gemini session in that repo started by reading a deleted file.
+- **A `--force` uninstall printed a plan that was not the removal it then ran.**
+  It said "Kept 1 file(s) … re-run with `--force`" about the file it was about
+  to delete. A plan you cannot trust is worse than no plan, because you read it
+  and approved.
+
+### Added
+
+- **`evals/` — the layer that measures the INSTRUCTIONS.** `verify_install.sh`
+  measures the hooks: given an event, does the gate answer correctly. Nothing
+  measured whether an obedient reader of the rules ends up somewhere the hooks
+  allow. Every scenario carries the commit of the regression it comes from, and
+  `--control` applies that regression and REQUIRES the scenario to go red: a
+  scenario that cannot fail is not a test. A run that examined nothing exits 2.
+- **`tests/test_validators.py`**, and thirteen more cases in
+  `tests/test_validate_transition.py`, over guards the suite executed ZERO
+  times — found by running the suite under `coverage` with
+  `COVERAGE_PROCESS_START`, which measures the subprocesses too, and the
+  validators and the hooks are subprocesses.
+- **Sixteen faults** (441 → 457), and `edit_re`, so a fault that has to touch a
+  line carrying a number is not anchored to that number.
+
+### Fixed — the clock
+
+- **A legal transition was refused because the wall clock stepped backwards.**
+  Measured on WSL2, which resyncs with the host: six one-second steps BACKWARDS
+  in 33,465 samples over 75 seconds under load. A step between two moves of a
+  run left the new entry stamped before the one it follows, and the monotonicity
+  guard refused a transition the helper itself had just built — with no way out,
+  because the only thing that would fix it is editing the history, which the
+  hook also refuses. The guard is unchanged; the sanctioned path can no longer
+  produce the case. Any user on a VM had this.
+- **`CLAUDE_PROJECT_DIR` leaked across sections of the suite**, and the helper
+  reads it before the cwd, so everything downstream operated on a repository
+  from another section.
+- **`## Testing` could be deleted from `ddw/AGENTS.template.md` with the linter
+  green**, undoing 87ae703. The sweep read only `ddw/**` — not the skills that
+  cite it — and only asked whether the REPORTER knew the heading, never whether
+  the template shipped it.
+
+### Added — the instruments
+
+- **`painted-door-sweep`**: every instruction file the method carries, every
+  imperative write pulled out of it, each one handed to the real gate. The four
+  painted doors this project has shipped were each closed with a scenario that
+  re-finds that one door; none of them would have found the other three.
+- **`mutate.py --flake-check N`**: the suite run UNMUTATED N times at the
+  concurrency of a real run, naming every check that fails on its own. A
+  spurious red is not lost — `run_one` reads it as a KILL, and fabricates
+  coverage. It is what found the clock.
+
+### Note on releases
+
+This version is NOT published. It is the number the work is attached to, which
+is what makes the version mean something; publishing is a separate decision.
+
 ## [0.20.0] — Unreleased
 
 ### Changed — BREAKING

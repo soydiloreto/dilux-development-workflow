@@ -1,0 +1,54 @@
+id: painted-door-sweep
+kind: painted-door-sweep
+
+# Éste no viene de una regresión: viene de las cuatro que sí, y de que las
+# cuatro se encontraron DESPUÉS de shippear. Los escenarios `painted-door`
+# fijan un regex sobre un archivo y vuelven a encontrar una puerta que ya se
+# abrió. Éste busca la próxima.
+regression:
+  changelog: "0.19.0, 0.9.2 y 0.20.0 — cuatro puertas pintadas, cuatro veces encontradas tarde"
+  commit: 3b145df
+  what_happened: >
+    `/ddw-eject` mandaba copiar el método a `.ddw/`, que toda fase rechaza. El
+    rechazo de estado corrupto ordenaba dos escrituras que él mismo rechazaba.
+    INSTALL.md describía el eject como "copia el método". Ninguna la vio un
+    check: los hooks estaban bien, la instrucción estaba mal, y no había nada
+    que le preguntara a la instrucción. Cada una se arregló con un escenario que
+    la re-encuentra; ninguno de esos escenarios habría encontrado a las otras
+    tres. Esto le pregunta al gate por TODA escritura que el método ordena.
+
+given:
+  install: claude
+  state:
+    tier: FEATURE
+    ticket: T-1
+    title: sweep fixture
+    autonomy: assisted
+    gates: {define: true, spec: true, threat: true}
+    history:
+      - {timestamp: "2026-01-01T00:00:00Z", from: IDLE, to: CLASSIFY, action: "start"}
+
+when:
+  corpus:
+    - "skills/*/SKILL.md"
+    - "ddw/rules/*.instructions.md"
+    - "ddw/orchestrator.md"
+  # Cada orden se juzga en estas fases y basta que UNA la rechace para que sea
+  # una puerta pintada: el archivo que la ordena no dice en cuál se lo van a
+  # pedir, y un skill se invoca donde el usuario quiera.
+  #
+  # CODE y CLOSEOUT quedan afuera a propósito: ahí se puede escribir código, así
+  # que una escritura permitida no dice nada, y una rechazada ahí lo está en
+  # todas las demás también.
+  phases: [DEFINE, PLAN, VERIFY]
+
+expect:
+  no_ordered_write_is_refused: true
+
+# El control: el skill de eject como shippeó en 3b145df^, con «**Copy** the
+# method to `.ddw/`» en su protocolo. El barrido tiene que encontrarlo sin que
+# nadie le diga dónde mirar — que es toda la diferencia con `painted-door`.
+control:
+  type: restore_from_commit
+  commit: 3b145df^
+  path: skills/ddw-eject/SKILL.md

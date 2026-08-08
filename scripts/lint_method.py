@@ -388,6 +388,33 @@ def check_context_reaches_agents(root):
                  "reach the model")
 
 
+def check_template_sections_known(root):
+    """Every section the context TEMPLATE ships is one `ddw-context-check` looks for.
+
+    `check_context_headings` walks one direction — a heading the method cites has
+    to be one the skill knows about. This is the other, and it was open: the
+    template shipped `## What this project is` and the skill never named it, so a
+    repository missing that section was reported as complete. And the two skills
+    that ask for a coverage floor cite `AGENTS.md, "Testing"` in the documents
+    they teach, against a template that had no Testing section at all — the
+    method telling every project to quote a heading its own installer does not
+    create.
+    """
+    tpl = os.path.join(root, "ddw/AGENTS.template.md")
+    skill = os.path.join(root, "skills/ddw-context-check/SKILL.md")
+    if not (os.path.exists(tpl) and os.path.exists(skill)):
+        return
+    known = read(skill)
+    for m in re.finditer(r"^##\s+(.+?)\s*$", read(tpl), re.M):
+        heading = m.group(1).strip()
+        if heading.lower() in ("language",):
+            continue                      # the template's own instructions, not a section DDW reads
+        if heading not in known:
+            fail("ddw/AGENTS.template.md",
+                 f"ships a `## {heading}` section that ddw-context-check never looks for — a "
+                 "repository missing it is reported as complete")
+
+
 def check_context_headings(root):
     """A section of AGENTS.md the method reads must be one the skill checks for.
 
@@ -409,24 +436,47 @@ def check_context_headings(root):
         return
     known = read(skill)
 
+    # Los SKILLS también, no sólo `ddw/**`. Los dos que piden un piso de
+    # cobertura citan `AGENTS.md, "Testing"` en el documento que enseñan a
+    # escribir, y con el corpus limitado a `ddw/` esa cita no se veía: se podía
+    # borrar `## Testing` de la plantilla y el lint quedaba verde. Es
+    # exactamente lo que arregló 87ae703, y nada lo sostenía.
+    corpus = sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)
+                    + glob.glob(os.path.join(root, "skills/*/SKILL.md")))
     cited = {}
-    for path in sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)):
+    for path in corpus:
         if os.path.samefile(path, skill):
             continue
         text = read(path)
         for i, line in enumerate(text.splitlines(), 1):
             if "AGENTS.md" not in line:
                 continue
-            for m in re.finditer(r'"([A-Z][^"]{2,45})"\s+section|section\s+"([A-Z][^"]{2,45})"',
-                                 line):
-                name = m.group(1) or m.group(2)
-                cited.setdefault(name, f"{rel(root, path)}:{i}")
+            # Y la forma `AGENTS.md, "Testing"`, que es como la escriben los
+            # documentos trabajados. Pidiendo la palabra `section` al lado, la
+            # cita que los skills realmente usan no contaba como cita.
+            for m in re.finditer(
+                    r'"([A-Z][^"]{2,45})"\s+section|section\s+"([A-Z][^"]{2,45})"|'
+                    r'AGENTS\.md[,\s]+\u00a7?\s*"?([A-Z][\w ]{2,45}?)"?\s*[)|]|'
+                    r'AGENTS\.md\s+\u00a7\s*([A-Z][\w ]{2,45})', line):
+                name = next((g for g in m.groups() if g), "").strip()
+                if name:
+                    cited.setdefault(name, f"{rel(root, path)}:{i}")
 
+    template = os.path.join(root, "ddw/AGENTS.template.md")
+    shipped = read(template) if os.path.exists(template) else ""
     for name, where in sorted(cited.items()):
         if f"## {name}" not in known:
             fail(where,
                  f"reads the {name!r} section of AGENTS.md, but ddw-context-check does not list "
                  "it — nothing will notice when a repo's context file has no such heading")
+        # …y que la plantilla la TRAIGA. Que el reportero sepa buscarla no la
+        # pone en el archivo: sin esto, el método le dice a cada proyecto que
+        # cite un encabezado que su propio instalador no escribe.
+        if shipped and f"## {name}" not in shipped:
+            fail(where,
+                 f"reads the {name!r} section of AGENTS.md and ddw/AGENTS.template.md ships no "
+                 f"such heading — every repo DDW installs is told to quote a section its own "
+                 f"installer never wrote")
 
 
 def check_rationale(root):
@@ -621,6 +671,108 @@ def check_commit_granularity(root):
                      "ddw/rules/commits.instructions.md")
 
 
+def check_tiers_documented(root, graph):
+    """Every tier the graph defines is explained where a person will look.
+
+    The graph is the authority for which tiers exist, and adding one there is
+    one line. What it costs is the part nobody remembers: CLASSIFY has to say
+    when to choose it, the state schema has to list it as a legal value, and the
+    router has to know what to load when the phase carrying its name comes up.
+    `FREE` was added and all three were missed on the first pass — the pipeline
+    worked and the method described a product with one fewer tier than it had.
+
+    Checked against the two files a reader and a model actually consult, not
+    against every mention: the classification rules, and the schema of the file
+    the tier is written into.
+    """
+    tiers = set(graph.get("tiers", {}))
+    if not tiers:
+        fail("ddw/rules/transition-graph.json", "defines no tier at all")
+        return
+    for rel_path in ("ddw/rules/classify.instructions.md", "ddw/rules/state.instructions.md"):
+        text = read(os.path.join(root, rel_path))
+        missing = sorted(t for t in tiers if t not in text)
+        if missing:
+            fail(rel_path, "the graph defines %s and this file explains %s — a tier nobody "
+                           "documents is one the model cannot choose on purpose"
+                 % (", ".join(sorted(tiers)), "none of them" if len(missing) == len(tiers)
+                    else "neither " + " nor ".join(missing) if len(missing) > 1
+                    else "not " + missing[0]))
+
+
+def check_blocked_marks_enforcement(root):
+    """A router's Blocked line says which half of it a hook actually refuses.
+
+    The lists mixed the two: `source code` (refused by the gate, in the gate's
+    own wording) sat beside `modifying the PRD` and `writing outside
+    docs/ddw/discovery/` (nobody's hook refuses those — nothing under `docs/` is
+    refused in any phase). A reader cannot tell them apart by looking, and this
+    whole framework is the argument that the difference matters: "the agent
+    politely declines" and "the write is rejected" mean opposite things.
+
+    So every phase whose rules forbid product source marks it, and the legend
+    that explains the mark has to be there to be read.
+    """
+    orch = os.path.join(root, "ddw/orchestrator.md")
+    text = read(orch)
+    if "🔒" not in text:
+        fail("ddw/orchestrator.md",
+             "no Blocked line marks what the hook refuses, so every line reads as enforcement")
+        return
+    if "refused by the hook" not in text:
+        fail("ddw/orchestrator.md",
+             "the 🔒 mark is used and never explained — a symbol nobody defines is decoration")
+    for m in re.finditer(r"^## Router: Phase `([A-Z-]+)`\n(.*?)(?=^## |\Z)", text, re.M | re.S):
+        phase, body = m.group(1), m.group(2)
+        if phase in ("CODE", "CLOSEOUT", "FREE", "IDLE"):
+            continue                      # source is allowed here, or the phase has no gate to state
+        blocked = re.search(r"^- \*\*Blocked:\*\*(.*)$", body, re.M)
+        if blocked and "source" in blocked.group(1).lower() and "🔒" not in blocked.group(1):
+            fail(f"{rel(root, orch)}:{text[:m.start()].count(chr(10)) + 1}",
+                 f"{phase} blocks source code and does not mark it as the hook's — it reads like "
+                 "the same kind of rule as the ones nothing enforces")
+
+
+def check_free_tiers_explained_to_people(root, graph):
+    """Un tier que no pide NINGUNA compuerta tiene que estar explicado en
+    `docs/METHOD.md`.
+
+    No todos: METHOD.md delega en las tablas canónicas a propósito —«every
+    phase, every tier, every gate» vive en el catálogo— y exigirle la lista
+    entera sería pedirle que duplique lo que este repo evita duplicar. Se probó
+    y el lint pidió meter FEATURE, FIX y QUICK-FIX en un documento que decide no
+    enumerarlos. Eso no es un hallazgo, es forzar una copia.
+
+    Lo que sí: un tier SIN compuertas es el único del que no se entera nadie por
+    el camino. Los demás se anuncian solos — algo se pide, algo se rechaza. En
+    ése no se pide nada, y si el documento que le explica el método a una
+    persona no lo nombra, el producto tiene un modo sin enforcement del que sólo
+    se enteran quienes leen el grafo. Es la mitad de 4c41f3e que ningún check
+    sostenía.
+    """
+    path = os.path.join(root, "docs/METHOD.md")
+    if not os.path.exists(path):
+        return
+    text = read(path)
+    for tier in sorted(graph.get("tiers", {})):
+        # La cadena `extends`, resuelta acá: un tier que hereda pide lo que
+        # pide su padre, y leer sólo sus propias claves diría que no pide nada.
+        asks, seen, cur = set(), set(), tier
+        while cur and cur not in seen:
+            seen.add(cur)
+            spec = graph["tiers"].get(cur) or {}
+            for key, edge in spec.items():
+                if key.startswith("_") or key == "extends" or not isinstance(edge, dict):
+                    continue
+                asks |= set(edge.get("gates") or [])
+            cur = spec.get("extends")
+        if not asks and tier not in text:
+            fail("docs/METHOD.md",
+                 "the graph defines %s, which asks for no gate at all, and this file never names "
+                 "it — a mode with no enforcement is the one a reader has to be told about, "
+                 "because nothing in the run will tell them" % tier)
+
+
 def check_phase_names(root, graph):
     """A phase named in a router must be a phase the graph knows."""
     phases = known_phases(graph) | {"DISCOVERY"}
@@ -731,11 +883,15 @@ def main():
     check_internal_links(root)
     check_context_reaches_agents(root)
     check_context_headings(root)
+    check_template_sections_known(root)
     check_rationale(root)
     check_rule_ranges(root)
     check_rule_counts(root)
     check_commit_granularity(root)
     check_phase_names(root, graph)
+    check_blocked_marks_enforcement(root)
+    check_tiers_documented(root, graph)
+    check_free_tiers_explained_to_people(root, graph)
     check_compaction_envelopes(root)
     check_ticket_retarget(root)
 

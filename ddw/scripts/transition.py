@@ -184,7 +184,30 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
 
     new_state["phase"] = to_phase
     history = list(new_state.get("history") or [])
-    entry = {"timestamp": _now_iso(), "from": from_phase, "to": to_phase, "action": action}
+    # El sello, y nunca ANTERIOR al de la entrada previa.
+    #
+    # El reloj de pared retrocede. Medido en esta máquina —WSL2, que resincroniza
+    # con el host— seis saltos de un segundo hacia atrás en 33.465 muestras
+    # tomadas a lo largo de 75 segundos bajo carga. Un salto entre dos pasos del
+    # pipeline deja la entrada nueva sellada antes que la anterior, y la guarda
+    # de monotonía —que existe para que una historia editada a mano no pueda
+    # reordenarse— refusa una transición legal que el helper acaba de construir.
+    #
+    # Sin salida, además: el rechazo dice que la historia va hacia atrás, y lo
+    # único que la corregiría es editar la historia, que el hook también
+    # rechaza. Un rechazo sobre el que no se puede actuar es el peor que hay.
+    #
+    # La guarda se queda como está: protege contra una historia reordenada, que
+    # es lo que fue escrita para atrapar. Lo que cambia es que el camino
+    # sancionado no puede producir el caso. Igual está permitido — dos
+    # transiciones en el mismo segundo son corrientes — así que sujetar al
+    # último sello no inventa orden, sólo se niega a perderlo.
+    _stamp = _now_iso()
+    _last = next((e.get("timestamp") for e in reversed(history)
+                  if isinstance(e, dict) and isinstance(e.get("timestamp"), str)), None)
+    if _last and _stamp < _last:
+        _stamp = _last
+    entry = {"timestamp": _stamp, "from": from_phase, "to": to_phase, "action": action}
     # The tier the edge was taken under, stamped on the edge itself.
     #
     # Reaching IDLE wipes `tier` — that is what closing a ticket means. But the
@@ -371,7 +394,7 @@ def main():
             print("ddw-transition: " + reason, file=sys.stderr)
             sys.exit(2)
         try:
-            vt.validate(old_state, claimed, graph)
+            vt.validate(old_state, claimed, graph, state_path=args.state)
         except vt.Block as exc:
             print("ddw-transition: %s" % exc, file=sys.stderr)
             sys.exit(2)
@@ -426,7 +449,7 @@ def main():
         sys.exit(2)
 
     try:
-        vt.validate(old_state, new_state, graph)
+        vt.validate(old_state, new_state, graph, state_path=args.state)
     except vt.Block as exc:
         # validate()'s message is the truth (single source of truth — we do not
         # duplicate the graph's logic), but we add an actionable hint from the

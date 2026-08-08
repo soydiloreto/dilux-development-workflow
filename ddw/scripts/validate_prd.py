@@ -85,7 +85,13 @@ def _after_label(text, label):
 
 
 def _items(text, prefix):
-    """Bullet items carrying an ID of the given prefix, as (id, full_text)."""
+    """Bullet items carrying an ID of the given prefix, as (id, full_text).
+
+    A bullet whose text after the ID is the template's placeholder is not a
+    requirement: `- FR-01: [atomic requirement]` says an FR exists and says
+    nothing about what it is. Counting those is how a PRD of placeholders came
+    out with three FRs, one NFR and three ACs, all of them traced to each other.
+    """
     out = []
     current = None
     for line in text.splitlines():
@@ -114,7 +120,7 @@ def _after_id(item_id, text):
     content — `NFR-01` carries digits, `FR-03` carries digits, and a rule looking
     for a number found the label every time.
     """
-    return re.sub(r"^\s*[-*]\s+\**" + re.escape(item_id) + r"\**\s*[:.(]?", "", text, count=1)
+    return re.sub(r"^[ \t]*[-*]\s+\**" + re.escape(item_id) + r"\**\s*[:.(]?", "", text, count=1)
 
 
 def _repo_relative(path):
@@ -163,7 +169,7 @@ LOOP_CEILING = 3
 
 
 def _loop_count(text, label):
-    m = re.search(rf"^\s*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
+    m = re.search(rf"^[ \t]*\|\s*{label}\s*\|\s*(\d+)", text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else 0
 
 
@@ -172,7 +178,7 @@ def _loops_since_human(text):
     is about. Absent, it falls back to the running total — an older document has
     no second number, and reading its total is the safe direction to be wrong
     in: it stops sooner, never later."""
-    m = re.search(r"^\s*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
+    m = re.search(r"^[ \t]*\|\s*Loops since (?:the )?last human decision\s*\|\s*(\d+)",
                   text, re.IGNORECASE | re.MULTILINE)
     return int(m.group(1)) if m else None
 
@@ -225,15 +231,31 @@ def main():
         nfrs = _items(text, "NFR")
         acs = _items(text, "AC")
 
-        # F-PRD-08 first: structure gates everything else's meaning.
+        # F-PRD-08 first: structure gates everything else's meaning — and a
+        # section is not present because its heading is.
+        #
+        # `_unfilled` was written for the QUICK-FIX brief and called from there
+        # alone, so the big PRD — the document the `define` gate is FOR — passed
+        # with every field still bracketed. Measured: the shipped template with
+        # ONE line filled in (the NFR, which needs a number) came out
+        # `PASSED — 8 passed, 0 failed` and wrote its receipt. Placeholders for
+        # the problem, the goals, every FR, every AC, the scope, the
+        # dependencies. The comment inside this file already described the bug
+        # for the four-line brief; the twenty-line document had the same one and
+        # nobody carried the fix across.
         missing = [pretty for pretty, names in SECTIONS
                    if not _section_body(text, names)]
+        unwritten = [pretty for pretty, names in SECTIONS
+                     if pretty not in missing and _unfilled(_section_body(text, names))]
         if args.tier != "FEATURE" and "Out of Scope" in missing:
             missing.remove("Out of Scope")
         if missing:
             fail("F-PRD-08", f"missing structural section(s): {', '.join(missing)}")
+        elif unwritten:
+            fail("F-PRD-08", "section(s) still carrying the template's placeholder and nothing "
+                             "else: " + ", ".join(unwritten))
         else:
-            ok("F-PRD-08", "all mandatory sections present")
+            ok("F-PRD-08", "all mandatory sections present and written in")
 
         # F-PRD-05: unique, gapless IDs.
         dup_msgs = []
@@ -275,7 +297,7 @@ def main():
         # F-PRD-04: Out of Scope non-empty (FEATURE).
         if args.tier == "FEATURE":
             oos = _section_body(text, ("out of scope", "fuera de alcance"))
-            if re.search(r"^\s*[-*]\s+\S", oos, re.MULTILINE):
+            if re.search(r"^[ \t]*[-*]\s+\S", oos, re.MULTILINE):
                 ok("F-PRD-04", "Out of Scope has explicit items")
             else:
                 fail("F-PRD-04", "Out of Scope is missing or has no explicit items")
