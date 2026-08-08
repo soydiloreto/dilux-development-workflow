@@ -83,7 +83,19 @@ def _longest_literal(msg):
     coma un pedazo por cualquiera de sus dos causas, y no es tan corto como para
     matchear cualquier cosa.
     """
-    parts = re.split(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+|'[^']*'|\\?\"", msg)
+    # `$(...)` también, no sólo `$VAR`. Sin eso, «expected $EXPECT_SKILLS
+    # skills, found $(n "$SELF/skills/*/SKILL.md")» dejaba como tramo más largo
+    # la ruta del glob, que no aparece nunca en la salida — y los cuatro conteos
+    # fijados se contaban como nunca disparados JUSTO después de escribirles el
+    # fault que los dispara. La cuarta versión de la misma clase de error.
+    # …y el `$(` SIN cerrar. `declared_bads` extrae el mensaje con una expresión
+    # que termina en la primera comilla doble, así que «found $(n "$SELF/…")»
+    # queda cortado en `found $(n `. Ese resto pegado al literal hacía que el
+    # tramo más largo fuera algo que no aparece nunca — y los cuatro conteos
+    # fijados se contaban como nunca disparados con el kill registrado dos
+    # líneas más abajo en el mismo archivo.
+    parts = re.split(r"\$\([^)]*\)|\$\(|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+|'[^']*'|\\?\"",
+                     msg)
     best = max((p.strip() for p in parts), key=len, default="")
     return best if len(best) >= 12 else ""
 
@@ -98,7 +110,7 @@ def _as_pattern(msg):
     que suena a hallazgo y mide el formateo. Ahora la variable es un comodín y
     lo que se compara es la forma entera.
     """
-    parts = re.split(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+", msg)
+    parts = re.split(r"\$\([^)]*\)|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+", msg)
     rx = ".*".join(re.escape(p) for p in parts if p != "")
     return re.compile(rx if rx else r"(?!x)x")   # sin literales, no matchea nada
 
