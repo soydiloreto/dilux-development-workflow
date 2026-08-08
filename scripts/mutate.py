@@ -1971,7 +1971,9 @@ MUTATIONS = [
           "tools: Read, Write, Grep, Glob, Bash")),
     ("the runner stops asking the suite to stop early, and pays a full pass per fault",
      edit("scripts/mutate.py",
-          '        env = dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1")\n', "", last=True)),
+          '        if not want_all_failures:\n'
+          '            env["DDW_STOP_ON_FIRST_FAILURE"] = "1"\n',
+          '        if False:\n            pass\n', last=True)),
     ("a diff touching the suite itself narrows the mutation run instead of running it whole",
      edit("scripts/mutate.py",
           '    if files & {"scripts/verify_install.sh", "scripts/mutate.py"}:\n'
@@ -2177,7 +2179,7 @@ def baseline():
         return 1
 
 
-def run_one(index, label, mutate, skip_fast=False):
+def run_one(index, label, mutate, skip_fast=False, want_all_failures=False):
     with tempfile.TemporaryDirectory() as tmp:
         repo = os.path.join(tmp, "ddw")
         shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
@@ -2207,21 +2209,31 @@ def run_one(index, label, mutate, skip_fast=False):
             fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
                                   capture_output=True, text=True, cwd=repo)
             if fast.returncode != 0:
-                return True, None, "tests/ (capa rápida)"
-        env = dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1")
+                return True, None, ["tests/ (capa rápida)"]
+        # Parar al primer ✗ contesta «¿se puso roja?», que es la pregunta del
+        # veredicto. NO es la pregunta del mapa de kills: ahí interesa QUÉ
+        # checks pueden fallar, y con la parada temprana sólo se registra el
+        # primero de cada fault. La primera corrida del mapa dio «352 de 402
+        # nunca se disparan», que leído así es falso — son 352 que nunca fueron
+        # los PRIMEROS. Un número que suena a hallazgo y mide otra cosa.
+        env = dict(os.environ)
+        if not want_all_failures:
+            env["DDW_STOP_ON_FIRST_FAILURE"] = "1"
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                            capture_output=True, text=True, cwd=repo, env=env)
         # QUÉ check lo mató, no sólo que murió. Con la parada al primer ✗ ese es
         # el primero que aparece. Sirve para la pregunta que ninguna otra cosa
         # responde: qué `bad` de la suite no se dispara NUNCA — un check que no
         # puede fallar reporta verde por no poder decir otra cosa.
-        killer = None
+        killers = []
         if r.returncode != 0:
             for ln in r.stdout.splitlines():
-                if "✗" in ln:
-                    killer = re.sub(r"\x1b\[[0-9;]*m", "", ln).replace("✗", "").strip()
-                    break
-        return r.returncode != 0, None, killer
+                clean = re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                if clean.lstrip().startswith("✗"):
+                    killers.append(clean.strip().lstrip("✗").strip())
+                    if not want_all_failures:
+                        break
+        return r.returncode != 0, None, killers
 
 
 def flake_check(rounds, jobs):
@@ -2668,7 +2680,8 @@ def main():
 
     if jobs == 1:
         for i, (label, mutate) in chosen:
-            verdict, problem, killer = run_one(i, label, mutate, args.no_fast)
+            verdict, problem, killer = run_one(i, label, mutate, args.no_fast,
+                                               bool(args.kill_map))
             if killer:
                 kills[i] = killer
             report(i, label, verdict, problem)
@@ -2684,7 +2697,8 @@ def main():
         # that had moved. It failed honestly, which is the only reason that was
         # a five-minute detour and not a fabricated hundred percent.
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-            futures = {pool.submit(run_one, i, label, mutate, args.no_fast): (i, label)
+            futures = {pool.submit(run_one, i, label, mutate, args.no_fast,
+                                   bool(args.kill_map)): (i, label)
                        for i, (label, mutate) in chosen}
             done = {}
             # A line per fault as it closes, to stderr, so the run says something
@@ -2732,7 +2746,7 @@ def main():
         declared = set()
         for m in re.finditer(r'\bbad\s+"((?:[^"\\]|\\.)*)"', suite):
             declared.add(m.group(1).strip())
-        fired = set(kills.values())
+        fired = {k for ks in kills.values() for k in ks}
         # El texto que imprime `bad` puede llevar interpolación; se comparan por
         # prefijo estable para no llamar "nunca disparado" a uno que sí lo fue.
         def seen(msg):

@@ -1742,7 +1742,7 @@ runner = open(os.path.join(src, "scripts/mutate.py"), encoding="utf-8").read()
 # live: the fault survived, found by its own text.
 _run_one = runner[runner.index("def run_one("):]
 _run_one = _run_one[:_run_one.index("\ndef ", 1)]
-assert 'DDW_STOP_ON_FIRST_FAILURE="1"' in _run_one, \
+assert 'DDW_STOP_ON_FIRST_FAILURE' in _run_one, \
     ("the runner no longer asks the suite to stop at the first failure, so every fault pays the "
      "whole suite after the answer is already known — a cost that shows up as an hour of wall "
      "clock and never as a red check")
