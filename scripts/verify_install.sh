@@ -781,7 +781,13 @@ step --to VERIFY --action x --gate tests --gate sast
 step --to CLOSEOUT --action x --gate verify
 python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
   && bad "closed WITHOUT commit+pr" || ok "closeout blocked without commit+pr"
-python3 "$TRC" --to IDLE --action done --gate commit --graph "$G" >/dev/null 2>&1 \
+# `--claim commit`, que es lo que el producto manda, y no `--gate commit`: ese
+# flag se rechaza de plano en `--to IDLE` —«--gate is not read on --to IDLE»— así
+# que este check mandaba exactamente el mismo input que el de arriba y no podía
+# distinguir «commit pago y pr faltante» de «ninguno de los dos». Dos checks, una
+# sola pregunta, y el segundo verde por no poder decir otra cosa.
+python3 "$TRC" --claim commit --graph "$G" >/dev/null 2>&1
+python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
   && bad "closed with commit but no pr" || ok "closeout blocked with commit but no pr"
 python3 - "$CLOSE" <<'PY'
 import json, sys
