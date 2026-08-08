@@ -1849,6 +1849,10 @@ MUTATIONS = [
      edit("ddw/scripts/validate_spec.py",
           "            if missing:\n                bad_api.append",
           "            if False:\n                bad_api.append")),
+    ("the refusal goes back to handing the model the way around itself",
+     edit("ddw/scripts/validate-transition.py",
+          '"this at all, that is theirs to say — ASK them, and classify with the tier "',
+          '"this at all, take `--to CLASSIFY --tier FREE` and then `--to FREE`. Or ask "')),
     ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
           "    damaged = _journal_undecodable(state_path)",
@@ -2466,7 +2470,12 @@ def cover(path, count):
     wf = yaml.safe_load(open(path, encoding="utf-8"))
     jobs = wf.get("jobs", {})
     steps = [(name, s) for name, job in jobs.items() for s in job.get("steps", [])]
+    # `--kill-map` es OTRA medición, repartida en la misma forma y a pedido: no
+    # contesta «¿se inyectó cada fault?» sino «¿qué check caza a cada uno?». Se
+    # excluye acá y sólo acá, para que la regla de abajo —un job con `if:` no
+    # cubre nada— siga valiendo entera para el job que sí es la cobertura.
     found = [(name, m) for name, s in steps
+             if "--kill-map" not in str(s.get("run", ""))
              for m in [re.search(r"--shard\s+\$\{\{\s*matrix\.(\w+)\s*\}\}/(\d+)",
                                  str(s.get("run", "")))] if m]
     if not found:

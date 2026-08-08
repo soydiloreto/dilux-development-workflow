@@ -1299,10 +1299,22 @@ def source_write_denied(target, root, phase):
         # From IDLE there is no phase to finish and no ticket to finish it for,
         # so the two real answers are: start one, or say out loud that you are
         # not going to.
-        unlock = ("Nothing is open here. Either classify the work — `--to CLASSIFY`, and the "
-                  "tier decides what it owes before CODE — or, if you genuinely want no "
-                  "pipeline for this, take `--to CLASSIFY --tier FREE` and then `--to FREE`: "
-                  "no gates, no artifacts, and a line in the history saying so. ")
+        # Sin la receta del tier sin enforcement.
+        #
+        # Este mensaje la traía: `--to CLASSIFY --tier FREE` y después `--to
+        # FREE`. Medido con un modelo en vivo — leyó el rechazo, tomó esos dos
+        # pasos por su cuenta, y escribió el archivo. Obedeció las dos mitades
+        # del mismo mensaje: el bloqueo y la forma de saltearlo.
+        #
+        # Trabajar sin pipeline es una decisión del USUARIO, y era la premisa de
+        # FREE desde que se agregó. Ofrecérsela al modelo dentro del rechazo la
+        # convierte en una decisión del modelo, que es lo contrario. El tier
+        # sigue existiendo, `classify.instructions.md` sigue enseñando cuándo
+        # corresponde, y el camino sigue abierto — para quien lo pida.
+        unlock = ("Nothing is open here: classify the work with `--to CLASSIFY`, and the tier "
+                  "decides what it owes before CODE. If the user does not want a pipeline for "
+                  "this at all, that is theirs to say — ASK them, and classify with the tier "
+                  "they name. It is not a step you take on your own to get past this. ")
     else:
         unlock = ("Finish this phase and take the transition — its gates are what unlock CODE, "
                   "which is the phase that writes source. " if phase != "CODE" else "")

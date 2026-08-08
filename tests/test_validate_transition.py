@@ -88,9 +88,24 @@ def test_a_repository_at_rest_still_writes_what_it_needs(repo, rel):
     assert vt.source_write_denied(os.path.join(repo, rel), repo, "IDLE") is None
 
 
-def test_the_refusal_at_idle_names_both_ways_out(repo):
+def test_the_refusal_at_idle_does_not_hand_over_the_way_around_itself(repo):
+    """El rechazo nombra el camino sancionado y NO la receta para evitarlo.
+
+    Traía las dos: `--to CLASSIFY` y, al lado, `--to CLASSIFY --tier FREE` con
+    su segundo paso. Medido con un modelo en vivo sobre OpenCode: leyó el
+    rechazo, tomó los dos pasos del tier sin enforcement, y escribió el archivo.
+    No hizo trampa — hizo lo que el mensaje decía que podía hacer.
+
+    Trabajar sin pipeline es una decisión del usuario. Puesta en el rechazo,
+    pasa a ser una decisión del modelo, y un pipeline que enseña cómo saltearlo
+    no está imponiendo nada. El tier no se toca; lo que se saca es la receta.
+    """
     why = vt.source_write_denied(os.path.join(repo, "src/app.py"), repo, "IDLE")
-    assert "CLASSIFY" in why and "FREE" in why
+    assert "CLASSIFY" in why, "el rechazo no nombra el camino sancionado"
+    assert "--tier FREE" not in why and "--to FREE" not in why, \
+        "el rechazo sigue entregando la receta para saltearse el pipeline: " + why
+    assert "ask" in why.lower() or "user" in why.lower(), \
+        "el rechazo no dice de quién es la decisión: " + why
 
 
 # ── DDW's own machinery, unwritable in every phase ───────────────────────────

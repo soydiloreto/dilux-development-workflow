@@ -65,6 +65,14 @@ jobs:
         if: runner.os == 'macOS'
         run: command -v rsync >/dev/null || brew install rsync
 
+      # Los controles de los evals reinyectan la regresión de la que sale cada
+      # escenario, y algunos commits viven en ramas que no son ancestro de ésta.
+      # `fetch-depth: 0` trae la historia de la rama del PR y nada más, así que
+      # ahí `git show <commit>^:<archivo>` no encuentra nada — y un control que
+      # no se puede aplicar falla, con razón.
+      - name: The history the eval controls reach back into
+        run: git fetch --quiet --no-tags origin "+refs/heads/*:refs/remotes/origin/*" || true
+
       - name: The prose agrees with the machine
         run: python3 scripts/lint_method.py
 

@@ -825,9 +825,26 @@ def apply_control(sc, ddw_root, repo, workdir, git_root=None):
         # uno que no se pone rojo.
         paths = ctl.get("paths") or [ctl["path"]]
         for rel_path in paths:
-            r = sh(["git", "show", f"{ctl['commit']}:{rel_path}"], cwd=(git_root or ddw_root))
+            gr = git_root or ddw_root
+            r = sh(["git", "show", f"{ctl['commit']}:{rel_path}"], cwd=gr)
             if r.returncode != 0:
-                raise RuntimeError(f"cannot read {rel_path} at {ctl['commit']}")
+                # El commit puede no ser alcanzable desde acá: vive en otra rama,
+                # o el clon es shallow. Localmente el clon tiene todas las ramas
+                # y anda; en un runner de CI se checkoutea la rama del PR y la
+                # historia de la otra no viene — y desde que un control que no se
+                # pudo aplicar FALLA en vez de contarse como rojo, eso ponía el
+                # CI entero en rojo por una razón que no es la del escenario.
+                # Un intento de traerlo por sha, que es lo que GitHub permite.
+                base = ctl["commit"].rstrip("^~0123456789")
+                sh(["git", "fetch", "--quiet", "--depth=2", "origin", base], cwd=gr)
+                r = sh(["git", "show", f"{ctl['commit']}:{rel_path}"], cwd=gr)
+            if r.returncode != 0:
+                raise RuntimeError(
+                    f"cannot read {rel_path} at {ctl['commit']} — el commit no es alcanzable "
+                    "desde este checkout ni se pudo traer del remoto. Un control que no se "
+                    "puede aplicar no prueba nada; considerá pasar este escenario a "
+                    "`type: substitute`, que reinyecta el defecto sobre HEAD y no depende "
+                    "de la historia.")
             # patch BOTH the source tree copy the scenario reads and the installed copy
             installed = (ctl.get("installed_paths", {}).get(rel_path)
                          or ctl.get("installed_path")

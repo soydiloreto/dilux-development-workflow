@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=554
+EXPECT_CHECKS=555
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=472
+EXPECT_MUTATIONS=473
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -7074,11 +7074,19 @@ def denied(rel, phase):
     return vt.source_write_denied(os.path.join(repo, rel), repo, phase)
 
 
-# 1. No ticket, no product source — and the refusal names both ways out.
+# 1. No ticket, no product source — and the refusal names the sanctioned way
+#    out and NOT the recipe for going around itself.
 why = denied("src/app.py", "IDLE")
 assert why, "product source is writable at IDLE: no ticket, no gates, no record"
-assert "CLASSIFY" in why and "FREE" in why, \
-    "the refusal at IDLE names neither way out, which is how a guard gets routed around: " + why
+assert "CLASSIFY" in why, \
+    "the refusal at IDLE does not name the sanctioned way out: " + why
+assert "--tier FREE" not in why and "--to FREE" not in why, \
+    ("the refusal hands the model the recipe for the tier with no enforcement. Measured with a "
+     "live model over OpenCode: it read this refusal, took `--to CLASSIFY --tier FREE` and then "
+     "`--to FREE` on its own, and wrote the file. It did not cheat — it did what the message "
+     "said it could do. Working with no pipeline is the USER's call; offered here it becomes "
+     "the model's, and a pipeline that teaches how to step around it is not enforcing "
+     "anything: " + why)
 
 # 2. …and what a repo at rest legitimately needs is still writable, or the guard
 #    stops the install, the eject and every document.
