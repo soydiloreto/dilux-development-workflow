@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -124,10 +125,72 @@ exit $CODE
 '''
 
 
-def install_verdict_tap(repo: Path):
+def _fingerprint(path: Path):
+    """The installer's own hash. Same definition as scripts/install_target.py."""
+    h = hashlib.sha256()
+    if path.is_file():
+        h.update(path.read_bytes())
+        return h.hexdigest()
+    if not path.is_dir():
+        return None
+    for base, dirs, files in os.walk(path):
+        dirs.sort()
+        for f in sorted(files):
+            p = Path(base) / f
+            h.update(str(p.relative_to(path)).encode())
+            h.update(p.read_bytes())
+    return h.hexdigest()
+
+
+def reseal_manifest(repo: Path, rels) -> int:
+    manifest = repo / ".ddw-installed.json"
+    if not manifest.exists():
+        return 0
+    try:
+        recorded = json.loads(manifest.read_text(encoding="utf-8"))
+    except ValueError:
+        return 0
+    resealed = 0
+    for key in list(recorded):
+        rel = key.split(":", 1)[1] if ":" in key else key
+        if rel not in rels:
+            continue
+        digest = _fingerprint(repo / rel)
+        if digest:
+            recorded[key] = digest
+            resealed += 1
+    manifest.write_text(json.dumps(recorded, indent=2) + "\n", encoding="utf-8")
+    return resealed
+
+# --------------------------------------------------------------------------- #
+# the tap — Claude Code (shell hooks). unchanged from runner.py
+# --------------------------------------------------------------------------- #
+
+TAP = r'''#!/usr/bin/env bash
+# Verdict tap. Installed by the eval runner only, around the adapter's own hook
+# script. It changes no verdict — it records one.
+PAYLOAD="$(cat)"
+printf '%s' "$PAYLOAD" | bash "$(dirname "$0")/__REAL__"
+CODE=$?
+python3 - "$CODE" "__NAME__" <<'PY' >> "${CLAUDE_PROJECT_DIR:-.}/.ddw-eval-verdicts.jsonl"
+import json, os, sys
+raw = os.environ.get("DDW_EVAL_PAYLOAD", "")
+try:
+    ev = json.loads(raw)
+except Exception:
+    ev = {}
+print(json.dumps({"hook": sys.argv[2], "exit": int(sys.argv[1]),
+                  "tool": ev.get("tool_name"),
+                  "path": (ev.get("tool_input") or {}).get("file_path")}))
+PY
+exit $CODE
+'''
+
+
+def _tap_claude(repo: Path) -> int:
     hooks = repo / ".claude" / "hooks"
     if not hooks.is_dir():
-        raise RuntimeError("no adapter hooks to tap; the install did not wire this tool")
+        return 0
     tapped = 0
     for name in ("enforce.sh", "validate-state-transition.sh", "validate-state-postwrite.sh"):
         src = hooks / name
@@ -136,15 +199,176 @@ def install_verdict_tap(repo: Path):
         real = hooks / (name[:-3] + ".real.sh")
         src.rename(real)
         body = TAP.replace("__REAL__", real.name).replace("__NAME__", name)
-        # the payload has to reach the recorder as well as the real hook
         body = body.replace('printf \'%s\' "$PAYLOAD" | bash',
                             'export DDW_EVAL_PAYLOAD="$PAYLOAD"; printf \'%s\' "$PAYLOAD" | bash')
         src.write_text(body)
         src.chmod(0o755)
+        reseal_manifest(repo, {f".claude/hooks/{name}"})
         tapped += 1
+    return tapped
+
+
+# --------------------------------------------------------------------------- #
+# the tap — OpenCode (JavaScript plugin)
+#
+# The adapter here is `adapters/opencode/plugin/ddw.js`, installed to
+# `.opencode/plugins/ddw.js`. It has no exit code to read: it enforces by
+# THROWING out of `tool.execute.before`, which is how OpenCode cancels a tool
+# call. So the tap wraps the plugin's returned hook table and records
+# throw/no-throw as exit 2/0 — the same codes Claude's hooks use, so
+# `judge_repo_state`'s `exit != 0` test means the same thing on both.
+#
+# The real plugin is MOVED OUT of `.opencode/plugins/` before being wrapped:
+# OpenCode loads every module in that directory, so leaving it there would load
+# it twice — enforcing twice and recording nothing for the second copy.
+# --------------------------------------------------------------------------- #
+
+OPENCODE_TAP = Path(__file__).with_name("ddw-eval-tap.js")
+
+
+def _tap_opencode(repo: Path) -> int:
+    plugins = repo / ".opencode" / "plugins"
+    src = plugins / "ddw.js"
+    if not src.exists():
+        # OpenCode reads both spellings; the installer writes the plural.
+        alt = repo / ".opencode" / "plugin" / "ddw.js"
+        if not alt.exists():
+            return 0
+        plugins, src = alt.parent, alt
+    real = repo / ".opencode" / "ddw.real.js"
+    src.rename(real)
+    body = (OPENCODE_TAP.read_text(encoding="utf-8")
+            .replace("__REAL__", "../ddw.real.js")
+            .replace("__LOG__", str((repo / ".ddw-eval-verdicts.jsonl").resolve())))
+    src.write_text(body, encoding="utf-8")
+    reseal_manifest(repo, {str(src.relative_to(repo))})
+    return 1
+
+
+def install_verdict_tap(repo: Path) -> int:
+    """Wrap whichever adapter this repo was installed with. Never judges."""
+    tapped = _tap_claude(repo) + _tap_opencode(repo)
     if tapped == 0:
         raise RuntimeError("verdict tap installed nothing — refusing to judge blind")
     return tapped
+
+
+# --------------------------------------------------------------------------- #
+# headless CLI shapes
+#
+# `run_behavioral` spoke Claude Code and nothing else. Each entry says how to
+# build one turn and how to read the answer back.
+# --------------------------------------------------------------------------- #
+
+AGENT_CLIS = {
+    "claude": {
+        "argv": ["claude"],
+        "flags": ["--permission-mode", "bypassPermissions", "--output-format", "json"],
+        "model": ["--model", "{model}"],
+        "resume": ["--resume", "{session}"],
+        "prompt": ["-p", "{turn}"],
+    },
+    "opencode": {
+        # `opencode run` is the headless entry point (`opencode` with no
+        # subcommand starts the TUI). `--auto` is OpenCode's spelling of
+        # bypassPermissions: without it a headless run stalls on the first
+        # permission prompt. `--format json` streams one JSON event per line —
+        # NOT a single object like Claude's `--output-format json`.
+        "argv": ["opencode", "run"],
+        "flags": ["--auto", "--format", "json"],
+        "model": ["-m", "{model}"],
+        "resume": ["-s", "{session}"],
+        # OpenCode picks the PROJECT from `PWD`, not from the process's working
+        # directory. Measured: `subprocess.run(..., cwd=repo)` leaves PWD at the
+        # parent's cwd, and OpenCode then loaded the DEVELOPER'S OWN checkout as
+        # the project — a different `.opencode/`, so the tapped plugin never
+        # loaded, no gate ever ran, and the model's `src/*.py` landed in
+        # /home/pablo/repos/dilux-development-workflow instead of the fixture.
+        # The tap caught it only because it recorded nothing and the scenario
+        # went red. `--dir` is the documented flag and `PWD` is what decides
+        # when it is absent, so both are set: a run pointed at the wrong repo
+        # measures nothing and can damage the tree it was pointed at.
+        "dir": ["--dir", "{repo}"],
+        "env": {"PWD": "{repo}"},
+        "prompt": ["{turn}"],
+    },
+}
+
+
+def agent_profile(agent_cmd) -> tuple[str, dict]:
+    name = Path(agent_cmd[0]).name
+    if name not in AGENT_CLIS:
+        raise RuntimeError(f"no headless profile for agent {name!r}; add one to AGENT_CLIS")
+    return name, AGENT_CLIS[name]
+
+
+def agent_turn_cmd(agent_cmd, model, session, turn, repo=None):
+    """-> (name, argv, env). `env` is None when the agent needs no override."""
+    name, prof = agent_profile(agent_cmd)
+    # `--agent opencode` names the binary; the headless entry point is the
+    # `run` SUBCOMMAND (bare `opencode` opens the TUI and the flags below are
+    # rejected). Added only if the caller did not already spell it out.
+    cmd = list(agent_cmd)
+    for extra in prof["argv"][1:]:
+        if extra not in cmd:
+            cmd.append(extra)
+    cmd += list(prof["flags"])
+    if model:
+        cmd += [p.format(model=model) for p in prof["model"]]
+    if session:
+        cmd += [p.format(session=session) for p in prof["resume"]]
+    if repo and prof.get("dir"):
+        cmd += [p.format(repo=str(repo)) for p in prof["dir"]]
+    cmd += [p.format(turn=turn) for p in prof["prompt"]]
+
+    env = None
+    if repo and prof.get("env"):
+        env = dict(os.environ)
+        env.update({k: v.format(repo=str(repo)) for k, v in prof["env"].items()})
+    return name, cmd, env
+
+
+_OC_SESSION = re.compile(r'"sessionID"\s*:\s*"([^"]+)"')
+
+
+def agent_turn_read(name, stdout):
+    """-> (payload, session_id, error_or_None). Never turns a crash into a pass."""
+    if name == "claude":
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError:
+            return None, None, "the agent returned output this runner cannot parse"
+        if payload.get("is_error"):
+            return payload, None, f"the agent reported an error: {str(payload.get('result'))[:150]}"
+        return payload, payload.get("session_id"), None
+
+    # OpenCode: newline-delimited JSON events. The session id appears on the
+    # message events as `sessionID`; there is no single result object.
+    events = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    if not events:
+        return None, None, "the agent produced no JSON events — the turn did not run"
+    session = None
+    m = _OC_SESSION.search(stdout)
+    if m:
+        session = m.group(1)
+    for ev in events:
+        if ev.get("type") == "error" or ev.get("error"):
+            return events, session, f"the agent reported an error: {json.dumps(ev)[:200]}"
+    return events, session, None
+
+
+# --------------------------------------------------------------------------- #
+# `run_behavioral`, adapter-agnostic. Drop-in replacement for the one in
+# runner.py — same signature, same judgement, same transcript file.
+# --------------------------------------------------------------------------- #
 
 
 def write_state(repo: Path, state):
@@ -491,28 +715,23 @@ def run_behavioral(sc, ddw_root, repo, agent_cmd, model):
     transcript = []
     session = None
     for turn in sc["when"]["turns"]:
-        cmd = list(agent_cmd) + ["--permission-mode", "bypassPermissions",
-                                 "--output-format", "json"]
-        if model:
-            cmd += ["--model", model]
-        if session:
-            cmd += ["--resume", session]
-        cmd += ["-p", turn]
-        r = sh(cmd, cwd=repo, timeout=sc["when"].get("timeout", 300))
+        name, cmd, env = agent_turn_cmd(agent_cmd, model, session, turn, repo)
+        # El techo por turno. 300s alcanzaba para Opus; un modelo gratis se pasó
+        # de 420 en un solo turno, y un timeout es ERROR — o sea que el
+        # escenario no se puede juzgar y la corrida queda roja, que es correcto
+        # pero no dice nada del producto. El escenario puede subirlo, y la
+        # medición de estabilidad es la que decide si un modelo entra o no.
+        r = sh(cmd, cwd=repo, env=env, timeout=sc["when"].get("timeout", 900))
         if r.returncode != 0:
             return ERROR, f"the agent did not complete a turn (exit {r.returncode}): {r.stderr[-200:]}"
-        try:
-            payload = json.loads(r.stdout)
-        except json.JSONDecodeError:
-            return ERROR, "the agent returned output this runner cannot parse"
-        if payload.get("is_error"):
-            return ERROR, f"the agent reported an error: {str(payload.get('result'))[:150]}"
-        session = payload.get("session_id") or session
+        payload, sid, err = agent_turn_read(name, r.stdout)
+        session = sid or session
+        if err:
+            return ERROR, err
         transcript.append(payload)
 
     (repo.parent / "transcript.json").write_text(json.dumps(transcript, indent=2))
     return judge_repo_state(sc, repo, transcript)
-
 
 def judge_repo_state(sc, repo, transcript):
     """Every assertion here is about the repo or the hooks. Never about prose."""
@@ -667,7 +886,27 @@ def run_one(sc, ddw_root, args, control: bool):
                             ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__"))
             sh(["git", "init", "-q"], cwd=scratch_root)
 
-        repo = make_repo(scratch_root, sc["given"].get("install", "claude"), workdir)
+        # El adaptador instalado sigue al agente cuando el escenario no dice
+        # otra cosa: correr `opencode` contra un repo cableado para claude
+        # instala un enforcement que ese agente no invoca nunca, y el escenario
+        # sale verde sin que nada lo haya juzgado.
+        # El adaptador instalado tiene que ser el que el agente invoca. Correr
+        # `opencode` contra un repo cableado para claude instala un enforcement
+        # que ese agente no llama nunca: nada juzga, el modelo escribe lo que
+        # quiere, y el escenario reporta el fallo del PRODUCTO. Medido — así
+        # salió el primer intento, y el veredicto acusaba a DDW de algo que
+        # nunca había sido instalado para el agente que corrió.
+        ADAPTERS = ("claude", "codex", "copilot", "cursor", "gemini", "opencode")
+        _agent_name = Path((sc["given"].get("agent") or args.agent).split()[0]).name
+        _install = sc["given"].get("install")
+        if _install and _agent_name in ADAPTERS and _install != _agent_name:
+            if sc.get("kind") == "behavioral":
+                return Result(sc["id"], sc["kind"], ERROR,
+                              f"el escenario instala `{_install}` y el agente es `{_agent_name}`: "
+                              "ese enforcement no lo invoca nadie, así que no hay nada que juzgar")
+        elif not _install:
+            _install = _agent_name if _agent_name in ADAPTERS else "claude"
+        repo = make_repo(scratch_root, _install, workdir)
         write_state(repo, sc["given"].get("state"))
 
         if control:
@@ -695,7 +934,13 @@ def run_one(sc, ddw_root, args, control: bool):
         elif kind == "router-reachability":
             v, d = run_router_reachability(sc, scratch_root, repo)
         elif kind == "behavioral":
-            v, d = run_behavioral(sc, scratch_root, repo, args.agent.split(), args.model)
+            # El agente y el modelo salen del escenario si los declara, y de la
+            # línea de comandos si no. Sin esto el mismo escenario no se puede
+            # correr contra dos adaptadores, que es la mitad del punto: DDW
+            # shippea seis y la capa conductual probaba uno.
+            _agent = (sc["given"].get("agent") or args.agent).split()
+            _model = sc["given"].get("model") or args.model
+            v, d = run_behavioral(sc, scratch_root, repo, _agent, _model)
         else:
             v, d = ERROR, f"unknown kind {kind!r}"
         return Result(sc["id"], kind, v, d)
