@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=536
+EXPECT_MUTATIONS=537
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -7824,7 +7824,13 @@ PYONESIDED
 # ── The guard cannot exempt its own rulebook ──────────────────────────────────
 section "What a blocked phase still cannot touch"
 
-printf '%s' "$IN_PLAN" > "$GST"
+# En CODE, y ahí está el punto. Corrido en PLAN —donde estaba— el guardia de
+# código fuente rechaza estos cuatro paths por su cuenta, así que romper el SELLO
+# entero no cambiaba ningún veredicto: el check informaba verde por una razón que
+# no era la suya, y ninguna edición de una línea sobre el sello se podía ver desde
+# acá. En CODE escribir código está permitido, así que lo único que puede negar
+# estas rutas es el sello, que es lo que este check dice medir.
+printf '%s' "$IN_CODE" > "$GST"
 # The graph and the gate ARE the enforcement. Allowing a phase to write there let
 # an agent that could not write code rewrite the rules that stopped it: add an
 # edge from PLAN and a FEATURE closes with no spec, no threat model, no tests and
@@ -7833,8 +7839,8 @@ for TARGET in .ddw/rules/transition-graph.json .ddw/scripts/hook-gate.py \
               .ddw/scripts/validate-transition.py .ddw/orchestrator.md; do
   ddw_event_path snake "$ALL/$TARGET"
   [ "$(gate_pre standard < "$EVENT")" = "2" ] \
-    && ok "a blocked phase cannot rewrite $TARGET" \
-    || bad "a blocked phase rewrote $TARGET — the guard exempts its own rulebook"
+    && ok "not even CODE can rewrite $TARGET" \
+    || bad "the phase that writes source rewrote $TARGET — the guard exempts its own rulebook"
 done
 
 # ...while the runtime the protocol needs stays writable. Pause is advertised as
