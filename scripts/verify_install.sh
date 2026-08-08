@@ -10753,10 +10753,22 @@ TRL="$LOOP/.ddw/scripts/transition.py"
 lstep() { python3 "$TRL" "$@" --state "$LOOP/.ddw-state.json" --graph "$G" > "$LOOP/s" 2>/dev/null \
           && cp "$LOOP/s" "$LOOP/.ddw-state.json"; }
 python3 "$TRL" --to CLASSIFY --action r --ticket T-1 --state "$LOOP/.ddw-state.json" --graph "$G" > "$LOOP/.ddw-state.json"
+# Las compuertas, GANADAS. Sin `ddw_earn` cada paso falla en silencio —`lstep`
+# redirige stderr y sólo copia el estado si el helper salió 0— y el fixture se
+# quedaba en DEFINE: los dos checks de abajo preguntaban por una arista
+# DEFINE→VERIFY que no está en el grafo, así que uno informaba verde por una
+# razón que no tenía nada que ver con el bucle correctivo, y el otro medía lo
+# mismo que su vecino. Es el único de los tres fixtures de esta sección que no
+# las ganaba.
+# Reclamar y MOVERSE son dos llamadas: `--claim` marca compuertas en la fase
+# actual y no toma arista. En una sola, el helper rechaza las dos cosas.
 lstep --to DEFINE --action c --tier FEATURE
-lstep --to PLAN   --action p --gate define
-lstep --to CODE   --action x --gate spec --gate threat
-lstep --to VERIFY --action x --gate tests --gate sast
+ddw_earn "$LOOP" define T-1;  lstep --claim define
+lstep --to PLAN   --action p
+ddw_earn "$LOOP" spec T-1; ddw_earn "$LOOP" threat T-1;  lstep --claim spec --claim threat
+lstep --to CODE   --action x
+ddw_earn "$LOOP" tests T-1; ddw_earn "$LOOP" sast T-1;  lstep --claim tests --claim sast
+lstep --to VERIFY --action x
 lstep --to CODE   --action "corrective loop" --clear-gate tests --clear-gate sast
 python3 "$LOOP/.ddw/scripts/validate-transition.py" --mode post --state "$LOOP/.ddw-state.json" --graph "$G" >/dev/null 2>&1 \
   && ok "post mode accepts the corrective loop it used to reject" \
