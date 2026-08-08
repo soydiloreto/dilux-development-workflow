@@ -94,6 +94,41 @@ move at different speeds. So the promise is specific:
   spurious red is not lost — `run_one` reads it as a KILL, and fabricates
   coverage. It is what found the clock.
 
+### Added — the kill map
+
+- **`scripts/mutate.py --kill-map`, and `docs/CHECKS-THAT-CANNOT-FAIL.md`.** The
+  map records WHICH check catches each fault. Crossed with every `bad "…"` the
+  suite knows how to say, what remains are the checks no fault provokes — and a
+  check that cannot fail reports green for having no other thing to say. Five of
+  those shipped in this project; they were found by accident.
+  **83 of 402 at the first measurement; 12 now**, of which eight carry a written
+  reason. It runs on `workflow_dispatch` across twenty-four runners, and the
+  ledger is an EXPECTATION CI compares against, not a report nobody regenerates:
+  a new check nothing provokes goes red until somebody writes the fault or
+  writes down why there is not one.
+- **`multi()`**, for defects that do not live on one line, and **`edit_re`**, so
+  a fault that must touch a line carrying a number is not anchored to that
+  number. Both were asked for by the map.
+- **Sixty-eight faults** (473 → 541), each verified by running the whole suite on
+  a mutated copy and reading the ✗ it produced.
+
+### Fixed — checks that could not fail
+
+- **`missing from the repository root:`** — `MISSING_FRONT` was never
+  initialised and the suite runs under `set -u`, so the first absent file killed
+  bash on that line. The fault that deletes `CODE_OF_CONDUCT.md` was recorded as
+  CAUGHT with no check having spoken, and everything after that line never ran.
+- **The seal over DDW's own machinery** was asked in PLAN, where the source
+  guard refuses those paths anyway: breaking the seal entirely changed no
+  verdict. Asked in CODE now, where nothing else covers it.
+- **`DDW's hooks are still wired to scripts that were just deleted`** grepped for
+  `ddw` in `.claude/settings.json`, and Claude is the one adapter whose wiring
+  hangs off no `ddw/` directory.
+- **The corrective-loop fixture never left DEFINE** — it did not earn its gates,
+  so every step failed silently and two checks asked about a state that was
+  never reached. **The closeout pair sent the same input twice**, because
+  `--gate` is refused outright on `--to IDLE`.
+
 ### Note on releases
 
 This version is NOT published. It is the number the work is attached to, which
