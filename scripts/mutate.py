@@ -1860,6 +1860,17 @@ MUTATIONS = [
     # no pudieran fallar sino porque la lista no tenía ninguna mutación capaz de
     # borrar un archivo. Un conteo que nada puede desmentir es un conteo que
     # informa verde por no saber decir otra cosa.
+    # El recibo, que es lo único que separa «el validador dijo que pasa» de «hay
+    # una compuerta abierta». Cuatro checks lo afirmaban —spec, tests, threat,
+    # verify: «rechaza un documento sano o no escribe recibo»— y ningún fault
+    # los provocaba: se podía dejar de escribirlo entero y los cuatro seguían
+    # verdes. Es la mitad de cada uno de esos mensajes que nadie medía.
+    ("a validator that passes stops leaving the receipt its gate looks for",
+     edit("ddw/scripts/ddw_receipt.py",
+          '    with open(os.path.join(sess, name), "w", encoding="utf-8") as fh:\n'
+          "        fh.write(filename + \"\\n\")",
+          '    with open(os.path.join(sess, \"x-\" + name), "w", encoding="utf-8") as fh:\n'
+          "        fh.write(filename + \"\\n\")")),
     ("an agent disappears from the tree and the pinned count says nothing",
      delete("agents/ddw-arch-auditor.md")),
     ("a skill disappears from the tree and the pinned count says nothing",

@@ -68,17 +68,15 @@ when:
 expect:
   every_step_succeeds: true
 
-# El control: `transition.py` como shippeó antes de 7dc4369, con el hint de los
-# claims pegado a toda arista rechazada hacia IDLE. Ahí el rechazo prescribe
-# `--claim commit --claim pr` y ninguna de las dos frases que este escenario
-# exige aparece, así que no hay nada que replicar y el escenario no puede
-# juzgar — que es rojo, y es rojo por el texto de la regresión.
-#
-# Un solo archivo a propósito: el `transition.py` de 7dc4369^ corre tal cual
-# contra el `validate-transition.py` de HEAD (mismo `vt.validate`, mismo
-# `gate_evidence_missing`), así que el rojo no puede venir de un crash de firma.
+# El control: `substitute`, no `restore_from_commit`. El commit del fix vive en
+# una rama que NO es ancestro de ésta: un clon local la tiene, un checkout de CI
+# no, y un control que no se puede aplicar falla — por una razón que no es la
+# del escenario. Reinyectar el defecto sobre HEAD no depende de la topología.
 control:
-  type: restore_from_commit
-  commit: 7dc4369^
+  type: substitute
   path: ddw/scripts/transition.py
   installed_path: .ddw/scripts/transition.py
+  old: |-
+    "There is no %s→IDLE edge%s — the closeout is taken from %s. Claiming gates "
+  new: |-
+    "There is no way out of %s%s. The closeout belongs to %s. Claiming gates "

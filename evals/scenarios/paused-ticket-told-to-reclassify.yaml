@@ -60,17 +60,19 @@ when:
 expect:
   every_step_succeeds: true
 
-# El control: `transition.py` de antes de 7dc4369. Sobre este estado imprime
-# «From IDLE the only transition is --to CLASSIFY», que es la regresión, y la
-# frase que este escenario exige no aparece — no hay nada que replicar y el
-# escenario no puede juzgar. Rojo, y rojo por el texto de la regresión.
+# El control: `substitute`, no `restore_from_commit`.
 #
-# Vale la pena decir por qué el control NO puede ser el paso replicado: bajo la
-# versión rota el resume TAMBIÉN sale 0 y TAMBIÉN mueve el estado. El defecto
-# nunca estuvo en el grafo, estuvo en lo que el rechazo decía sobre el grafo,
-# así que el único discriminador honesto es el texto que el lector lee.
+# El commit del fix vive en una rama que NO es ancestro de ésta. Un clon local
+# la tiene y un checkout de CI no, así que allá el control no se podía aplicar —
+# y desde que un control inaplicable FALLA en vez de contarse como rojo, ponía
+# el CI entero en rojo por una razón que no es la del escenario. Reinyectar el
+# defecto sobre HEAD no depende de la topología de ramas ni de la profundidad
+# del clon.
 control:
-  type: restore_from_commit
-  commit: 7dc4369^
+  type: substitute
   path: ddw/scripts/transition.py
   installed_path: .ddw/scripts/transition.py
+  old: |-
+    "This ticket was paused in %s, so the edge you want exists — as a resume, "
+  new: |-
+    "From IDLE the only transition is --to CLASSIFY. Run that first. "

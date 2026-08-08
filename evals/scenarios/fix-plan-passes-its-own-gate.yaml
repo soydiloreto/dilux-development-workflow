@@ -29,11 +29,19 @@ when:
 expect:
   validator_accepts_the_worked_document: true
 
+# Antes de 7dc4369 el skill no traía ningún fix-plan trabajado — «no había nada
+# que copiar y cada borrador era una adivinanza». El escenario tiene que ponerse
+# rojo también para eso: un skill sin forma canónica no se puede juzgar, y lo
+# que no se puede juzgar es rojo.
+#
+# `substitute` y no `restore_from_commit`: ese commit vive en una rama que NO es
+# ancestro de ésta, así que un checkout de CI no lo tiene y el control no se
+# podía aplicar — rojo por una razón que no es la del escenario. Sacarle el
+# título al documento trabajado es el mismo estado: no hay de dónde extraerlo.
 control:
-  # Before 7dc4369 the skill carried no worked fix-plan at all — "there was
-  # nothing to copy and every draft was a guess". The scenario must go red for
-  # that too: a skill with no canonical shape cannot be judged, and unjudgeable
-  # is red.
-  type: restore_from_commit
-  commit: 7dc4369^
+  type: substitute
   path: skills/ddw-create-spec/SKILL.md
+  old: |-
+    ### The fix-plan, in the shape the validator reads
+  new: |-
+    ### A fix-plan, roughly
