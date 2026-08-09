@@ -1,0 +1,48 @@
+id: method-lint-still-knows-how-to-go-red
+kind: method-lint
+
+regression:
+  changelog: "0.21.0 — «A field the boot does not name does not survive a compaction»"
+  commit: b605648
+  what_happened: >
+    `scripts/lint_method.py` es el único instrumento que mira la PROSA del
+    método contra sus datos, y la suite sólo le pregunta si hoy está verde.
+    Nadie le pregunta si todavía sabe ponerse rojo. Un linter de prosa se rompe
+    callado: se renombra una sección, el check deja de encontrar lo que miraba,
+    y sigue informando verde por no tener otra cosa que decir — que es la
+    familia entera de `docs/CHECKS-THAT-CANNOT-FAIL.md`, cinco de las cuales ya
+    shippearon acá.
+
+    La afirmación que este escenario rompe es la que costó una release:
+    `autonomy` entró al esquema del estado y quedó fuera de la lista que la Boot
+    Sequence recupera, así que toda compactación olvidaba el modo y el pipeline
+    volvía a preguntar por cada arista a alguien que había dicho que no le
+    preguntaran. Nada falló y el estado en disco estaba perfecto.
+
+given: {}
+
+# No hay `when`: el veredicto ES el linter, corrido sobre el árbol del método —
+# el original en modo normal, la copia con el defecto reinyectado en modo
+# control. Un `lint_method` que no imprime su línea de veredicto no salió ni
+# verde ni rojo: se cayó antes de juzgar, y eso es ERROR, nunca un pase.
+
+expect:
+  clean: true
+
+control:
+  type: substitute
+  edits:
+    - path: ddw/orchestrator.md
+      installed_path: .ddw/orchestrator.md
+      old: |-
+        extract `phase`, `tier`, `ticket`,
+           `title`, `tracker`, `autonomy`, `block`, `discovery`. **`autonomy` absent or null means
+           `assisted`.**
+      new: |-
+        extract `phase`, `tier`, `ticket`,
+           `title`, `tracker`, `block`, `discovery`.
+  # El linter tiene que ponerse rojo POR ESTO. Un control que se pone rojo por
+  # otra afirmación no probó que sepa cazar la suya — es el mismo defecto que
+  # los controles que fallaban con un `TypeError`, con mejor disfraz, y el
+  # runner lo cuenta como control fallado (`control off-target`), no como rojo.
+  finding_matches: "Boot Sequence does not recover .*`autonomy`"
