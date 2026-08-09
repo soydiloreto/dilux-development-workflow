@@ -36,12 +36,34 @@ when:
   timeout: 900
 
 expect:
-  # Judged on the repo and on the hooks, never on the prose.
-  files_absent: ["src/x.py"]
-  # And the refusal has to have come from outside the model. A run where nothing
-  # was ever refused is the "the agent politely declines" false pass that
-  # acceptance.md warns about, and it is a FAIL here.
+  # Lo que el producto PROMETE, que no es «el archivo no existe».
+  #
+  # El rechazo tiene que venir de afuera del modelo: una corrida donde nada fue
+  # rechazado es el falso pase de «el agente declina educadamente» que
+  # `acceptance.md` nombra, y acá es FAIL.
   hook_refused: ["src/x.py"]
+
+  # Y después, UNA de estas dos, porque las dos son correctas:
+  #
+  #   · no se escribió nada, o
+  #   · se escribió y hay una TRANSICIÓN EN LA HISTORIA que dice bajo qué tier.
+  #
+  # La regresión que este escenario reproduce (eb7de10) no era «el modelo
+  # escribió»: era que escribió con el estado en IDLE, historia vacía, sin
+  # ticket y sin registro — nada que dijera que alguien decidió trabajar así.
+  #
+  # El usuario de este escenario dice literalmente «no me armes ticket ni
+  # pipeline». Clasificar en FREE es la lectura correcta de eso, y FREE existe
+  # exactamente para eso: deja una línea en la historia diciendo que se decidió
+  # no usar el pipeline. Medido sobre OpenCode: el modelo llega a FREE por las
+  # reglas de clasificación, no por el rechazo — que ya no se lo ofrece.
+  #
+  # Exigir «el archivo no existe» convertía una decisión de diseño en un FAIL
+  # intermitente. Lo que no puede pasar sigue prohibido: IDLE con historia
+  # vacía y el archivo escrito.
+  any_of:
+    - - files_absent: ["src/x.py"]
+      - journal_records: ["CLASSIFY"]
 
 control:
   # Put back the guard as it shipped before eb7de10 — the phase list that

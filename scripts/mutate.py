@@ -2206,9 +2206,21 @@ MUTATIONS = [
               "F-PRD-09 (FAIL) and W-PRD-01 to W-PRD-05 (WARNING)",
               "the FAIL rules and W-PRD-01 to W-PRD-05 (WARNING)"))),
     ("the PRD template goes back to acceptance criteria in prose the validator cannot match",
-     edit("skills/ddw-create-prd/SKILL.md",
-          "- AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].",
-          "- AC-01 (FR-01): when [trigger] the [system] does [response].")),
+     # Las CUATRO apariciones: el check pregunta si la palabra está en el
+     # archivo, y tres ejemplos más una nota sobre el idioma la mantienen viva
+     # aunque el template deje de emitir la forma. Otra defensa por repetición.
+     multi(
+         edit("skills/ddw-create-prd/SKILL.md",
+              "- AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].",
+              "- AC-01 (FR-01): when [trigger] the [system] does [response]."),
+         edit("skills/ddw-create-prd/SKILL.md",
+              "- AC-02 (FR-01): IF [failure or misuse], THEN THE [system] SHALL [response].",
+              "- AC-02 (FR-01): if [failure or misuse] the [system] does [response]."),
+         edit("skills/ddw-create-prd/SKILL.md",
+              "- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].",
+              "- AC-03 (FR-02): while [state] the [system] does [response]."),
+         edit("skills/ddw-create-prd/SKILL.md",
+              "`IF … THEN`, `SHALL`)", "`IF … THEN`)"))),
     ("the context check goes back to being able to block over somebody else's stack",
      multi(
          # Dos frases satisfacen el mismo `grep`, así que una edición sola la
