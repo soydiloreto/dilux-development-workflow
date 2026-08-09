@@ -89,6 +89,28 @@ move at different speeds. So the promise is specific:
   imperative write pulled out of it, each one handed to the real gate. The four
   painted doors this project has shipped were each closed with a scenario that
   re-finds that one door; none of them would have found the other three.
+- **`kind: method-lint`**, and the first scenario of that kind. `lint_method.py`
+  is the only instrument that reads the method's PROSE against its data, and the
+  suite only ever asked whether it is green today. A prose linter breaks
+  silently — rename a section, the check stops finding what it looked at, and it
+  keeps reporting green for having nothing else to say. Now it is a verdict with
+  a control: the scenario reinjects the claim that cost a release (`autonomy`
+  left out of the Boot Sequence, so every compaction forgot the mode) and
+  REQUIRES the linter to name it. A control that goes red on a claim the
+  scenario did not break is reported as a failed control, not as red — the same
+  defect as a control that fails with a `TypeError`, better disguised.
+- **`expect.file_matches`**: a scenario can assert on the CONTENT of an
+  artifact, not only on its existence. `files_present` cannot tell the document
+  that answered the question from the one that invented the answer — both exist
+  — and "a `minimal` run that answers its own product questions" is visible
+  inside the file or not at all. A clause that asserts nothing, or a regex that
+  does not compile, is an ERROR: an assertion that cannot judge reads as green.
+- **`given.files`**: a scenario can seed the tree. Until now the fixture could
+  only be given `.ddw-state.json`, so every scenario about a product source that
+  already exists, a half-written artifact, or an artifact that is already there
+  when the phase goes to write it, started from an empty repo and measured
+  something else. Seeded files are committed unless the scenario says otherwise,
+  and a path that escapes the fixture is refused.
 - **`mutate.py --flake-check N`**: the suite run UNMUTATED N times at the
   concurrency of a real run, naming every check that fails on its own. A
   spurious red is not lost — `run_one` reads it as a KILL, and fabricates
