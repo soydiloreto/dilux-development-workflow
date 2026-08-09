@@ -2239,6 +2239,14 @@ MUTATIONS = [
      edit("ddw/orchestrator.md",
           "5. Am I writing product source? → **With `Write` or `Edit`, never with a shell command.**",
           "5. Am I writing product source? → however is convenient.")),
+    ("the file the router loads every turn stops saying what a history entry carries",
+     multi(
+         # Lo dice dos veces —la forma declarada y la frase que la sigue— así que
+         # una edición sola la tapa la otra.
+         edit("ddw/orchestrator.md",
+              "**Shape:** `{timestamp, from, to, action, ticket,\n   tier}`",
+              "**Shape:** `{timestamp, from, to, action}`"),
+         edit("ddw/orchestrator.md", "and `ticket`/`tier`", "and the rest"))),
     ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
           "    damaged = _journal_undecodable(state_path)",

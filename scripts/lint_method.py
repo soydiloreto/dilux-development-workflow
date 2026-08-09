@@ -296,7 +296,16 @@ def check_history_stamp(root):
     A schema that promises what no instruction asks for is a schema describing a
     file nobody writes.
     """
-    for path in sorted(glob.glob(os.path.join(root, "ddw/rules/*.instructions.md"))):
+    # `ddw/orchestrator.md` también, y no por completitud: es el archivo que el
+    # router carga en cada turno, así que una instrucción de historia escrita ahí
+    # llega antes que cualquiera de las de fase. El barrido leía sólo
+    # `ddw/rules/*.instructions.md`, así que la mitad más leída del método quedaba
+    # afuera del check que existe para que las entradas salgan estampadas.
+    _corpus = (sorted(glob.glob(os.path.join(root, "ddw/rules/*.instructions.md")))
+               + [os.path.join(root, "ddw/orchestrator.md")])
+    for path in _corpus:
+        if not os.path.exists(path):
+            continue
         # state.instructions.md DEFINES the entry; it does not instruct a phase to
         # append one. Reading its schema row as an instruction made the check fire
         # on the very file that documents the answer.
@@ -318,8 +327,21 @@ def check_history_stamp(root):
             # Whitespace-normalised: the wrap leaves "**stamped" at the end of
             # one line and "     with `ticket`" at the start of the next, so a
             # plain join produces "stamped      with" and the substring missed.
-            window = re.sub(r"\s+", " ", " ".join(lines[i - 1:i + 2]))
+            # La ventana, y también la FORMA declarada. El orquestador no dice
+            # «stamped with»: enumera la forma entera —`{timestamp, from, to,
+            # action, ticket, tier}`— nueve líneas más abajo, en el mismo
+            # párrafo. Un check que sólo acepta una redacción acusa a un archivo
+            # que dice lo mismo con otras palabras, y eso empuja a reescribir la
+            # prosa para conformar al check en vez de al revés.
+            window = re.sub(r"\s+", " ", " ".join(lines[i - 1:i + 10]))
             if "stamped with" in window:
+                continue
+            # …sin contar los FLAGS. `--ticket <ID>` y `--tier <TIER>` son cómo
+            # se invoca el helper, no qué lleva la entrada, y con ellos adentro
+            # la ventana se satisfacía sola: borré la forma declarada a propósito
+            # y el check siguió verde. Se descuentan antes de preguntar.
+            _fields = re.sub(r"--(ticket|tier)\b", "", window)
+            if "`ticket`" in _fields and "`tier`" in _fields:
                 continue
             fail(f"{rel(root, path)}:{i}",
                  "tells the model to append a history entry without saying to stamp `ticket` and "
