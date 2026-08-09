@@ -11,6 +11,11 @@ here why there is not one.
 
 A check that cannot fail reports green because it has no other thing to say.
 
+One of the lines below — `the method's prose claims something the repo does not
+support` — is the whole of `scripts/lint_method.py` seen from here, and its
+thirty-odd checks collapse into it. The same question, asked one level down, is
+in [LINT-CHECKS-THAT-CANNOT-FAIL.md](LINT-CHECKS-THAT-CANNOT-FAIL.md).
+
 <!-- 541 fault(s) across 25 shard(s) -->
 - [ ] `$TOOL is missing — the checks that need it would skip, and a skip reads as a pass`
       **Entorno.** Sólo falla si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito — y ahí un skip se cuenta aparte y no suma a un verde.

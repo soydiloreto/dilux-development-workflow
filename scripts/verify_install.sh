@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=555
+EXPECT_CHECKS=556
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14

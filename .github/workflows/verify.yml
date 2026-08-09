@@ -113,5 +113,12 @@ jobs:
           python3 evals/runner.py --repo . --offline
           python3 evals/runner.py --repo . --offline --control
 
+      # El mapa de kills del linter de la prosa. No corre la suite ni una vez:
+      # aplica cada fault que toca un archivo que el linter LEE y anota qué
+      # check suyo se encendió. Vive acá y no en `mutations` porque no depende
+      # de esa corrida y tarda menos de un minuto.
+      - name: Every check of the prose linter can still go red, or says why not
+        run: python3 scripts/lint_kill_map.py --repo .
+
       - name: The suite
         run: bash scripts/verify_install.sh
