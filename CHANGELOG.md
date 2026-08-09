@@ -116,6 +116,24 @@ move at different speeds. So the promise is specific:
   spurious red is not lost — `run_one` reads it as a KILL, and fabricates
   coverage. It is what found the clock.
 
+- **`scripts/lint_kill_map.py`, and `docs/LINT-CHECKS-THAT-CANNOT-FAIL.md`.**
+  The suite has ONE check for the whole prose linter, so in the ledger below
+  `lint_method.py`'s forty-four `fail()` sites collapse into a single line: while
+  any fault keeps the linter red, a check inside it that stopped finding what it
+  was written for goes on reporting green, and the ledger says it is covered.
+  This asks the same question one level down — apply each fault, run the linter,
+  record WHICH site fired — and it needs no run of the suite at all: under a
+  minute, in `verify`. **16 of 34 sites were provoked by some fault at the first
+  measurement; 42 of 44 now**, and the two that are not carry their reason.
+  Twenty faults were written for the difference.
+  Two measurement defects were found by tracing single entries rather than
+  reading the total, which is the only way this repository has ever found them:
+  a `fail()` whose message is built with `%s` cannot be recognised by its format
+  string (it reported the boot check as uncovered while its fault existed), and
+  a whitelist of the extensions the linter reads silently dropped every fault
+  that deletes a DIRECTORY — the two guards those faults exist to fire went on
+  reading as holes in the product after the faults were written.
+
 ### Added — the kill map
 
 - **`scripts/mutate.py --kill-map`, and `docs/CHECKS-THAT-CANNOT-FAIL.md`.** The
