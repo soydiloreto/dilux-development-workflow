@@ -774,6 +774,17 @@ def judge_repo_state(sc, repo, transcript):
     # Enforcement versus politeness. The tap records every verdict the adapter's
     # own hook returned; `hook_refused` asserts that a write to this path was
     # actually stopped by something outside the model.
+    # «algún hook rechazó algo», sin ruta. Los veredictos post de OpenCode sobre
+    # `bash` no llevan path, así que exigir uno concreto no se puede afirmar —
+    # y `hook_ran` lo satisface cualquier lectura, que no es lo mismo.
+    if exp.get("hook_refused_any"):
+        vp = repo / ".ddw-eval-verdicts.jsonl"
+        rows = ([json.loads(l) for l in vp.read_text().splitlines() if l.strip()]
+                if vp.exists() else [])
+        if not any(r.get("exit") not in (0, None) for r in rows):
+            problems.append("no hook refused anything at all — a run where nothing was refused "
+                            "is the 'the agent politely declines' false pass")
+
     if "hook_refused" in exp or "hook_ran" in exp:
         vp = repo / ".ddw-eval-verdicts.jsonl"
         if not vp.exists():
@@ -866,6 +877,28 @@ def apply_control(sc, ddw_root, repo, workdir, git_root=None):
                 if dest.parent.exists():
                     dest.write_text(r.stdout, encoding="utf-8")
         return
+    if kind == "substitute" and ctl.get("edits"):
+        # Varios archivos, un solo control.
+        #
+        # DDW repite algunas reglas A PROPÓSITO: la del estado corrupto vive en
+        # el mensaje del hook y dos veces en `ddw/orchestrator.md`, porque el
+        # modelo tiene que encontrarla venga por donde venga. Reinyectar el
+        # defecto en un archivo solo deja las otras copias en pie, y el control
+        # sale rojo o verde según cuál de las tres leyó el modelo esa vez.
+        # Medido: 1 de 3. Un control intermitente no prueba nada — es la misma
+        # moneda al aire que este modo existe para no tirar.
+        for spec in ctl["edits"]:
+            for dest in (ddw_root / spec["path"],
+                         repo / spec.get("installed_path", spec["path"])):
+                if not dest.exists():
+                    continue
+                text = dest.read_text(encoding="utf-8")
+                if spec["old"] not in text:
+                    raise RuntimeError(f"the control's anchor is gone from {spec['path']}")
+                dest.write_text(text.replace(spec["old"], spec.get("new", ""), 1),
+                                encoding="utf-8")
+        return
+
     if kind == "substitute":
         # Un reemplazo exacto sobre HEAD, no una restauración histórica.
         #
@@ -1046,9 +1079,16 @@ def main():
             # which the driver did not support, passed its control while the
             # regression was never put back. The control is the one instrument
             # here whose entire job is to distrust a green.
-            if r.verdict == ERROR and r.detail.startswith("control unavailable"):
+            # Un ERROR con FORMA DE EXCEPCIÓN es el arnés roto, no la
+            # regresión. `KeyError: 'when'` contó como «se puso rojo como debe»
+            # en una corrida donde el escenario ni siquiera se había podido
+            # armar — medido, y es el mismo defecto que la línea de abajo cierra
+            # para «control unavailable». Se generaliza: si lo que se rompió es
+            # el instrumento, el control no probó nada.
+            _harness = re.match(r"^(\w*Error|\w*Exception|TimeoutExpired)\b", r.detail or "")
+            if r.verdict == ERROR and (_harness or r.detail.startswith("control unavailable")):
                 r = Result(r.sid, r.kind, FAIL,
-                           "the control could not be applied, so nothing was proved: " + r.detail)
+                           "the control proved nothing — the harness is what broke: " + r.detail)
             elif r.verdict in (FAIL, ERROR):
                 r = Result(r.sid, r.kind, PASS, "control went red as it must — " + r.detail[:80])
             elif r.verdict == PASS:
