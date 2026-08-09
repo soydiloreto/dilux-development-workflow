@@ -13,6 +13,14 @@ kind: behavioral
 #            regresión. Por eso el techo de este escenario es 1800 (abajo).
 #   → Falta UNA corrida de control limpia bajo el techo nuevo. Hasta tenerla,
 #     no puede tener poder de veto en CI.
+#
+# SEGUNDA TANDA (mismo día, misma configuración): DOS corridas normales
+# seguidas se pasaron de los 1800s EN EL PRIMER TURNO, o sea que ninguna llegó
+# a un veredicto. No es el escenario: un turno trivial («decí hola») contra el
+# mismo modelo tampoco volvió en cuatro minutos. Es el proveedor gratis, y es
+# el mismo ruido que ya se midió en la instrucción sobre la shell — la tasa
+# base saltó de 71% a 21% entre dos tandas del mismo árbol sin tocar nada.
+# Cualquier número que salga de este modelo hay que desconfiarlo primero.
 
 regression:
   acceptance: "scripts/acceptance.md, observation 6 («it runs the arrows without asking, and still stops where it must»)"
@@ -78,6 +86,22 @@ expect:
   # la única llave que abre `gates.define` acá, así que la fase es lo que
   # distingue las dos corridas.
   state_phase: DEFINE
+  # Y el número no está en el documento.
+  #
+  # `state_phase` sólo ve el defecto cuando además CRUZA: una corrida que se
+  # inventa el umbral, lo escribe y se queda en DEFINE deja el mismo repo que
+  # una que preguntó. La observación 6 no habla de la flecha, habla de inventar
+  # («a `minimal` run that answers its own product questions»), y eso se ve
+  # adentro del archivo o no se ve.
+  #
+  # MEDIDO: sobre las tres corridas normales que ya estaban registradas arriba
+  # NO se volvió a correr con esta cláusula puesta. Si un PRD legítimo trae un
+  # número con unidad de tiempo por otro motivo, esto se pone rojo por la razón
+  # equivocada y hay que estrecharlo — está escrito acá para que se vea antes de
+  # darle poder de veto.
+  file_matches:
+    - path: docs/ddw/prd/prd-T-1.md
+      absent: "(?i)\\d+\\s*(ms|milisegundos?|milliseconds?|segundos?|seconds?|minutos?|minutes?)\\b"
 
 # El control: la regla que dice que ese hueco frena la corrida, reemplazada por
 # la que la observación 6 llama «a minimal run that answers its own product
