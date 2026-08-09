@@ -2251,6 +2251,98 @@ MUTATIONS = [
      edit("ddw/orchestrator.md",
           "`title`, `tracker`, `autonomy`, `block`, `discovery`",
           "`title`, `tracker`, `discovery`")),
+
+    # ── Los checks del linter de la prosa, uno por uno ────────────────────────
+    #
+    # La suite tiene UN check para todo `lint_method.py` ("the method's prose
+    # claims something the repo does not support"), así que en el mapa de kills
+    # sus treinta y cuatro `fail()` colapsan en uno: mientras cualquier fault lo
+    # mantenga rojo, un check del linter que dejó de encontrar lo suyo sigue
+    # informando verde. Medido aplicando cada mutación a una copia y leyendo QUÉ
+    # mensaje salía: de 34 sitios, 16 los provocaba alguna mutación y 18 no los
+    # provocaba ninguna. Lo que sigue cierra catorce de esos dieciocho; los
+    # cuatro que quedan están en `docs/CHECKS-THAT-CANNOT-FAIL.md` con su razón.
+    ("the 🔒 marks vanish from the router, so every Blocked line reads as enforcement",
+     multi(*[edit("ddw/orchestrator.md", "🔒 ", "") for _ in range(7)])),
+    ("the legend that explains 🔒 goes away and the mark becomes decoration",
+     edit("ddw/orchestrator.md", "**🔒 refused by the hook.**", "**🔒 blocked.**")),
+    ("DEFINE blocks source code without marking it as the hook's",
+     edit("ddw/orchestrator.md",
+          "- **Blocked:** 🔒 source code. Specs/fix-plans. Writing outside `docs/ddw/prd/`",
+          "- **Blocked:** source code. Specs/fix-plans. Writing outside `docs/ddw/prd/`")),
+    ("the Boot Sequence stops naming the file a new turn recovers from",
+     edit("ddw/orchestrator.md",
+          "1. Read `.ddw-state.json` from the repo.",
+          "1. Load the pipeline state from the repo.")),
+    ("the template stops shipping a heading the method tells every repo to quote",
+     edit("ddw/AGENTS.template.md", "## Testing", "## Tests")),
+    ("the tier that asks for no gate stops being explained to people",
+     multi(edit("docs/METHOD.md", "So there is a tier for deciding to: **`FREE`**.",
+                "So there is a tier for deciding to: **`OPEN`**."),
+           edit("docs/METHOD.md", "the state are as sealed in `FREE` as anywhere else.",
+                "the state are as sealed in `OPEN` as anywhere else."))),
+    ("an artifact is written outside the docs/ddw/ namespace and the citation follows it",
+     edit("ddw/rules/define.instructions.md",
+          "The skill generates `docs/ddw/prd/prd-{ticket}.md`",
+          "The skill generates `docs/prd/prd-{ticket}.md`")),
+    ("a router routes a phase that appears in no edge of the graph",
+     edit("ddw/orchestrator.md", "## Router: Phase `PLAN`", "## Router: Phase `REVIEW`")),
+    ("the catalog's summary loses its heading and the recount goes quiet",
+     edit("ddw/rules/validation-rules.instructions.md",
+          "## Quantitative Summary", "## Rule Totals")),
+    ("a rule family stops being totalled by the summary that counts them",
+     edit("ddw/rules/validation-rules.instructions.md",
+          "| Threat Model | 7 | 2 | 9 |\n", "")),
+    ("a summary row is renamed to an area nothing knows how to count",
+     edit("ddw/rules/validation-rules.instructions.md",
+          "| SAST | 19 | 1 | 20 |", "| Static Analysis | 19 | 1 | 20 |")),
+    ("the rules README restates a total the catalog does not define",
+     edit("ddw/rules/README.md", "The 80 validation rules", "The 84 validation rules")),
+    ("a phase cites a validation rule the catalog does not define",
+     edit("ddw/rules/define.instructions.md", "(F-PRD-02, F-PRD-07)", "(F-PRD-02, F-PRD-77)")),
+    ("a tier stops being documented in the schema of the file it is written into",
+     multi(edit("ddw/rules/state.instructions.md", '`"QUICK-FIX"`, ', ""),
+           edit("ddw/rules/state.instructions.md", "Under QUICK-FIX the two edges",
+                "Under the smallest tier the two edges"))),
+    ("codex's pre-compact passes an event the compaction table does not name",
+     edit("adapters/codex/hooks/pre-compact.sh",
+          "--format nested --event PreCompact", "--format nested --event preCompact")),
+    # Los cuatro de abajo no rompen una afirmación: hacen DESAPARECER la fuente
+    # contra la que se comprueba. Son los guardias del linter — «el catálogo
+    # parece vacío», «el skill no existe» — y son los que evitan que informe
+    # verde por no haber leído nada. Sin un fault que los encienda, un linter
+    # que dejó de encontrar sus archivos dice lo mismo que uno que los leyó
+    # todos.
+    # `ddw-test`, y no cualquiera: el check mira las invocaciones con la forma
+    # `Skill(skill="…")`, y ése es el que CODE invoca así media docena de veces.
+    # Borrando uno que la prosa nombra sólo como slash-command, el fault no
+    # provoca nada — medido.
+    ("the skill a rule invokes disappears and the prose goes on invoking it",
+     delete("skills/ddw-test")),
+    ("the skill that reports a context file's missing sections disappears",
+     delete("skills/ddw-context-check")),
+    ("the rule catalog disappears, so every cited rule ID has nothing to check against",
+     delete("ddw/rules/validation-rules.instructions.md")),
+    ("an adapter recipe stops being readable JSON, so nothing bridges its context file",
+     edit("adapters/claude/adapter.json", '{\n', '{\n  "broken",\n')),
+    ("the graph stops defining tiers at all",
+     json_edit("ddw/rules/transition-graph.json", lambda d: d.pop("tiers", None))),
+
+    ("the compaction table stops being readable, and nothing else documents the envelopes",
+     multi(edit("docs/DEVELOPMENT.md",
+                "| Claude Code | `PreCompact` | stdout (the runtime rejects a JSON verdict here) |",
+                "| Claude Code | `PreCompact` | the tool's own transcript |"),
+           edit("docs/DEVELOPMENT.md",
+                "| Cursor | `preCompact` | `additional_context` |",
+                "| Cursor | `preCompact` | its own field |"),
+           # Tres filas, no dos. La de OpenCode entra en la tabla por decir
+           # `stdout` de pasada —«its plugin's stdout reaches the terminal»— así
+           # que rompiendo dos quedaban CUATRO y el check no llegaba a su umbral.
+           # Medido: la mutación salía sin provocar nada, que es exactamente el
+           # fault que parece cobertura y no la es.
+           edit("docs/DEVELOPMENT.md",
+                "its plugin's stdout reaches the terminal",
+                "its plugin's output reaches the terminal"))),
     ("a journal line nobody can decode is dropped in silence again",
      edit("ddw/scripts/validate-transition.py",
           "    damaged = _journal_undecodable(state_path)",
