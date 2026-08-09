@@ -20,7 +20,8 @@ wins.
 1. Read `.ddw-state.json` from the repo. If it **does not exist**, ASSUME `phase: "IDLE"` — the
    state is materialized when the pipeline transitions to `CLASSIFY`, or when the PreToolUse hook
    creates it before the first write. If it **does exist**, extract `phase`, `tier`, `ticket`,
-   `title`, `tracker`, `autonomy`, `discovery`. **`autonomy` absent or null means `assisted`.**
+   `title`, `tracker`, `autonomy`, `block`, `discovery`. **`autonomy` absent or null means
+   `assisted`.**
    It was missing from this list for one release, which meant the mode was remembered only for as
    long as the CLASSIFY turn stayed in the context window: a compaction or a new session silently
    put the run back to asking. The runs `minimal` exists for are the long ones, and the long ones

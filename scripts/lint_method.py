@@ -349,6 +349,52 @@ def check_history_stamp(root):
                  "phase asks for")
 
 
+def check_boot_reads_every_state_field(root):
+    """Lo que el boot vuelve a leer del estado tiene que ser todo lo que el
+    esquema promete que hay ahí.
+
+    Un turno nuevo, o una compactación, reconstruye la sesión desde
+    `.ddw-state.json` — y sólo desde los campos que la Boot Sequence nombra. El
+    campo que no se nombra ahí no existe para el turno siguiente: se agregó
+    `autonomy` al esquema y quedó fuera de esa lista, así que **toda compactación
+    olvidaba el modo** y el pipeline volvía a preguntar por cada arista a alguien
+    que había dicho que no le preguntaran. Nada falló; el estado en disco estaba
+    perfecto.
+
+    Derivado del esquema, no de una lista escrita acá: una segunda lista es una
+    segunda cosa que se queda atrás, que es exactamente el defecto que este
+    check existe para atrapar.
+    """
+    schema = os.path.join(root, "ddw/rules/state.instructions.md")
+    orch = os.path.join(root, "ddw/orchestrator.md")
+    if not (os.path.exists(schema) and os.path.exists(orch)):
+        return
+    fields = [m.group(1) for m in re.finditer(r"^\|\s*`(\w+)`\s*\|", read(schema), re.M)]
+    if not fields:
+        fail("ddw/rules/state.instructions.md",
+             "no state field could be read out of the schema table, so the check below "
+             "compared the boot against nothing")
+        return
+    text = read(orch)
+    m = re.search(r"^1\. Read `\.ddw-state\.json`.*?(?=^\s*\d+\.\s)", text, re.M | re.S)
+    boot = m.group(0) if m else ""
+    if not boot:
+        fail("ddw/orchestrator.md",
+             "the Boot Sequence no longer starts by reading `.ddw-state.json` — nothing says "
+             "what a new turn recovers")
+        return
+    # `gates`, `history` y `discovery` los lee el propio hook y no la prosa del
+    # boot: lo que se comprueba acá son los campos de CABECERA, que son los que
+    # deciden cómo se comporta el turno.
+    header = [f for f in fields if f not in ("gates", "history", "discovery")]
+    missing = [f for f in header if "`%s`" % f not in boot]
+    if missing:
+        fail("ddw/orchestrator.md",
+             "the Boot Sequence does not recover %s from the state — a field it does not name "
+             "does not survive a compaction, and the run carries on as if it had never been set"
+             % ", ".join("`%s`" % f for f in missing))
+
+
 def check_internal_links(root):
     """A relative link in the docs must point at something that is there.
 
@@ -902,6 +948,7 @@ def main():
     check_skill_and_agent_refs(root)
     check_counts(root)
     check_history_stamp(root)
+    check_boot_reads_every_state_field(root)
     check_internal_links(root)
     check_context_reaches_agents(root)
     check_context_headings(root)
