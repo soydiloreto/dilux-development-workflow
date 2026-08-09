@@ -172,6 +172,18 @@ When the user wants to resume a paused ticket:
    stdout into a `Write`. Fallback: a full-file `Write` composed by hand. **NEVER** with `Edit` (it
    cannot touch the header and the history in one operation) and never by writing the file with
    `Bash/jq/sed/echo` (those paths bypass PreToolUse).
+5. Am I writing product source? → **With `Write` or `Edit`, never with a shell command.**
+   `cat >`, `echo >`, `tee`, `sed -i`, a heredoc: every one of those bypasses PreToolUse, which is
+   the guard that answers whether this phase may write this file at all. A phase that is not allowed
+   to write source is not allowed to write it through a different door either, and the refusal you
+   would have received is the point, not an obstacle to route around.
+
+   This is asked of you because it cannot be enforced. DDW sees a shell command; it cannot tell
+   yours from the user's own editing in another terminal, so it reports the change instead of
+   refusing it (`docs/RATIONALE.md`, decision 12). The report is not the same thing as permission.
+
+   Measured, and that is why this line exists: given a refused `Write`, a live model reached for the
+   shell in most runs. Not to cheat — because nothing had said not to.
 
 **If it fails → STOP:** `⚠️ Self-check failed: Phase [phase], Action [desc], Reason [reason]`
 

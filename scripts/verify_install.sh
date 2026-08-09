@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=541
+EXPECT_MUTATIONS=542
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -7093,6 +7093,19 @@ subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
 def denied(rel, phase):
     return vt.source_write_denied(os.path.join(repo, rel), repo, phase)
 
+
+# 0. Y el método le PIDE que escriba código con la herramienta de escritura, no
+#    con la shell. No se puede imponer —DDW ve un comando de shell y no puede
+#    distinguir el del agente del tuyo en otra terminal, que es la decisión 12—
+#    así que lo único que queda es pedirlo, y lo único que sostiene un pedido es
+#    que esté escrito. Medido: ante un `Write` rechazado, un modelo en vivo se
+#    fue a la shell en la mayoría de las corridas. No por hacer trampa: porque
+#    nada le había dicho que no.
+_orch = open(os.path.join(src, "ddw/orchestrator.md"), encoding="utf-8").read()
+assert "never with a shell command" in _orch and "bypasses PreToolUse" in _orch, \
+    ("the method no longer asks the model to write source with the write tool. That request is "
+     "the only thing standing between a refused `Write` and the same file written with `cat >`, "
+     "because the shell path cannot be refused — only reported.")
 
 # 1. No ticket, no product source — and the refusal names the sanctioned way
 #    out and NOT the recipe for going around itself.
