@@ -50,7 +50,7 @@ PASS, FAIL, ERROR = "PASS", "FAIL", "ERROR"
 
 # Kinds that never call a model. These are the ones CI runs on every push.
 OFFLINE_KINDS = {"painted-door", "painted-door-sweep", "router-reachability",
-                 "template-vs-gate"}
+                 "template-vs-gate", "method-lint"}
 
 
 # --------------------------------------------------------------------------- #
@@ -98,33 +98,6 @@ def make_repo(ddw_root: Path, target: str, workdir: Path) -> Path:
     return repo
 
 
-TAP = r'''#!/usr/bin/env bash
-# Verdict tap. Installed by the eval runner only, around the adapter's own hook
-# script. It changes no verdict — it records one.
-#
-# It exists because of the failure acceptance.md names and cannot otherwise
-# rule out: "the agent politely declines" and "the write was refused" leave the
-# same repository behind. Without this, a behavioral eval that asserts only
-# `src/x.py is absent` goes green on prose, which is the exact thing this
-# framework exists to stop depending on.
-PAYLOAD="$(cat)"
-printf '%s' "$PAYLOAD" | bash "$(dirname "$0")/__REAL__"
-CODE=$?
-python3 - "$CODE" "__NAME__" <<'PY' >> "${CLAUDE_PROJECT_DIR:-.}/.ddw-eval-verdicts.jsonl"
-import json, os, sys
-raw = os.environ.get("DDW_EVAL_PAYLOAD", "")
-try:
-    ev = json.loads(raw)
-except Exception:
-    ev = {}
-print(json.dumps({"hook": sys.argv[2], "exit": int(sys.argv[1]),
-                  "tool": ev.get("tool_name"),
-                  "path": (ev.get("tool_input") or {}).get("file_path")}))
-PY
-exit $CODE
-'''
-
-
 def _fingerprint(path: Path):
     """The installer's own hash. Same definition as scripts/install_target.py."""
     h = hashlib.sha256()
@@ -163,12 +136,18 @@ def reseal_manifest(repo: Path, rels) -> int:
     return resealed
 
 # --------------------------------------------------------------------------- #
-# the tap — Claude Code (shell hooks). unchanged from runner.py
+# the tap — Claude Code (shell hooks)
 # --------------------------------------------------------------------------- #
 
 TAP = r'''#!/usr/bin/env bash
 # Verdict tap. Installed by the eval runner only, around the adapter's own hook
 # script. It changes no verdict — it records one.
+#
+# It exists because of the failure acceptance.md names and cannot otherwise
+# rule out: "the agent politely declines" and "the write was refused" leave the
+# same repository behind. Without this, a behavioral eval that asserts only
+# `src/x.py is absent` goes green on prose, which is the exact thing this
+# framework exists to stop depending on.
 PAYLOAD="$(cat)"
 printf '%s' "$PAYLOAD" | bash "$(dirname "$0")/__REAL__"
 CODE=$?
@@ -388,6 +367,72 @@ def write_state(repo: Path, state):
         (repo / ".ddw-state.json").write_text(state, encoding="utf-8")
         return
     (repo / ".ddw-state.json").write_text(json.dumps(state, indent=2))
+
+
+def seed_files(repo: Path, files, commit=True) -> int:
+    """Los archivos que el escenario necesita que YA existan.
+
+    `given.state` sabe escribir uno solo, `.ddw-state.json`, y hay una familia
+    entera de escenarios que sin más que eso no se puede expresar: un fuente de
+    producto que una fase no debe tocar, un artefacto a medio escribir que su
+    gate tiene que rechazar, un PRD que ya está cuando la fase va a escribirlo.
+    Todos ellos arrancaban con el repo vacío del fixture, o sea midiendo otra
+    cosa que la que dicen medir.
+
+    Se escriben POR EL SISTEMA DE ARCHIVOS, sin pasar por las herramientas: son
+    el `given`, no algo que el modelo haga, y mandarlos por el gate haría
+    imposible sembrar justamente lo que el gate rechaza.
+
+    Se COMMITEAN salvo que el escenario diga que no. Un fuente sembrado y sin
+    commitear deja el árbol sucio antes del primer turno, y lo que el escenario
+    mide después es una regla sobre trabajo sin commitear que nadie pidió.
+    """
+    if not files:
+        return 0
+    if not isinstance(files, dict):
+        raise RuntimeError("given.files is a mapping of path -> content")
+    root = repo.resolve()
+    written = []
+    for rel, content in files.items():
+        if Path(rel).is_absolute():
+            raise RuntimeError(f"given.files carries an absolute path: {rel!r}")
+        dest = (repo / rel)
+        try:
+            # Sin esto, un `../..` en un escenario escribe en el checkout de
+            # quien lo corre. Ya pasó una vez por otro camino —un control que
+            # reescribía el árbol del usuario— y costó veinte minutos de creer
+            # que el producto tenía un bug.
+            dest.resolve().relative_to(root)
+        except ValueError:
+            raise RuntimeError(
+                f"given.files tried to write outside the fixture repo: {rel!r}") from None
+        if dest.resolve() == (repo / ".ddw-state.json").resolve():
+            raise RuntimeError(
+                "given.files cannot write `.ddw-state.json` — that is what `given.state` is "
+                "for, and two sources of truth for one file is how a fixture stops being one")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content if isinstance(content, str)
+                        else json.dumps(content, indent=2) + "\n", encoding="utf-8")
+        written.append(rel)
+
+    if commit and written:
+        # Sólo lo sembrado. Un `git add -A` acá se lleva puesto el método
+        # instalado y el estado del escenario, que el fixture deja fuera del
+        # índice a propósito.
+        #
+        # `-f` porque la instalación deja un bloque en `.gitignore`, y lo que
+        # ignora —`.ddw-paused/`, `.ddw-sessions/`, el journal— es justamente
+        # parte de lo que un escenario necesita sembrar. Sin `-f`, `git add`
+        # rechaza esas rutas, el commit no encuentra nada que commitear, y el
+        # fixture queda distinto de lo que el escenario dice que es sin que
+        # nadie se entere.
+        r = sh(["git", "add", "-f", "--", *written], cwd=repo)
+        if r.returncode == 0:
+            r = sh(["git", "commit", "-qm", "eval fixture: given.files"], cwd=repo)
+        if r.returncode != 0:
+            raise RuntimeError("given.files could not be committed into the fixture: "
+                               + (r.stderr or r.stdout).strip()[:200])
+    return len(written)
 
 
 def hook_verdict(repo: Path, event: dict, mode="pre") -> tuple[int, str]:
@@ -696,6 +741,50 @@ def run_router_reachability(sc, ddw_root, repo):
 
 
 # --------------------------------------------------------------------------- #
+# kind: method-lint
+#
+# `scripts/lint_method.py` compara lo que la prosa AFIRMA contra el grafo, el
+# catálogo de reglas y el árbol. Corre en la suite, pero ahí lo único que se
+# pregunta es si HOY está verde — nadie mide si sigue sabiendo ponerse rojo.
+# Cada uno de sus veintipico de checks es una regresión que ya pasó, y un linter
+# de prosa se rompe callado: le cambiás el nombre a una sección, el check deja
+# de encontrar lo que miraba, y sigue informando verde por no tener otra cosa
+# que decir. Es exactamente la familia de [[CHECKS-THAT-CANNOT-FAIL]].
+#
+# Acá el linter es el VEREDICTO: en normal tiene que salir limpio, y con el
+# control puesto —una afirmación de la prosa rota a propósito— tiene que
+# nombrarla. Por eso `control.finding_matches`: un linter que se pone rojo por
+# otra cosa no probó que sepa cazar ésta, y ese es el mismo error que este
+# repositorio ya cometió con los controles que fallaban por un TypeError.
+# --------------------------------------------------------------------------- #
+
+def run_method_lint(sc, ddw_root, repo, control=False):
+    r = sh([sys.executable, str(ddw_root / "scripts" / "lint_method.py"),
+            "--repo", str(ddw_root)], cwd=ddw_root, timeout=300)
+    out = (r.stdout + r.stderr).strip()
+    if not re.search(r"^lint_method: ", out, re.M):
+        # Ni el verde ni el rojo: se cayó antes de juzgar. Un stack no es un
+        # veredicto, y contarlo como rojo en modo control regala el control.
+        tail = out.splitlines()[-1][:140] if out else "<no output>"
+        return ERROR, (f"lint_method printed no verdict line (exit {r.returncode}) — "
+                       f"nothing was judged: {tail}")
+    clean = r.returncode == 0
+
+    if control:
+        needle = (sc.get("control") or {}).get("finding_matches")
+        if needle and clean:
+            return FAIL, "lint_method stayed green with the broken claim in the tree"
+        if needle and not re.search(needle, out, re.S):
+            return ERROR, ("control off-target: lint_method went red, but on a claim this "
+                           "scenario did not break — " + out.splitlines()[0][:110])
+
+    if not clean:
+        return FAIL, "lint_method: " + " | ".join(
+            l.strip() for l in out.splitlines()[1:5] if l.strip())
+    return PASS, "every claim the prose makes is backed by the graph, the catalog and the tree"
+
+
+# --------------------------------------------------------------------------- #
 # kind: behavioral
 #
 # The only kind that needs a model. Drive the real tool headless in a repo with
@@ -757,6 +846,46 @@ def judge_repo_state(sc, repo, transcript):
     for rel in exp.get("files_present", []):
         if not (repo / rel).exists():
             problems.append(f"{rel} is missing")
+
+    # El CONTENIDO de un artefacto, no su existencia.
+    #
+    # `files_present` no distingue el documento que contesta la pregunta del que
+    # se la inventa: los dos existen, y `state_phase` sólo los separa si el
+    # modelo además cruzó la flecha. El defecto que `acceptance.md` nombra —
+    # «inventar un requisito, un criterio o un umbral para que un check pase»—
+    # se ve adentro del archivo o no se ve.
+    #
+    # Un `matches` que no compila, o una cláusula que no afirma nada, LEVANTA:
+    # una aserción que no puede juzgar es lo mismo que no escribirla, y acá eso
+    # se lee como verde.
+    for spec in exp.get("file_matches", []):
+        rel = spec["path"]
+        clauses = [(k, spec[k]) for k in ("matches", "absent") if k in spec]
+        if not clauses:
+            raise RuntimeError(
+                f"file_matches on {rel!r} declares neither `matches` nor `absent` — "
+                "a clause that asserts nothing passes for the wrong reason")
+        p = repo / rel
+        if not p.exists():
+            problems.append(f"{rel} does not exist, so nothing in it could be asserted")
+            continue
+        body = p.read_text(encoding="utf-8", errors="replace")
+        for key, pats in clauses:
+            for pat in (pats if isinstance(pats, list) else [pats]):
+                try:
+                    # Sin `re.I`: un `matches` insensible es un `matches` más
+                    # flojo, y lo que se afirma acá es lo único que separa el
+                    # documento que contestó del que se inventó la respuesta. El
+                    # escenario que lo necesita escribe `(?i)` y se ve.
+                    hit = re.search(pat, body, re.S | re.M) is not None
+                except re.error as exc:
+                    raise RuntimeError(
+                        f"file_matches on {rel!r} carries a regex that does not compile "
+                        f"({pat!r}): {exc}") from None
+                if key == "matches" and not hit:
+                    problems.append(f"{rel} does not contain anything matching {pat!r}")
+                elif key == "absent" and hit:
+                    problems.append(f"{rel} contains {pat!r} and must not")
 
     state = {}
     sp = repo / ".ddw-state.json"
@@ -971,6 +1100,8 @@ def run_one(sc, ddw_root, args, control: bool):
             _install = _agent_name if _agent_name in ADAPTERS else "claude"
         repo = make_repo(scratch_root, _install, workdir)
         write_state(repo, sc["given"].get("state"))
+        seed_files(repo, sc["given"].get("files"),
+                   commit=sc["given"].get("commit_files", True))
 
         if control:
             # UNA implementación. `apply_control` tenía soporte de `paths` y esta
@@ -996,6 +1127,8 @@ def run_one(sc, ddw_root, args, control: bool):
             v, d = run_template_vs_gate(sc, scratch_root, repo)
         elif kind == "router-reachability":
             v, d = run_router_reachability(sc, scratch_root, repo)
+        elif kind == "method-lint":
+            v, d = run_method_lint(sc, scratch_root, repo, control=control)
         elif kind == "behavioral":
             # El agente y el modelo salen del escenario si los declara, y de la
             # línea de comandos si no. Sin esto el mismo escenario no se puede
@@ -1085,8 +1218,15 @@ def main():
             # armar — medido, y es el mismo defecto que la línea de abajo cierra
             # para «control unavailable». Se generaliza: si lo que se rompió es
             # el instrumento, el control no probó nada.
+            #
+            # `control off-target` es el tercer caso y llegó con `method-lint`:
+            # el control se aplicó, el instrumento se puso rojo, y lo hizo por
+            # una afirmación que este escenario no rompió. Eso no prueba que
+            # sepa cazar la suya — es el mismo defecto que el control que
+            # fallaba con un `TypeError`, con mejor disfraz.
             _harness = re.match(r"^(\w*Error|\w*Exception|TimeoutExpired)\b", r.detail or "")
-            if r.verdict == ERROR and (_harness or r.detail.startswith("control unavailable")):
+            if r.verdict == ERROR and (_harness or r.detail.startswith(
+                    ("control unavailable", "control off-target"))):
                 r = Result(r.sid, r.kind, FAIL,
                            "the control proved nothing — the harness is what broke: " + r.detail)
             elif r.verdict in (FAIL, ERROR):
