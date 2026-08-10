@@ -51,6 +51,27 @@ files and **propose the text for you to paste here**. You always confirm it.
 
 ---
 
+## Testing
+
+**The coverage floor lives here, and nowhere else.** `ddw-test` and
+`ddw-verify-module` both require a report to state the floor **and where it came from**, and both
+show it sourced as `AGENTS.md, "Testing"` — a section this template did not have, so every project
+was told to cite something the installer never created. A floor a report chooses for itself is a
+floor that passes itself; it belongs to the project.
+
+| Field | Value |
+|-------|-------|
+| Coverage floor — line | [e.g. 80%] |
+| Coverage floor — branch | [e.g. 70%] |
+| Coverage floor — function | [e.g. 80%] |
+| How the suite is run | [e.g. `pnpm test`] |
+| What a skipped test owes | [e.g. a reason on the same line] |
+
+If a number here is not the one your CI enforces, say which one wins. Two floors that disagree is
+the same as no floor.
+
+---
+
 ## Architecture conventions
 
 **DDW validates your code against this section** during the CODE phase, via `ddw-validate-arch`.

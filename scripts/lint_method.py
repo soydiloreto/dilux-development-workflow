@@ -296,7 +296,16 @@ def check_history_stamp(root):
     A schema that promises what no instruction asks for is a schema describing a
     file nobody writes.
     """
-    for path in sorted(glob.glob(os.path.join(root, "ddw/rules/*.instructions.md"))):
+    # `ddw/orchestrator.md` también, y no por completitud: es el archivo que el
+    # router carga en cada turno, así que una instrucción de historia escrita ahí
+    # llega antes que cualquiera de las de fase. El barrido leía sólo
+    # `ddw/rules/*.instructions.md`, así que la mitad más leída del método quedaba
+    # afuera del check que existe para que las entradas salgan estampadas.
+    _corpus = (sorted(glob.glob(os.path.join(root, "ddw/rules/*.instructions.md")))
+               + [os.path.join(root, "ddw/orchestrator.md")])
+    for path in _corpus:
+        if not os.path.exists(path):
+            continue
         # state.instructions.md DEFINES the entry; it does not instruct a phase to
         # append one. Reading its schema row as an instruction made the check fire
         # on the very file that documents the answer.
@@ -318,13 +327,72 @@ def check_history_stamp(root):
             # Whitespace-normalised: the wrap leaves "**stamped" at the end of
             # one line and "     with `ticket`" at the start of the next, so a
             # plain join produces "stamped      with" and the substring missed.
-            window = re.sub(r"\s+", " ", " ".join(lines[i - 1:i + 2]))
+            # La ventana, y también la FORMA declarada. El orquestador no dice
+            # «stamped with»: enumera la forma entera —`{timestamp, from, to,
+            # action, ticket, tier}`— nueve líneas más abajo, en el mismo
+            # párrafo. Un check que sólo acepta una redacción acusa a un archivo
+            # que dice lo mismo con otras palabras, y eso empuja a reescribir la
+            # prosa para conformar al check en vez de al revés.
+            window = re.sub(r"\s+", " ", " ".join(lines[i - 1:i + 10]))
             if "stamped with" in window:
+                continue
+            # …sin contar los FLAGS. `--ticket <ID>` y `--tier <TIER>` son cómo
+            # se invoca el helper, no qué lleva la entrada, y con ellos adentro
+            # la ventana se satisfacía sola: borré la forma declarada a propósito
+            # y el check siguió verde. Se descuentan antes de preguntar.
+            _fields = re.sub(r"--(ticket|tier)\b", "", window)
+            if "`ticket`" in _fields and "`tier`" in _fields:
                 continue
             fail(f"{rel(root, path)}:{i}",
                  "tells the model to append a history entry without saying to stamp `ticket` and "
                  "`tier` — the schema promises both on every entry, and the model writes what the "
                  "phase asks for")
+
+
+def check_boot_reads_every_state_field(root):
+    """Lo que el boot vuelve a leer del estado tiene que ser todo lo que el
+    esquema promete que hay ahí.
+
+    Un turno nuevo, o una compactación, reconstruye la sesión desde
+    `.ddw-state.json` — y sólo desde los campos que la Boot Sequence nombra. El
+    campo que no se nombra ahí no existe para el turno siguiente: se agregó
+    `autonomy` al esquema y quedó fuera de esa lista, así que **toda compactación
+    olvidaba el modo** y el pipeline volvía a preguntar por cada arista a alguien
+    que había dicho que no le preguntaran. Nada falló; el estado en disco estaba
+    perfecto.
+
+    Derivado del esquema, no de una lista escrita acá: una segunda lista es una
+    segunda cosa que se queda atrás, que es exactamente el defecto que este
+    check existe para atrapar.
+    """
+    schema = os.path.join(root, "ddw/rules/state.instructions.md")
+    orch = os.path.join(root, "ddw/orchestrator.md")
+    if not (os.path.exists(schema) and os.path.exists(orch)):
+        return
+    fields = [m.group(1) for m in re.finditer(r"^\|\s*`(\w+)`\s*\|", read(schema), re.M)]
+    if not fields:
+        fail("ddw/rules/state.instructions.md",
+             "no state field could be read out of the schema table, so the check below "
+             "compared the boot against nothing")
+        return
+    text = read(orch)
+    m = re.search(r"^1\. Read `\.ddw-state\.json`.*?(?=^\s*\d+\.\s)", text, re.M | re.S)
+    boot = m.group(0) if m else ""
+    if not boot:
+        fail("ddw/orchestrator.md",
+             "the Boot Sequence no longer starts by reading `.ddw-state.json` — nothing says "
+             "what a new turn recovers")
+        return
+    # `gates`, `history` y `discovery` los lee el propio hook y no la prosa del
+    # boot: lo que se comprueba acá son los campos de CABECERA, que son los que
+    # deciden cómo se comporta el turno.
+    header = [f for f in fields if f not in ("gates", "history", "discovery")]
+    missing = [f for f in header if "`%s`" % f not in boot]
+    if missing:
+        fail("ddw/orchestrator.md",
+             "the Boot Sequence does not recover %s from the state — a field it does not name "
+             "does not survive a compaction, and the run carries on as if it had never been set"
+             % ", ".join("`%s`" % f for f in missing))
 
 
 def check_internal_links(root):
@@ -388,6 +456,33 @@ def check_context_reaches_agents(root):
                  "reach the model")
 
 
+def check_template_sections_known(root):
+    """Every section the context TEMPLATE ships is one `ddw-context-check` looks for.
+
+    `check_context_headings` walks one direction — a heading the method cites has
+    to be one the skill knows about. This is the other, and it was open: the
+    template shipped `## What this project is` and the skill never named it, so a
+    repository missing that section was reported as complete. And the two skills
+    that ask for a coverage floor cite `AGENTS.md, "Testing"` in the documents
+    they teach, against a template that had no Testing section at all — the
+    method telling every project to quote a heading its own installer does not
+    create.
+    """
+    tpl = os.path.join(root, "ddw/AGENTS.template.md")
+    skill = os.path.join(root, "skills/ddw-context-check/SKILL.md")
+    if not (os.path.exists(tpl) and os.path.exists(skill)):
+        return
+    known = read(skill)
+    for m in re.finditer(r"^##\s+(.+?)\s*$", read(tpl), re.M):
+        heading = m.group(1).strip()
+        if heading.lower() in ("language",):
+            continue                      # the template's own instructions, not a section DDW reads
+        if heading not in known:
+            fail("ddw/AGENTS.template.md",
+                 f"ships a `## {heading}` section that ddw-context-check never looks for — a "
+                 "repository missing it is reported as complete")
+
+
 def check_context_headings(root):
     """A section of AGENTS.md the method reads must be one the skill checks for.
 
@@ -409,24 +504,47 @@ def check_context_headings(root):
         return
     known = read(skill)
 
+    # Los SKILLS también, no sólo `ddw/**`. Los dos que piden un piso de
+    # cobertura citan `AGENTS.md, "Testing"` en el documento que enseñan a
+    # escribir, y con el corpus limitado a `ddw/` esa cita no se veía: se podía
+    # borrar `## Testing` de la plantilla y el lint quedaba verde. Es
+    # exactamente lo que arregló 87ae703, y nada lo sostenía.
+    corpus = sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)
+                    + glob.glob(os.path.join(root, "skills/*/SKILL.md")))
     cited = {}
-    for path in sorted(glob.glob(os.path.join(root, "ddw/**/*.md"), recursive=True)):
+    for path in corpus:
         if os.path.samefile(path, skill):
             continue
         text = read(path)
         for i, line in enumerate(text.splitlines(), 1):
             if "AGENTS.md" not in line:
                 continue
-            for m in re.finditer(r'"([A-Z][^"]{2,45})"\s+section|section\s+"([A-Z][^"]{2,45})"',
-                                 line):
-                name = m.group(1) or m.group(2)
-                cited.setdefault(name, f"{rel(root, path)}:{i}")
+            # Y la forma `AGENTS.md, "Testing"`, que es como la escriben los
+            # documentos trabajados. Pidiendo la palabra `section` al lado, la
+            # cita que los skills realmente usan no contaba como cita.
+            for m in re.finditer(
+                    r'"([A-Z][^"]{2,45})"\s+section|section\s+"([A-Z][^"]{2,45})"|'
+                    r'AGENTS\.md[,\s]+\u00a7?\s*"?([A-Z][\w ]{2,45}?)"?\s*[)|]|'
+                    r'AGENTS\.md\s+\u00a7\s*([A-Z][\w ]{2,45})', line):
+                name = next((g for g in m.groups() if g), "").strip()
+                if name:
+                    cited.setdefault(name, f"{rel(root, path)}:{i}")
 
+    template = os.path.join(root, "ddw/AGENTS.template.md")
+    shipped = read(template) if os.path.exists(template) else ""
     for name, where in sorted(cited.items()):
         if f"## {name}" not in known:
             fail(where,
                  f"reads the {name!r} section of AGENTS.md, but ddw-context-check does not list "
                  "it — nothing will notice when a repo's context file has no such heading")
+        # …y que la plantilla la TRAIGA. Que el reportero sepa buscarla no la
+        # pone en el archivo: sin esto, el método le dice a cada proyecto que
+        # cite un encabezado que su propio instalador no escribe.
+        if shipped and f"## {name}" not in shipped:
+            fail(where,
+                 f"reads the {name!r} section of AGENTS.md and ddw/AGENTS.template.md ships no "
+                 f"such heading — every repo DDW installs is told to quote a section its own "
+                 f"installer never wrote")
 
 
 def check_rationale(root):
@@ -621,6 +739,108 @@ def check_commit_granularity(root):
                      "ddw/rules/commits.instructions.md")
 
 
+def check_tiers_documented(root, graph):
+    """Every tier the graph defines is explained where a person will look.
+
+    The graph is the authority for which tiers exist, and adding one there is
+    one line. What it costs is the part nobody remembers: CLASSIFY has to say
+    when to choose it, the state schema has to list it as a legal value, and the
+    router has to know what to load when the phase carrying its name comes up.
+    `FREE` was added and all three were missed on the first pass — the pipeline
+    worked and the method described a product with one fewer tier than it had.
+
+    Checked against the two files a reader and a model actually consult, not
+    against every mention: the classification rules, and the schema of the file
+    the tier is written into.
+    """
+    tiers = set(graph.get("tiers", {}))
+    if not tiers:
+        fail("ddw/rules/transition-graph.json", "defines no tier at all")
+        return
+    for rel_path in ("ddw/rules/classify.instructions.md", "ddw/rules/state.instructions.md"):
+        text = read(os.path.join(root, rel_path))
+        missing = sorted(t for t in tiers if t not in text)
+        if missing:
+            fail(rel_path, "the graph defines %s and this file explains %s — a tier nobody "
+                           "documents is one the model cannot choose on purpose"
+                 % (", ".join(sorted(tiers)), "none of them" if len(missing) == len(tiers)
+                    else "neither " + " nor ".join(missing) if len(missing) > 1
+                    else "not " + missing[0]))
+
+
+def check_blocked_marks_enforcement(root):
+    """A router's Blocked line says which half of it a hook actually refuses.
+
+    The lists mixed the two: `source code` (refused by the gate, in the gate's
+    own wording) sat beside `modifying the PRD` and `writing outside
+    docs/ddw/discovery/` (nobody's hook refuses those — nothing under `docs/` is
+    refused in any phase). A reader cannot tell them apart by looking, and this
+    whole framework is the argument that the difference matters: "the agent
+    politely declines" and "the write is rejected" mean opposite things.
+
+    So every phase whose rules forbid product source marks it, and the legend
+    that explains the mark has to be there to be read.
+    """
+    orch = os.path.join(root, "ddw/orchestrator.md")
+    text = read(orch)
+    if "🔒" not in text:
+        fail("ddw/orchestrator.md",
+             "no Blocked line marks what the hook refuses, so every line reads as enforcement")
+        return
+    if "refused by the hook" not in text:
+        fail("ddw/orchestrator.md",
+             "the 🔒 mark is used and never explained — a symbol nobody defines is decoration")
+    for m in re.finditer(r"^## Router: Phase `([A-Z-]+)`\n(.*?)(?=^## |\Z)", text, re.M | re.S):
+        phase, body = m.group(1), m.group(2)
+        if phase in ("CODE", "CLOSEOUT", "FREE", "IDLE"):
+            continue                      # source is allowed here, or the phase has no gate to state
+        blocked = re.search(r"^- \*\*Blocked:\*\*(.*)$", body, re.M)
+        if blocked and "source" in blocked.group(1).lower() and "🔒" not in blocked.group(1):
+            fail(f"{rel(root, orch)}:{text[:m.start()].count(chr(10)) + 1}",
+                 f"{phase} blocks source code and does not mark it as the hook's — it reads like "
+                 "the same kind of rule as the ones nothing enforces")
+
+
+def check_free_tiers_explained_to_people(root, graph):
+    """Un tier que no pide NINGUNA compuerta tiene que estar explicado en
+    `docs/METHOD.md`.
+
+    No todos: METHOD.md delega en las tablas canónicas a propósito —«every
+    phase, every tier, every gate» vive en el catálogo— y exigirle la lista
+    entera sería pedirle que duplique lo que este repo evita duplicar. Se probó
+    y el lint pidió meter FEATURE, FIX y QUICK-FIX en un documento que decide no
+    enumerarlos. Eso no es un hallazgo, es forzar una copia.
+
+    Lo que sí: un tier SIN compuertas es el único del que no se entera nadie por
+    el camino. Los demás se anuncian solos — algo se pide, algo se rechaza. En
+    ése no se pide nada, y si el documento que le explica el método a una
+    persona no lo nombra, el producto tiene un modo sin enforcement del que sólo
+    se enteran quienes leen el grafo. Es la mitad de 4c41f3e que ningún check
+    sostenía.
+    """
+    path = os.path.join(root, "docs/METHOD.md")
+    if not os.path.exists(path):
+        return
+    text = read(path)
+    for tier in sorted(graph.get("tiers", {})):
+        # La cadena `extends`, resuelta acá: un tier que hereda pide lo que
+        # pide su padre, y leer sólo sus propias claves diría que no pide nada.
+        asks, seen, cur = set(), set(), tier
+        while cur and cur not in seen:
+            seen.add(cur)
+            spec = graph["tiers"].get(cur) or {}
+            for key, edge in spec.items():
+                if key.startswith("_") or key == "extends" or not isinstance(edge, dict):
+                    continue
+                asks |= set(edge.get("gates") or [])
+            cur = spec.get("extends")
+        if not asks and tier not in text:
+            fail("docs/METHOD.md",
+                 "the graph defines %s, which asks for no gate at all, and this file never names "
+                 "it — a mode with no enforcement is the one a reader has to be told about, "
+                 "because nothing in the run will tell them" % tier)
+
+
 def check_phase_names(root, graph):
     """A phase named in a router must be a phase the graph knows."""
     phases = known_phases(graph) | {"DISCOVERY"}
@@ -728,14 +948,19 @@ def main():
     check_skill_and_agent_refs(root)
     check_counts(root)
     check_history_stamp(root)
+    check_boot_reads_every_state_field(root)
     check_internal_links(root)
     check_context_reaches_agents(root)
     check_context_headings(root)
+    check_template_sections_known(root)
     check_rationale(root)
     check_rule_ranges(root)
     check_rule_counts(root)
     check_commit_granularity(root)
     check_phase_names(root, graph)
+    check_blocked_marks_enforcement(root)
+    check_tiers_documented(root, graph)
+    check_free_tiers_explained_to_people(root, graph)
     check_compaction_envelopes(root)
     check_ticket_retarget(root)
 

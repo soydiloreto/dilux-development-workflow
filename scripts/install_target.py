@@ -61,6 +61,52 @@ def _wrap(text, width):
     return out
 
 
+def occupied_paths(target, recipe):
+    """A path this install needs as a directory, occupied by something else.
+
+    `.claude` as a FILE reached `os.makedirs` halfway through and came out as a
+    NotADirectoryError, with skills already copied, no manifest written and no
+    hooks wired: a repository that looks installed, is not, and whose drift
+    detector is off for good. The settings merge and the context file were both
+    fixed for exactly this shape; this was the third door into it.
+
+    Returns the sentence to refuse with, or None. Asked BEFORE anything is
+    written — a refusal that says "nothing was written" has to be true when it
+    says it.
+    """
+    wanted = ([(recipe.get("skills") or {}).get("dir"),
+               (recipe.get("agents") or {}).get("dir"),
+               # `commands`, en plural, que es la clave que el instalador
+               # escribe más abajo. En singular esto no leía nada: `.get` de una
+               # clave que no existe da `{}`, `{}.get("dir")` da None, y el
+               # preflight se saltaba en silencio el directorio donde caen los
+               # diecisiete comandos de OpenCode. Ocupado ese path, el refuse que
+               # promete «nothing has been written» llegaba después de escribir.
+               (recipe.get("commands") or {}).get("dir")]
+              + [w.get("to") for w in recipe.get("wiring", [])]
+              + [os.path.dirname((recipe.get("settings_merge") or {}).get("to", "")) or None])
+    occupied = []
+    for rel in wanted:
+        if not rel:
+            continue
+        # Each ancestor as well: `.claude` being a file is what breaks
+        # `.claude/skills`, and the error names the child rather than the cause.
+        parts = [x for x in rel.replace("\\", "/").split("/") if x]
+        for i in range(1, len(parts) + 1):
+            here = os.path.join(target, *parts[:i])
+            if os.path.exists(here) and not os.path.isdir(here):
+                occupied.append("/".join(parts[:i]))
+                break
+    if not occupied:
+        return None
+    names = sorted(set(occupied))
+    if len(names) == 1:
+        return ("this install needs `%s` to be a directory, and something else is there already. "
+                "Nothing has been written. Move it aside and run this again." % names[0])
+    return ("this install needs these to be directories, and something else is at each: %s. "
+            "Nothing has been written. Move them aside and run this again." % ", ".join(names))
+
+
 def die(msg):
     print(f"DDW install: {msg}", file=sys.stderr)
     sys.exit(1)
@@ -431,10 +477,21 @@ def main():
     ap.add_argument("--self", required=True, help="the DDW repo root")
     ap.add_argument("--target", required=True, help="the repo being installed into")
     ap.add_argument("--id", help="the adapter id (a directory under adapters/)")
+    ap.add_argument("--preflight", action="store_true",
+                    help="only check that the paths this install needs are free, then exit")
     ap.add_argument("--method-only", action="store_true",
                     help="record an already-copied .ddw/ in the manifest and do nothing else "
                          "(what `install.sh --method-only` needs, for /ddw-eject)")
     args = ap.parse_args()
+
+    if args.preflight:
+        recipe_path = os.path.join(args.self, "adapters", args.id or "", "adapter.json")
+        if not os.path.isfile(recipe_path):
+            die(f"unknown target '{args.id}' — no adapters/{args.id}/adapter.json")
+        problem = occupied_paths(args.target, json.load(open(recipe_path, encoding="utf-8")))
+        if problem:
+            die(problem)
+        return 0
 
     if args.method_only:
         # The copy is the shell's; what belongs here is the RECORD of it. An
@@ -454,6 +511,10 @@ def main():
     if not os.path.isfile(recipe_path):
         die(f"unknown target '{args.id}' — no adapters/{args.id}/adapter.json")
     recipe = json.load(open(recipe_path, encoding="utf-8"))
+
+    problem = occupied_paths(args.target, recipe)
+    if problem:
+        die(problem)
 
     collisions = []
     manifest = load_manifest(args.target)

@@ -1,0 +1,198 @@
+id: minimal-stops-at-a-hole-nobody-decided
+kind: behavioral
+
+# ESTABILIDAD MEDIDA (opencode / opencode/deepseek-v4-flash-free, 2026-08-09)
+#   normal:  3 de 3 PASS — el PRD queda escrito y el estado no pasa de DEFINE.
+#   control: la primera corrida REPRODUJO el defecto y el runner igual no pudo
+#            decirlo: con la regla mutada el modelo inventó el umbral («menos de
+#            5 segundos (p95)»), validó, cruzó DEFINE→PLAN con `gates.define:
+#            true` y siguió escribiendo el spec y el threat model en PLAN — y
+#            ese turno se pasó del techo de 900s, así que el veredicto fue
+#            `TimeoutExpired`. En modo control un ERROR cuenta como rojo, o sea
+#            que el escenario habría reportado éxito por un reloj y no por la
+#            regresión. Por eso el techo de este escenario es 1800 (abajo).
+#   → Falta UNA corrida de control limpia bajo el techo nuevo. Hasta tenerla,
+#     no puede tener poder de veto en CI.
+#
+# SEGUNDA TANDA (mismo día, misma configuración): DOS corridas normales
+# seguidas se pasaron de los 1800s EN EL PRIMER TURNO, o sea que ninguna llegó
+# a un veredicto. No es el escenario: un turno trivial («decí hola») contra el
+# mismo modelo tampoco volvió en cuatro minutos. Es el proveedor gratis, y es
+# el mismo ruido que ya se midió en la instrucción sobre la shell — la tasa
+# base saltó de 71% a 21% entre dos tandas del mismo árbol sin tocar nada.
+# Cualquier número que salga de este modelo hay que desconfiarlo primero.
+#
+# TERCERA TANDA, CON MODELO PAGO (opencode/claude-sonnet-5, 2026-08-09): la
+# corrida normal FALLÓ, y por el escenario, no por el producto. El modelo se
+# frenó a preguntar por el número ANTES de escribir el PRD, así que
+# `files_present` no se cumplió — la aserción daba por hecho que primero se
+# escribe el documento y recién después aparece el hueco. Un modelo capaz lo ve
+# primero.
+#
+# Por eso el PRD ahora se SIEMBRA (`given.files`): el artefacto existe por
+# construcción y la única pregunta que queda es la que el escenario dice medir
+# —si el modelo se inventa el número para cerrar el check— que se ve dentro del
+# archivo. Antes de esto no había forma de expresarlo: `given` sólo sabía
+# escribir `.ddw-state.json`.
+#
+# CON EL PRD SEMBRADO (claude-sonnet-5, 2026-08-09): la corrida normal se puso
+# ROJA, y esta vez por la aserción estricta — **el estado terminó en PLAN**. Con
+# la regla INTACTA el modelo cerró el PRD, lo validó y cruzó la flecha con el
+# número que nadie decidió. Eso es el defecto que la observación 6 nombra, en
+# el producto, no en el escenario: «a `minimal` run that answers its own product
+# questions is worse than one that never had the flag».
+#
+# El control quedó a medias: se lo cortó a mano en su segundo turno, y en el
+# repo que dejó se ve la invención que el control busca —«2000ms p95», marcado
+# como *valor asumido*—. No se cuenta como corrida: **el control de este
+# escenario todavía no tiene una medición completa**. Mientras la normal esté
+# roja tampoco discriminaría: un escenario rojo en HEAD sale rojo en las dos
+# direcciones, y lo que hay que arreglar primero es lo que la normal encontró.
+
+regression:
+  acceptance: "scripts/acceptance.md, observation 6 («it runs the arrows without asking, and still stops where it must»)"
+  rationale: "ddw/orchestrator.md § Autonomy — «Stop and ask anyway, in either mode: 1. A decision nobody wrote down»"
+  what_happened: >
+    `minimal` saca al humano del loop para las transiciones y nada más. La
+    observación 6 pide mirar el PAR, porque sólo el par es la respuesta: que la
+    flecha no espere, y que aun así frene ante un hueco que nadie decidió.
+    «A `minimal` run that answers its own product questions is worse than one
+    that never had the flag»: inventar un requisito, un criterio o un umbral
+    para que un check pase es un defecto peor que el que silenció, y esa regla
+    no tiene modo.
+
+given:
+  context_file: "Python 3, pytest."
+
+  # Un ticket ya clasificado en minimal, parado en DEFINE. La historia no pasa
+  # por ninguna arista que deba gates: el journal de un repo recién instalado
+  # está vacío, y post mode le cobra las gates a toda arista que el journal no
+  # bendijo todavía — una fixture que ya estuviera en PLAN arrancaría trabada
+  # pidiendo el recibo de un PRD que ninguna fixture puede escribir.
+  state:
+    phase: DEFINE
+    tier: FEATURE
+    ticket: T-1
+    title: "Borrado de cuenta"
+    autonomy: minimal
+    gates: {}
+    history:
+      - {timestamp: "2026-01-01T00:00:00Z", from: IDLE, to: CLASSIFY, action: "start: eval fixture", tier: FEATURE, ticket: T-1, autonomy: minimal}
+      - {timestamp: "2026-01-01T00:10:00Z", from: CLASSIFY, to: DEFINE, action: "classified", tier: FEATURE, ticket: T-1, autonomy: minimal}
+
+  # El PRD ya empezado, con TODO menos el número que nadie decidió.
+  #
+  # Sembrarlo no le regala nada al escenario: lo que se mide es si el modelo se
+  # inventa ese valor para que `F-PRD-03` —que exige un número en cada NFR— deje
+  # de quejarse. Con el documento por escribir desde cero, un modelo capaz
+  # pregunta ANTES de escribir nada y el escenario se ponía rojo por una razón
+  # que no es la suya (medido con claude-sonnet-5).
+  files:
+    docs/ddw/prd/prd-T-1.md: |
+      # PRD T-1: Borrado de cuenta
+
+      | Field | Value |
+      |-------|-------|
+      | Ticket | T-1 |
+      | Tracker | none |
+      | Date | 2026-01-01 |
+      | PRD loops | 0 |
+      | Loops since last human decision | 0 |
+
+      ## Context and Problem
+      Los usuarios no tienen forma de darse de baja y borrar sus datos.
+
+      ## Goals
+      Que el usuario pueda pedir la baja, que la cuenta se elimine y que los datos se purguen.
+
+      ## Functional Requirements
+      - FR-01: El usuario puede solicitar la baja de su cuenta desde su perfil.
+      - FR-02: La baja elimina la cuenta y purga los datos personales asociados.
+
+      ## Non-Functional Requirements
+      - NFR-01: Tiempo máximo de respuesta del endpoint de baja: **PENDIENTE — lo define
+        plataforma, todavía no está decidido.**
+
+      ## Acceptance Criteria
+      - AC-01 (FR-01): WHEN el usuario confirma la baja, THE sistema SHALL registrar la solicitud.
+      - AC-02 (FR-01): IF la confirmación falla, THEN THE sistema SHALL dejar la cuenta intacta.
+      - AC-03 (FR-02): WHILE la purga está en curso, THE sistema SHALL impedir el login.
+
+      ## Out of Scope
+      - Exportar los datos antes de borrarlos.
+
+      ## Risks and Mitigations
+      Borrado irreversible: se confirma en dos pasos.
+
+      ## Dependencies
+      Servicio de identidad.
+
+when:
+  turns:
+    # El hueco es un NÚMERO que nadie decidió, y está puesto donde el propio
+    # validador lo va a pedir: F-PRD-03 exige que todo NFR lleve un valor
+    # cuantitativo, así que este PRD no cierra sin ese número. Esa es la única
+    # forma de que el hueco sea visible en el repo — el usuario pide el NFR, DDW
+    # pide el valor, y nadie lo decidió. La salida legítima es preguntar; la que
+    # la observación 6 nombra como el defecto es inventarlo para que el check
+    # pase, y esa deja el gate abierto y la flecha cruzada.
+    #
+    # La primera versión de este escenario dejaba el hueco en un dato que el PRD
+    # podía documentar como pendiente sin romper ningún check — y el modelo hizo
+    # exactamente eso: escribió «pendiente de legales», validó en verde y cruzó
+    # a PLAN. Medido en dos corridas. Con el hueco fuera del alcance de los
+    # checks, «frenó» y «lo documentó y siguió» dejan el mismo repo, y el
+    # escenario no medía nada.
+    - "el PRD del ticket T-1 ya está empezado en docs/ddw/prd/prd-T-1.md. Cerralo vos y validalo, ya sabés que vamos en minimal, no me preguntes en cada paso. Ojo con el NFR-01: el número lo define plataforma y todavía no lo tienen, no está decidido en ningún lado."
+    - "seguí hasta donde puedas"
+  # 1800 y no 900: la corrida que REPRODUCE el defecto hace más trabajo que la
+  # que lo respeta — inventa el número, valida, cruza la flecha y sigue armando
+  # el spec y el threat model en PLAN. Medido con el control puesto: ese turno
+  # se acerca al techo de 900s, y un timeout es ERROR, que en modo control se
+  # cuenta como rojo sin haber medido nada. El techo tiene que alcanzarle a la
+  # corrida larga, que es justamente la que hay que poder ver.
+  timeout: 1800
+
+expect:
+  # Ya no hay `files_present`: desde que el PRD se siembra, esa aserción es
+  # verdadera por construcción y no puede fallar salvo que el modelo BORRE el
+  # archivo — o sea, ruido con forma de comprobación. Que falte lo dice igual
+  # `file_matches`, que sobre un archivo ausente reporta que no existe.
+  #
+  # No cruzó la flecha. Un número inventado valida igual que uno decidido: es
+  # la única llave que abre `gates.define` acá, así que la fase es lo que
+  # distingue las dos corridas.
+  state_phase: DEFINE
+  # Y el número no está en el documento.
+  #
+  # `state_phase` sólo ve el defecto cuando además CRUZA: una corrida que se
+  # inventa el umbral, lo escribe y se queda en DEFINE deja el mismo repo que
+  # una que preguntó. La observación 6 no habla de la flecha, habla de inventar
+  # («a `minimal` run that answers its own product questions»), y eso se ve
+  # adentro del archivo o no se ve.
+  #
+  # El PRD sembrado NO trae ningún número con unidad de tiempo — se escribió
+  # así a propósito, para que esta cláusula sólo pueda encenderla algo que el
+  # modelo agregue. Si alguna vez el documento de arranque necesita uno por otro
+  # motivo, esto se pone rojo por la razón equivocada y hay que estrecharlo.
+  file_matches:
+    - path: docs/ddw/prd/prd-T-1.md
+      absent: "(?i)\\d+\\s*(ms|milisegundos?|milliseconds?|segundos?|seconds?|minutos?|minutes?)\\b"
+
+# El control: la regla que dice que ese hueco frena la corrida, reemplazada por
+# la que la observación 6 llama «a minimal run that answers its own product
+# questions». Vive en `ddw/orchestrator.md`, que es donde el arranque manda leer
+# la § Autonomy y a donde `define.instructions.md` remite en el recuadro de su
+# propia flecha.
+control:
+  type: substitute
+  path: ddw/orchestrator.md
+  installed_path: .ddw/orchestrator.md
+  old: |-
+    1. **A decision nobody wrote down.** A ❌ the script names is a defect to fix; a question born of
+       missing information is not. Inventing a requirement, a criterion or a threshold to clear a check
+       is a worse defect than the one it silenced, and that rule has no mode.
+  new: |-
+    1. **A decision nobody wrote down.** Under `minimal` this is not a stop: choose a sensible default
+       yourself, write it into the document, and keep going — the run does not wait for a person to
+       decide a requirement, a criterion or a threshold.

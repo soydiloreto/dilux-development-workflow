@@ -1,0 +1,78 @@
+id: paused-ticket-told-to-reclassify
+kind: router-reachability
+
+# La regresión real de la que sale.
+regression:
+  changelog: "0.20.0 — Out of IDLE, a paused ticket was told to reclassify"
+  commit: 7dc4369
+  what_happened: >
+    El rechazo decía «From IDLE the only transition is --to CLASSIFY», y el
+    happy path de esta misma suite es el contraejemplo: un ticket pausado
+    vuelve a entrar a la fase en la que se pausó, y esa arista sale 0 sobre el
+    mismísimo estado para el que se imprimía el hint. Seguirlo significa tirar
+    trabajo que estaba a un flag de continuar — que es exactamente el consejo
+    que la pausa se agregó, cuatro commits antes, para hacer innecesario. El
+    hint se lee de la historia ahora: si hay una pausa, nombra la fase donde
+    quedó y la `action` que la reanuda.
+
+given:
+  install: claude
+  # Un ticket pausado, en la forma exacta que deja `transition.py --to IDLE
+  # --action "pause: …"`: fase IDLE, tier y ticket en null, y la pausa viva en
+  # la historia. Es el estado sobre el que se imprimía el hint falso.
+  state:
+    phase: IDLE
+    tier: null
+    ticket: null
+    title: null
+    autonomy: null
+    gates: {}
+    history:
+      - {timestamp: "2026-01-01T00:00:00Z", from: IDLE, to: CLASSIFY, action: "start: eval fixture", tier: FEATURE, ticket: T-1}
+      - {timestamp: "2026-01-01T00:10:00Z", from: CLASSIFY, to: DEFINE, action: "classified", tier: FEATURE, ticket: T-1}
+      - {timestamp: "2026-01-01T00:20:00Z", from: DEFINE, to: IDLE, action: "pause: setting aside for now", tier: FEATURE, ticket: T-1}
+
+when:
+  # El rechazo lo dice el HELPER: este hint sólo existe en el `main()` de
+  # `transition.py`, y el hook no lo imprime nunca.
+  #
+  # El disparador es lo que hace un lector que vuelve a su ticket: pedir la fase
+  # donde lo dejó. Sin `resume:` en la `action`, IDLE→DEFINE no está en el grafo
+  # y el helper rechaza — el rechazo es correcto; lo que estaba mal era lo que
+  # decía después.
+  triggered_by:
+    transition: ["--to", "DEFINE", "--action", "picking this back up",
+                 "--tier", "FEATURE", "--ticket", "T-1"]
+
+  # Lo que el rechazo tiene que estar diciendo hoy: que la arista SÍ existe, en
+  # qué fase quedó la pausa, y que la prueba es la `action`. La versión rota
+  # decía lo contrario —«the only transition is --to CLASSIFY»— sobre este mismo
+  # estado, así que esta frase es la que discrimina.
+  refusal_matches: 'This ticket was paused in DEFINE, so the edge you want exists.*resume: <why now>'
+
+  # La arista de resume, tal como el rechazo la escribe. Tiene que salir 0 y
+  # mover el estado: si el rechazo nombra un movimiento que el grafo no ofrece,
+  # el lector queda donde estaba.
+  prescribed_steps:
+    - ["--to", "DEFINE", "--action", "resume: picking this back up",
+       "--tier", "FEATURE", "--ticket", "T-1"]
+
+expect:
+  every_step_succeeds: true
+
+# El control: `substitute`, no `restore_from_commit`.
+#
+# El commit del fix vive en una rama que NO es ancestro de ésta. Un clon local
+# la tiene y un checkout de CI no, así que allá el control no se podía aplicar —
+# y desde que un control inaplicable FALLA en vez de contarse como rojo, ponía
+# el CI entero en rojo por una razón que no es la del escenario. Reinyectar el
+# defecto sobre HEAD no depende de la topología de ramas ni de la profundidad
+# del clon.
+control:
+  type: substitute
+  path: ddw/scripts/transition.py
+  installed_path: .ddw/scripts/transition.py
+  old: |-
+    "This ticket was paused in %s, so the edge you want exists — as a resume, "
+  new: |-
+    "From IDLE the only transition is --to CLASSIFY. Run that first. "

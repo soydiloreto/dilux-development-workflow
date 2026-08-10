@@ -19,6 +19,183 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.21.0] — Unreleased
+
+### Fixed — SECURITY
+
+- **Copilot's two write-deciding hooks failed OPEN without `python3`.** They
+  exited 127 where the other five adapters exit 2, and every exit that is not 2
+  is a non-blocking error: the write went through with nothing having judged it.
+  The check that was supposed to cover this read the hooks' text, skipped any
+  file that did not already contain the guard, and globbed
+  `adapters/*/hooks/**` — where Copilot's hooks do not live. It is now measured
+  by INSTALLING all five tools and running every write-deciding hook with a
+  `PATH` that has no `python3` on it.
+
+### Fixed
+
+- **`install.sh` with no `--target` failed on any repo that already had DDW.**
+  The manifest also carries `method:` keys, so the tool list read
+  `claude method`, and choosing it exited on `Unknown target: method`.
+- **The install preflight never looked at the commands directory.** It read
+  `command` where the installer writes `commands`, so the directory OpenCode's
+  seventeen commands land in went unchecked. Occupied by a file, the refusal
+  that promises "nothing has been written" arrived after writing `.ddw/` and
+  `AGENTS.md`, and with no manifest — the drift detector off for good.
+- **The uninstall left `GEMINI.md` importing a method that was gone**, so every
+  Gemini session in that repo started by reading a deleted file.
+- **A `--force` uninstall printed a plan that was not the removal it then ran.**
+  It said "Kept 1 file(s) … re-run with `--force`" about the file it was about
+  to delete. A plan you cannot trust is worse than no plan, because you read it
+  and approved.
+
+### Added
+
+- **`evals/` — the layer that measures the INSTRUCTIONS.** `verify_install.sh`
+  measures the hooks: given an event, does the gate answer correctly. Nothing
+  measured whether an obedient reader of the rules ends up somewhere the hooks
+  allow. Every scenario carries the commit of the regression it comes from, and
+  `--control` applies that regression and REQUIRES the scenario to go red: a
+  scenario that cannot fail is not a test. A run that examined nothing exits 2.
+- **`tests/test_validators.py`**, and thirteen more cases in
+  `tests/test_validate_transition.py`, over guards the suite executed ZERO
+  times — found by running the suite under `coverage` with
+  `COVERAGE_PROCESS_START`, which measures the subprocesses too, and the
+  validators and the hooks are subprocesses.
+- **Sixteen faults** (441 → 457), and `edit_re`, so a fault that has to touch a
+  line carrying a number is not anchored to that number.
+
+### Fixed — the clock
+
+- **A legal transition was refused because the wall clock stepped backwards.**
+  Measured on WSL2, which resyncs with the host: six one-second steps BACKWARDS
+  in 33,465 samples over 75 seconds under load. A step between two moves of a
+  run left the new entry stamped before the one it follows, and the monotonicity
+  guard refused a transition the helper itself had just built — with no way out,
+  because the only thing that would fix it is editing the history, which the
+  hook also refuses. The guard is unchanged; the sanctioned path can no longer
+  produce the case. Any user on a VM had this.
+- **`CLAUDE_PROJECT_DIR` leaked across sections of the suite**, and the helper
+  reads it before the cwd, so everything downstream operated on a repository
+  from another section.
+- **`## Testing` could be deleted from `ddw/AGENTS.template.md` with the linter
+  green**, undoing 87ae703. The sweep read only `ddw/**` — not the skills that
+  cite it — and only asked whether the REPORTER knew the heading, never whether
+  the template shipped it.
+
+### Added — the instruments
+
+- **`painted-door-sweep`**: every instruction file the method carries, every
+  imperative write pulled out of it, each one handed to the real gate. The four
+  painted doors this project has shipped were each closed with a scenario that
+  re-finds that one door; none of them would have found the other three.
+- **`kind: method-lint`**, and the first scenario of that kind. `lint_method.py`
+  is the only instrument that reads the method's PROSE against its data, and the
+  suite only ever asked whether it is green today. A prose linter breaks
+  silently — rename a section, the check stops finding what it looked at, and it
+  keeps reporting green for having nothing else to say. Now it is a verdict with
+  a control: the scenario reinjects the claim that cost a release (`autonomy`
+  left out of the Boot Sequence, so every compaction forgot the mode) and
+  REQUIRES the linter to name it. A control that goes red on a claim the
+  scenario did not break is reported as a failed control, not as red — the same
+  defect as a control that fails with a `TypeError`, better disguised.
+- **`expect.file_matches`**: a scenario can assert on the CONTENT of an
+  artifact, not only on its existence. `files_present` cannot tell the document
+  that answered the question from the one that invented the answer — both exist
+  — and "a `minimal` run that answers its own product questions" is visible
+  inside the file or not at all. A clause that asserts nothing, or a regex that
+  does not compile, is an ERROR: an assertion that cannot judge reads as green.
+- **`given.files`**: a scenario can seed the tree. Until now the fixture could
+  only be given `.ddw-state.json`, so every scenario about a product source that
+  already exists, a half-written artifact, or an artifact that is already there
+  when the phase goes to write it, started from an empty repo and measured
+  something else. Seeded files are committed unless the scenario says otherwise,
+  and a path that escapes the fixture is refused.
+- **`mutate.py --flake-check N`**: the suite run UNMUTATED N times at the
+  concurrency of a real run, naming every check that fails on its own. A
+  spurious red is not lost — `run_one` reads it as a KILL, and fabricates
+  coverage. It is what found the clock.
+
+- **A `behavioral` workflow, and the key it runs on.** The scenarios that put
+  the instructions in front of a real model cost money and minutes, so they run
+  on demand and weekly rather than on every push — and until now they ran
+  nowhere: the API key had been in the repository's secrets since August and no
+  workflow read it, so every behavioral number came from a free model that,
+  measured twice in one afternoon, could not finish a turn in 1800 seconds. The
+  job fails with a message when the key is absent, because a run that called no
+  model must not finish green saying the instructions were checked. It runs the
+  controls too, in a separate step.
+- **`control.cannot_discriminate`**, and a fourth verdict counted apart. Asked
+  against a capable model, `forged-state-stops-and-reports` passed its own
+  control — which the runner reads, correctly, as "this scenario cannot detect
+  its own regression". It is not written wrong: all three of its edits are
+  PROSE, and the hook goes on refusing the write to a corrupt state either way
+  — the message it mutates says so itself. The rule is defended twice on
+  purpose, so breaking one defence leaves the same repository behind, and only a
+  model that goes around the hook via the shell could end differently. Leaving
+  it red forever teaches people to ignore red; deleting the control leaves the
+  scenario claiming a measurement it does not make. So the scenario says so, the
+  reason is in the file, and the run counts it apart — and a run where
+  everything was skipped is not green, which is the rule the suite already
+  applies to its own skips.
+- **`scripts/lint_kill_map.py`, and `docs/LINT-CHECKS-THAT-CANNOT-FAIL.md`.**
+  The suite has ONE check for the whole prose linter, so in the ledger below
+  `lint_method.py`'s forty-four `fail()` sites collapse into a single line: while
+  any fault keeps the linter red, a check inside it that stopped finding what it
+  was written for goes on reporting green, and the ledger says it is covered.
+  This asks the same question one level down — apply each fault, run the linter,
+  record WHICH site fired — and it needs no run of the suite at all: under a
+  minute, in `verify`. **16 of 34 sites were provoked by some fault at the first
+  measurement; 42 of 44 now**, and the two that are not carry their reason.
+  Twenty faults were written for the difference.
+  Two measurement defects were found by tracing single entries rather than
+  reading the total, which is the only way this repository has ever found them:
+  a `fail()` whose message is built with `%s` cannot be recognised by its format
+  string (it reported the boot check as uncovered while its fault existed), and
+  a whitelist of the extensions the linter reads silently dropped every fault
+  that deletes a DIRECTORY — the two guards those faults exist to fire went on
+  reading as holes in the product after the faults were written.
+
+### Added — the kill map
+
+- **`scripts/mutate.py --kill-map`, and `docs/CHECKS-THAT-CANNOT-FAIL.md`.** The
+  map records WHICH check catches each fault. Crossed with every `bad "…"` the
+  suite knows how to say, what remains are the checks no fault provokes — and a
+  check that cannot fail reports green for having no other thing to say. Five of
+  those shipped in this project; they were found by accident.
+  **83 of 402 at the first measurement; 12 now**, of which eight carry a written
+  reason. It runs on `workflow_dispatch` across twenty-four runners, and the
+  ledger is an EXPECTATION CI compares against, not a report nobody regenerates:
+  a new check nothing provokes goes red until somebody writes the fault or
+  writes down why there is not one.
+- **`multi()`**, for defects that do not live on one line, and **`edit_re`**, so
+  a fault that must touch a line carrying a number is not anchored to that
+  number. Both were asked for by the map.
+- **Sixty-eight faults** (473 → 541), each verified by running the whole suite on
+  a mutated copy and reading the ✗ it produced.
+
+### Fixed — checks that could not fail
+
+- **`missing from the repository root:`** — `MISSING_FRONT` was never
+  initialised and the suite runs under `set -u`, so the first absent file killed
+  bash on that line. The fault that deletes `CODE_OF_CONDUCT.md` was recorded as
+  CAUGHT with no check having spoken, and everything after that line never ran.
+- **The seal over DDW's own machinery** was asked in PLAN, where the source
+  guard refuses those paths anyway: breaking the seal entirely changed no
+  verdict. Asked in CODE now, where nothing else covers it.
+- **`DDW's hooks are still wired to scripts that were just deleted`** grepped for
+  `ddw` in `.claude/settings.json`, and Claude is the one adapter whose wiring
+  hangs off no `ddw/` directory.
+- **The corrective-loop fixture never left DEFINE** — it did not earn its gates,
+  so every step failed silently and two checks asked about a state that was
+  never reached. **The closeout pair sent the same input twice**, because
+  `--gate` is refused outright on `--to IDLE`.
+
+### Note on releases
+
+This version is NOT published. It is the number the work is attached to, which
+is what makes the version mean something; publishing is a separate decision.
+
 ## [0.20.0] — Unreleased
 
 ### Changed — BREAKING

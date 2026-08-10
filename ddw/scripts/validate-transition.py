@@ -707,7 +707,7 @@ def _check_gate_owner(old_state, new_state, graph, appended):
 
 
 def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
-             gates_scope="all", skip_edges=0):
+             gates_scope="all", skip_edges=0, state_path=None):
     old_h, new_h = _check_append_only(old_state, new_state)
     appended = new_h[len(old_h):]
 
@@ -767,6 +767,35 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     # With a transition: validate the chain of appended entries.
     for entry in appended:
         _check_entry_shape(entry)
+
+    # Time moves forward, or the record cannot be read in the order it happened.
+    #
+    # The shape was validated and the VALUE was not, so a new entry could be
+    # dated six years before the one above it and land without a word. Two ways
+    # that happens for real: a machine whose clock is wrong — a container, a VM
+    # resumed from a snapshot — and somebody editing the file by hand. Both
+    # produce the same thing, which is the one artefact this method promises will
+    # still make sense in six months: a history that says a ticket was defined
+    # before it was classified.
+    #
+    # Compared as strings on purpose. The format is already pinned to
+    # `YYYY-MM-DDThh:mm:ssZ` by the check above, and in that format lexical order
+    # IS chronological order — no parsing, no timezone arithmetic, nothing that
+    # can raise on the way to a verdict. Equal timestamps are allowed: two
+    # transitions inside the same second are ordinary, and a clock with
+    # one-second resolution is not evidence of anything.
+    _prev = [e for e in old_h if isinstance(e, dict) and isinstance(e.get("timestamp"), str)]
+    _last = _prev[-1]["timestamp"] if _prev else ""
+    for entry in appended:
+        if _last and entry["timestamp"] < _last:
+            raise Block(
+                "history goes backwards in time: this entry is stamped %s and the one before it "
+                "%s. The history is the record somebody reads six months from now; one that "
+                "cannot be read in order is not one. If this machine's clock is wrong, fix the "
+                "clock — the entry cannot be written as if it were not."
+                % (entry["timestamp"], _last)
+            )
+        _last = entry["timestamp"]
 
     # Internal contiguity.
     for a, b in zip(appended, appended[1:]):
@@ -845,6 +874,23 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
             # owed none either, and the gates it had earned come back with it.
             # But it has to BE a resume: proven by a pause, from this phase.
             _resume_allowed(entry, old_h + appended, len(old_h) + idx)
+            # …and proven by a pause the JOURNAL saw, not merely one the file
+            # claims. This branch skips the graph and skips the gates — it is the
+            # one edge in the machine that does — so what it rests on has to be
+            # something the forger does not also write. The history is the state
+            # file, and the state file is exactly what a shell rewrites.
+            #
+            # Measured: one shell write of a history containing a single
+            # `pause:` entry from CODE, then the SANCTIONED helper resuming into
+            # CODE — no ticket, no tier, no receipt, gates `{}`, both hooks
+            # green, and product source writable on the next call. Every gate in
+            # the pipeline skipped by inventing a pause that never happened.
+            #
+            # The journal is append-only, written by post mode when a transition
+            # actually lands, and already carries every edge. A pause it never
+            # recorded is a pause that never happened.
+            if state_path:
+                _resume_needs_a_recorded_pause(state_path, entry, dst)
             # Except the two that describe the world outside this repository.
             # A pause at CLOSEOUT is a pause waiting on a person, and days pass:
             # the pull request can be closed, the branch can be force-pushed,
@@ -1253,10 +1299,22 @@ def source_write_denied(target, root, phase):
         # From IDLE there is no phase to finish and no ticket to finish it for,
         # so the two real answers are: start one, or say out loud that you are
         # not going to.
-        unlock = ("Nothing is open here. Either classify the work — `--to CLASSIFY`, and the "
-                  "tier decides what it owes before CODE — or, if you genuinely want no "
-                  "pipeline for this, take `--to CLASSIFY --tier FREE` and then `--to FREE`: "
-                  "no gates, no artifacts, and a line in the history saying so. ")
+        # Sin la receta del tier sin enforcement.
+        #
+        # Este mensaje la traía: `--to CLASSIFY --tier FREE` y después `--to
+        # FREE`. Medido con un modelo en vivo — leyó el rechazo, tomó esos dos
+        # pasos por su cuenta, y escribió el archivo. Obedeció las dos mitades
+        # del mismo mensaje: el bloqueo y la forma de saltearlo.
+        #
+        # Trabajar sin pipeline es una decisión del USUARIO, y era la premisa de
+        # FREE desde que se agregó. Ofrecérsela al modelo dentro del rechazo la
+        # convierte en una decisión del modelo, que es lo contrario. El tier
+        # sigue existiendo, `classify.instructions.md` sigue enseñando cuándo
+        # corresponde, y el camino sigue abierto — para quien lo pida.
+        unlock = ("Nothing is open here: classify the work with `--to CLASSIFY`, and the tier "
+                  "decides what it owes before CODE. If the user does not want a pipeline for "
+                  "this at all, that is theirs to say — ASK them, and classify with the tier "
+                  "they name. It is not a step you take on your own to get past this. ")
     else:
         unlock = ("Finish this phase and take the transition — its gates are what unlock CODE, "
                   "which is the phase that writes source. " if phase != "CODE" else "")
@@ -1917,6 +1975,38 @@ def _journal_undecodable(state_path):
     return bad
 
 
+def _resume_needs_a_recorded_pause(state_path, entry, dst):
+    """The pause a resume points at has to be one the journal recorded.
+
+    `_resume_allowed` reads the history — which lives in the state file, which is
+    what a shell rewrites. This asks the other record, the one written only when
+    a transition really landed.
+
+    A journal that does not exist yet is not evidence of forgery: it is a
+    repository installed before this file existed, or one whose first transition
+    has not landed. In that case there is nothing to compare against and the
+    older check is all there is — the same bargain the tier line on a receipt
+    makes. What is refused is a journal that EXISTS and has no such pause.
+    """
+    recorded = _journal_entries(state_path)
+    if not recorded:
+        return
+    for line in recorded:
+        if line.get("to") != IDLE or line.get("from") != dst:
+            continue
+        action = line.get("action")
+        if isinstance(action, str) and action.strip().lower().split(":", 1)[0].strip() == "pause":
+            return
+    raise Block(
+        "this resume points at a pause the journal never recorded. The history says this ticket "
+        f"was paused in {dst}; the append-only record of what actually landed does not. A resume "
+        "is the one edge that owes no gates, so it rests on a pause that happened — and a pause "
+        "that happened is in both records. If the journal was lost, restore it or start the work "
+        "again from CLASSIFY; it cannot be resumed on the strength of the file the resume is "
+        "asking about."
+    )
+
+
 def _journal_entries(state_path):
     """The transitions the journal recorded, in order.
 
@@ -2190,7 +2280,7 @@ def _read_state_or_refuse(state_path):
     return text, parsed
 
 
-def _method_write_denied(target, method):
+def _method_write_denied(target, method, repo=None):
     """A write to the method itself, wherever the method actually lives.
 
     `enforcement_write_denied` asks whether a path is under `.ddw/` *in the
@@ -2206,10 +2296,31 @@ def _method_write_denied(target, method):
 
     Kept separate from the repo guard because the answer is different: this one
     holds no matter which side of the repo boundary the path falls on.
+
+    **And it covers the plugin ROOT, not only the method inside it.** The first
+    version sealed `$PLUGIN/ddw` — the rules, the graph, the validators — while
+    the files the tool actually EXECUTES sit one level up:
+    `$PLUGIN/adapters/claude/hooks/validate-state-transition.sh`, the
+    `plugin-hooks.json` that wires it, `.claude-plugin/plugin.json`. None of
+    those are under the method and none are in the repo, so every guard answered
+    "not ours". Measured: overwriting that one `.sh` with `exit 0` took a single
+    `Write`, allowed in any phase including IDLE, after which a write to
+    `src/x.py` that had just been refused came back at exit 0 — DDW off, in
+    every repository using that plugin, from inside a ticket.
+
+    Only when the method is OUTSIDE the repo. In a drop-in install the method is
+    `<repo>/.ddw`, whose parent is the repository itself: sealing that would seal
+    the user's project, which is the opposite of the deal.
     """
     if not method:
         return None
     root = os.path.realpath(method)
+    if repo:
+        repo_root = os.path.realpath(repo)
+        outside = root != repo_root and not root.startswith(repo_root + os.sep)
+        if outside:
+            # The plugin root: what the tool loads, hooks and manifest included.
+            root = os.path.dirname(root) or root
     if target != root and not target.startswith(root + os.sep):
         return None
     return (
@@ -2246,7 +2357,7 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
     # graph. The scratch path the corrupt-state recovery prescribes is not under
     # the method root, so that door stays open.
     for target in targets:
-        denied = _method_write_denied(target, method)
+        denied = _method_write_denied(target, method, repo)
         if denied:
             return denied
 
@@ -2331,7 +2442,8 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
         graph = _load_graph(graph_path)
         new_text = _reconstruct_new_text(tool_name, tool_input, old_text)
         new_state = _parse_new_state(new_text)
-        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=1)
+        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=1,
+                 state_path=state_path)
         # The claim is legal. Is it backed?
         #
         # This used to be asked by transition.py alone — the helper the model is
@@ -2509,6 +2621,7 @@ def decide_post(state_path, graph_path):
     # does not re-check history, it invents a verdict — and it rejected the
     # corrective loop, the pipeline's own documented recovery path.
     validate(prior, disk_state, graph, gates_scope=scope, max_appended=None,
+             state_path=state_path,
              skip_edges=max(0, blessed - start))
 
     # The same question the pre path asks, for the writes it never sees: a
@@ -2541,6 +2654,30 @@ def decide_post(state_path, graph_path):
         if run_ticket:
             disk_state = {**disk_state, "ticket": run_ticket,
                           "tier": disk_state.get("tier") or tier}
+        else:
+            # And if NOTHING names a ticket, that is not "nothing to check" — it
+            # is a run that cannot be checked, which is the same thing wearing a
+            # different face. Every receipt gate resolves its document through
+            # the ticket, and `_receipt_missing` reads a missing one as a missing
+            # CLAIM: so the switch that turns the whole evidence layer on was
+            # held by whoever wrote the history.
+            #
+            # Measured: a FEATURE forged in one shell write —
+            # IDLE→CLASSIFY→DEFINE→PLAN→CODE→VERIFY→CLOSEOUT→IDLE, seven
+            # transitions, `tier` stamped so the tier-less hatch would not catch
+            # it, and `ticket` left off every entry. Post mode returned 0, and
+            # the journal recorded all seven as blessed: a run with no PRD, no
+            # spec, no threat model, no test report, no SAST report and no
+            # verdict, indistinguishable afterwards from one that earned them.
+            raise Block(
+                "this run takes %d transition(s) that owe evidence (%s) and no entry names a "
+                "ticket, so there is no document any of them can be checked against. The ticket "
+                "is stamped on the entry that classifies the work and carried by every entry "
+                "after it — a run without one cannot be judged, and a run that cannot be judged "
+                "is not one this gate lets past. If this history is real, the entries lost their "
+                "`ticket` field; restore it from the journal rather than writing the state again."
+                % (len(landed), ", ".join(sorted(set(owed))))
+            )
 
     # And the gates this write turned on WITHOUT declaring a transition, which is
     # the case the edges above cannot see: a `jq`/`sed` that flips `tests` to true

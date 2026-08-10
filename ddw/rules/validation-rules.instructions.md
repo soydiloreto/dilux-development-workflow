@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.8.0
+version: 1.9.0
 ---
 
 # Validation Rules — Central Catalog
@@ -303,7 +303,7 @@ To suppress a Medium finding as a false positive or an accepted risk:
 |---|---|---|---|
 | F-VER-01 | AC with no passing test | **Every AC in the PRD must have at least one test validating it, and that test must be passing.** If an AC has no test, or the test exists but fails → FAIL. | The AC is the contract with the user. Without a test validating it, there is no evidence it works. |
 | F-VER-02 | Spec task not implemented | **Every task/block in the spec, or step in the fix-plan, must be implemented.** If a whole block or a fix-plan step has no corresponding code → FAIL. | The spec is the approved plan. Partial implementation = an incomplete feature = a bug. |
-| F-VER-03 | Test coverage below the minimum | **Line coverage ≥ 80%, branch coverage ≥ 80%, and function coverage ≥ 80%** over the new/modified code. If any is below → FAIL. | `.ddw/rules/testing.instructions.md` defines these three minimums. Verify they are met, not just that "there are tests". |
+| F-VER-03 | Test coverage below the floor | **Line, branch and function coverage must each be at or above the project's floor**, read from `AGENTS.md` §Testing. Where the project states none, `.ddw/rules/testing.instructions.md` supplies 80/80/80 as the default. If any is below → FAIL. | The floor belongs to the project, which is what F-TEST-05 says in the same catalog: a report that chooses its own floor passes itself, and a rule that hardcodes one calls a project with a 70% floor both PASS and FAIL depending on which of the two rules you read. Verify the numbers are met, not just that "there are tests". |
 | F-VER-04 | No sad-path tests | **Every endpoint or function accepting input must have at least one test with invalid input.** If there are only happy-path tests → FAIL. | The worst bugs live in edge cases and sad paths. Testing only the happy path tests only 20% of the real behavior. |
 | F-VER-05 | Lint/type checker fails | If the project has a linter or type checker configured and there are errors → FAIL. | Lint/type errors indicate code that can fail at runtime. You cannot verify code that does not compile or pass lint. |
 | F-VER-06 | Spec tests not implemented | **Every test listed in the spec must exist and pass.** If the spec says "test: creating a product with an empty name returns 400" and that test does not exist → FAIL. | The spec's tests are quality commitments the user approved. Not implementing them is breaching the spec. |

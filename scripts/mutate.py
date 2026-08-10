@@ -30,6 +30,7 @@ still green. `--cover` reads the workflow and adds the slices back up, so the
 workflow has to prove it ran the whole list rather than assert it.
 """
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -42,7 +43,7 @@ SELF = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SELF)
 
 
-def edit(rel, old, new, last=False):
+def edit(rel, old, new, last=False, may_not_parse=False):
     """A mutation that swaps one exact string in one file.
 
     `last=True` swaps the LAST occurrence instead of the first, and it exists for
@@ -68,7 +69,60 @@ def edit(rel, old, new, last=False):
         return None
     # What this mutation needs to still be true of the tree, cheap enough to ask
     # about without running anything. See `--check-anchors`.
-    apply.probe = ("text", rel, old, new, last)
+    apply.probe = ("text", rel, old, new, last, may_not_parse)
+    return apply
+
+
+def edit_re(rel, pattern, repl, what):
+    """Como `edit`, pero el ancla es una EXPRESIÓN, no un literal.
+
+    Existe por una sola clase de fault: los que tienen que tocar una línea que
+    lleva un número que cambia solo. `EXPECT_CHECKS=553` como ancla literal
+    significa que agregar un check rompe el fault que comprueba que el total
+    está fijado — y lo que se rompe es justamente la comprobación de que nadie
+    borró checks. Pasó tres veces en una noche, con `EXPECT_MUTATIONS` y con
+    `EXPECT_CHECKS` dos veces.
+
+    `what` describe qué se espera encontrar, para que `--check-anchors` diga
+    algo accionable cuando deje de estar.
+    """
+    rx = re.compile(pattern, re.M)
+
+    def apply(repo):
+        path = os.path.join(repo, rel)
+        text = open(path, encoding="utf-8").read()
+        out, n = rx.subn(repl, text, count=1)
+        if not n:
+            return f"{what} ya no está en {rel} — actualizá esta mutación"
+        if out == text:
+            return f"{what} en {rel}: la sustitución no cambió nada"
+        open(path, "w", encoding="utf-8").write(out)
+        return None
+
+    apply.probe = ("regex", rel, pattern, repl, what)
+    return apply
+
+
+def multi(*parts):
+    """Varias ediciones como UN fault.
+
+    Existe porque hay defectos que no viven en una línea. El bucle correctivo
+    devuelve compuertas en dos lugares —el estado en disco y la lista de aristas
+    que las devuelven— y romper uno solo lo tapa el otro: el fault sobrevive y
+    parece que el check no puede fallar, cuando lo que no puede es una edición
+    sola. Lo pidió el mapa de kills, que es donde se vio.
+
+    El probe es el del PRIMER pedazo: `--check-anchors` pregunta si el fault
+    todavía encuentra qué romper, y si el primero se movió el resto no importa.
+    Los demás igual reportan su propio problema al inyectarse.
+    """
+    def apply(repo):
+        for part in parts:
+            problem = part(repo)
+            if problem:
+                return problem
+        return None
+    apply.probe = getattr(parts[0], "probe", None)
     return apply
 
 
@@ -133,8 +187,8 @@ MUTATIONS = [
     # behaviour, and a mutation that cannot fail is not evidence of anything.
     ("the pre path stops capping transitions per write",
      edit("ddw/scripts/validate-transition.py",
-          "        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=1)",
-          "        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=None)")),
+          "        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=1,",
+          "        validate(old_state, new_state, graph, tool_name=tool_name, max_appended=None,")),
     ("the gate's fail-closed wrapper becomes fail-open",
      edit("ddw/scripts/hook-gate.py",
           'deny(_d, f"DDW could not reach a verdict', 'allow(_d) or deny(_d, f"DDW could not reach a verdict')),
@@ -558,8 +612,8 @@ MUTATIONS = [
           "    if False:")),
 
     ("the installer stops noticing that this repo already has DDW",
-     edit("install.sh", 'INSTALLED="$(python3 - "$TARGET" <<\'PY\' 2>/dev/null || true',
-          'INSTALLED=""; true "$(python3 - "$TARGET" <<\'PY\' 2>/dev/null || true')),
+     edit("install.sh", 'INSTALLED="$(python3 - "$TARGET" "$SELF" <<\'PY\' 2>/dev/null || true',
+          'INSTALLED=""; true "$(python3 - "$TARGET" "$SELF" <<\'PY\' 2>/dev/null || true')),
     ("an installed tool left out of the run is passed over in silence",
      edit("install.sh", 'case " $TARGETS " in *" $inst "*) ;; *) SKIPPED="$SKIPPED $inst" ;; esac',
           'case " $TARGETS " in *) ;; esac')),
@@ -616,10 +670,10 @@ MUTATIONS = [
     # this injects.
     ("CLASSIFY appends its entry without being told to stamp the ticket",
      edit("ddw/rules/classify.instructions.md",
-          "(or → DISCOVERY), **stamped\n     with `ticket` and `tier`** "
+          "(or → DISCOVERY, or → FREE), **stamped\n     with `ticket` and `tier`** "
           "(see `.ddw/rules/state.instructions.md`). This is the first entry\n"
           "     that can carry a ticket — the one before it left IDLE, where there was none yet.",
-          "(or → DISCOVERY).")),
+          "(or → DISCOVERY, or → FREE).")),
     ("a phase appends to history without being told what to stamp on the entry",
      edit("ddw/rules/verify.instructions.md",
           "transition VERIFY \u2192 CLOSEOUT, **stamped with `ticket` and `tier`** "
@@ -1685,21 +1739,637 @@ MUTATIONS = [
           'repo = tempfile.mkdtemp(dir=os.environ["WORK"])', "repo = tempfile.mkdtemp()")),
     ("WORK stops being exported, so nothing can anchor to the one cleanup there is",
      edit("scripts/verify_install.sh", 'export WORK="$(mktemp -d)"', 'WORK="$(mktemp -d)"')),
-    ("one undecodable byte in the journal escapes both handlers again",
+    # Dos redacciones anteriores de este fault picaban código redundante y no
+    # las mataba nada: `UnicodeDecodeError` es subclase de `ValueError`, y la
+    # lectura en bytes está cubierta por el guard que corre antes en TODOS los
+    # caminos. El guard es la defensa viva — sin él la línea rota se descarta
+    # callada y el journal queda más corto que la historia que verifica.
+    # Las tres siguientes salieron de correr la suite bajo `coverage` midiendo
+    # también los subprocesos: son líneas de enforcement que la suite no
+    # ejecutaba ni una vez. No las encontró nadie leyendo el código.
+    ("a receipt written before the corrective loop took the gate back reopens it again",
      edit("ddw/scripts/validate-transition.py",
-          "        except (ValueError, UnicodeDecodeError):\n            continue",
-          "        except ValueError:\n            continue")),
+          "    if written_at is not None and written_at > spent_at:\n        return None",
+          "    if True:\n        return None")),
+    ("the refusal for a phase without its entry tells an Edit to do what an Edit cannot",
+     edit("ddw/scripts/validate-transition.py",
+          '            if tool_name == "Edit":',
+          '            if False:')),
+    ("the drift warning stops naming what is missing, so a repo with no enforcement looks governed",
+     edit("ddw/scripts/session-boot.py",
+          "    if not changed and not gone:\n        return []",
+          "    if True:\n        return []")),
+    ("a security suppression goes back to being aged by a date it writes about itself",
+     edit("ddw/scripts/validate_sast.py",
+          "                if (today - made).days > 190:",
+          "                if False:")),
+    # Estos cuatro salieron de una auditoría dirigida a la instalación y los seis
+    # adaptadores. Los cuatro sobrevivían a la suite entera cuando se propusieron.
+    ("a write-deciding hook stops refusing when there is no python3 to judge with",
+     edit("adapters/copilot/scripts/pre-tool-use.sh",
+          'command -v python3 >/dev/null 2>&1 || {\n'
+          '  echo "DDW cannot enforce anything without python3 on PATH. Refusing the write." >&2\n'
+          '  exit 2\n'
+          '}\n',
+          "")),
+    ("the preflight stops looking at where the wiring goes, so `nothing was written` stops being true",
+     edit("scripts/install_target.py",
+          '              + [w.get("to") for w in recipe.get("wiring", [])]',
+          "              + []")),
+    ("the uninstall leaves Gemini importing a method that is no longer there",
+     edit("scripts/uninstall_repo.py",
+          'CONTEXT_FILES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")',
+          'CONTEXT_FILES = ("AGENTS.md", "CLAUDE.md")')),
+    ("the plan you approve stops being the removal that runs",
+     edit("uninstall.sh",
+          'python3 "$SELF/scripts/uninstall_repo.py" --repo "$TARGET" --self "$SELF" --plan $FORCE',
+          'python3 "$SELF/scripts/uninstall_repo.py" --repo "$TARGET" --self "$SELF" --plan')),
+    # Ocho de una auditoría dirigida al núcleo de enforcement. Cuatro sobrevivían
+    # a la suite entera cuando se propusieron; los otros cuatro ya morían y se
+    # agregan porque la lista es la cobertura: un check sin nada que lo mida es
+    # un check que nadie sabe si puede fallar.
+    ("a NotebookEdit writes product source with no path for any guard to see",
+     edit("ddw/scripts/validate-transition.py",
+          'PATH_KEYS = ("file_path", "notebook_path", "path", "filePath", "file", "absolute_path")',
+          'PATH_KEYS = ("file_path", "path", "filePath", "file", "absolute_path")')),
+    ("a receipt earned for another document opens this gate",
+     edit("ddw/scripts/validate-transition.py",
+          "        if not named or named == os.path.basename(path):",
+          "        if True:")),
+    ("a forged history can skip whole phases: nobody compares a.to with b.from",
+     edit("ddw/scripts/validate-transition.py",
+          '        if a["to"] != b["from"]:', "        if False:")),
+    ("the artefact allowlist stops being anchored at the start of the path",
+     edit("ddw/scripts/validate-transition.py",
+          "    if any(rel.startswith(pre) for pre in ALLOWED_DIR_PREFIXES):",
+          "    if any(pre in rel for pre in ALLOWED_DIR_PREFIXES):")),
+    ("deleting .ddw-state.json starts a clean run again",
+     edit("ddw/scripts/validate-transition.py",
+          '        raise Block(\n            f".ddw-state.json is gone, but ',
+          '        return  # noqa\n        raise Block(\n            f".ddw-state.json is gone, but ')),
+    ("the header can declare a phase no transition ever reached",
+     edit("ddw/scripts/validate-transition.py",
+          '    if appended[-1]["to"] != new_phase:', "    if False:")),
+    ("the field that takes the human out of the loop stops being checked at all",
+     edit("ddw/scripts/validate-transition.py",
+          "    _check_autonomy(old_state, new_state, appended)", "    pass")),
+    ("a write can move the phase without declaring the transition",
+     edit("ddw/scripts/validate-transition.py",
+          "    if not appended:\n        if new_phase != old_phase:",
+          "    if not appended:\n        if False:")),
+    # Diez de una auditoría dirigida a los validadores de artefactos. Ocho
+    # sobrevivían a las 553 comprobaciones: son las reglas que deciden si un
+    # documento vacío, o uno que se aprueba a sí mismo, gana una compuerta.
+    ("a threat model that names nothing from its own design earns the gate",
+     edit("ddw/scripts/validate_threat.py",
+          "        if anchors and not cited:", "        if False:")),
+    ("a design handling sensitive data passes with nothing classified",
+     edit("ddw/scripts/validate_threat.py",
+          "    elif SENSITIVE.search(text):", "    elif False:")),
+    ("a threat model written in Spanish is told it skipped a STRIDE category",
+     edit("ddw/scripts/validate_threat.py",
+          '    "Elevation of Privilege": (r"elevation of privilege|elevaci[oó]n de privilegios?|escalada"),',
+          '    "Elevation of Privilege": (r"elevation of privilege"),')),
+    ("a test report picks a coverage floor it can clear and grades itself against it",
+     edit("ddw/scripts/validate_tests.py",
+          "        floor = args.floor\n", "        pass\n")),
+    ("a report that states no floor is graded against one DDW invented for it",
+     edit("ddw/scripts/validate_tests.py",
+          "    floor = float(floor_m.group(1)) if floor_m else None",
+          "    floor = float(floor_m.group(1)) if floor_m else args.floor")),
+    ("a skipped test stops owing a reason — the cheapest way to green a suite",
+     edit("ddw/scripts/validate_tests.py",
+          "    if skipped and reasons < skipped:", "    if False:")),
+    ("a real run of 1,204 tests is refused for its own punctuation",
+     edit("ddw/scripts/validate_tests.py",
+          '    raw = re.sub(r"(\\d),(\\d{3})\\b", r"\\1\\2", raw)\n', "\n")),
+    ("a spec block stops owing what can go wrong with it",
+     edit("ddw/scripts/validate_spec.py",
+          "        if not errors:\n            no_errors.append(label)",
+          "        if False:\n            no_errors.append(label)")),
+    ("a spec stops owing the order its blocks run in",
+     edit("ddw/scripts/validate_spec.py", "    if deps:", "    if True:")),
+    ("the PRD template earns its own gate with one field filled in",
+     edit("ddw/scripts/validate_prd.py",
+          "        unwritten = [pretty for pretty, names in SECTIONS\n"
+          "                     if pretty not in missing and _unfilled(_section_body(text, names))]",
+          "        unwritten = []")),
+    ("the method tells every project to quote a heading its own installer never writes",
+     edit("scripts/lint_method.py",
+          '        if shipped and f"## {name}" not in shipped:',
+          "        if False:")),
+    ("a clock that steps backwards stops the pipeline with a refusal nobody can act on",
+     edit("ddw/scripts/transition.py",
+          "    if _last and _stamp < _last:\n        _stamp = _last",
+          "    if False:\n        _stamp = _last")),
+    ("a tier with no enforcement stops being explained to the person using it",
+     edit("scripts/lint_method.py",
+          "        if not asks and tier not in text:", "        if False:")),
+    ("a spec block stops owing a criterion for when it is done",
+     edit("ddw/scripts/validate_spec.py",
+          "        if not criterion and not is_fix:", "        if False:")),
+    ("an endpoint stops owing error codes and authentication in its contract",
+     edit("ddw/scripts/validate_spec.py",
+          "            if missing:\n                bad_api.append",
+          "            if False:\n                bad_api.append")),
+    ("the refusal goes back to handing the model the way around itself",
+     edit("ddw/scripts/validate-transition.py",
+          '"this at all, that is theirs to say — ASK them, and classify with the tier "',
+          '"this at all, take `--to CLASSIFY --tier FREE` and then `--to FREE`. Or ask "')),
+    # Cuatro de FORMA, no de contenido: borran un archivo entero.
+    #
+    # El mapa de kills los pidió. Los cuatro conteos fijados —skills, agentes,
+    # reglas, adaptadores— eran checks que ningún fault provocaba, y no porque
+    # no pudieran fallar sino porque la lista no tenía ninguna mutación capaz de
+    # borrar un archivo. Un conteo que nada puede desmentir es un conteo que
+    # informa verde por no saber decir otra cosa.
+    # El recibo, que es lo único que separa «el validador dijo que pasa» de «hay
+    # una compuerta abierta». Cuatro checks lo afirmaban —spec, tests, threat,
+    # verify: «rechaza un documento sano o no escribe recibo»— y ningún fault
+    # los provocaba: se podía dejar de escribirlo entero y los cuatro seguían
+    # verdes. Es la mitad de cada uno de esos mensajes que nadie medía.
+    ("a validator that passes stops leaving the receipt its gate looks for",
+     edit("ddw/scripts/ddw_receipt.py",
+          '    with open(os.path.join(sess, name), "w", encoding="utf-8") as fh:\n'
+          "        fh.write(filename + \"\\n\")",
+          '    with open(os.path.join(sess, \"x-\" + name), "w", encoding="utf-8") as fh:\n'
+          "        fh.write(filename + \"\\n\")")),
+    ("an agent disappears from the tree and the pinned count says nothing",
+     delete("agents/ddw-arch-auditor.md")),
+    ("a skill disappears from the tree and the pinned count says nothing",
+     delete("skills/ddw-commit")),
+    ("a rule file disappears from the tree and the pinned count says nothing",
+     delete("ddw/rules/branches.instructions.md")),
+    ("an adapter disappears from the tree and the pinned count says nothing",
+     delete("adapters/cursor")),
+    # ── Del mapa de kills, lista A ──────────────────────────────────────────
+    ("the user-level stand-down fires against the repo's own hook, so Copilot's post net never runs",
+         edit("adapters/copilot/scripts/post-write.sh",
+              "if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$REPO/.github/hooks/ddw/post-write.sh\" ]; then",
+              "if [ -f \"$REPO/.github/hooks/ddw/post-write.sh\" ]; then")),
+    ("the uninstall reports the block removed and writes the file back unchanged",
+         edit("scripts/uninstall_repo.py",
+              "                open(path, \"w\", encoding=\"utf-8\").write(out)",
+              "                open(path, \"w\", encoding=\"utf-8\").write(text)")),
+    ("Copilot's hook grows a matcher, so the gate stops being the only filter",
+         edit("adapters/copilot/hooks/ddw.json",
+              "    \"preToolUse\": [\n"
+              "      {\n"
+              "        \"type\": \"command\",",
+              "    \"preToolUse\": [\n"
+              "      {\n"
+              "        \"matcher\": \"write\",\n"
+              "        \"type\": \"command\",")),
+    ("DISCOVERY closes with no commit and no pull request",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["DISCOVERY"]["DISCOVERY->IDLE"].update(gates=[]))),
+    ("the installer stops recognising the block it already wrote and appends a second one",
+         edit("scripts/install_target.py",
+              "        if \"<!-- BEGIN DDW\" in existing:",
+              "        if False:")),
+    ("QUICK-FIX grows a PLAN phase, so the tier for a one-line fix costs a spec",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["QUICK-FIX"].update({"DEFINE->PLAN": {"gates": []}}))),
+    ("the wiring directory of the tool that runs the gate stops being sealed by name",
+         edit("ddw/scripts/validate-transition.py",
+              "PROTECTED_WIRING_DIRS = (\n"
+              "    \".claude/hooks/\", \".codex/hooks/ddw/\", \".cursor/hooks/ddw/\",",
+              "PROTECTED_WIRING_DIRS = (\n"
+              "    \".codex/hooks/ddw/\", \".cursor/hooks/ddw/\",")),
+    ("every event is judged as a read, so no write is judged at all",
+         edit("ddw/scripts/validate-transition.py",
+              "        if not writing:\n"
+              "            continue                      # a read cannot violate a write rule",
+              "        if True:\n"
+              "            continue                      # a read cannot violate a write rule")),
+    ("the gate reads its own Block — the corrupt-state refusal — as nothing to object to",
+         edit("ddw/scripts/hook-gate.py",
+              "    except vt.Block as exc:\n"
+              "        deny(args.dialect, f\"DDW FSM blocked the write to the state: {exc}\")",
+              "    except vt.Block as exc:\n"
+              "        allow(args.dialect)")),
+    ("the lint result under its own heading stops counting, and a complete report is warned at",
+         edit("ddw/scripts/validate_tests.py",
+              "        lint = m.group(1).strip() if m else \"\"",
+              "        lint = \"\"")),
+    ("a path key that is not a string empties the check instead of refusing the write",
+         edit("ddw/scripts/hook-gate.py",
+              "    typed_but_wrong = any(\n"
+              "        k in args and args[k] is not None and not isinstance(args[k], str)\n"
+              "        for k in vt.PATH_KEYS\n"
+              "    )",
+              "    typed_but_wrong = False")),
+    ("F-PRD-06 stops looking, so 'deberia' passes as a requirement",
+         edit("ddw/scripts/validate_prd.py",
+              "        loose = [i for i, t in frs + nfrs + acs if AMBIGUOUS.search(t)]",
+              "        loose = []")),
+    ("CODE->VERIFY stops asking for tests and sast, so the corrective loop is free",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["FEATURE"]["CODE->VERIFY"].update(gates=[]))),
+    ("a graph written before the version field existed is read as an unknown format",
+         edit("ddw/scripts/validate-transition.py",
+              "    declared = graph.get(\"format_version\")",
+              "    declared = graph.get(\"format_version\", \"0\")")),
+    ("a run that names no ticket anywhere is waved through instead of refused",
+         edit("ddw/scripts/validate-transition.py",
+              "        else:\n"
+              "            # And if NOTHING names a ticket, that is not \"nothing to check\" — it",
+              "        elif False:\n"
+              "            # And if NOTHING names a ticket, that is not \"nothing to check\" — it")),
+    ("the shared resolver leaves lib/guard.sh under another name, and every hook bows out silently",
+         edit("adapters/claude/hooks/lib/guard.sh",
+              "ddw_method() {\n  if [ -f",
+              "ddw_resolve() {\n  if [ -f")),
+    ("any action reads as a declared walkaway, so an undeclared exit to IDLE is free",
+         edit("ddw/scripts/validate-transition.py",
+              "    return first in (\"abandon\", \"abandoned\", \"pause\", \"paused\")",
+              "    return True")),
+    ("a script under scripts/ stops parsing, and nothing runs it until CI does",
+         edit("scripts/lint_method.py",
+              "        print(f\"  {where}\\n      {msg}\")",
+              "        print(f\"  {where}\\n      {msg}\"", may_not_parse=True)),
+    ("the boot cannot tell a drop-in from a plugin, and tells everyone not to install",
+         edit("ddw/scripts/session-boot.py",
+              "    if not dropped_in:",
+              "    if True:")),
+    ("the install manifest moves back inside the method",
+         edit("scripts/install_target.py",
+              "MANIFEST = \".ddw-installed.json\"\n"
+              "LEGACY_MANIFEST = os.path.join(\".ddw\", \".installed.json\")",
+              "MANIFEST = os.path.join(\".ddw\", \".installed.json\")\n"
+              "LEGACY_MANIFEST = \".ddw-installed.json\"")),
+    ("a gh that fails is read as 'the forge has none', which is a fact the guard never established",
+         edit("ddw/scripts/validate-transition.py",
+              "    if out.returncode != 0:\n"
+              "        # An error is not an answer. Offline, rate-limited, unauthenticated, a",
+              "    if False:\n"
+              "        # An error is not an answer. Offline, rate-limited, unauthenticated, a")),
+    ("the user-level Copilot hook stops standing down, so every write is judged twice",
+         edit("adapters/copilot/scripts/pre-tool-use.sh",
+              "if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$REPO/.github/hooks/ddw/pre-tool-use.sh\" ]; then",
+              "if false; then")),
+    # ── Del mapa de kills, lista B ──────────────────────────────────────────
+    ("el recipe de Claude coloca las skills dentro de .ddw/, y el método vuelve a llevar "
+     "payload de una herramienta",
+     edit("adapters/claude/adapter.json",
+          '"dir": ".claude/skills",',
+          '"dir": ".ddw/skills",')),
+    ("el snippet de Claude deja de ser un puntero y copia las instrucciones: dos copias "
+     "que mantener en paso",
+     edit("adapters/claude/CLAUDE.snippet.md",
+          "@AGENTS.md\n@.ddw/orchestrator.md\n",
+          "@AGENTS.md\n@.ddw/orchestrator.md\n\n"
+          "Before answering, read `.ddw/orchestrator.md` and run its Boot Sequence. It is a strict state\n"
+          "machine: it decides what you are allowed to do based on the phase recorded in `.ddw-state.json`.\n")),
+    ("el plugin de OpenCode deja de juzgar las escrituras antes de que ocurran",
+     edit("adapters/opencode/plugin/ddw.js",
+          '      if (!WRITE_TOOLS.has(input?.tool)) return\n'
+          '      if (!installed()) return\n'
+          '      try {\n'
+          '        runGate("pre",',
+          '      if (true) return\n'
+          '      if (!installed()) return\n'
+          '      try {\n'
+          '        runGate("pre",')),
+    ("W-SAST-01 deja de contar la palabra 'low' y sólo mira 'informational'",
+     edit("ddw/scripts/validate_sast.py",
+          '    lows = [m for m in re.finditer(r"\\b(?:low|informational|informativ\\w*)\\b",',
+          '    lows = [m for m in re.finditer(r"\\b(?:informational|informativ\\w*)\\b",')),
+    ("F-SPEC-15 aprueba un fix-plan sin plan de rollback: la sección deja de ser obligatoria",
+     edit("ddw/scripts/validate_spec.py",
+          '        rb = _section_body(text, ("rollback", "plan de rollback", "reversa"))\n'
+          '        if rb:\n',
+          '        rb = _section_body(text, ("rollback", "plan de rollback", "reversa"))\n'
+          '        if True:\n')),
+    ("DEFINE deja de medir la deriva al retomar una rama que ya existía",
+     edit("ddw/rules/define.instructions.md",
+          '**Then measure the drift** (checkpoint 2 of "Staying current" in `.ddw/rules/branches.instructions.md`):\n'
+          '`git fetch origin` and `git rev-list --count HEAD..origin/{base}`. Silent if it is 0; if the base\n'
+          'moved, report how far and offer to update. Do not rebase or merge without the user saying so.',
+          'Do not rebase or merge without the user saying so.')),
+    ("el instalador deja de decir si está instalando o actualizando",
+     edit("install.sh",
+          'if [ -n "$INSTALLED" ]; then\n'
+          '  echo "DDW → updating: $TARGET"\n'
+          'else\n'
+          '  echo "DDW → installing into: $TARGET"\n'
+          'fi\n',
+          'echo "DDW → $TARGET"\n')),
+    ("un rule file puede cambiar sin mover su propia versión",
+     edit("scripts/check_versions.py",
+          "                if m and m.group(1) == now:",
+          "                if False:")),
+    ("un recipe se queda sin label, y el instalador pierde el bloque de esa herramienta",
+     edit("adapters/opencode/adapter.json",
+          '"label": "OpenCode",',
+          '"label": "",')),
+    ("el cierre de un ticket FEATURE deja de exigir commit y PR",
+     edit("ddw/rules/transition-graph.json",
+          '      "CLOSEOUT->IDLE": {\n'
+          '        "gates": [\n'
+          '          "commit",\n'
+          '          "pr"\n'
+          '        ]\n'
+          '      },',
+          '      "CLOSEOUT->IDLE": {\n'
+          '        "gates": []\n'
+          '      },')),
+    ("el validador de tests vuelve a exigir la etiqueta larga: una tabla `| Line | 88% |` "
+     "se lee como cobertura ausente",
+     edit("ddw/scripts/validate_tests.py",
+          '    line = _number(text, "Line coverage", "Cobertura de l[ií]neas", "Lines", "Line")',
+          '    line = _number(text, "Line coverage", "Cobertura de l[ií]neas", "Lines")')),
+    ("el instalador vuelve a pisar el AGENTS.md que ya estaba con la plantilla",
+     edit("install.sh",
+          'if [ -f "$TARGET/AGENTS.md" ]; then',
+          'if false; then')),
+    ("el marketplace declara el owner con otro nombre de campo y el esquema lo rechaza",
+     edit(".claude-plugin/marketplace.json",
+          '  "owner": {',
+          '  "author": {')),
+    ("el instalador deja de reconocer sus propios archivos: toda segunda corrida los "
+     "reporta como colisión del usuario",
+     edit("scripts/install_target.py",
+          "    if _same(src_path, dst_path):\n"
+          "        manifest[rel] = _fingerprint(dst_path)\n"
+          "        return False                      # already current; nothing to do\n"
+          "    if manifest.get(rel) == _fingerprint(dst_path):\n"
+          "        return True                       # ours, untouched, superseded\n",
+          "")),
+    ("el procedimiento de desinstalación de Copilot deja de decir que hay que sacar la "
+     "clave hooks del settings de usuario",
+     edit(".github/INSTALL.md",
+          "Then remove the `hooks` key from `~/.copilot/settings.json`.",
+          "Then delete `~/.copilot/ddw/`.")),
+    ("el instalador avisa por un heading que su propia plantilla nunca escribe, así que "
+     "el aviso sale en cada corrida",
+     edit("install.sh",
+          '  for h in "## Stack" "## Architecture conventions" "## Domain glossary"; do',
+          '  for h in "## Stack" "## Architecture conventions" "## Domain glossary" "## Deployment"; do')),
+    ("el desinstalador nunca borra el manifest: el repo sigue diciendo que DDW está instalado",
+     edit("scripts/uninstall_repo.py",
+          "    if os.path.exists(mpath) and not kept:",
+          "    if False:")),
+    ("el closeout deja el modo de autonomía puesto, y el ticket siguiente hereda el "
+     "permiso de no preguntar",
+     edit("ddw/scripts/transition.py",
+          '        for key in ("ticket", "title", "tracker", "block", "discovery", "autonomy"):',
+          '        for key in ("ticket", "title", "tracker", "block", "discovery"):')),
+    ("validate_spec.py deja de refutar QUICK-FIX y acuña un recibo para una fase que ese "
+     "tier no tiene",
+     edit("ddw/scripts/validate_spec.py",
+          '    if args.tier == "QUICK-FIX":',
+          '    if False:')),
+    # ── Del mapa de kills, lista C ──────────────────────────────────────────
+    ("el desinstalador busca en .gitignore los marcadores del archivo de contexto",
+         edit("scripts/uninstall_repo.py",
+              "        out, found = strip_block(text, GI_BEGIN, GI_END)",
+              "        out, found = strip_block(text, BEGIN, END)")),
+    ("la excepción del cascarón vacío se ensancha de AGENTS.md a todo archivo de contexto",
+         edit("scripts/uninstall_repo.py",
+              '        if not out.strip() and name != "AGENTS.md":',
+              "        if not out.strip() and name not in CONTEXT_FILES:")),
+    ("FEATURE gana un atajo DEFINE->CODE y PLAN deja de ser obligatorio",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["FEATURE"].update({"DEFINE->CODE": {"gates": []}}))),
+    ("el grafo deja salir de IDLE directo a DEFINE, sin clasificar y sin ticket",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["common"].update({"IDLE->DEFINE": {"gates": []}}))),
+    ("la arista de QUICK-FIX a CODE deja de pedir el fix-brief",
+         json_edit("ddw/rules/transition-graph.json",
+                   lambda d: d["tiers"]["QUICK-FIX"]["DEFINE->CODE"].update({"gates": []}))),
+    ("F-SPEC-06 sigue en el catálogo y ya no mira nada: siempre dice que sí",
+         edit("ddw/scripts/validate_spec.py",
+              '    verdict("F-SPEC-06", no_tests, "every block lists at least one required test",\n'
+              '            "block with no tests")',
+              '    ok("F-SPEC-06", "every block lists at least one required test")')),
+    ("el validador de amenazas se queda con cinco categorías STRIDE",
+         edit("ddw/scripts/validate_threat.py",
+              'STRIDE = ("Spoofing", "Tampering", "Repudiation", "Information Disclosure",',
+              'STRIDE = ("Spoofing", "Tampering", "Information Disclosure",')),
+    ("el hook PreCompact de Claude vuelve a llevar su propia copia del recordatorio",
+         edit("adapters/claude/hooks/pre-compact.sh",
+              "command -v python3 >/dev/null 2>&1 || exit 0",
+              'echo "DDW POST-COMPACTION: re-read the orchestrator and .ddw-state.json before answering."\n'
+              "command -v python3 >/dev/null 2>&1 || exit 0")),
+    ("el archivo de estado se reconoce por el nombre con que se lo escribió, no por lo que resuelve",
+         edit("ddw/scripts/validate-transition.py",
+              "    if state_real in targets and writing:",
+              "    if state_real in lexicals and writing:")),
+    ("el conjunto sellado pierde el directorio de hooks de Gemini",
+         edit("ddw/scripts/validate-transition.py",
+              '    ".gemini/hooks/ddw/", ".github/hooks/", ".opencode/plugins/",',
+              '    ".github/hooks/", ".opencode/plugins/",')),
+    ("package.json apunta a un ddw.js que se movió",
+         edit("package.json",
+              '"main": "adapters/opencode/plugin/ddw.js"',
+              '"main": "adapters/opencode/ddw.js"')),
+    ("una skill queda con el `name` del frontmatter distinto de su directorio",
+         edit("skills/ddw-create-adr/SKILL.md",
+              "name: ddw-create-adr", "name: create-adr")),
+    ("el trailer de atribución sólo se busca al principio del mensaje, no línea por línea",
+         edit("scripts/check_commits.py",
+              'TRAILER = re.compile(r"^(?:AI-assisted|AI-full):\\s*yes\\s*$", re.M | re.I)',
+              'TRAILER = re.compile(r"^(?:AI-assisted|AI-full):\\s*yes\\s*$", re.I)')),
+    ("el bucle correctivo vuelve a VERIFY con los gates que había invalidado",
+         multi(  # ← primitivo que hoy no existe en mutate.py
+           json_edit("ddw/rules/transition-graph.json",
+                     lambda d: d["tiers"]["FEATURE"]["VERIFY->CODE"].pop("clears", None)),
+           edit("ddw/scripts/transition.py",
+                "        for gate in clear_gates:\n            merged.pop(gate, None)\n",
+                ""))),
+    ("el aviso de headings faltantes imprime el AGENTS.md del usuario en la salida del instalador",
+         edit("install.sh",
+              '    echo "  ⚠ AGENTS.md              is missing headings the method reads:"',
+              '    echo "  ⚠ AGENTS.md              is missing headings the method reads; it has:"\n'
+              "    grep '^##' \"$TARGET/AGENTS.md\" || true")),
+    ("la línea de arranque vuelve a nombrar un .ddw/orchestrator.md relativo",
+         edit("ddw/scripts/session-boot.py",
+              '\n    orch = os.path.join(method, "orchestrator.md")',
+              '\n    orch = ".ddw/orchestrator.md"')),
+    ("la plantilla de AGENTS.md deja de aplicarse una sola vez: -f pasa a -d y todo AGENTS.md se pisa",
+         edit("install.sh",
+              'if [ -f "$TARGET/AGENTS.md" ]; then',
+              'if [ -d "$TARGET/AGENTS.md" ]; then')),
+    ("the seal over DDW's own machinery stops refusing, in the one phase where nothing else does",
+     edit("ddw/scripts/validate-transition.py",
+          "    if rel == INSTALL_MANIFEST:", "    if False:")),
+    # Los cuatro que el libro de cuentas todavía debía.
+    ("the PRD validator skill stops naming the rule it is the only one that applies",
+     multi(
+         # Dos veces en el mismo archivo: la fila del catálogo y el rango de la
+         # cabecera. Una sola edición la tapa la otra.
+         edit("skills/ddw-validate-prd/SKILL.md",
+              "| F-PRD-09 | An AC matches none of the five EARS patterns",
+              "| F-PRD-XX | An AC matches none of the five EARS patterns"),
+         edit("skills/ddw-validate-prd/SKILL.md",
+              "F-PRD-09 (FAIL) and W-PRD-01 to W-PRD-05 (WARNING)",
+              "the FAIL rules and W-PRD-01 to W-PRD-05 (WARNING)"))),
+    ("the PRD template goes back to acceptance criteria in prose the validator cannot match",
+     # Las CUATRO apariciones: el check pregunta si la palabra está en el
+     # archivo, y tres ejemplos más una nota sobre el idioma la mantienen viva
+     # aunque el template deje de emitir la forma. Otra defensa por repetición.
+     multi(
+         edit("skills/ddw-create-prd/SKILL.md",
+              "- AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].",
+              "- AC-01 (FR-01): when [trigger] the [system] does [response]."),
+         edit("skills/ddw-create-prd/SKILL.md",
+              "- AC-02 (FR-01): IF [failure or misuse], THEN THE [system] SHALL [response].",
+              "- AC-02 (FR-01): if [failure or misuse] the [system] does [response]."),
+         edit("skills/ddw-create-prd/SKILL.md",
+              "- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].",
+              "- AC-03 (FR-02): while [state] the [system] does [response]."),
+         edit("skills/ddw-create-prd/SKILL.md",
+              "`IF … THEN`, `SHALL`)", "`IF … THEN`)"))),
+    ("the context check goes back to being able to block over somebody else's stack",
+     multi(
+         # Dos frases satisfacen el mismo `grep`, así que una edición sola la
+         # tapa la otra: es la clase de defecto para la que existe `multi`.
+         edit("skills/ddw-context-check/SKILL.md",
+              "commands DDW would otherwise run wrong. Never blocks.",
+              "commands DDW would otherwise run wrong."),
+         edit("skills/ddw-context-check/SKILL.md",
+              "it **never blocks**", "it reports"),
+         edit("skills/ddw-context-check/SKILL.md",
+              "**It never sets a gate and never blocks a",
+              "**It reports what it finds. It may set a gate and block a"))),
+    ("the context check stops being a skill, so nobody reads a repo's own commands",
+     delete("skills/ddw-context-check")),
+    ("nothing tells the model to write source with the write tool rather than the shell",
+     edit("ddw/orchestrator.md",
+          "5. Am I writing product source? → **With `Write` or `Edit`, never with a shell command.**",
+          "5. Am I writing product source? → however is convenient.")),
+    ("the file the router loads every turn stops saying what a history entry carries",
+     multi(
+         # Lo dice dos veces —la forma declarada y la frase que la sigue— así que
+         # una edición sola la tapa la otra.
+         edit("ddw/orchestrator.md",
+              "**Shape:** `{timestamp, from, to, action, ticket,\n   tier}`",
+              "**Shape:** `{timestamp, from, to, action}`"),
+         edit("ddw/orchestrator.md", "and `ticket`/`tier`", "and the rest"))),
+    ("a state field stops being recovered at boot, so a compaction forgets it",
+     edit("ddw/orchestrator.md",
+          "`title`, `tracker`, `autonomy`, `block`, `discovery`",
+          "`title`, `tracker`, `discovery`")),
+
+    # ── Los checks del linter de la prosa, uno por uno ────────────────────────
+    #
+    # La suite tiene UN check para todo `lint_method.py` ("the method's prose
+    # claims something the repo does not support"), así que en el mapa de kills
+    # sus treinta y cuatro `fail()` colapsan en uno: mientras cualquier fault lo
+    # mantenga rojo, un check del linter que dejó de encontrar lo suyo sigue
+    # informando verde. Medido aplicando cada mutación a una copia y leyendo QUÉ
+    # mensaje salía: de 34 sitios, 16 los provocaba alguna mutación y 18 no los
+    # provocaba ninguna. Lo que sigue cierra catorce de esos dieciocho; los
+    # cuatro que quedan están en `docs/CHECKS-THAT-CANNOT-FAIL.md` con su razón.
+    ("the 🔒 marks vanish from the router, so every Blocked line reads as enforcement",
+     multi(*[edit("ddw/orchestrator.md", "🔒 ", "") for _ in range(7)])),
+    ("the legend that explains 🔒 goes away and the mark becomes decoration",
+     edit("ddw/orchestrator.md", "**🔒 refused by the hook.**", "**🔒 blocked.**")),
+    ("DEFINE blocks source code without marking it as the hook's",
+     edit("ddw/orchestrator.md",
+          "- **Blocked:** 🔒 source code. Specs/fix-plans. Writing outside `docs/ddw/prd/`",
+          "- **Blocked:** source code. Specs/fix-plans. Writing outside `docs/ddw/prd/`")),
+    ("the Boot Sequence stops naming the file a new turn recovers from",
+     edit("ddw/orchestrator.md",
+          "1. Read `.ddw-state.json` from the repo.",
+          "1. Load the pipeline state from the repo.")),
+    ("the template stops shipping a heading the method tells every repo to quote",
+     edit("ddw/AGENTS.template.md", "## Testing", "## Tests")),
+    ("the tier that asks for no gate stops being explained to people",
+     multi(edit("docs/METHOD.md", "So there is a tier for deciding to: **`FREE`**.",
+                "So there is a tier for deciding to: **`OPEN`**."),
+           edit("docs/METHOD.md", "the state are as sealed in `FREE` as anywhere else.",
+                "the state are as sealed in `OPEN` as anywhere else."))),
+    ("an artifact is written outside the docs/ddw/ namespace and the citation follows it",
+     edit("ddw/rules/define.instructions.md",
+          "The skill generates `docs/ddw/prd/prd-{ticket}.md`",
+          "The skill generates `docs/prd/prd-{ticket}.md`")),
+    ("a router routes a phase that appears in no edge of the graph",
+     edit("ddw/orchestrator.md", "## Router: Phase `PLAN`", "## Router: Phase `REVIEW`")),
+    ("the catalog's summary loses its heading and the recount goes quiet",
+     edit("ddw/rules/validation-rules.instructions.md",
+          "## Quantitative Summary", "## Rule Totals")),
+    ("a rule family stops being totalled by the summary that counts them",
+     edit("ddw/rules/validation-rules.instructions.md",
+          "| Threat Model | 7 | 2 | 9 |\n", "")),
+    ("a summary row is renamed to an area nothing knows how to count",
+     edit("ddw/rules/validation-rules.instructions.md",
+          "| SAST | 19 | 1 | 20 |", "| Static Analysis | 19 | 1 | 20 |")),
+    ("the rules README restates a total the catalog does not define",
+     edit("ddw/rules/README.md", "The 80 validation rules", "The 84 validation rules")),
+    ("a phase cites a validation rule the catalog does not define",
+     edit("ddw/rules/define.instructions.md", "(F-PRD-02, F-PRD-07)", "(F-PRD-02, F-PRD-77)")),
+    ("a tier stops being documented in the schema of the file it is written into",
+     multi(edit("ddw/rules/state.instructions.md", '`"QUICK-FIX"`, ', ""),
+           edit("ddw/rules/state.instructions.md", "Under QUICK-FIX the two edges",
+                "Under the smallest tier the two edges"))),
+    ("codex's pre-compact passes an event the compaction table does not name",
+     edit("adapters/codex/hooks/pre-compact.sh",
+          "--format nested --event PreCompact", "--format nested --event preCompact")),
+    # Los cuatro de abajo no rompen una afirmación: hacen DESAPARECER la fuente
+    # contra la que se comprueba. Son los guardias del linter — «el catálogo
+    # parece vacío», «el skill no existe» — y son los que evitan que informe
+    # verde por no haber leído nada. Sin un fault que los encienda, un linter
+    # que dejó de encontrar sus archivos dice lo mismo que uno que los leyó
+    # todos.
+    # `ddw-test`, y no cualquiera: el check mira las invocaciones con la forma
+    # `Skill(skill="…")`, y ése es el que CODE invoca así media docena de veces.
+    # Borrando uno que la prosa nombra sólo como slash-command, el fault no
+    # provoca nada — medido.
+    ("the skill a rule invokes disappears and the prose goes on invoking it",
+     delete("skills/ddw-test")),
+    ("the skill that reports a context file's missing sections disappears",
+     delete("skills/ddw-context-check")),
+    ("the rule catalog disappears, so every cited rule ID has nothing to check against",
+     delete("ddw/rules/validation-rules.instructions.md")),
+    ("an adapter recipe stops being readable JSON, so nothing bridges its context file",
+     edit("adapters/claude/adapter.json", '{\n', '{\n  "broken",\n')),
+    ("the graph stops defining tiers at all",
+     json_edit("ddw/rules/transition-graph.json", lambda d: d.pop("tiers", None))),
+
+    ("the compaction table stops being readable, and nothing else documents the envelopes",
+     multi(edit("docs/DEVELOPMENT.md",
+                "| Claude Code | `PreCompact` | stdout (the runtime rejects a JSON verdict here) |",
+                "| Claude Code | `PreCompact` | the tool's own transcript |"),
+           edit("docs/DEVELOPMENT.md",
+                "| Cursor | `preCompact` | `additional_context` |",
+                "| Cursor | `preCompact` | its own field |"),
+           # Tres filas, no dos. La de OpenCode entra en la tabla por decir
+           # `stdout` de pasada —«its plugin's stdout reaches the terminal»— así
+           # que rompiendo dos quedaban CUATRO y el check no llegaba a su umbral.
+           # Medido: la mutación salía sin provocar nada, que es exactamente el
+           # fault que parece cobertura y no la es.
+           edit("docs/DEVELOPMENT.md",
+                "its plugin's stdout reaches the terminal",
+                "its plugin's output reaches the terminal"))),
+    ("a journal line nobody can decode is dropped in silence again",
+     edit("ddw/scripts/validate-transition.py",
+          "    damaged = _journal_undecodable(state_path)",
+          "    damaged = 0")),
     ("a FIFO where a record belongs hangs every hook again",
      edit("ddw/scripts/validate-transition.py",
           "    for _path in (journal_path(state_path), state_path):\n"
           "        _odd = _not_a_regular_file(_path)\n        if _odd:\n            raise Block(_odd)\n",
           "")),
     ("the mutation count goes back to being pinned nowhere",
-     edit("scripts/verify_install.sh", "EXPECT_MUTATIONS=425", "EXPECT_MUTATIONS=0")),
+     # Anclado a la COMPARACIÓN, no al número: anclado al número, agregar un
+     # fault rompe este fault, y lo que se rompe es justo la comprobación de que
+     # no se borraron faults. La única línea que hay que tocar al sumar uno es
+     # `EXPECT_MUTATIONS`, y ninguna otra.
+     # Con `edit_re`, sobre el PIN. Reanclarlo a la comparación fue un error y
+     # la corrida lo dijo: hacer la comparación trivialmente cierta APAGA el
+     # check, y un check apagado no pone nada en rojo — el fault sobrevivía.
+     # Lo que tiene que romperse es el número, para que el check hable.
+     edit_re("scripts/verify_install.sh", r"^EXPECT_MUTATIONS=\d+$", "EXPECT_MUTATIONS=0",
+             "la línea que fija el total de mutaciones")),
     ("the check total goes back to being unpinned, which used to print as a pass",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=541", "EXPECT_CHECKS=0")),
+     edit_re("scripts/verify_install.sh", r"^EXPECT_CHECKS=\d+$", "EXPECT_CHECKS=0",
+             "la línea que fija el total de checks")),
     ("the check total becomes a knob the environment can turn again",
-     edit("scripts/verify_install.sh", "EXPECT_CHECKS=541", "EXPECT_CHECKS=${EXPECT_CHECKS:-541}")),
+     edit_re("scripts/verify_install.sh", r"^EXPECT_CHECKS=(\d+)$",
+             r"EXPECT_CHECKS=${EXPECT_CHECKS:-\1}",
+             "la línea que fija el total de checks")),
     ("the sealed names are judged only after symlinks are followed again",
      edit("ddw/scripts/validate-transition.py",
           "        if lexical != target:\n            reason = enforcement_write_denied(lexical, root)\n"
@@ -1733,7 +2403,7 @@ MUTATIONS = [
           '  --repo "${CLAUDE_PROJECT_DIR}"')),
     ("a write to the method itself is judged only when the method is inside the repo",
      edit("ddw/scripts/validate-transition.py",
-          "        denied = _method_write_denied(target, method)", "        denied = None")),
+          "        denied = _method_write_denied(target, method, repo)", "        denied = None")),
     ("`mkdir .ddw` picks the method again, and every Claude hook bows out",
      edit("adapters/claude/hooks/lib/guard.sh",
           '  if [ -f "${CLAUDE_PROJECT_DIR:-}/.ddw/scripts/hook-gate.py" ]; then',
@@ -1795,7 +2465,9 @@ MUTATIONS = [
           "tools: Read, Write, Grep, Glob, Bash")),
     ("the runner stops asking the suite to stop early, and pays a full pass per fault",
      edit("scripts/mutate.py",
-          '        env = dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1")\n', "", last=True)),
+          '        if not want_all_failures:\n'
+          '            env["DDW_STOP_ON_FIRST_FAILURE"] = "1"\n',
+          '        if False:\n            pass\n', last=True)),
     ("a diff touching the suite itself narrows the mutation run instead of running it whole",
      edit("scripts/mutate.py",
           '    if files & {"scripts/verify_install.sh", "scripts/mutate.py"}:\n'
@@ -1805,12 +2477,69 @@ MUTATIONS = [
           '        print("Nothing in this diff is named by a mutation, so this run injects nothing. "',
           '        (lambda *a: None)("Nothing in this diff is named by a mutation, so this run injects nothing. "',
           last=True)),
+    ("the empty-selection probe goes back to killing one process and orphaning its tree",
+     edit("scripts/verify_install.sh", "                            start_new_session=True)", "                            )")),
+    ("a router stops marking which half of its Blocked line the hook actually refuses",
+     edit("scripts/lint_method.py", "    check_blocked_marks_enforcement(root)\n", "")),
+    ("the context template ships a section the check for missing sections never looks for",
+     edit("scripts/lint_method.py", "    check_template_sections_known(root)\n", "")),
+    ("the coverage floor goes back to being sourced from a section the template does not ship",
+     edit("ddw/AGENTS.template.md", "## Testing\n", "## Testing (unused)\n")),
+    ("the install stops asking whether the paths it needs are free, and crashes halfway in",
+     edit("install.sh",
+          '  python3 "$SELF/scripts/install_target.py" --self "$SELF" --target "$TARGET" --id "$t" --preflight || exit 1\n',
+          "")),
+    ("the untraced-block warning is deleted outright and nothing goes red",
+     edit("ddw/scripts/validate_spec.py",
+          '        warn("W-SPEC-01", f"block referencing no FR — enabler or gold-plating?: {\', \'.join(no_fr)}")',
+          "        pass")),
+    ("the missing-lint warning is deleted outright and nothing goes red",
+     edit("ddw/scripts/validate_tests.py",
+          '        warn("W-TEST-01", "no lint or type-check result reported; VERIFY will ask for it (F-VER-05)")',
+          "        pass")),
+    ("codex stops watching the shell, so a state rewritten behind the gate is never caught",
+     edit("adapters/codex/hooks.json", '"matcher": "apply_patch|Edit|Write|Bash"',
+          '"matcher": "apply_patch|Edit|Write"')),
+    ("gemini stops matching one of its two write verbs",
+     edit("adapters/gemini/settings.json", '"matcher": "write_file|replace"',
+          '"matcher": "write_file"')),
+    ("the history goes back to accepting an entry dated before the one above it",
+     edit("ddw/scripts/validate-transition.py",
+          '        if _last and entry["timestamp"] < _last:',
+          "        if False:")),
+    ("the field extractor goes back to a pattern whitespace can hang", 
+     edit("ddw/scripts/validate_tests.py",
+          r'rf"^[ \t]*(?:[-*][ \t]*)?\|?[ \t]*\*{{0,2}}{name}\*{{0,2}}[ \t]*[:|][ \t]*(.+?)[ \t]*\|?[ \t]*$"',
+          r'rf"^\s*(?:[-*]\s*)?\|?\s*\*{{0,2}}{name}\*{{0,2}}\s*[:|]\s*(.+?)\s*\|?\s*$"')),
+    ("the fast layer over the enforcement core stops being run, so it rots unnoticed",
+     edit("scripts/verify_install.sh",
+          '  PYTEST_OUT="$(python3 -m pytest "$SELF/tests" -q 2>&1)"',
+          '  PYTEST_OUT="$(true)"')),
+    ("a run that owes evidence and names no ticket is read as owing nothing again",
+     edit("ddw/scripts/validate-transition.py",
+          '            raise Block(\n                "this run takes %d transition(s) that owe evidence',
+          '            pass\n        if False:\n            raise Block(\n                "this run takes %d transition(s) that owe evidence')),
+    ("a pause invented in the state file is enough to resume into any phase again",
+     edit("ddw/scripts/validate-transition.py",
+          "            if state_path:\n                _resume_needs_a_recorded_pause(state_path, entry, dst)",
+          "            if False:\n                _resume_needs_a_recorded_pause(state_path, entry, dst)")),
+    ("the plugin seal shrinks back to the method, leaving the hook that runs the gate writable",
+     edit("ddw/scripts/validate-transition.py",
+          "        if outside:\n            # The plugin root:",
+          "        if False:\n            # The plugin root:")),
+    ("a tier can be added to the graph and explained nowhere",
+     edit("scripts/lint_method.py", "    check_tiers_documented(root, graph)\n", "")),
     ("the shard timeout goes back under what a shard actually takes",
      edit(".github/workflows/mutations.yml", "    timeout-minutes: 75", "    timeout-minutes: 30")),
-    ("a word ending in `dos` answers for the denial-of-service category again",
+    # Era `\bdos\b` contra `dos\b`, y no la mata nada: `_entry_after` ya exige que
+    # el match SEA la etiqueta, así que el boundary quedó redundante cuando llegó
+    # el guard de posición. Un fault que ninguna comprobación puede ver no mide
+    # una defensa — mide que había dos. Ésta es la que queda viva, y cubre las
+    # seis categorías, no sólo la que termina en `dos`.
+    ("a category word inside somebody else's sentence answers for the category again",
      edit("ddw/scripts/validate_threat.py",
-          '    "Denial of Service": (r"denial of service|\\bdos\\b|denegaci[o\u00f3]n de servicio"),',
-          '    "Denial of Service": (r"denial of service|dos\\b|denegaci[o\u00f3]n de servicio"),')),
+          '        if m and re.fullmatch(r"[\\s*_`\\-\u2014\u2013|>]*", ln[:m.start()]):',
+          '        if m:')),
     ("the threat validator goes back to counting a bracketed placeholder as an answer",
      edit("ddw/scripts/validate_threat.py",
           '    return not re.search(r"[0-9A-Za-z\u00c0-\u00ff]", re.sub(r"\\[[^\\[\\]]*\\]", "", v))',
@@ -1869,6 +2598,14 @@ MUTATIONS = [
 ]
 
 
+# ¿Hay capa rápida? Preguntado una vez: sin pytest instalado el runner no la
+# usa, y el baseline no tiene que negarse por la ausencia de algo que no iba a
+# usar. El aviso sale una vez, arriba, para que nadie lea una corrida más lenta
+# como una corrida distinta.
+HAVE_PYTEST = subprocess.run([sys.executable, "-c", "import pytest"],
+                             capture_output=True).returncode == 0
+
+
 def baseline():
     """Does the suite pass on a copy nobody mutated?
 
@@ -1891,6 +2628,24 @@ def baseline():
         # which is a statement about every check — and the run that answers it
         # yes costs the same either way, because a passing run never reaches the
         # branch that stops.
+        # The fast layer is asked here too, because `run_one` takes a kill from
+        # it: red on an unmutated copy and every fault reports as caught without
+        # being examined — the fabricated hundred percent, one layer further down
+        # than the one this function was written for.
+        #
+        # …but only when there IS one. Without pytest installed the runner never
+        # asks it, so a baseline that refuses over its absence refuses a run that
+        # was never going to use it. Measured in CI, which installs pyyaml and
+        # not pytest: twenty-four shards refused to inject anything.
+        fast = (subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
+                               capture_output=True, text=True, cwd=repo)
+                if HAVE_PYTEST else None)
+        if fast is not None and fast.returncode != 0:
+            print("`tests/` does not pass on an UNMUTATED copy of this tree, and the runner "
+                  "takes a kill\nfrom it. Nothing was injected. pytest said:\n")
+            for ln in [l for l in (fast.stdout + fast.stderr).splitlines() if l.strip()][-15:]:
+                print("  " + ln)
+            return 1
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                            capture_output=True, text=True, cwd=repo)
         if r.returncode == 0:
@@ -1898,13 +2653,27 @@ def baseline():
         print("The suite does not pass on an UNMUTATED copy of this tree, so every fault "
               "below would\nbe recorded as caught without being examined. Nothing was "
               "injected. The suite said:\n")
-        tail = [ln for ln in (r.stdout + r.stderr).splitlines() if ln.strip()][-25:]
+        # Las líneas ✗ PRIMERO, y después la cola. El baseline no para en el
+        # primer fallo —tiene que poder decir «la suite pasa», que es una
+        # afirmación sobre todos los checks— así que lo que falló puede quedar a
+        # cuatrocientas líneas del final, y la cola sola dice «falló algo» sin
+        # decir qué. Eso es exactamente lo que este archivo entero está tratando
+        # de que no pase.
+        out = r.stdout + r.stderr
+        marks = [re.sub(r"\x1b\[[0-9;]*m", "", ln).strip()
+                 for ln in r.stdout.splitlines()
+                 if re.sub(r"\x1b\[[0-9;]*m", "", ln).lstrip().startswith("✗")]
+        for ln in marks:
+            print("  " + ln)
+        if marks:
+            print()
+        tail = [ln for ln in out.splitlines() if ln.strip()][-25:]
         for ln in tail:
             print("  " + ln)
         return 1
 
 
-def run_one(index, label, mutate):
+def run_one(index, label, mutate, skip_fast=False, want_all_failures=False):
     with tempfile.TemporaryDirectory() as tmp:
         repo = os.path.join(tmp, "ddw")
         shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
@@ -1917,10 +2686,122 @@ def run_one(index, label, mutate):
         # It cannot change a verdict: the variable is read from `bad` and
         # nowhere else, so a run with nothing to report never sees it, and a run
         # that does exits non-zero either way.
-        env = dict(os.environ, DDW_STOP_ON_FIRST_FAILURE="1")
+        # The fast layer first, and it is not a shortcut: the suite RUNS pytest
+        # and refuses to go green with a single failure or error in it, so a
+        # fault that reddens pytest is a fault the suite would catch — the same
+        # verdict, reached in a third of a second instead of eighty-five.
+        #
+        # Only a KILL is taken from here. pytest passing says nothing at all
+        # about the fault (it sees a fraction of the enforcement core and no
+        # hook, no install, no adapter), so that case falls through to the suite
+        # exactly as before. The measurement can only get faster, never looser.
+        #
+        # The baseline pays the same question on an unmutated copy, for the same
+        # reason it pays the suite: a pytest that is already red would report
+        # every fault as caught without examining one.
+        # …y el mapa de kills NO la usa, aunque no se haya pedido `--no-fast`.
+        # `run_one` corta acá si pytest se pone rojo, así que el check de la
+        # suite que también habría cazado ese fault nunca queda registrado — y
+        # aparece como «ningún fault lo provoca» cuando sí lo provoca uno. Parte
+        # de los 83 era eso. El atajo es correcto para el veredicto y falso para
+        # el mapa: son dos preguntas distintas sobre la misma corrida.
+        if not skip_fast and not want_all_failures and HAVE_PYTEST:
+            fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
+                                  capture_output=True, text=True, cwd=repo)
+            if fast.returncode != 0:
+                return True, None, ["tests/ (capa rápida)"]
+        # Parar al primer ✗ contesta «¿se puso roja?», que es la pregunta del
+        # veredicto. NO es la pregunta del mapa de kills: ahí interesa QUÉ
+        # checks pueden fallar, y con la parada temprana sólo se registra el
+        # primero de cada fault. La primera corrida del mapa dio «352 de 402
+        # nunca se disparan», que leído así es falso — son 352 que nunca fueron
+        # los PRIMEROS. Un número que suena a hallazgo y mide otra cosa.
+        env = dict(os.environ)
+        if not want_all_failures:
+            env["DDW_STOP_ON_FIRST_FAILURE"] = "1"
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                            capture_output=True, text=True, cwd=repo, env=env)
-        return r.returncode != 0, None
+        # QUÉ check lo mató, no sólo que murió. Con la parada al primer ✗ ese es
+        # el primero que aparece. Sirve para la pregunta que ninguna otra cosa
+        # responde: qué `bad` de la suite no se dispara NUNCA — un check que no
+        # puede fallar reporta verde por no poder decir otra cosa.
+        killers = []
+        if r.returncode != 0:
+            for ln in r.stdout.splitlines():
+                clean = re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                if clean.lstrip().startswith("✗"):
+                    killers.append(clean.strip().lstrip("✗").strip())
+                    if not want_all_failures:
+                        break
+        return r.returncode != 0, None, killers
+
+
+def flake_check(rounds, jobs):
+    """El ruido del instrumento, medido antes de creerle.
+
+    Un rojo espurio no se pierde: se convierte en un KILL. `run_one` lee un exit
+    distinto de cero como «la suite cazó el fault», y no tiene forma de
+    distinguirlo de «la suite falló por su cuenta». Bajo la concurrencia de una
+    corrida completa eso fabrica cobertura, que es el mismo defecto que
+    `baseline` y `--check-anchors` existen para impedir, una capa más abajo.
+
+    Así que se corre la suite SIN MUTAR, tantas veces como se pida y a la misma
+    concurrencia que la corrida real, y se nombra todo check que falle. Un check
+    que falla acá no puede matar nada: lo que reporte sobre un fault es sobre sí
+    mismo.
+
+    Observado dos veces y no reproducido en cuarenta corridas dirigidas. Esto no
+    lo explica — lo hace visible, que es lo que se puede prometer.
+    """
+    print(f"Midiendo el ruido: {rounds} corridas de la suite sin mutar, {jobs} a la vez.\n")
+
+    def once(n):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "ddw")
+            shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
+                               capture_output=True, text=True, cwd=repo)
+            # El ✗ como MARCADOR, no en cualquier lado de la línea: hay un check
+            # cuyo propio mensaje lleva un ✗ («…can stop the suite at the first
+            # ✗…»), y buscarlo en cualquier posición reportaba ese check verde
+            # como ruido en 24 de 24 corridas. El mismo defecto que este modo
+            # existe para medir, cometido por el modo.
+            bad_lines = []
+            for ln in r.stdout.splitlines():
+                clean = re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                if clean.lstrip().startswith("✗"):
+                    bad_lines.append(clean.strip().lstrip("✗").strip())
+            # Guardada, no descartada: el nombre del check dice CUÁL falló y no
+            # dice por qué, y el árbol se borra al salir del `with`. Sin esto
+            # cada rojo hay que volver a cazarlo.
+            if r.returncode != 0:
+                keep = os.path.join(tempfile.gettempdir(), "ddw-flake-%d.log" % n)
+                with open(keep, "w", encoding="utf-8") as fh:
+                    fh.write(r.stdout + "\n----- stderr -----\n" + r.stderr)
+            return n, r.returncode, bad_lines
+
+    seen = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        for fut in concurrent.futures.as_completed([pool.submit(once, n)
+                                                    for n in range(1, rounds + 1)]):
+            n, rc, bad_lines = fut.result()
+            mark = "\033[32m✓\033[0m" if rc == 0 else "\033[31m✗\033[0m"
+            print(f"  {mark} corrida {n}", file=sys.stderr, flush=True)
+            for ln in bad_lines:
+                seen.setdefault(ln, []).append(n)
+
+    print(f"\n{'─' * 60}")
+    if not seen:
+        print(f"{rounds}/{rounds} corridas verdes. Ningún check falló por su cuenta a esta "
+              f"concurrencia — lo que no prueba que no pueda, sólo que no lo hizo acá.")
+        return 0
+    print(f"{len(seen)} check(s) fallaron sobre un árbol SIN MUTAR. Lo que reporten sobre un "
+          f"fault es sobre sí mismos:")
+    for ln, rounds_hit in sorted(seen.items(), key=lambda kv: -len(kv[1])):
+        print(f"  · {len(rounds_hit)}/{rounds}  {ln[:96]}")
+    print(f"\nLa salida entera de cada corrida roja quedó en "
+          f"{os.path.join(tempfile.gettempdir(), 'ddw-flake-<n>.log')}")
+    return 1
 
 
 def slice_of(spec, count):
@@ -1996,6 +2877,26 @@ def check_anchors():
         if not os.path.exists(path):
             stale.append((i, label, f"{rel} does not exist"))
             continue
+        if kind == "regex":
+            if rel not in cache:
+                cache[rel] = open(path, encoding="utf-8").read()
+            _rx = re.compile(probe[2], re.M)
+            _out, _n = _rx.subn(probe[3], cache[rel], count=1)
+            if not _n:
+                stale.append((i, label, "%s ya no está en %s" % (probe[4], rel)))
+                continue
+            if _out == cache[rel]:
+                stale.append((i, label, "%s: la sustitución no cambia nada en %s" % (probe[4], rel)))
+                continue
+            if rel.endswith(".py"):
+                try:
+                    compile(_out, rel, "exec")
+                except SyntaxError as exc:
+                    stale.append((i, label, "deja %s sin compilar (%s, línea %s)"
+                                  % (rel, exc.msg, exc.lineno)))
+                    continue
+            continue
+
         if kind == "text":
             if rel not in cache:
                 cache[rel] = open(path, encoding="utf-8").read()
@@ -2008,7 +2909,11 @@ def check_anchors():
             # a kill, and the fault it claimed to measure was never in the tree.
             # One of these shipped, and it read as covered for as long as it
             # existed. Compiled in memory: the answer is a parse, not a copy.
-            if rel.endswith(".py"):
+            # …salvo cuando NO parsear ES el defecto. Hay un check que afirma
+            # que un script de `scripts/` deja de parsear y nadie lo corre hasta
+            # el CI; el único fault que puede provocarlo es uno que rompa la
+            # sintaxis. La guarda existe para el caso accidental, no para éste.
+            if rel.endswith(".py") and not (len(probe) > 5 and probe[5]):
                 text, new, last = cache[rel], probe[3], probe[4]
                 if last:
                     head, _, tail = text.rpartition(needle)
@@ -2065,7 +2970,12 @@ def cover(path, count):
     wf = yaml.safe_load(open(path, encoding="utf-8"))
     jobs = wf.get("jobs", {})
     steps = [(name, s) for name, job in jobs.items() for s in job.get("steps", [])]
+    # `--kill-map` es OTRA medición, repartida en la misma forma y a pedido: no
+    # contesta «¿se inyectó cada fault?» sino «¿qué check caza a cada uno?». Se
+    # excluye acá y sólo acá, para que la regla de abajo —un job con `if:` no
+    # cubre nada— siga valiendo entera para el job que sí es la cobertura.
     found = [(name, m) for name, s in steps
+             if "--kill-map" not in str(s.get("run", ""))
              for m in [re.search(r"--shard\s+\$\{\{\s*matrix\.(\w+)\s*\}\}/(\d+)",
                                  str(s.get("run", "")))] if m]
     if not found:
@@ -2134,6 +3044,21 @@ def main():
                     help="check that workflow's shards cover every mutation, then exit")
     ap.add_argument("--check-anchors", action="store_true",
                     help="check every mutation still finds what it breaks, then exit")
+    ap.add_argument("--jobs", type=int, default=None,
+                    help="how many faults to inject at once (default: half the cores, capped at "
+                         "4 — the bound is disk, not CPU)")
+    ap.add_argument("--flake-check", metavar="N", type=int,
+                    help="correr la suite SIN MUTAR N veces a la concurrencia de --jobs y "
+                         "nombrar todo check que falle: un rojo espurio no se pierde, se "
+                         "convierte en un kill")
+    ap.add_argument("--no-fast", action="store_true",
+                    help="no preguntar a tests/ primero: cada fault paga la suite entera. "
+                         "Necesario para el mapa de kills, que pregunta QUÉ check mata a "
+                         "cada uno — un kill de la capa rápida esconde el check que también "
+                         "habría fallado.")
+    ap.add_argument("--kill-map", metavar="ARCHIVO",
+                    help="escribir qué check mató a cada fault, y listar los `bad` de la "
+                         "suite que no se disparan con ninguno")
     ap.add_argument("--changed", metavar="BASE",
                     help="only the mutations whose file the diff against BASE touches "
                          "(a pull request's question); the whole list still runs on main")
@@ -2149,6 +3074,10 @@ def main():
 
     if args.cover:
         return cover(args.cover, len(MUTATIONS))
+
+    if args.flake_check:
+        return flake_check(args.flake_check,
+                           args.jobs or max(1, min(8, (os.cpu_count() or 2) // 2)))
 
     if args.only and args.shard:
         raise SystemExit("--only and --shard both pick what runs; use one")
@@ -2222,9 +3151,32 @@ def main():
     # Name the slice in the output. A shard's log is a full green run to anyone
     # skimming it, and "193/193" is the only number worth reporting.
     of_all = f" — shard {args.shard} of the {len(MUTATIONS)}" if args.shard else ""
-    print(f"Injecting {len(chosen)} faults, one at a time{of_all}.\n")
-    for i, (label, mutate) in chosen:
-        verdict, problem = run_one(i, label, mutate)
+    # In parallel, and the only thing that changes is the wall clock. Each fault
+    # still gets a private copy of the tree and a full run of the suite over it:
+    # `run_one` allocates its own TemporaryDirectory and the suite anchors every
+    # scratch path to a `mktemp -d` of its own, so two faults share nothing —
+    # measured before writing this, along with the fact that nothing here writes
+    # `$HOME` or `git config --global`.
+    #
+    # The default is deliberately below the core count. The bound here is not
+    # CPU, it is the disk: every worker copies the tree and the suite makes
+    # dozens of temporary repositories inside its run, and this measurement once
+    # put 38 GB into /tmp.
+    # Was capped at 4 when a worker meant one full suite each. Most faults are
+    # now answered by the fast layer in under a second, so the cap was costing
+    # wall clock for a disk pressure that only the minority still create. Held
+    # to half the cores, which is what /tmp survived at 6 on a 12-core machine.
+    jobs = args.jobs or max(1, min(8, (os.cpu_count() or 2) // 2))
+    print(f"Injecting {len(chosen)} faults, {jobs} at a time{of_all}.")
+    if not HAVE_PYTEST:
+        print("pytest is not installed, so every fault pays the whole suite: the fast layer "
+              "answers a third of them in under a second and it is not here.")
+    print()
+
+    kills = {}
+
+    def report(i, label, verdict, problem):
+        nonlocal killed
         if problem:
             broken.append((i, label, problem))
             print(f"  \033[33m?\033[0m  {i:2d}. {label}\n         {problem}")
@@ -2234,6 +3186,52 @@ def main():
         else:
             survived.append((i, label))
             print(f"  \033[31m✗\033[0m  {i:2d}. {label}  ← SURVIVED")
+
+    if jobs == 1:
+        for i, (label, mutate) in chosen:
+            verdict, problem, killer = run_one(i, label, mutate, args.no_fast,
+                                               bool(args.kill_map))
+            if killer:
+                kills[i] = killer
+            report(i, label, verdict, problem)
+    else:
+        # Printed in list order even though they finish out of order: a log whose
+        # lines arrive by luck is a log nobody can diff against the last one.
+        # Threads, not processes. Every worker spends its life waiting on
+        # `bash verify_install.sh`, so the GIL is released the whole time and
+        # there is nothing to gain from separate interpreters — and something to
+        # lose: the mutations are closures over their arguments, which do not
+        # pickle. Measured: the process pool refused all four faults of a smoke
+        # test with "Can't pickle local object", and reported them as anchors
+        # that had moved. It failed honestly, which is the only reason that was
+        # a five-minute detour and not a fabricated hundred percent.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(run_one, i, label, mutate, args.no_fast,
+                                   bool(args.kill_map)): (i, label)
+                       for i, (label, mutate) in chosen}
+            done = {}
+            # A line per fault as it closes, to stderr, so the run says something
+            # while it runs. It cannot go to stdout: that is the log, and a log
+            # whose lines arrive by luck is one nobody can diff against the last
+            # one. An hour of silence is what made people reach for `--only`,
+            # which is the measurement getting smaller to fit the wait.
+            for n, fut in enumerate(concurrent.futures.as_completed(futures), 1):
+                i, label = futures[fut]
+                try:
+                    verdict, problem, killer = fut.result()
+                    done[i] = (label, verdict, problem)
+                    if killer:
+                        kills[i] = killer
+                except Exception as exc:                          # noqa: BLE001
+                    done[i] = (label, None, f"the worker died: {exc.__class__.__name__}: {exc}")
+                mark = "?" if done[i][2] else ("✓" if done[i][1] else "✗")
+                left = len(chosen) - n
+                print(f"  [{n}/{len(chosen)}] {mark} {i}. {label[:58]}"
+                      + (f"   ({left} left)" if left else ""),
+                      file=sys.stderr, flush=True)
+            for i, _ in chosen:
+                label, verdict, problem = done[i]
+                report(i, label, verdict, problem)
 
     total = len(chosen) - len(broken)
     rate = (killed / total * 100) if total else 0
@@ -2247,6 +3245,33 @@ def main():
         print("\nThese mutations no longer apply — their anchor moved. Update them:")
         for i, label, why in broken:
             print(f"  {i:2d}. {label}: {why}")
+
+    if args.kill_map:
+        # Todos los `bad` que la suite sabe decir, contra los que alguna vez dijo.
+        # Un `bad` que ningún fault provoca es un check que, hasta donde esta
+        # lista sabe, no puede fallar — y un check que no puede fallar informa
+        # verde porque no sabe decir otra cosa, no porque haya mirado algo.
+        suite = open(os.path.join(ROOT, "scripts/verify_install.sh"), encoding="utf-8").read()
+        declared = set()
+        for m in re.finditer(r'\bbad\s+"((?:[^"\\]|\\.)*)"', suite):
+            declared.add(m.group(1).strip())
+        fired = {k for ks in kills.values() for k in ks}
+        # El texto que imprime `bad` puede llevar interpolación; se comparan por
+        # prefijo estable para no llamar "nunca disparado" a uno que sí lo fue.
+        def seen(msg):
+            head = msg.split("$")[0].strip()[:40]
+            return any(head and head in f for f in fired)
+        never = sorted(d for d in declared if not seen(d))
+        with open(args.kill_map, "w", encoding="utf-8") as fh:
+            json.dump({"kills": kills, "never_fired": never,
+                       "declared": len(declared), "fired": len(fired)}, fh, indent=2)
+        print(f"\n{'─' * 60}")
+        print(f"Mapa de kills: {len(fired)} checks distintos mataron algo; "
+              f"{len(never)} de {len(declared)} `bad` no se disparan con ningún fault.")
+        for d in never[:40]:
+            print(f"  · {d[:100]}")
+        if len(never) > 40:
+            print(f"  … y {len(never) - 40} más (la lista completa en {args.kill_map})")
     return 1 if (survived or broken) else 0
 
 

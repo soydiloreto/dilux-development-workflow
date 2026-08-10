@@ -1,0 +1,82 @@
+id: closeout-hint-from-code-is-a-fixed-point
+kind: router-reachability
+
+# La regresión real de la que sale.
+regression:
+  changelog: "0.20.0 — On the way to IDLE, the hint prescribed gates the edge never asks for"
+  commit: 7dc4369
+  what_happened: >
+    `--to IDLE` desde CODE se rechaza porque no hay arista CODE→IDLE, y el hint
+    que acompañaba a ese rechazo estaba pegado a TODO estado que llegara a esa
+    rama: «Run `--claim commit --claim pr` first (one run, no phase change),
+    then take this edge». Desde CLOSEOUT es la frase correcta; desde CODE los
+    dos claims salían 0, el reintento imprimía el mismo rechazo palabra por
+    palabra, y al lector le quedaba una sola conclusión: la herramienta está
+    rota. Un punto fijo — hacés lo que te dijeron, las compuertas ahora son
+    verdaderas, no hay en qué gastarlas y el rechazo no se movió. El hint se lee
+    del grafo ahora: las compuertas donde la arista las pide, y qué fase cierra
+    un ticket donde esa arista no existe.
+
+given:
+  install: claude
+  # Mitad de ticket en CODE, tier FEATURE: la fase desde la que un modelo pide
+  # cerrar y desde la que el grafo no tiene arista a IDLE. Es el estado exacto
+  # sobre el que se midió el punto fijo.
+  state:
+    phase: CODE
+    tier: FEATURE
+    ticket: T-1
+    title: eval fixture
+    autonomy: assisted
+    gates: {define: true, spec: true, threat: true}
+    history:
+      - {timestamp: "2026-01-01T00:00:00Z", from: IDLE, to: CLASSIFY, action: "start: eval fixture", tier: FEATURE, ticket: T-1}
+      - {timestamp: "2026-01-01T00:10:00Z", from: CLASSIFY, to: DEFINE, action: "classified", tier: FEATURE, ticket: T-1}
+
+when:
+  # Quién dice el rechazo: el HELPER. Los dos hints que 7dc4369 arregló viven
+  # sólo en el `main()` de `transition.py` — el hook no los imprime nunca — así
+  # que la única forma de afirmar sobre el texto que el lector realmente ve es
+  # correr el helper y leer su stderr.
+  triggered_by:
+    transition: ["--to", "IDLE", "--action", "close: the work is done"]
+
+  # Las dos mitades del rechazo, en el orden en que salen y en la misma línea.
+  #
+  # La primera es de `validate()` y no cambió nunca: irse de un ticket sin
+  # cerrarlo se escribe en la `action`. La segunda es la que 7dc4369 arregló, y
+  # es la que discrimina: la versión rota decía «Run `--claim commit --claim pr`
+  # first» acá, y ninguna de estas dos frases aparecía.
+  #
+  # Se exigen LAS DOS a propósito. Con la primera sola el escenario pasaría el
+  # control —esa oración está en las dos versiones— y con la segunda sola el
+  # paso que se replica abajo no estaría anclado a ningún texto.
+  refusal_matches: 'pause: <reason>.*no CODE→IDLE edge in tier FEATURE — the closeout is taken from CLOSEOUT'
+
+  # El movimiento que el rechazo prescribe, al pie de la letra, y que el helper
+  # sancionado tiene que aceptar.
+  #
+  # Se replica la pausa y no la ruta a CLOSEOUT porque la pausa es lo que este
+  # rechazo ofrece DESDE ESTA FASE en un solo movimiento: el rechazo dice que la
+  # arista es lo que falta, no la evidencia, y llegar a CLOSEOUT es caminar el
+  # pipeline entero con sus artefactos — que es precisamente lo que el hint roto
+  # prometía saltear con dos `--claim`. Si esto sale 0 y mueve el estado, el
+  # rechazo tiene salida; si no la tuviera, sería el punto fijo otra vez.
+  prescribed_steps:
+    - ["--to", "IDLE", "--action", "pause: the closeout is taken from CLOSEOUT, not from here"]
+
+expect:
+  every_step_succeeds: true
+
+# El control: `substitute`, no `restore_from_commit`. El commit del fix vive en
+# una rama que NO es ancestro de ésta: un clon local la tiene, un checkout de CI
+# no, y un control que no se puede aplicar falla — por una razón que no es la
+# del escenario. Reinyectar el defecto sobre HEAD no depende de la topología.
+control:
+  type: substitute
+  path: ddw/scripts/transition.py
+  installed_path: .ddw/scripts/transition.py
+  old: |-
+    "There is no %s→IDLE edge%s — the closeout is taken from %s. Claiming gates "
+  new: |-
+    "There is no way out of %s%s. The closeout belongs to %s. Claiming gates "

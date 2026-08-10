@@ -81,7 +81,7 @@ jobs:
           node-version: "20"
       - name: Install what the suite asserts it needs
         run: |
-          python3 -m pip install --quiet pyyaml
+          python3 -m pip install --quiet pyyaml pytest
           # Load-bearing HERE in a way it is nowhere else. The suite's preflight
           # calls `bad()` for a missing tool, so without this the suite exits
           # non-zero on every copy — and this job reads a non-zero exit as "the
@@ -107,6 +107,89 @@ jobs:
             python3 scripts/mutate.py --shard ${{ matrix.shard }}/24
           fi
 
+  # ── ¿Hay checks que no pueden fallar? ──────────────────────────────────────
+  #
+  # El mapa de kills anota QUÉ check caza cada fault. Cruzado con todo `bad` que
+  # la suite sabe decir, lo que queda son los checks que ningún fault provoca: no
+  # se sabe si pueden fallar, y un check que no puede fallar informa verde por no
+  # saber decir otra cosa. Cinco de ésos shippearon en este repo — se leían a sí
+  # mismos, y aparecieron de casualidad.
+  #
+  # Acá y no en la máquina de nadie: son 472 corridas COMPLETAS de la suite, sin
+  # la parada al primer ✗ (que haría ver sólo el primer check de cada fault, que
+  # es la pregunta equivocada). Local son ~2,5 horas; repartido en veinticuatro,
+  # quince minutos.
+  #
+  # A pedido, no en cada push: contesta una pregunta sobre la SUITE, y la suite
+  # no cambia en cada push.
+  kill-map:
+    name: which checks can never fail? (shard ${{ matrix.shard }}/24)
+    if: github.event_name == 'workflow_dispatch'
+    needs: anchors
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - run: |
+          python3 -m pip install --quiet pyyaml pytest
+          # Igual que el job de mutaciones: el preflight de la suite llama a
+          # `bad()` por una herramienta ausente, así que sin el CLI la suite sale
+          # distinta de cero en un árbol LIMPIO — y en un job de mutaciones eso
+          # se lee como cada fault cazado. El baseline lo refusa, que convierte
+          # el 100% falso en un job rojo; instalarlo es lo que lo vuelve una
+          # medición. La suite lo comprueba, y me lo dijo acá.
+          npm install -g @anthropic-ai/claude-code
+      - run: |
+          python3 scripts/mutate.py --shard ${{ matrix.shard }}/24 --no-fast \
+                  --kill-map "kill-map-${{ matrix.shard }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kill-map-${{ matrix.shard }}
+          path: kill-map-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+  kill-map-ledger:
+    name: does the ledger still describe the suite?
+    if: github.event_name == 'workflow_dispatch'
+    needs: kill-map
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kill-map-*
+          path: parts
+          merge-multiple: true
+      # El libro de cuentas es la EXPECTATIVA, no el reporte. Un reporte
+      # generado que se commitea y nadie regenera miente a las dos semanas; una
+      # expectativa que el CI compara no puede envejecer en silencio. Un check
+      # nuevo que no puede fallar entra en rojo hasta que alguien escriba por
+      # qué, o le escriba un fault. Es el idioma de las supresiones de SAST: no
+      # prohíbe, obliga a decirlo.
+      - run: python3 -m pip install --quiet pyyaml
+      - run: python3 scripts/kill_map_ledger.py --parts parts --ledger docs/CHECKS-THAT-CANNOT-FAIL.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kill-map-merged
+          path: kill-map-merged.json
+
   coverage:
     name: did every fault get injected?
     needs: [mutations, anchors]
@@ -117,7 +200,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python3 -m pip install --quiet pyyaml
+      - run: python3 -m pip install --quiet pyyaml pytest
       # Ten green jobs are ten green jobs, not a covered list. Drop a matrix
       # entry and every job still passes while the faults in that slice are
       # never injected — the same failure the pinned check count in
