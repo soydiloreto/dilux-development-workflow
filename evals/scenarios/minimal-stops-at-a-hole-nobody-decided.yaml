@@ -42,12 +42,20 @@ kind: behavioral
 # el producto, no en el escenario: «a `minimal` run that answers its own product
 # questions is worse than one that never had the flag».
 #
-# El control quedó a medias: se lo cortó a mano en su segundo turno, y en el
-# repo que dejó se ve la invención que el control busca —«2000ms p95», marcado
-# como *valor asumido*—. No se cuenta como corrida: **el control de este
-# escenario todavía no tiene una medición completa**. Mientras la normal esté
-# roja tampoco discriminaría: un escenario rojo en HEAD sale rojo en las dos
-# direcciones, y lo que hay que arreglar primero es lo que la normal encontró.
+# EN LA NUBE, TRES CORRIDAS (workflow `behavioral`, mismo modelo, 2026-08-10):
+#   normal:  2 de 3 PASS. La tercera volvió a terminar en PLAN.
+#   control: una se puso roja POR LO SUYO — terminó en PLAN y el PRD trae el
+#            número inventado, o sea que el escenario discrimina. La otra se
+#            contó como roja sin haberlo estado: el CLI salió 1 sin completar un
+#            turno, y esa familia de ERROR no la cubría el guardia del modo
+#            control. Arreglado en el runner; la corrida no cuenta.
+#
+# ASÍ QUE: sumando la local, el modelo cruzó la flecha en 2 de 4 corridas CON LA
+# REGLA INTACTA. **El defecto es intermitente, no sistemático**, y la primera
+# medición sola lo habría vendido como sistemático. El escenario queda con poder
+# de veto para el control —que ya se probó que discrimina— y la corrida normal
+# va a fallar de a ratos hasta que la regla se endurezca o se decida que este
+# 50% es aceptable. Esa decisión no la toma el escenario.
 
 regression:
   acceptance: "scripts/acceptance.md, observation 6 («it runs the arrows without asking, and still stops where it must»)"

@@ -234,6 +234,30 @@ def test_the_excuse_does_nothing_in_a_normal_run():
     assert "if control:" in head and "cannot_discriminate" in head
 
 
+# ── el modo control no acepta un rojo del arnés ──────────────────────────────
+
+@pytest.mark.parametrize("detail", [
+    "KeyError: 'when'",
+    "TimeoutExpired: …",
+    "control unavailable: the anchor is gone",
+    "control off-target: lint_method went red on another claim",
+    # Medido en la nube: un control se contó como rojo porque el CLI salió 1 sin
+    # llegar a contestar. La regresión nunca se puso delante de nadie.
+    "the agent did not complete a turn (exit 1): ",
+    "the agent produced no JSON events — the turn did not run",
+])
+def test_a_red_that_is_the_harness_does_not_pass_the_control(detail):
+    import inspect
+    src = inspect.getsource(runner.main)
+    block = src[src.index("if args.control:"):src.index("results.append(r)")]
+    # Las cuatro familias tienen que estar nombradas en la rama que convierte un
+    # ERROR del arnés en un control FALLADO, no en un rojo legítimo.
+    needles = ("_harness", "_no_turn", "control unavailable", "control off-target",
+               "the agent did not complete a turn", "the agent produced no JSON events")
+    assert all(n in block or n in src for n in needles)
+    assert "the control proved nothing" in block
+
+
 # ── el escenario real, leído como dato ───────────────────────────────────────
 
 def test_the_method_lint_scenario_declares_a_control_with_a_target(tmp_path):

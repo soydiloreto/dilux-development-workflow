@@ -1246,10 +1246,23 @@ def main():
             # una afirmación que este escenario no rompió. Eso no prueba que
             # sepa cazar la suya — es el mismo defecto que el control que
             # fallaba con un `TypeError`, con mejor disfraz.
+            #
+            # Y el cuarto: «the agent did not complete a turn». Medido en la
+            # nube — un control se contó como rojo porque el CLI salió 1 sin
+            # llegar a contestar, o sea que la regresión nunca se puso delante
+            # de nadie. No empieza con `…Error`, así que la regla de arriba no
+            # lo veía: un turno que no corrió no prueba nada, y en modo control
+            # eso REGALA el control, que es el instrumento cuyo trabajo entero
+            # es desconfiar de un verde.
             _harness = re.match(r"^(\w*Error|\w*Exception|TimeoutExpired)\b", r.detail or "")
+            _no_turn = (r.detail or "").startswith((
+                "the agent did not complete a turn",
+                "the agent produced no JSON events",
+                "the agent returned output this runner cannot parse",
+                "the agent reported an error"))
             if r.verdict == SKIP:
                 pass                        # dicho, con su razón, y contado aparte
-            elif r.verdict == ERROR and (_harness or r.detail.startswith(
+            elif r.verdict == ERROR and (_harness or _no_turn or r.detail.startswith(
                     ("control unavailable", "control off-target"))):
                 r = Result(r.sid, r.kind, FAIL,
                            "the control proved nothing — the harness is what broke: " + r.detail)
