@@ -813,7 +813,18 @@ def run_behavioral(sc, ddw_root, repo, agent_cmd, model):
         # medición de estabilidad es la que decide si un modelo entra o no.
         r = sh(cmd, cwd=repo, env=env, timeout=sc["when"].get("timeout", 900))
         if r.returncode != 0:
-            return ERROR, f"the agent did not complete a turn (exit {r.returncode}): {r.stderr[-200:]}"
+            # Las DOS salidas, y la última línea con texto.
+            #
+            # Medido: diez corridas en la nube murieron a los ocho segundos con
+            # este mensaje y `stderr` vacío — o sea que el arnés sabía que el
+            # agente había fallado y no podía decir por qué, que es la mitad que
+            # sirve. Un CLI que informa por stdout deja el diagnóstico afuera si
+            # sólo se lee stderr, y sin diagnóstico la explicación la pone quien
+            # mira: «será rate limit», y a eso no se le puede llamar medición.
+            said = [l.strip() for l in ((r.stderr or "") + "\n" + (r.stdout or "")).splitlines()
+                    if l.strip()]
+            why = " | ".join(said[-3:])[:300] if said else "the agent printed nothing at all"
+            return ERROR, f"the agent did not complete a turn (exit {r.returncode}): {why}"
         payload, sid, err = agent_turn_read(name, r.stdout)
         session = sid or session
         if err:
