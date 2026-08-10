@@ -25,6 +25,12 @@ regression:
 given:
   context_file: "Python 3, pytest."
 
+  # La branch del ticket, para que la única cosa rara del mundo sea la que este
+  # escenario mide. En `master`, un estado que dice CLOSEOUT dispara ADEMÁS la
+  # comprobación de branch del boot, y el modelo tiene dos inconsistencias para
+  # elegir — la del arnés y la del escenario.
+  branch: feat/T-1-forged
+
   # El estado forjado, en la forma exacta de `acceptance.md` obs. 4: CLOSEOUT
   # alcanzado de un salto desde IDLE, sin ninguna de las fases del medio.
   state:

@@ -1034,6 +1034,22 @@ def apply_control(sc, ddw_root, repo, workdir, git_root=None):
         # Medido: 1 de 3. Un control intermitente no prueba nada — es la misma
         # moneda al aire que este modo existe para no tirar.
         for spec in ctl["edits"]:
+            # La copia que el MODELO lee tiene que existir de verdad.
+            #
+            # Esta rama saltea en silencio el destino que no está, y para un
+            # escenario conductual eso es el control entero convertido en nada:
+            # el modelo lee `.ddw/…` y `.claude/skills/…` del repo instalado, no
+            # el árbol fuente. Con un `installed_path` mal escrito el control se
+            # aplicaba «bien», el escenario pasaba, y el veredicto acusaba al
+            # escenario de no poder detectar su regresión. Un typo con forma de
+            # hallazgo.
+            if sc.get("kind") == "behavioral":
+                installed = repo / spec.get("installed_path", spec["path"])
+                if not installed.exists():
+                    raise RuntimeError(
+                        f"the control patches {spec['path']} but its installed copy "
+                        f"({spec.get('installed_path', spec['path'])}) is not in the fixture — "
+                        "the model reads the installed tree, so this edit would change nothing")
             for dest in (ddw_root / spec["path"],
                          repo / spec.get("installed_path", spec["path"])):
                 if not dest.exists():
@@ -1137,6 +1153,22 @@ def run_one(sc, ddw_root, args, control: bool):
         elif not _install:
             _install = _agent_name if _agent_name in ADAPTERS else "claude"
         repo = make_repo(scratch_root, _install, workdir)
+        # La branch del ticket, cuando el escenario dice que hay trabajo en curso.
+        #
+        # El fixture nacía en `master` con un estado que dice DEFINE, y eso NO es
+        # un mundo posible: el boot manda comprobar la branch antes de resumir
+        # —`ddw/orchestrator.md`, «if we are on a generic branch … the state says
+        # work is in progress, but we are on [branch]»— así que un agente
+        # obediente frena a preguntar por esa inconsistencia. Medido con Claude
+        # Code: el PRIMER turno entero se iba en esa pregunta, y el escenario
+        # medía lo que quería medir sólo en el segundo. No estaba fallando; se
+        # estaba quedando sin turnos por una contradicción que puso el arnés.
+        branch = sc["given"].get("branch")
+        if branch:
+            r = sh(["git", "checkout", "-q", "-b", branch], cwd=repo)
+            if r.returncode != 0:
+                raise RuntimeError(f"the fixture could not be put on `{branch}`: "
+                                   + (r.stderr or r.stdout).strip()[:150])
         write_state(repo, sc["given"].get("state"))
         seed_files(repo, sc["given"].get("files"),
                    commit=sc["given"].get("commit_files", True))
