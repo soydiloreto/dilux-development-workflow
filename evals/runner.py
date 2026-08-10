@@ -823,7 +823,12 @@ def run_behavioral(sc, ddw_root, repo, agent_cmd, model):
             # mira: «será rate limit», y a eso no se le puede llamar medición.
             said = [l.strip() for l in ((r.stderr or "") + "\n" + (r.stdout or "")).splitlines()
                     if l.strip()]
-            why = " | ".join(said[-3:])[:300] if said else "the agent printed nothing at all"
+            # Y la línea que HABLA del error primero. Con las últimas tres a
+            # secas, el aviso de arranque que DDW inyecta en cada turno se comía
+            # el presupuesto de caracteres y el evento que dice qué pasó salía
+            # cortado — otra vez sin diagnóstico, esta vez por el recorte.
+            errs = [l for l in said if '"type":"error"' in l or '"error"' in l]
+            why = " | ".join((errs or said)[-2:])[:600] if said else "the agent printed nothing"
             return ERROR, f"the agent did not complete a turn (exit {r.returncode}): {why}"
         payload, sid, err = agent_turn_read(name, r.stdout)
         session = sid or session
