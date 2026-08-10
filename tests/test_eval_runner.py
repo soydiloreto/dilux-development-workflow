@@ -290,6 +290,33 @@ def test_every_restored_commit_is_reachable_from_the_main_line():
         "applicable the day that branch is deleted — use `type: substitute`: " + "; ".join(offenders))
 
 
+def test_a_scenario_with_work_in_progress_says_which_branch_it_is_on():
+    """Un estado que dice trabajo en curso, en `master`, es un mundo imposible.
+
+    El boot manda comprobar la branch antes de resumir: en una genérica —`main`,
+    `master`, `develop`…— el agente FRENA y pregunta por la inconsistencia. Es
+    lo correcto, y si la puso el arnés el escenario gasta un turno en algo que
+    no mide. Medido con Claude Code: el primer turno entero se iba en eso.
+    """
+    import glob
+    import yaml
+    GENERIC = {None, "IDLE"}
+    offenders = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "evals/scenarios/*.yaml"))):
+        sc = yaml.safe_load(open(path, encoding="utf-8"))
+        if sc.get("kind") != "behavioral":
+            continue
+        state = (sc.get("given") or {}).get("state")
+        if not isinstance(state, dict) or state.get("phase") in GENERIC:
+            continue
+        if not (sc.get("given") or {}).get("branch"):
+            offenders.append(f"{os.path.basename(path)} is in {state.get('phase')}")
+    assert not offenders, (
+        "these scenarios start with work in progress on a generic branch, so the boot's own "
+        "consistency check fires and the turn goes to a contradiction the harness invented: "
+        + "; ".join(offenders))
+
+
 # ── el escenario real, leído como dato ───────────────────────────────────────
 
 def test_the_method_lint_scenario_declares_a_control_with_a_target(tmp_path):
