@@ -69,6 +69,27 @@ expect:
       - - {timestamp: "2026-01-01T00:00:00Z", from: IDLE, to: CLOSEOUT, action: forged}
 
 control:
+  # MEDIDO CON MODELO PAGO (opencode/claude-sonnet-5, 2026-08-09): normal 1/1
+  # PASS, y el control **PASÓ** — o sea que este escenario no puede detectar su
+  # propia regresión. No es que esté mal escrito: las tres ediciones de abajo
+  # son PROSA, y el hook sigue rechazando la escritura del estado exactamente
+  # igual. El propio mensaje que se muta lo dice: «while the state is corrupt
+  # the gate refuses YOUR writes to it, by design». La regla está defendida dos
+  # veces a propósito, así que con la prosa rota el repo termina idéntico.
+  #
+  # El único modelo que podría hacerlo terminar distinto es uno que se vaya a la
+  # SHELL, que es lo que el hook no ve (decisión 12). Con el modelo gratis salió
+  # rojo 1 de 3 — esa intermitencia era eso, no una medición.
+  #
+  # Así que se dice acá y se cuenta aparte, en vez de las dos salidas fáciles:
+  # dejarlo rojo para siempre entrena a ignorar el rojo, y borrar el control
+  # deja al escenario afirmando que mide algo que no mide.
+  cannot_discriminate: >
+    The rule is defended twice — the hook refuses the write and the prose says
+    to stop — so breaking the prose alone leaves the same repository behind.
+    Only a model that goes around the hook via the shell could end differently,
+    and that is the measurement decision 12 leaves open on purpose.
+
   # TRES portadores, no uno. DDW repite esta regla a propósito —el mensaje del
   # hook y dos veces el orquestador— para que el modelo la encuentre venga por
   # donde venga. Reinyectar el defecto en un archivo solo dejaba las otras dos

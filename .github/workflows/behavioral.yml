@@ -1,0 +1,90 @@
+# La capa que necesita un modelo.
+#
+# `verify` corre los escenarios OFFLINE en cada push: los que se juzgan leyendo
+# una instrucción y preguntándole al gate de verdad, sin llamar a nadie. Los
+# conductuales son la otra mitad — se instala DDW en un repo real, se le mandan
+# los turnos de un usuario, y después se le pregunta AL REPO qué pasó — y ésos
+# cuestan dinero y minutos. Por eso viven acá: a pedido, y semanal para que no
+# se enteren de que se rompieron el día que hacen falta.
+#
+# Lo que no puede pasar, y este archivo está escrito para eso: que la corrida
+# reporte verde sin haber medido. `runner.py` ya trata un escenario que no se
+# puede juzgar como ROJO, y el modo `--control` exige que cada escenario se
+# ponga rojo contra la regresión de la que salió. Acá se corren los dos.
+name: behavioral
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Modelo (id de opencode). El gratis se queda sin turno y un timeout no mide nada."
+        required: false
+        default: opencode/claude-sonnet-5
+      scenario:
+        description: "Un escenario por id, o vacío para todos los conductuales"
+        required: false
+        default: ""
+  schedule:
+    # Lunes a la mañana (UTC). Un escenario conductual se rompe callado: el
+    # modelo cambia, el CLI cambia, y nadie se entera hasta que se necesita.
+    - cron: "0 7 * * 1"
+
+jobs:
+  behavioral:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: The tools this layer cannot run without
+        run: |
+          python3 -m pip install --quiet pyyaml
+          npm install -g opencode-ai
+
+      # Los controles reinyectan la regresión de la que sale cada escenario, y
+      # algunos commits viven en ramas que no son ancestro de ésta.
+      - name: The history the controls reach back into
+        run: git fetch --quiet --no-tags origin "+refs/heads/*:refs/remotes/origin/*" || true
+
+      # Sin la key no hay medición, y una corrida sin medición NO puede salir
+      # verde: el `runner` cuenta un escenario injuzgable como rojo, pero un
+      # workflow que ni siquiera lo intenta terminaría en verde por no haber
+      # corrido nada. Se falla acá, en una línea que dice por qué.
+      - name: The key this layer runs on
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: |
+          if [ -z "$OPENCODE_API_KEY" ]; then
+            echo "::error::OPENCODE_API_KEY is not set. A behavioral run without a model measures nothing, and a green here would say the instructions were checked when nothing called one."
+            exit 1
+          fi
+
+      - name: The instructions, in front of a model
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          MODEL: ${{ inputs.model || 'opencode/claude-sonnet-5' }}
+          ONLY: ${{ inputs.scenario }}
+        run: |
+          ARGS="--repo . --kinds behavioral --agent opencode --model $MODEL"
+          [ -n "$ONLY" ] && ARGS="$ARGS --only $ONLY"
+          python3 evals/runner.py $ARGS
+
+      # El control, aparte y siempre. Un escenario que pasa en normal y NO se
+      # pone rojo con su regresión puesta no está midiendo nada, y es el modo
+      # de falla que esta capa tiene más a mano: la prosa del modelo cambia, el
+      # repo termina igual, y el escenario aplaude.
+      - name: And each one still goes red against the regression it came from
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          MODEL: ${{ inputs.model || 'opencode/claude-sonnet-5' }}
+          ONLY: ${{ inputs.scenario }}
+        run: |
+          ARGS="--repo . --kinds behavioral --agent opencode --model $MODEL --control"
+          [ -n "$ONLY" ] && ARGS="$ARGS --only $ONLY"
+          python3 evals/runner.py $ARGS

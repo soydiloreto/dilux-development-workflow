@@ -209,6 +209,31 @@ def test_method_lint_green_tree_passes(tmp_path, repo):
     assert v == runner.PASS
 
 
+# ── un control que no puede discriminar, dicho y contado aparte ──────────────
+
+def test_a_control_that_cannot_discriminate_is_skipped_with_its_reason():
+    # Medido: el control de `forged` PASA con un modelo capaz, porque sus tres
+    # ediciones son prosa y el hook rechaza la escritura igual. Dejarlo rojo
+    # para siempre entrena a ignorar el rojo; borrarlo deja al escenario
+    # afirmando que mide algo que no mide.
+    import types
+    sc = {"id": "x", "kind": "behavioral",
+          "control": {"cannot_discriminate": "the rule is defended twice"}}
+    args = types.SimpleNamespace(keep=False, agent="claude", model=None)
+    r = runner.run_one(sc, os.path.join(ROOT), args, control=True)
+    assert r.verdict == runner.SKIP
+    assert "defended twice" in r.detail
+
+
+def test_the_excuse_does_nothing_in_a_normal_run():
+    # Sólo el modo control lo mira: en normal el escenario tiene que correr como
+    # cualquier otro, o una excusa sobre el control apagaría la medición entera.
+    import inspect
+    src = inspect.getsource(runner.run_one)
+    head = src[:src.index("workdir = Path(")]
+    assert "if control:" in head and "cannot_discriminate" in head
+
+
 # ── el escenario real, leído como dato ───────────────────────────────────────
 
 def test_the_method_lint_scenario_declares_a_control_with_a_target(tmp_path):

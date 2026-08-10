@@ -46,7 +46,7 @@ except ImportError:  # fail closed: no silent degradation to "0 scenarios, all g
     print("FATAL: pyyaml is not installed; the scenarios cannot be read.", file=sys.stderr)
     sys.exit(2)
 
-PASS, FAIL, ERROR = "PASS", "FAIL", "ERROR"
+PASS, FAIL, ERROR, SKIP = "PASS", "FAIL", "ERROR", "SKIP"
 
 # Kinds that never call a model. These are the ones CI runs on every push.
 OFFLINE_KINDS = {"painted-door", "painted-door-sweep", "router-reachability",
@@ -62,7 +62,8 @@ class Result:
         self.sid, self.kind, self.verdict, self.detail = sid, kind, verdict, detail
 
     def line(self):
-        colour = {PASS: "\033[32m", FAIL: "\033[31m", ERROR: "\033[33m"}[self.verdict]
+        colour = {PASS: "\033[32m", FAIL: "\033[31m", ERROR: "\033[33m",
+                  SKIP: "\033[36m"}[self.verdict]
         return f"  {colour}{self.verdict:5}\033[0m {self.sid:34} {self.detail}"
 
 
@@ -1058,6 +1059,27 @@ def apply_control(sc, ddw_root, repo, workdir, git_root=None):
 # --------------------------------------------------------------------------- #
 
 def run_one(sc, ddw_root, args, control: bool):
+    # Un control que NO puede discriminar, dicho por el escenario y con su
+    # razón escrita.
+    #
+    # Existe porque se midió: el control de `forged-state-stops-and-reports`
+    # PASA con un modelo capaz, y no porque el escenario esté mal escrito —
+    # porque sus tres ediciones son PROSA y el hook sigue rechazando la
+    # escritura del estado igual. La regla está defendida dos veces a propósito,
+    # así que el repo termina idéntico con la prosa rota, y el único modelo que
+    # podría hacerlo terminar distinto es uno que se vaya a la shell.
+    #
+    # Las dos salidas fáciles eran malas: dejarlo rojo para siempre entrena a
+    # ignorar el rojo, y borrar el control deja al escenario diciendo que mide
+    # algo que no mide. Así que se dice, se cuenta APARTE, y una corrida donde
+    # sólo hubo salteados no sale verde — la misma regla que la suite aplica a
+    # sus propios skips, por la misma razón.
+    if control:
+        excuse = (sc.get("control") or {}).get("cannot_discriminate")
+        if excuse:
+            return Result(sc["id"], sc.get("kind", "?"), SKIP,
+                          "control declared non-discriminating: " + " ".join(excuse.split())[:150])
+
     workdir = Path(tempfile.mkdtemp(prefix=f"ddweval-{sc['id']}-"))
     scratch_root = ddw_root
     try:
@@ -1225,7 +1247,9 @@ def main():
             # sepa cazar la suya — es el mismo defecto que el control que
             # fallaba con un `TypeError`, con mejor disfraz.
             _harness = re.match(r"^(\w*Error|\w*Exception|TimeoutExpired)\b", r.detail or "")
-            if r.verdict == ERROR and (_harness or r.detail.startswith(
+            if r.verdict == SKIP:
+                pass                        # dicho, con su razón, y contado aparte
+            elif r.verdict == ERROR and (_harness or r.detail.startswith(
                     ("control unavailable", "control off-target"))):
                 r = Result(r.sid, r.kind, FAIL,
                            "the control proved nothing — the harness is what broke: " + r.detail)
@@ -1240,8 +1264,9 @@ def main():
     p = sum(1 for r in results if r.verdict == PASS)
     f_ = sum(1 for r in results if r.verdict == FAIL)
     e = sum(1 for r in results if r.verdict == ERROR)
-    print(f"\n  {p} passed, {f_} failed, {e} could not be judged "
-          f"(of {len(scenarios)} run / {discovered} on disk)")
+    s = sum(1 for r in results if r.verdict == SKIP)
+    print(f"\n  {p} passed, {f_} failed, {e} could not be judged, {s} skipped with a "
+          f"written reason (of {len(scenarios)} run / {discovered} on disk)")
 
     if len(results) != len(scenarios):
         print("  FATAL: fewer results than scenarios — the runner lost one.")
@@ -1250,6 +1275,12 @@ def main():
         return 1
     if not results:
         print("  FATAL: nothing ran.")
+        return 2
+    if s and s == len(results):
+        # Un skip se cuenta aparte y no suma a un verde: si TODO lo que había
+        # para medir se salteó, la corrida no midió nada, y decir «green» ahí es
+        # la misma mentira que un `bad` que no puede fallar.
+        print("  FATAL: every scenario was skipped — a run that measured nothing is not a pass.")
         return 2
     print("  green\n")
     return 0

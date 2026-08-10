@@ -4472,7 +4472,7 @@ assert any("pull_request" in str(s.get("if", "")) for s in runs), \
 # approvals it merges itself. What protects main has to be the CONTENT of the
 # job, and nothing was checking it.
 LOADBEARING = ("scripts/verify_install.sh", "scripts/lint_method.py",
-               "scripts/check_versions.py")
+               "scripts/check_versions.py", "scripts/lint_kill_map.py")
 for needle in LOADBEARING:
     owning = [s for s in steps if needle in str(s.get("run", ""))]
     assert owning, f"verify.yml no longer runs {needle} — the job name stays green either way"
@@ -4514,6 +4514,34 @@ for needle in ("scripts/mutate.py --shard", "--check-anchors", "--cover"):
     for s in owning:
         assert not s.get("continue-on-error"), f"`{needle}` runs with continue-on-error"
         assert "|| true" not in str(s.get("run", "")), f"`{needle}`'s failure is swallowed"
+
+# La capa conductual, que es la única que cuesta dinero y por eso la única que
+# se corre a pedido. Nada comprobaba que exista: borrando el workflow, la
+# medición que necesita un modelo simplemente deja de existir y ningún contexto
+# requerido se pone rojo, porque no era uno.
+#
+# Y el CONTROL aparte del normal, porque es el que discrimina: un escenario
+# conductual que pasa y no se pone rojo con su regresión puesta está aplaudiendo
+# la prosa del modelo. Un workflow que corre sólo la mitad normal reporta verde
+# sobre eso.
+beh_path = os.path.join(sys.argv[1], ".github/workflows/behavioral.yml")
+assert os.path.exists(beh_path), \
+    "there is no behavioral workflow — the layer that puts the instructions in front of a model"
+beh = yaml.safe_load(open(beh_path, encoding="utf-8"))
+bsteps = [s for job in beh["jobs"].values() for s in job.get("steps", [])]
+runs = [str(s.get("run", "")) for s in bsteps]
+assert any("evals/runner.py" in r and "--kinds behavioral" in r for r in runs), \
+    "behavioral.yml never runs the behavioral scenarios"
+assert any("--control" in r for r in runs), \
+    "behavioral.yml runs the scenarios and never their controls — the half that discriminates"
+for s in bsteps:
+    if "evals/runner.py" in str(s.get("run", "")):
+        assert not s.get("continue-on-error") and "|| true" not in str(s.get("run", "")), \
+            "a behavioral run's failure is swallowed, so the layer reports green either way"
+assert any("OPENCODE_API_KEY" in str(s.get("run", "")) and "exit 1" in str(s.get("run", ""))
+           for s in bsteps), \
+    ("behavioral.yml does not fail when the key is absent — a run that called no model would "
+     "finish green, saying the instructions were measured when nothing measured them")
 
 # Every job that RUNS the suite has to be a machine the suite's own preflight
 # accepts — asked of all workflows, not of a hand-listed three, because the one

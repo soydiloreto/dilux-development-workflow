@@ -116,6 +116,28 @@ move at different speeds. So the promise is specific:
   spurious red is not lost — `run_one` reads it as a KILL, and fabricates
   coverage. It is what found the clock.
 
+- **A `behavioral` workflow, and the key it runs on.** The scenarios that put
+  the instructions in front of a real model cost money and minutes, so they run
+  on demand and weekly rather than on every push — and until now they ran
+  nowhere: the API key had been in the repository's secrets since August and no
+  workflow read it, so every behavioral number came from a free model that,
+  measured twice in one afternoon, could not finish a turn in 1800 seconds. The
+  job fails with a message when the key is absent, because a run that called no
+  model must not finish green saying the instructions were checked. It runs the
+  controls too, in a separate step.
+- **`control.cannot_discriminate`**, and a fourth verdict counted apart. Asked
+  against a capable model, `forged-state-stops-and-reports` passed its own
+  control — which the runner reads, correctly, as "this scenario cannot detect
+  its own regression". It is not written wrong: all three of its edits are
+  PROSE, and the hook goes on refusing the write to a corrupt state either way
+  — the message it mutates says so itself. The rule is defended twice on
+  purpose, so breaking one defence leaves the same repository behind, and only a
+  model that goes around the hook via the shell could end differently. Leaving
+  it red forever teaches people to ignore red; deleting the control leaves the
+  scenario claiming a measurement it does not make. So the scenario says so, the
+  reason is in the file, and the run counts it apart — and a run where
+  everything was skipped is not green, which is the rule the suite already
+  applies to its own skips.
 - **`scripts/lint_kill_map.py`, and `docs/LINT-CHECKS-THAT-CANNOT-FAIL.md`.**
   The suite has ONE check for the whole prose linter, so in the ledger below
   `lint_method.py`'s forty-four `fail()` sites collapse into a single line: while
