@@ -46,10 +46,19 @@ when:
 expect:
   no_ordered_write_is_refused: true
 
-# Restoring the page as it shipped before 4c41f3e must make this scenario FAIL.
-# The doc is not installed into the repo — the probe runs against the gate in the
-# fixture either way — so there is no `installed_path`.
+# La frase como shippeó antes de 4c41f3e, reinyectada sobre HEAD.
+#
+# Era `restore_from_commit`, y el squash-merge del PR #7 se llevó puesta esa
+# historia: `4c41f3e` vivía sólo en `feat/docs-audit`, así que desde `main` el
+# control ya no se podía aplicar y el escenario salía rojo por no poder
+# preguntarse nada — que es lo que el propio error recomienda arreglar así. Un
+# control atado a un commit de una rama es un control con fecha de vencimiento:
+# el día que la rama se borra, deja de probar.
+#
+# El documento no se instala en el repo —el probe le pregunta al gate del
+# fixture igual— así que no hay `installed_path`.
 control:
-  type: restore_from_commit
-  commit: 4c41f3e^
+  type: substitute
   path: docs/INSTALL.md
+  old: "`/ddw-eject` walks you through it when that day comes"
+  new: "`/ddw-eject` copies it in when that day comes"

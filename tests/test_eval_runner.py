@@ -234,6 +234,62 @@ def test_the_excuse_does_nothing_in_a_normal_run():
     assert "if control:" in head and "cannot_discriminate" in head
 
 
+# ── el modo control no acepta un rojo del arnés ──────────────────────────────
+
+@pytest.mark.parametrize("detail", [
+    "KeyError: 'when'",
+    "TimeoutExpired: …",
+    "control unavailable: the anchor is gone",
+    "control off-target: lint_method went red on another claim",
+    # Medido en la nube: un control se contó como rojo porque el CLI salió 1 sin
+    # llegar a contestar. La regresión nunca se puso delante de nadie.
+    "the agent did not complete a turn (exit 1): ",
+    "the agent produced no JSON events — the turn did not run",
+])
+def test_a_red_that_is_the_harness_does_not_pass_the_control(detail):
+    import inspect
+    src = inspect.getsource(runner.main)
+    block = src[src.index("if args.control:"):src.index("results.append(r)")]
+    # Las cuatro familias tienen que estar nombradas en la rama que convierte un
+    # ERROR del arnés en un control FALLADO, no en un rojo legítimo.
+    needles = ("_harness", "_no_turn", "control unavailable", "control off-target",
+               "the agent did not complete a turn", "the agent produced no JSON events")
+    assert all(n in block or n in src for n in needles)
+    assert "the control proved nothing" in block
+
+
+# ── un control atado a una rama tiene fecha de vencimiento ───────────────────
+
+def test_every_restored_commit_is_reachable_from_the_main_line():
+    """Un `restore_from_commit` que apunta a un commit de una rama muere con ella.
+
+    Medido: el squash-merge del PR #7 se llevó puesta la historia de
+    `feat/docs-audit`, y el control de `painted-door-install-doc-eject` —que
+    restauraba `docs/INSTALL.md` en `4c41f3e^`— pasó a fallar desde `main` por
+    no poder aplicarse. Un control que no se puede aplicar no prueba nada, y el
+    escenario sale rojo por una razón que no es la suya.
+    """
+    import glob
+    import yaml
+    offenders = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "evals/scenarios/*.yaml"))):
+        sc = yaml.safe_load(open(path, encoding="utf-8"))
+        ctl = sc.get("control") or {}
+        if ctl.get("type") != "restore_from_commit":
+            continue
+        commit = ctl["commit"]
+        # ¿Está en la línea principal de ESTE checkout? `HEAD` alcanza porque
+        # toda rama de trabajo sale de `main`; lo que se descarta es el commit
+        # que sólo vive en otra rama.
+        r = subprocess.run(["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+                           cwd=ROOT, capture_output=True)
+        if r.returncode != 0:
+            offenders.append(f"{os.path.basename(path)} restores at {commit}")
+    assert not offenders, (
+        "these controls hang off history the main line does not carry, so they stop being "
+        "applicable the day that branch is deleted — use `type: substitute`: " + "; ".join(offenders))
+
+
 # ── el escenario real, leído como dato ───────────────────────────────────────
 
 def test_the_method_lint_scenario_declares_a_control_with_a_target(tmp_path):

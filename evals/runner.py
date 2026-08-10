@@ -813,7 +813,23 @@ def run_behavioral(sc, ddw_root, repo, agent_cmd, model):
         # medición de estabilidad es la que decide si un modelo entra o no.
         r = sh(cmd, cwd=repo, env=env, timeout=sc["when"].get("timeout", 900))
         if r.returncode != 0:
-            return ERROR, f"the agent did not complete a turn (exit {r.returncode}): {r.stderr[-200:]}"
+            # Las DOS salidas, y la última línea con texto.
+            #
+            # Medido: diez corridas en la nube murieron a los ocho segundos con
+            # este mensaje y `stderr` vacío — o sea que el arnés sabía que el
+            # agente había fallado y no podía decir por qué, que es la mitad que
+            # sirve. Un CLI que informa por stdout deja el diagnóstico afuera si
+            # sólo se lee stderr, y sin diagnóstico la explicación la pone quien
+            # mira: «será rate limit», y a eso no se le puede llamar medición.
+            said = [l.strip() for l in ((r.stderr or "") + "\n" + (r.stdout or "")).splitlines()
+                    if l.strip()]
+            # Y la línea que HABLA del error primero. Con las últimas tres a
+            # secas, el aviso de arranque que DDW inyecta en cada turno se comía
+            # el presupuesto de caracteres y el evento que dice qué pasó salía
+            # cortado — otra vez sin diagnóstico, esta vez por el recorte.
+            errs = [l for l in said if '"type":"error"' in l or '"error"' in l]
+            why = " | ".join((errs or said)[-2:])[:600] if said else "the agent printed nothing"
+            return ERROR, f"the agent did not complete a turn (exit {r.returncode}): {why}"
         payload, sid, err = agent_turn_read(name, r.stdout)
         session = sid or session
         if err:
@@ -1246,10 +1262,23 @@ def main():
             # una afirmación que este escenario no rompió. Eso no prueba que
             # sepa cazar la suya — es el mismo defecto que el control que
             # fallaba con un `TypeError`, con mejor disfraz.
+            #
+            # Y el cuarto: «the agent did not complete a turn». Medido en la
+            # nube — un control se contó como rojo porque el CLI salió 1 sin
+            # llegar a contestar, o sea que la regresión nunca se puso delante
+            # de nadie. No empieza con `…Error`, así que la regla de arriba no
+            # lo veía: un turno que no corrió no prueba nada, y en modo control
+            # eso REGALA el control, que es el instrumento cuyo trabajo entero
+            # es desconfiar de un verde.
             _harness = re.match(r"^(\w*Error|\w*Exception|TimeoutExpired)\b", r.detail or "")
+            _no_turn = (r.detail or "").startswith((
+                "the agent did not complete a turn",
+                "the agent produced no JSON events",
+                "the agent returned output this runner cannot parse",
+                "the agent reported an error"))
             if r.verdict == SKIP:
                 pass                        # dicho, con su razón, y contado aparte
-            elif r.verdict == ERROR and (_harness or r.detail.startswith(
+            elif r.verdict == ERROR and (_harness or _no_turn or r.detail.startswith(
                     ("control unavailable", "control off-target"))):
                 r = Result(r.sid, r.kind, FAIL,
                            "the control proved nothing — the harness is what broke: " + r.detail)
