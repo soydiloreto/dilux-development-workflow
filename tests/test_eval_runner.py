@@ -258,6 +258,38 @@ def test_a_red_that_is_the_harness_does_not_pass_the_control(detail):
     assert "the control proved nothing" in block
 
 
+# ── un control atado a una rama tiene fecha de vencimiento ───────────────────
+
+def test_every_restored_commit_is_reachable_from_the_main_line():
+    """Un `restore_from_commit` que apunta a un commit de una rama muere con ella.
+
+    Medido: el squash-merge del PR #7 se llevó puesta la historia de
+    `feat/docs-audit`, y el control de `painted-door-install-doc-eject` —que
+    restauraba `docs/INSTALL.md` en `4c41f3e^`— pasó a fallar desde `main` por
+    no poder aplicarse. Un control que no se puede aplicar no prueba nada, y el
+    escenario sale rojo por una razón que no es la suya.
+    """
+    import glob
+    import yaml
+    offenders = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "evals/scenarios/*.yaml"))):
+        sc = yaml.safe_load(open(path, encoding="utf-8"))
+        ctl = sc.get("control") or {}
+        if ctl.get("type") != "restore_from_commit":
+            continue
+        commit = ctl["commit"]
+        # ¿Está en la línea principal de ESTE checkout? `HEAD` alcanza porque
+        # toda rama de trabajo sale de `main`; lo que se descarta es el commit
+        # que sólo vive en otra rama.
+        r = subprocess.run(["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+                           cwd=ROOT, capture_output=True)
+        if r.returncode != 0:
+            offenders.append(f"{os.path.basename(path)} restores at {commit}")
+    assert not offenders, (
+        "these controls hang off history the main line does not carry, so they stop being "
+        "applicable the day that branch is deleted — use `type: substitute`: " + "; ".join(offenders))
+
+
 # ── el escenario real, leído como dato ───────────────────────────────────────
 
 def test_the_method_lint_scenario_declares_a_control_with_a_target(tmp_path):
