@@ -29,6 +29,25 @@
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/adapters/claude/hooks/validate-state-transition.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/adapters/claude/hooks/confirm-commit.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/adapters/claude/hooks/user-turn.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

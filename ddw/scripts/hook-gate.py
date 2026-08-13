@@ -22,6 +22,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -223,6 +224,14 @@ def normalize(event, dialect):
 POST_CANNOT_BLOCK = {"copilot"}
 
 
+# `git … commit`, not crossing a shell separator — so `git log … | grep commit`
+# is not a commit and `git -C sub commit` still is. It over-matches rather than
+# under-matches on purpose: an extra prompt costs a keystroke, a missed one is
+# the whole defect this gate exists for. `--dry-run` writes nothing, so it is
+# the one spelling that is let through.
+_IS_COMMIT = re.compile(r"\bgit\b(?![^|&;]*--dry-run)[^|&;]*\bcommit\b")
+
+
 # What a corrupt state is: an incident to report, never a task to take on.
 #
 # The two halves of this net used to say opposite things. The reporting path
@@ -322,6 +331,102 @@ def deny(dialect, reason):
     sys.exit(2)
 
 
+# Where the message being proposed lives, and the proof that a human saw it.
+#
+# `ddw-commit` writes the message it is showing to PROPOSAL. The turn hook —
+# which runs when the user speaks, and only then — stamps SEAL with a digest of
+# whatever PROPOSAL held at that moment. A commit is allowed when the digest of
+# the message it is about to write matches the sealed one, which can only be
+# true if that exact text was on screen before the user answered.
+#
+# The first design refused the FIRST attempt and allowed the second, counting
+# turns. It enforced the same thing and cost a round trip every time: a model
+# that had done exactly the right thing — shown the message, waited, been told
+# to go — still had its attempt refused, because it was the first attempt the
+# gate had seen. Sealing at proposal time instead of at attempt time removes
+# that, and buys something the counter never had: the bytes are compared, so
+# showing one message and committing another is no longer possible.
+def _paths(repo):
+    """The proposal the model writes, and the seal only a hook writes.
+
+    They are deliberately in different places. `.ddw-sessions/` holds the
+    receipts six of the eight gates read, so every write into it is refused in
+    every phase — a model that could write there could forge a gate. The first
+    version of this put the proposal there, and DDW's own painted-door eval
+    caught it in one run: a skill ordering a write the guard refuses is the
+    defect this repository has spent the most time removing.
+    `.ddw-work/` is the runtime that IS writable, in every phase, by design.
+    """
+    base = repo or "."
+    return (os.path.join(base, ".ddw-work", "commit-message.txt"),
+            os.path.join(base, ".ddw-sessions", "commit-seen"))
+
+
+def _digest(path):
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read().strip()).hexdigest()
+    except OSError:
+        return None
+
+
+def seal_proposal(repo):
+    """The user just spoke: whatever is being proposed, they have now seen it."""
+    proposal, seal = _paths(repo)
+    digest = _digest(proposal)
+    if digest is None:
+        return
+    try:
+        os.makedirs(os.path.dirname(seal), exist_ok=True)
+        with open(seal, "w", encoding="utf-8") as fh:
+            fh.write(digest)
+    except OSError:
+        pass                         # never fail a turn over bookkeeping
+
+
+def commit_verdict(repo, command):
+    """None to allow, or the reason to refuse."""
+    proposal, seal = _paths(repo)
+    rel = os.path.join(".ddw-work", "commit-message.txt")
+    howto = (
+        "\nHow this works: write the message you are about to show — gitmoji, type, scope, body "
+        "and trailers, exactly as it will be committed — to `%s`, show it to the user, and END "
+        "YOUR TURN. When they answer, commit it with:\n"
+        "    git commit -F %s\n"
+        "The file is what gets committed, so what they read and what lands are the same bytes." % (rel, rel))
+    # The message has to come from the file, so no comparison of shell-quoted
+    # text is needed — and none can be got wrong. `-m` through the shell is the
+    # same quoting problem that took `--set` out of the transition helper.
+    if not re.search(r"(?:^|\s)(?:-F|--file)[=\s]+\S*\.ddw-work/commit-message\.txt", command):
+        return ("DDW (assisted): a commit takes its message from the file the user was shown."
+                + howto)
+    digest = _digest(proposal)
+    if digest is None:
+        return ("DDW (assisted): `%s` does not exist, so nothing says the user has seen this "
+                "message." % rel) + howto
+    try:
+        with open(seal, encoding="utf-8") as fh:
+            sealed = fh.read().strip()
+    except OSError:
+        sealed = ""
+    if sealed != digest:
+        return (
+            "DDW (assisted): this message has not been in front of the user yet — it was written "
+            "during the turn you are still in.\n"
+            "`ddw-commit` step 7 is to present it and step 8 is to commit only after they "
+            "approve, and `assisted` means every step waits for a person. Show it, end your turn, "
+            "and run the same command once they have answered. Do NOT reach for a different "
+            "command: the refusal is the pause, not an obstacle to route around.\n"
+            "If the user wants commits to stop waiting, that is `autonomy: minimal`, decided in "
+            "CLASSIFY with the cost stated, not something to infer from impatience.")
+    for path in (proposal, seal):    # spent: the next commit is proposed afresh
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    return None
+
+
 def allow(dialect):
     # Tools that read a JSON verdict want a well-formed one; the rest treat any
     # stdout on an allow as noise, so they get silence. Cursor is explicit
@@ -343,7 +448,7 @@ def main():
     # The choices come off the table itself, so the two cannot disagree: a name
     # the table does not carry is a mistake, not a quiet fall back to generic.
     ap.add_argument("--dialect", choices=tuple(DIALECTS), default="standard")
-    ap.add_argument("--mode", choices=("pre", "post"), default="pre")
+    ap.add_argument("--mode", choices=("pre", "post", "commit", "turn"), default="pre")
     ap.add_argument("--state", required=True)
     ap.add_argument("--graph", required=True)
     ap.add_argument("--repo", default=None,
@@ -358,6 +463,13 @@ def main():
     ap.add_argument("--method", default=None,
                     help="the method root (.ddw, or the plugin's copy); no phase writes inside it")
     args = ap.parse_args()
+
+    if args.mode == "turn":
+        # The user just spoke, so anything being proposed to them has now been
+        # seen. This decides nothing and prints nothing: whatever a hook on this
+        # event writes to stdout is prepended to the user's own message.
+        seal_proposal(args.repo)
+        sys.exit(0)
 
     _VALIDATOR = vt = _load_validator()
 
@@ -416,6 +528,29 @@ def main():
     _touch_marker(args.repo, event.get("session_id") or event.get("sessionId"))
 
     tool_name, tool_input, paths, typed_but_wrong, raw_name = normalize(event, args.dialect)
+
+    if args.mode == "commit":
+        # Anything that is not a commit is not this gate's business. The matcher
+        # fires on every shell call, so silence on the other 99% is the point.
+        command = tool_input.get("command")
+        if not isinstance(command, str) or not _IS_COMMIT.search(command):
+            allow(args.dialect)
+        # `minimal` was opted into with the cost stated out loud, and what it
+        # removes is the asking, not the showing. A commit is local and
+        # reversible, so it is not one of the acts that keep their confirmation
+        # in both modes — those are the ones that leave the repository.
+        try:
+            with open(args.state, encoding="utf-8") as fh:
+                autonomy = (json.load(fh) or {}).get("autonomy")
+        except (OSError, ValueError, AttributeError):
+            autonomy = None              # unreadable reads as assisted, like absent
+        if autonomy == "minimal":
+            allow(args.dialect)
+        reason = commit_verdict(args.repo, command)
+        if reason:
+            deny(args.dialect, reason)
+        allow(args.dialect)
+
     if typed_but_wrong:
         deny(args.dialect,
              "the event names a file path that is not a string, so this write cannot be "

@@ -28,6 +28,25 @@
             "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/validate-state-transition.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/confirm-commit.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/user-turn.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
