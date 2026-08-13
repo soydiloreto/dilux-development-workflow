@@ -33,5 +33,9 @@
   },
   "context_file": "GEMINI.md",
   "trust_note": "Gemini fingerprints project hooks: if a hook's name or command changes (a git pull, for instance), it is treated as new and untrusted until you approve it again.",
-  "snippet": "GEMINI.snippet.md"
+  "snippet": "GEMINI.snippet.md",
+  "choice_prompt": {
+    "tool": "ask_user",
+    "note": "the Ask User tool, `choice` type, with multiSelect"
+  }
 }

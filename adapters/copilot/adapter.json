@@ -30,5 +30,9 @@
       "chmod": "+x"
     }
   ],
-  "context_file": "AGENTS.md"
+  "context_file": "AGENTS.md",
+  "choice_prompt": {
+    "tool": "ask_user",
+    "note": "the ask_user tool — agent and Plan mode; absent in Ask mode"
+  }
 }

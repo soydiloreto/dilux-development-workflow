@@ -32,5 +32,9 @@
     "merge_key": "hooks"
   },
   "context_file": "CLAUDE.md",
-  "snippet": "CLAUDE.snippet.md"
+  "snippet": "CLAUDE.snippet.md",
+  "choice_prompt": {
+    "tool": "AskUserQuestion",
+    "note": "the AskUserQuestion tool"
+  }
 }

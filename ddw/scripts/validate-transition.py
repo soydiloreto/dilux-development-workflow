@@ -2472,7 +2472,84 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
         reason = gate_evidence_missing(root, new_state, sorted(set(owed)))
         if reason:
             return reason
+        if len(_nh) > len(_oh):
+            reason = second_arrow_in_one_turn(root, old_state, new_state)
+            if reason:
+                return reason
+            _record_arrow(root)
     return None
+
+
+# ── One arrow per turn ───────────────────────────────────────────────────────
+#
+# "NEVER run more than one phase transition in a single response. Finish the
+# current phase, show the closing summary, wait for EXPLICIT confirmation."
+# The orchestrator states it as hard, and said how it was enforced: "the state
+# is written once per arrow either way, and the hook refuses a write that
+# appends two."
+#
+# That covers one of the two ways to break it. Measured on a live run: three
+# separate writes, one entry each, thirty-seven seconds apart, on a single
+# "avanti" — the split closed, the sub-ticket opened, and DEFINE entered, with
+# the user having approved only the first. Each write was legal on its own and
+# nothing compares writes across a response.
+#
+# The turn counter the commit gate needed is the signal that was missing. Under
+# `minimal` this does not apply: there the arrows are supposed to run without
+# anyone between them, which is what that mode was opted into.
+def _turn_file(root):
+    return os.path.join(root or ".", ".ddw-sessions", "turn")
+
+
+def _turn_now(root):
+    try:
+        with open(_turn_file(root), encoding="utf-8") as fh:
+            return int(fh.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _record_arrow(root):
+    turn = _turn_now(root)
+    if turn is None:
+        return
+    try:
+        path = os.path.join(root, ".ddw-sessions", "last-arrow")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(str(turn))
+    except OSError:
+        pass                            # bookkeeping never decides a write
+
+
+def second_arrow_in_one_turn(root, old_state, new_state):
+    """The reason to refuse a second transition in one response, or None."""
+    autonomy = new_state.get("autonomy") or old_state.get("autonomy") or "assisted"
+    if autonomy == "minimal":
+        return None
+    turn = _turn_now(root)
+    if turn is None:
+        # No turn signal from this tool. Silence rather than a refusal: a guard
+        # that fires because a counter is missing refuses every write on every
+        # harness that does not write one.
+        return None
+    try:
+        with open(os.path.join(root, ".ddw-sessions", "last-arrow"), encoding="utf-8") as fh:
+            last = int(fh.read().strip())
+    except (OSError, ValueError):
+        return None
+    if last != turn:
+        return None
+    return (
+        "a transition already landed in this turn (%s → %s), and `assisted` means every arrow "
+        "waits for the user.\n"
+        "Show the closing summary for the arrow you just took, END YOUR TURN, and take the next "
+        "one once they have answered. Do NOT batch the rest of the pipeline into this response: "
+        "approving one step is not approving the ones after it, and a run that crosses three "
+        "phases on one \"go ahead\" was approved once and recorded as three decisions.\n"
+        "If the user wants the arrows to stop waiting, that is `autonomy: minimal`, decided in "
+        "CLASSIFY with the cost stated." % (old_state.get("phase", IDLE),
+                                            new_state.get("phase", IDLE)))
 
 
 # DDW's own footprint, which is not product source and is not the agent going

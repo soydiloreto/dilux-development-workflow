@@ -614,3 +614,181 @@ def test_the_helper_never_stamps_an_entry_before_the_one_it_follows(tmp_path):
     assert stamps == sorted(stamps), f"la historia quedó desordenada igual: {stamps}"
     assert stamps[-1] >= ahead, \
         "el sello nuevo quedó antes que el anterior, que es lo que la guarda refusa"
+
+
+# ── El helper y su propia compuerta ──────────────────────────────────────────
+#
+# Dos defectos medidos en una corrida real, una flecha de distancia. El helper
+# resolvía un valor para la entrada de history y dejaba el header sin él; post
+# mode lee el tier y el ticket de las entradas, así que condenaba los bytes que
+# el helper acababa de escribir con exit 0. Y el rechazo, que es correcto, dice
+# no reparar: una flag faltante frenaba la corrida y sólo un `cp` a mano la
+# devolvía.
+
+# Rutas, no el grafo ya cargado: `GRAPH` en este módulo es el JSON parseado y
+# media docena de tests lo usan como dict.
+_TRANSITION_PY = os.path.join(ROOT, "ddw/scripts/transition.py")
+_GRAPH_PATH = os.path.join(ROOT, "ddw/rules/transition-graph.json")
+
+
+def _step(state_path, *args):
+    return subprocess.run([sys.executable, _TRANSITION_PY, "--state", state_path,
+                           "--graph", _GRAPH_PATH, *args, "--write"],
+                          capture_output=True, text=True,
+                          cwd=os.path.dirname(state_path))
+
+
+def _split_upto_pause(tmp_path):
+    """CLASSIFY → DEFINE → IDLE(pause), que es como termina todo split."""
+    p = str(tmp_path / ".ddw-state.json")
+    open(p, "w", encoding="utf-8").write(json.dumps(state()))
+    assert _step(p, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
+                 "--action", "clasificar").returncode == 0
+    assert _step(p, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
+                 "--action", "definir").returncode == 0
+    assert _step(p, "--to", "IDLE", "--action", "pause: split into F-1a/F-1b").returncode == 0
+    return p
+
+
+def test_el_header_lleva_el_tier_que_lleva_la_entrada(tmp_path):
+    """Saliendo de IDLE tras un pause, el helper recupera el tier pausado y lo
+    estampa en la entrada. Si no lo pone también en el header, el estado se
+    contradice con su propia flecha más nueva y post mode lo condena."""
+    p = _split_upto_pause(tmp_path)
+    r = _step(p, "--to", "CLASSIFY", "--ticket", "F-1a", "--action", "abrir sub-ticket")
+    assert r.returncode == 0, r.stderr[-300:]
+    d = json.load(open(p, encoding="utf-8"))
+    assert d["tier"] == "FEATURE", (
+        "el header quedó sin tier mientras su última entrada dice %r — es el estado que el "
+        "post-write llama corrupto" % d["history"][-1].get("tier"))
+    assert d["history"][-1].get("tier") == "FEATURE"
+
+
+def test_el_header_lleva_el_ticket_que_lleva_la_entrada_al_retomar(tmp_path):
+    """Un `resume:` sí hereda el ticket pausado — y tiene que restaurarlo en el
+    header por la misma razón."""
+    p = _split_upto_pause(tmp_path)
+    r = _step(p, "--to", "DEFINE", "--action", "resume: seguimos con lo pausado")
+    assert r.returncode == 0, r.stderr[-300:]
+    d = json.load(open(p, encoding="utf-8"))
+    assert d["ticket"] == "F-1" == d["history"][-1].get("ticket")
+
+
+def test_saliendo_de_idle_tras_un_pause_el_helper_no_adivina_el_ticket(tmp_path):
+    """Para un sub-ticket de un split —la forma normal en que termina un pause—
+    heredar el ticket pausado estampa el ID del padre en una corrida que es del
+    hijo, y post mode encuentra una corrida nombrando dos tickets."""
+    p = _split_upto_pause(tmp_path)
+    r = _step(p, "--to", "CLASSIFY", "--action", "abrir sub-ticket del split")
+    assert r.returncode == 2, "el helper adivinó en vez de pedir --ticket"
+    assert "--ticket" in r.stderr, r.stderr[-300:]
+    assert json.load(open(p, encoding="utf-8"))["phase"] == "IDLE", "escribió igual"
+
+
+# ── Una flecha por turno ─────────────────────────────────────────────────────
+#
+# El orquestador lo dice duro — "NUNCA corras más de una transición en una sola
+# respuesta" — y decía cómo se hacía cumplir: "el hook rechaza un write que
+# agregue dos". Eso cubre una de las dos formas de romperlo. Medido: tres writes
+# separados, una entrada cada uno, 37 segundos de diferencia, sobre un solo
+# "avanti". Cada uno legal por su cuenta.
+
+def _turn_passes(repo_dir):
+    subprocess.run([sys.executable, os.path.join(ROOT, "ddw/scripts/hook-gate.py"),
+                    "--mode", "turn", "--state", os.path.join(repo_dir, ".ddw-state.json"),
+                    "--graph", _GRAPH_PATH, "--repo", repo_dir],
+                   input="{}", capture_output=True, text=True)
+
+
+def _arrow(repo_dir, *args):
+    """La flecha por el camino sancionado, con el guard de pre-write mirando."""
+    p = os.path.join(repo_dir, ".ddw-state.json")
+    emitted = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p,
+                              "--graph", _GRAPH_PATH, *args],
+                             capture_output=True, text=True, cwd=repo_dir)
+    assert emitted.returncode == 0, emitted.stderr[-300:]
+    vt = _load("vt", "ddw/scripts/validate-transition.py")
+    old = json.load(open(p, encoding="utf-8"))
+    new = json.loads(emitted.stdout)
+    reason = vt.second_arrow_in_one_turn(repo_dir, old, new)
+    if reason is None:
+        open(p, "w", encoding="utf-8").write(emitted.stdout)
+        vt._record_arrow(repo_dir)
+    return reason
+
+
+def _repo_con_estado(tmp_path, autonomy="assisted"):
+    d = str(tmp_path)
+    os.makedirs(os.path.join(d, ".ddw-sessions"), exist_ok=True)
+    open(os.path.join(d, ".ddw-state.json"), "w", encoding="utf-8").write(
+        json.dumps(state(autonomy=autonomy) if False else
+                   {"phase": "IDLE", "tier": None, "ticket": None, "autonomy": autonomy,
+                    "gates": {}, "history": []}))
+    return d
+
+
+def test_dos_flechas_en_un_turno_son_rechazadas(tmp_path):
+    d = _repo_con_estado(tmp_path)
+    _turn_passes(d)
+    assert _arrow(d, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
+                  "--autonomy", "assisted", "--action", "clasificar") is None
+    reason = _arrow(d, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
+                    "--action", "definir")
+    assert reason and "already landed in this turn" in reason, \
+        "la segunda transición del mismo turno pasó: %r" % reason
+
+
+def test_despues_de_que_hable_el_usuario_la_siguiente_flecha_pasa(tmp_path):
+    d = _repo_con_estado(tmp_path)
+    _turn_passes(d)
+    _arrow(d, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
+           "--autonomy", "assisted", "--action", "clasificar")
+    _turn_passes(d)
+    assert _arrow(d, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
+                  "--action", "definir") is None, "la flecha aprobada fue rechazada igual"
+
+
+def test_en_minimal_las_flechas_no_esperan(tmp_path):
+    """Lo que ese modo saca es la confirmación, y se opta a él con el costo
+    dicho en voz alta."""
+    d = _repo_con_estado(tmp_path, autonomy="minimal")
+    _turn_passes(d)
+    _arrow(d, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
+           "--autonomy", "minimal", "--action", "clasificar")
+    assert _arrow(d, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
+                  "--action", "definir") is None, "minimal quedó atrapado por la regla"
+
+
+def test_sin_señal_de_turno_no_se_refusa_nada(tmp_path):
+    """Una guarda que dispara porque falta un contador refusa cada write en toda
+    herramienta que no escriba uno."""
+    d = _repo_con_estado(tmp_path)
+    assert _arrow(d, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
+                  "--autonomy", "assisted", "--action", "c") is None
+    assert _arrow(d, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
+                  "--action", "d") is None
+
+
+def test_el_guard_de_pre_write_es_el_que_refusa_la_segunda_flecha(tmp_path):
+    """Por el camino que corre de verdad. El test de arriba llama la función; si
+    `decide_pre` deja de consultarla, ese test sigue verde y el hueco vuelve."""
+    d = _repo_con_estado(tmp_path)
+    _turn_passes(d)
+    p = os.path.join(d, ".ddw-state.json")
+
+    def write(*args):
+        emitted = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p,
+                                  "--graph", _GRAPH_PATH, *args],
+                                 capture_output=True, text=True, cwd=d)
+        assert emitted.returncode == 0, emitted.stderr[-300:]
+        reason = vt.decide_pre(p, _GRAPH_PATH, "Write",
+                               {"file_path": p, "content": emitted.stdout}, [p], repo=d)
+        if reason is None:
+            open(p, "w", encoding="utf-8").write(emitted.stdout)
+        return reason
+
+    assert write("--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
+                 "--autonomy", "assisted", "--action", "c") is None
+    reason = write("--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1", "--action", "d")
+    assert reason and "already landed in this turn" in reason, \
+        "el guard dejó pasar la segunda flecha del turno: %r" % reason

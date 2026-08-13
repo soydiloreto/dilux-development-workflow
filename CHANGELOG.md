@@ -86,6 +86,56 @@ move at different speeds. So the promise is specific:
 
 ### Fixed
 
+- **"One transition per response" was enforced against one of the two ways to
+  break it.** The orchestrator states the rule as hard and said how it was held:
+  "the state is written once per arrow either way, and the hook refuses a write
+  that appends two". Measured on a live run: three separate writes, one entry
+  each, thirty-seven seconds apart, on a single "avanti" — the split closed, the
+  sub-ticket opened, and DEFINE was entered, with the user having approved the
+  first. Each write was legal alone and nothing compared writes across a
+  response. The turn counter the commit gate needed turned out to be the missing
+  signal: a second arrow in the same turn is refused now. `minimal` is exempt by
+  design — there the arrows are supposed to run without anyone between them —
+  and a tool that writes no turn counter is not refused for lacking one.
+
+- **The scope check ran on the parent and never looked at what it produced.**
+  Across three runs of one source PRD, one split into four left children of 11,
+  12, 16 and 12 acceptance criteria — every one above the threshold that caused
+  the split — and the box reported "4 sub-tickets" without saying so. The user
+  approved a cut that had made nothing smaller. The same assessment now applies
+  to each proposed part with its numbers in the box, W-PRD-06 states the count on
+  every PRD, and the phase says which of the three criteria decides: a part that
+  cannot reach production on its own is not a part, it is a layer.
+
+- **A split could drop an acceptance criterion and nothing would ever know.** The
+  protocol REPLACES the parent PRD with an index, so the original list is gone
+  the moment the split lands and "did the parts cover the whole?" stops being
+  answerable from anything. The index now carries the original count and which
+  ACs each sub-ticket takes, and F-PRD-10 refuses one that leaves an AC behind or
+  lets two sub-tickets claim the same one.
+
+- **Nothing said how to ask a question.** All six supported tools have something
+  that turns a question into options the user picks from — `AskUserQuestion`,
+  `ask_user_question`, `ask_user`, Gemini's Ask User tool, OpenCode's question
+  tool, Cursor's ask question tool — and DDW named none of them. Two models were
+  asked the same thing on the same repo: one offered a picker, the other prose,
+  and neither was breaking a rule. The rule is written once in the orchestrator
+  and each adapter declares its own tool's name under `choice_prompt`; where a
+  tool has none, the fallback is a numbered list.
+
+- **CLASSIFY showed the autonomy without saying it was a choice.** A line reading
+  `autonomy: assisted` tells nobody that another mode exists or what it costs,
+  and a run that showed exactly that was following the section to the letter. The
+  box now offers both, with the cost stated once, before the user agrees.
+
+- **The mutation run could not start, and had not been able to for some time.**
+  `scripts/mutate.py` copies the tree without `.git`, and an eval test asks
+  whether certain commits are reachable from the main line — without history
+  `git merge-base` cannot run, so it failed on every unmutated copy. The runner's
+  red-baseline guard caught it and refused to inject, so no kill was ever
+  fabricated; what was lost was the whole run. That test now skips where the
+  question has no answer.
+
 - **PLAN never told anyone to consider an ADR.** The skill said "the agent MUST
   create an ADR when it detects…" and the phase that would detect it did not
   mention the skill — so the trigger lived inside a file the model reads only

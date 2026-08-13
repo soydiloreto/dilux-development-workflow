@@ -208,6 +208,52 @@ def main():
         warns += 1
         rows.append(f"  ⚠️ {rule}: {msg}")
 
+    # A split index is not a PRD and must not be judged as one: the protocol
+    # REPLACES the parent with an index, and the AC list it used to hold is gone
+    # the moment the split lands. So the one thing nobody could check afterwards
+    # is whether the parts actually cover the whole — and nothing did. The index
+    # now carries the mapping, and this is where it is counted.
+    if re.search(r"^\|\s*Status\s*\|\s*Split\s*\|", text, re.MULTILINE | re.IGNORECASE):
+        # The header is a table here, like every other field of the index, so it
+        # is read as one — `_after_label` reads `label:` prose and found nothing.
+        m = re.search(r"^\|\s*Original acceptance criteria\s*\|\s*(\d+)",
+                      text, re.MULTILINE | re.IGNORECASE)
+        total = int(m.group(1)) if m else 0
+        taken, dupes = {}, []
+        for row in re.findall(r"^\|.*$", text, re.MULTILINE):
+            cells = [c.strip() for c in row.strip().strip("|").split("|")]
+            sub = cells[0] if cells else ""
+            if not re.match(r"^[A-Z]+-\d+[a-z]$", sub):
+                continue
+            for ac in re.findall(r"AC-\d+", " ".join(cells)):
+                if ac in taken:
+                    dupes.append(f"{ac} is in {taken[ac]} and {sub}")
+                taken[ac] = sub
+        if not total:
+            fail("F-PRD-10", "the index does not say how many acceptance criteria the original PRD "
+                             "had (`| Original acceptance criteria | N |`), so whether the parts "
+                             "cover the whole cannot be answered — and the original is gone")
+        else:
+            want = {f"AC-{n:02d}" for n in range(1, total + 1)}
+            lost = sorted(want - set(taken))
+            problems = []
+            if lost:
+                problems.append("no sub-ticket takes " + ", ".join(lost))
+            if dupes:
+                problems.append("; ".join(dupes))
+            if problems:
+                fail("F-PRD-10", "the split does not partition the original: " + " · ".join(problems))
+            else:
+                ok("F-PRD-10", f"the {len(taken)} acceptance criteria of the original are taken by "
+                               f"exactly one sub-ticket each ({len(set(taken.values()))} sub-tickets)")
+        print(f"\n/ddw-validate-prd {args.prd} — {'FAILED' if fails else 'PASSED'} (split index)")
+        print("─" * 64)
+        for row in rows:
+            print(row)
+        print("─" * 64)
+        print(f"Result: {'FAILED' if fails else 'PASSED'}")
+        sys.exit(2 if fails else 0)
+
     if args.tier == "QUICK-FIX":
         low = text.lower()
         missing = [s for s in FIX_BRIEF_SECTIONS if s not in low]
@@ -326,6 +372,25 @@ def main():
         # W-PRD-04: zero unwanted-behaviour ACs.
         if not any(UNWANTED.search(t) for _, t in acs):
             warn("W-PRD-04", "no IF…THEN…SHALL criterion — nobody wrote the failure modes down")
+
+        # W-PRD-06: over the ceiling scope control names, on THIS document.
+        #
+        # The scope check runs once, on the parent, and nothing looked at the
+        # parts it produced. Measured across three runs of one source PRD: a
+        # split into four left children of 11, 12, 16 and 12 ACs — every one
+        # above the threshold that caused the split — and the box reported "4
+        # sub-tickets" without saying so. The user approved a cut that had not
+        # solved the problem, because the number that would have said it was on
+        # nobody's screen.
+        #
+        # A warning, not a failure: deciding to keep a ticket whole is the
+        # user's to make, and `define.instructions.md` says so. What is not
+        # theirs to lose is the number.
+        if args.tier == "FEATURE" and len(acs) > 7:
+            warn("W-PRD-06", f"{len(acs)} acceptance criteria, over the 5–7 that Scope Control "
+                             "names as the point to reassess. Legitimate if it was decided; a "
+                             "sub-ticket of a split arriving here means the split did not make "
+                             "the parts smaller than the whole")
 
         # W-PRD-05: risks section empty.
         if not _section_body(text, ("risks", "riesgos")):

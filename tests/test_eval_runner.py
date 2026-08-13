@@ -271,6 +271,18 @@ def test_every_restored_commit_is_reachable_from_the_main_line():
     """
     import glob
     import yaml
+    # Esta pregunta es sobre el REPOSITORIO, no sobre el árbol: sin `.git` no
+    # hay línea principal contra la cual medir, y `git merge-base` falla por no
+    # poder correr — que es indistinguible de un control inaplicable.
+    #
+    # El sandbox de `scripts/mutate.py` copia el árbol con
+    # `ignore_patterns(".git", …)`, así que acá esto fallaba en TODA copia sin
+    # mutar. La guarda de baseline rojo del runner lo agarraba y se negaba a
+    # inyectar — o sea que la corrida de mutaciones no podía arrancar, ni local
+    # ni en CI, y el motivo era este test preguntando algo que en una copia no
+    # tiene respuesta.
+    if not os.path.isdir(os.path.join(ROOT, ".git")):
+        pytest.skip("sin historia git: la pregunta no se puede hacer sobre una copia del árbol")
     offenders = []
     for path in sorted(glob.glob(os.path.join(ROOT, "evals/scenarios/*.yaml"))):
         sc = yaml.safe_load(open(path, encoding="utf-8"))

@@ -465,10 +465,25 @@ def main():
     args = ap.parse_args()
 
     if args.mode == "turn":
-        # The user just spoke, so anything being proposed to them has now been
-        # seen. This decides nothing and prints nothing: whatever a hook on this
-        # event writes to stdout is prepended to the user's own message.
+        # The user just spoke. Two things follow from that and nothing else
+        # does: whatever was being proposed to them has now been seen, and a
+        # turn has passed — which is the only signal a hook has that the run is
+        # allowed to take its next arrow. This decides nothing and prints
+        # nothing: whatever a hook on this event writes to stdout is prepended
+        # to the user's own message.
         seal_proposal(args.repo)
+        try:
+            counter = os.path.join(args.repo or ".", ".ddw-sessions", "turn")
+            os.makedirs(os.path.dirname(counter), exist_ok=True)
+            try:
+                with open(counter, encoding="utf-8") as fh:
+                    n = int(fh.read().strip())
+            except (OSError, ValueError):
+                n = 0
+            with open(counter, "w", encoding="utf-8") as fh:
+                fh.write(str(n + 1))
+        except OSError:
+            pass                     # never fail a turn over bookkeeping
         sys.exit(0)
 
     _VALIDATOR = vt = _load_validator()

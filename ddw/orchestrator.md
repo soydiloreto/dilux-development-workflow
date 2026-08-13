@@ -234,6 +234,26 @@ the corresponding Skill.`
   away; **one transition per response does not** — the state is written once per arrow either way,
   and the hook refuses a write that appends two.
 
+## Asking
+
+**When the answer is one of a set you already know, offer the set — never an open question.**
+"¿FEATURE, FIX o QUICK-FIX?" with the options in front of the user is a decision; the same question
+as prose is a typing exercise where the answer that arrives may be none of the three.
+
+Every tool DDW supports has something that turns a question into options a user picks from, and each
+one calls it something different: Claude Code's `AskUserQuestion`, Codex's `ask_user_question`,
+Copilot's `ask_user`, Gemini's Ask User tool, OpenCode's question tool, Cursor's ask question tool.
+**Use the one your tool has** — its name is in that tool's `adapter.json` under `choice_prompt`. If
+it has none, or the mode you are in does not expose it, fall back to a numbered list with the
+default marked. What must not vary between tools is the shape of the question.
+
+This is written here because it was written nowhere: two models were asked the same thing on the
+same repo, one offered a picker and the other prose, and neither was breaking any rule. The user got
+two different products.
+
+Free text is still right where the answer is genuinely open — a title, a reason, a decision nobody
+has framed yet. The rule is about the questions whose answers you could list.
+
 ## Autonomy
 
 `.ddw-state.json` carries `autonomy`, set in CLASSIFY. Absent or `null` reads as `"assisted"`.

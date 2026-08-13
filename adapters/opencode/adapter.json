@@ -36,5 +36,9 @@
       "to": ".opencode/plugins"
     }
   ],
-  "context_file": "AGENTS.md"
+  "context_file": "AGENTS.md",
+  "choice_prompt": {
+    "tool": "question",
+    "note": "the question tool — header, question, options, and a free answer"
+  }
 }
