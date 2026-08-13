@@ -220,14 +220,36 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
     run_tier = old_state.get("tier") or new_state.get("tier") or _resumed_from(old_state, "tier")
     if run_tier:
         entry["tier"] = run_tier
+        # …and in the header too, when the header carries none. Resuming out of
+        # IDLE is the only edge where the two can differ: `_resumed_from`
+        # recovers the paused run's tier for the entry, and leaving the header
+        # null emitted a state that contradicted its own newest edge. Post mode
+        # reads a run's tier off the entries, so it saw FEATURE against a null
+        # header and condemned as corrupt the exact bytes this helper had just
+        # written with exit 0 — and the refusal it prints forbids repairing, so
+        # one missing --tier bricked the pipeline and only the user could undo
+        # it. Only IDLE clears a tier, and that branch cleared it above.
+        if to_phase != "IDLE" and new_state.get("tier") is None:
+            new_state["tier"] = run_tier
     # And the ticket, for the same reason: the entry is what answers "what
     # happened to which ticket", and the session boot reads it to work out which
     # sub-tickets of a split still have no closeout. The header's ticket is wiped
     # by the closeout, so an unstamped entry is unattributable forever after.
+    # The fallback to the paused ticket now reaches only a `resume:`, which is
+    # the edge it was written for: `main` refuses every other way out of IDLE
+    # that does not name its ticket, instead of guessing. It used to guess, and a
+    # sub-ticket of a split came out stamped with its parent's ID — two writes
+    # later post mode found one run naming two tickets and condemned the state.
     run_ticket = (new_state.get("ticket") or old_state.get("ticket")
                   or _resumed_from(old_state, "ticket"))
     if run_ticket:
         entry["ticket"] = run_ticket
+        # And in the header, for the reason the tier is: a resume restores the
+        # run it is picking back up, and a header that names no ticket while its
+        # newest edge names one is the same self-contradiction post mode reads as
+        # corruption.
+        if to_phase != "IDLE" and new_state.get("ticket") is None:
+            new_state["ticket"] = run_ticket
     # And the mode the edge was taken under, stamped on the edge itself, when it
     # was taken without anyone being asked. A history that reads identically for
     # a run somebody watched and one that had nobody to watch it is a record that
@@ -415,6 +437,33 @@ def main():
               "first, in the phase that owns it: --claim %s" % " --claim ".join(args.gate),
               file=sys.stderr)
         sys.exit(2)
+    # Leaving IDLE with a pause behind it is the one edge whose ticket cannot be
+    # inferred: it is either resuming the paused ticket or opening a new one —
+    # a sub-ticket of a split is the ordinary case — and the two want opposite
+    # stamps. The helper used to guess, and inherited the paused ticket onto an
+    # edge that was about a different one; two writes later post mode found a run
+    # naming two tickets and condemned the state, which is how a split lost a
+    # pipeline to a flag nobody knew was needed. A guess that lands in the audit
+    # trail is worse than a question: the record has to say which ticket the work
+    # was for, and only the caller knows.
+    #
+    # A `resume:` is exempt, and is the reason this is not a blanket rule: that
+    # word says which ticket is meant — the paused one — so there is nothing to
+    # guess and the entry inherits it correctly. Every other action leaving IDLE
+    # is about a ticket only the caller can name.
+    _verb = (args.action or "").strip().lower().split(":", 1)[0].strip()
+    if (args.to != "IDLE" and old_state.get("phase", "IDLE") == "IDLE"
+            and args.ticket is None and _verb not in ("resume", "resumed")):
+        paused = _resumed_from(old_state, "ticket")
+        if paused:
+            print("ddw-transition: this edge needs --ticket. The history has a paused %s, so "
+                  "leaving IDLE is either resuming it or opening a different ticket (a "
+                  "sub-ticket of a split, say) — and the helper cannot tell, while the entry it "
+                  "writes claims one of them forever. Pass --ticket %s to resume it, or "
+                  "--ticket <ID> for the new one."
+                  % (paused, paused), file=sys.stderr)
+            sys.exit(2)
+
     # The edge decides what it gives up, and the graph is where that is written.
     _edges = vt._effective_edges(graph, args.tier or old_state.get("tier"))
     _cfg = _edges.get("%s->%s" % (old_state.get("phase", "IDLE"), args.to)) or {}
