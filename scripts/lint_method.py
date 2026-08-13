@@ -623,6 +623,7 @@ _SUMMARY_AREAS = {
     "SAST": "SAST",
     "Test Run Report": "TEST",
     "Module Verify": "VER",
+    "ADR": "ADR",
 }
 
 

@@ -457,3 +457,93 @@ def test_an_endpoint_owes_a_complete_contract(tmp_path):
     assert _refuses(refused, "F-SPEC-07"), \
         ("un contrato sin códigos de error ni autenticación pasó: "
          + ("\n".join(refused) or "sin rechazos"))
+
+
+# ── El ADR ──────────────────────────────────────────────────────────────────
+#
+# El único artefacto que no tenía comprobación, y por eso el único cuyo género
+# dependía de que el modelo ya lo supiera. La regla que importa es F-ADR-03: un
+# ADR explica una decisión ya tomada y no obliga a nada.
+
+ADR_SANO = """# ADR-001: Límite en proceso en lugar de CAPTCHA
+
+| Field | Value |
+|-------|-------|
+| Date | 2026-08-13 |
+| Ticket | T-1 |
+| Status | Accepted |
+
+## Context
+El formulario es público y anónimo, y cada alta cuesta una llamada al modelo.
+
+## Options considered
+
+### Option 1: CAPTCHA de un tercero
+- **Pros:** frena bots conocidos
+- **Cons:** suma un tercero a la carga inicial
+
+### Option 2: Límite por IP en proceso
+- **Pros:** sin dependencias nuevas
+- **Cons:** no distingue IPs compartidas
+
+## Decision
+Se eligió el límite en proceso: 5 altas por IP cada 10 minutos.
+
+## Consequences
+- Un aula detrás de una sola IP puede toparse con el límite.
+- Se revisa cuando entren credenciales a la misma base.
+"""
+
+
+def _adr(tmp_path, body, name="adr-001-limite.md"):
+    d = tmp_path / "docs" / "adr"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(body, encoding="utf-8")
+    r = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts/validate_adr.py"),
+                        str(d / name)], capture_output=True, text=True)
+    return r, [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+
+
+def test_un_adr_que_explica_pasa(tmp_path):
+    r, refused = _adr(tmp_path, ADR_SANO)
+    assert r.returncode == 0, "el ADR sano fue rechazado: " + "\n".join(refused)
+
+
+def test_un_adr_que_manda_es_rechazado(tmp_path):
+    """F-ADR-03, la regla por la que existe este validador. Una obligación acá
+    es un requerimiento que ningún criterio de aceptación cubre y ninguna
+    compuerta lee, compitiendo con la spec por la autoridad sobre el código."""
+    manda = ADR_SANO.replace("Se eligió el límite en proceso: 5 altas por IP cada 10 minutos.",
+                             "El sistema debe limitar a 5 altas por IP cada 10 minutos.")
+    _, refused = _adr(tmp_path, manda)
+    assert _refuses(refused, "F-ADR-03"), \
+        "un ADR que impone pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_una_obligacion_citada_no_es_del_adr(tmp_path):
+    """El mismo verbo, dicho por otro documento. Leer una cita como voz propia
+    convertía la regla más filosa del catálogo en la más ruidosa."""
+    citando = ADR_SANO.replace("## Consequences",
+                               "## Consequences\n\n> El PRD dice: el sistema debe responder en 3 s.\n")
+    r, refused = _adr(tmp_path, citando)
+    assert not _refuses(refused, "F-ADR-03"), \
+        "una obligación citada se leyó como propia: " + "\n".join(refused)
+    assert r.returncode == 0
+
+
+def test_una_sola_opcion_no_es_una_decision(tmp_path):
+    """F-ADR-02. Una opción es una preferencia; registrarla como decisión es
+    cómo una preferencia adquiere la autoridad de una."""
+    sola = re.sub(r"(?s)### Option 2.*?(?=## Decision)", "", ADR_SANO)
+    _, refused = _adr(tmp_path, sola)
+    assert _refuses(refused, "F-ADR-02"), \
+        "un ADR con una sola opción pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_dos_decisiones_no_comparten_numero(tmp_path):
+    """F-ADR-05. El número es la identidad del documento: es como un sucesor
+    nombra lo que reemplaza."""
+    _adr(tmp_path, ADR_SANO, "adr-001-limite.md")
+    _, refused = _adr(tmp_path, ADR_SANO, "adr-001-otra.md")
+    assert _refuses(refused, "F-ADR-05"), \
+        "dos ADR con el mismo número pasaron: " + ("\n".join(refused) or "sin rechazos")

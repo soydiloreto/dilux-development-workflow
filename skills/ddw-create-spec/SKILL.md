@@ -10,6 +10,22 @@ description: >
 ## Description
 Creates a new spec or fix-plan from an approved PRD or a fix diagnosis, or updates an existing one.
 
+### What a spec is, and what it is not
+
+**A spec says how the thing in the PRD gets built, and everything in it traces back to something
+the PRD asked for.** Components, files, data structures, endpoints, the order of the work, split
+into blocks that can each be verified on their own. Where the PRD is technology-free on purpose,
+this is where the technology is chosen and the reasons are written down.
+
+**It does not introduce requirements.** If building the design reveals something the product has to
+do that the PRD never said — a rule, a limit, a behaviour — that is not a line to add here. It is a
+corrective loop back to DEFINE, and the loop exists precisely so that requirements keep coming from
+one place. A requirement smuggled into a spec is a requirement no acceptance criterion covers, and
+VERIFY checks the criteria.
+
+It is binding, unlike an ADR: what it says is what CODE implements, and the blocks it declares are
+what the implementation is judged against.
+
 ## Inputs
 - The PRD at `docs/ddw/prd/prd-{ticket}.md` (for FEATURE, if `gates.define` is true)
 - The ticket info in `.ddw-state.json` (for FIX)

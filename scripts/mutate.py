@@ -2297,7 +2297,7 @@ MUTATIONS = [
      edit("ddw/rules/validation-rules.instructions.md",
           "| SAST | 19 | 1 | 20 |", "| Static Analysis | 19 | 1 | 20 |")),
     ("the rules README restates a total the catalog does not define",
-     edit("ddw/rules/README.md", "The 80 validation rules", "The 84 validation rules")),
+     edit("ddw/rules/README.md", "The 87 validation rules", "The 91 validation rules")),
     ("a phase cites a validation rule the catalog does not define",
      edit("ddw/rules/define.instructions.md", "(F-PRD-02, F-PRD-07)", "(F-PRD-02, F-PRD-77)")),
     ("a tier stops being documented in the schema of the file it is written into",

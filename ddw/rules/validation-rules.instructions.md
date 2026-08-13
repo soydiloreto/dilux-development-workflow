@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.9.0
+version: 1.10.0
 ---
 
 # Validation Rules — Central Catalog
@@ -354,6 +354,42 @@ a document; whether it is a true document remains the reader's judgement, and ev
 ---
 
 
+## 7. Architecture Decision Record (`ddw-create-adr`)
+
+**Applies in:** the PLAN and CODE phases, whenever a decision is recorded.
+**Artifact:** `docs/adr/adr-NNN-title.md` — outside `docs/ddw/`, because the decision belongs to the
+project rather than to the tool that helped write it.
+
+**No gate reads this one.** An ADR is written only when a decision warrants it, so demanding one per
+ticket would fill `docs/adr/` with filler — worse than the gap it closes. `validate_adr.py` is run by
+the skill that writes the ADR, and its verdict is for the person reading it.
+
+It exists because every other artifact here has a validator pinning its genre and this one had none.
+An ADR **explains a decision already taken and binds nobody**; requirements live in the PRD and
+binding design lives in the spec, both machine-checked. Nothing was catching an ADR that issued
+orders instead — a document no gate reads, competing with the spec for authority over the code.
+
+### FAIL rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| F-ADR-01 | Sections missing or empty | Context, Options considered, Decision and Consequences must all be present and written in. Missing, empty or still a placeholder → FAIL. | The four together are what makes it a record rather than a note. Consequences is the one that gets dropped, and it is the one the future reader needs. |
+| F-ADR-02 | Fewer than two options | At least two options under `### ` headings. One or none → FAIL. | One option is a preference. Recording it as a decision is how a preference acquires the authority of one. |
+| F-ADR-03 | Normative language | No `must` / `shall` / `should` / `debe` / `tiene que` (and their forms) in **Decision** or **Consequences**. Quoted text and code are exempt. → FAIL. | This is the rule that makes it an ADR. An obligation written here is a requirement that no acceptance criterion covers and no gate reads, competing with the spec for authority over the implementation. |
+| F-ADR-04 | Status not actionable | `Status` must be `Accepted` or `Superseded by ADR-NNN`. Anything else → FAIL. | A decision is live or it was replaced by a named one. "Obsolete" with no successor leaves the reader no thread to pull. |
+| F-ADR-05 | Number missing or taken | The filename must be `adr-NNN-title.md` and NNN must be unused in `docs/adr/`. → FAIL. | The number is the document's identity: it is how a successor names what it supersedes. Two decisions on one number make every reference ambiguous. |
+
+### WARNING rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| W-ADR-01 | Longer than it should be | More than ~45 lines of prose against the skill's ceiling of about 30. | A long ADR stops being read, and an ADR nobody reads is a decision nobody can find. What belongs to the design belongs in the spec. |
+| W-ADR-02 | No ticket | The header names no ticket. | Some decisions predate any ticket, so this is a reminder — but without it nothing connects the decision to the work that caused it. |
+
+
+---
+
+
 ## Quantitative Summary
 
 | Area | FAIL rules | WARNING rules | Total |
@@ -364,7 +400,8 @@ a document; whether it is a true document remains the reader's judgement, and ev
 | SAST | 19 | 1 | 20 |
 | Test Run Report | 8 | 1 | 9 |
 | Module Verify | 6 | 3 | 9 |
-| **Total** | **65** | **15** | **80** |
+| ADR | 5 | 2 | 7 |
+| **Total** | **70** | **17** | **87** |
 
 ---
 

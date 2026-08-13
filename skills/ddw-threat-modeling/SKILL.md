@@ -12,6 +12,20 @@ description: >
 Threat analysis of the proposed design. Identifies new attack surfaces and security risks before any
 code is written. The findings become mitigations folded into the spec.
 
+### What a threat model is, and what it is not
+
+**A threat model asks what an attacker can do to THIS design, and what is done about each answer.**
+It names the real components, the real data, the real boundaries the design crosses, and walks
+STRIDE over them. Every threat ends in one of two places: a mitigation that goes into the spec, or a
+risk formally accepted with who accepted it, why, and when it gets revisited.
+
+It is not a security checklist. A document that says "validate all input, use HTTPS, hash passwords"
+without naming a component of this system protects nothing and is why F-TM-06 compares it against
+the spec: a model that would read the same for any project has not looked at this one.
+
+It is written before the spec is finished on purpose — it is the last step that can still add files
+to the plan, and it regularly does. It is validated after the spec exists, against it.
+
 ## Inputs
 - The proposed design (the plan in progress, before it is written to disk).
 - The PRD at `docs/ddw/prd/prd-{ticket}.md` (if `gates.define` is true and the tier is FEATURE).

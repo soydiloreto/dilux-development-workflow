@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=556
+EXPECT_CHECKS=559
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -842,7 +842,7 @@ python3 "$V" --mode post --state "$R/.ddw-state.json" --graph "$G" </dev/null >/
   && ok "PostToolUse accepts a legal state on disk" || bad "PostToolUse rejects a legal state"
 
 # ── The two Claude hook manifests must stay the same manifest ─────────────────
-# One wires the drop-in install, the other the (in-progress) plugin. Same five
+# One wires the drop-in install, the other the (in-progress) plugin. Same seven
 # hooks, different root variable. Two hand-maintained copies drift, and the one
 # that drifts is the one nobody runs day to day.
 python3 - "$SELF" <<'PY' && ok "the plugin hook manifest matches settings.json" || bad "the two Claude hook manifests have drifted"
@@ -3206,7 +3206,7 @@ tiers = sorted(json.load(open(os.path.join(src, "ddw/rules/transition-graph.json
 assert tiers, "the graph defines no tiers, so this check has nothing to hold the validators to"
 scripts = sorted(f for f in os.listdir(os.path.join(src, "ddw/scripts"))
                  if f.startswith("validate_") and f.endswith(".py"))
-assert len(scripts) == 6, "expected the six document validators, found: %s" % scripts
+assert len(scripts) == 7, "expected the seven document validators, found: %s" % scripts
 for name in scripts:
     path = os.path.join(src, "ddw/scripts", name)
     r = subprocess.run([sys.executable, path, os.devnull, "--tier", "WHATEVER"],
@@ -5152,11 +5152,11 @@ rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 10 | 5 | 15 |", "
 
 # The total alone, with every row correct — the arithmetic nobody redid.
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **65** | **15** | **80** |", "| **Total** | **69** | **15** | **84** |")
+        "| **Total** | **70** | **17** | **87** |", "| **Total** | **74** | **17** | **91** |")
 code, out = lint()
-assert code != 0 and "65" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
+assert code != 0 and "70" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **69** | **15** | **84** |", "| **Total** | **65** | **15** | **80** |")
+        "| **Total** | **74** | **17** | **91** |", "| **Total** | **70** | **17** | **87** |")
 
 # Two more of the linter's checks, driven the same way. Both were added with a
 # mutation and no check: deleting the CALL left the repository linting clean,
@@ -5243,10 +5243,10 @@ assert code == 0, "the tree was not put back the way it was found: " + out[-300:
 
 # And the restatement outside the catalog, which is the line a reader of
 # `ddw/rules/` meets first.
-rewrite("ddw/rules/README.md", "The 80 validation rules", "The 84 validation rules")
+rewrite("ddw/rules/README.md", "The 87 validation rules", "The 91 validation rules")
 code, out = lint()
-assert code != 0 and "80" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
-rewrite("ddw/rules/README.md", "The 84 validation rules", "The 80 validation rules")
+assert code != 0 and "87" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
+rewrite("ddw/rules/README.md", "The 91 validation rules", "The 87 validation rules")
 
 code, out = lint()
 assert code == 0, "the probe was not restored: " + out[-300:]
@@ -8184,7 +8184,14 @@ os.rename(os.path.join(legacy, ".ddw-installed.json"),
           os.path.join(legacy, ".ddw", ".installed.json"))
 out = subprocess.run(["bash", os.path.join(src, "install.sh"), legacy, "--target", "claude"],
                      capture_output=True, text=True).stdout
-assert "updating" in out.splitlines()[0], \
+# Anchored on the headline, not on line 0: the installer opens with a banner
+# now, and "the first line says updating" was a fact about the old layout rather
+# than about the thing being checked. Both directions are asserted, so a run
+# that called every install an update still fails — that is what the pair of
+# checks further up is for, and this one no longer depends on where in the
+# output the sentence lands.
+assert (any("is updating:" in l for l in out.splitlines())
+        and "installing into" not in out), \
     ("an upgrade from a pre-move install announced itself as a first install — it did not find "
      "the manifest, which is what tells DDW's wiring from yours:\n" + out[:200])
 
@@ -8772,7 +8779,7 @@ PYCLOSEWIPE
 # hooks decide whether a write happens, the boot is the session's first line, and
 # the installer runs half-way. Each of these crashed on input a real repo can
 # hold.
-python3 - "$SELF" <<'PYCRASH' && ok "the boot, the installer, the uninstaller and the six validators refuse odd input instead of crashing on it" || bad "an entry point answers with a traceback: a half-install, a session that starts blind, or a validator that exits 1 where its contract says 3"
+python3 - "$SELF" <<'PYCRASH' && ok "the boot, the installer, the uninstaller and the seven validators refuse odd input instead of crashing on it" || bad "an entry point answers with a traceback: a half-install, a session that starts blind, or a validator that exits 1 where its contract says 3"
 import glob, json, os, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 
