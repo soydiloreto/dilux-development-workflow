@@ -179,6 +179,91 @@ def _cursor_open(d):
 
 
 MUTATIONS = [
+    # ── The defects a real ticket found, one arrow at a time ────────────────
+    #
+    # Each of these was live, measured on a run, and each reinjection is the
+    # only thing standing between the fix and the next refactor.
+    ("the helper stops carrying the resumed tier into the header, so the state contradicts its own newest edge",
+     edit("ddw/scripts/transition.py",
+          '        if to_phase != "IDLE" and new_state.get("tier") is None:\n'
+          '            new_state["tier"] = run_tier',
+          '        if False:\n'
+          '            new_state["tier"] = run_tier')),
+    ("the helper goes back to guessing which ticket an edge out of IDLE is about",
+     edit("ddw/scripts/transition.py",
+          '            and args.ticket is None and _verb not in ("resume", "resumed")):',
+          '            and args.ticket is None and _verb in ("never", "happens")):')),
+    ("a resume out of IDLE stops restoring the ticket to the header",
+     edit("ddw/scripts/transition.py",
+          '        if to_phase != "IDLE" and new_state.get("ticket") is None:\n'
+          '            new_state["ticket"] = run_ticket',
+          '        if False:\n'
+          '            new_state["ticket"] = run_ticket')),
+    ("a commit no longer has to have been shown to the user",
+     edit("ddw/scripts/hook-gate.py",
+          "        reason = commit_verdict(args.repo, command)",
+          "        reason = None")),
+    ("a commit shown once opens every commit after it",
+     edit("ddw/scripts/hook-gate.py",
+          "    for path in (proposal, seal):    # spent: the next commit is proposed afresh",
+          "    for path in ():                 # spent: the next commit is proposed afresh")),
+    ("the commit gate stops comparing what was shown with what is being committed",
+     edit("ddw/scripts/hook-gate.py",
+          "    if sealed != digest:",
+          "    if False:")),
+    ("an ADR can order the implementation around again",
+     edit("ddw/scripts/validate_adr.py", "    if offenders:", "    if False:")),
+    ("one option is a decision again",
+     edit("ddw/scripts/validate_adr.py", "    if len(names) >= 2:", "    if len(names) >= 0:")),
+    # El bloque ENTERO, que es como estaba el repo: `plan.instructions.md` no
+    # nombraba la skill en ningún lado de su proceso. Recortar sólo la primera
+    # frase dejaba el resto del párrafo nombrándola, y el control —que pregunta
+    # si la fase rutea a la skill— seguía pasando sobre un defecto real.
+    ("PLAN stops asking what it decided that nobody could reconstruct",
+     edit_re("ddw/rules/plan.instructions.md",
+             r"(?s)   \*\*Then ask what step 3 decided.*?(?=\n5\. \*\*Impact check)",
+             "",
+             "el paso que manda escribir un ADR desaparece de PLAN")),
+    ("a split can drop an acceptance criterion and nothing counts",
+     edit("ddw/scripts/validate_prd.py",
+          "            if problems:", "            if False:")),
+    ("a split index no longer owes the count of what it replaced",
+     edit("ddw/scripts/validate_prd.py",
+          "        if not total:", "        if False:")),
+    ("a run takes three arrows on one \"go ahead\" again",
+     edit("ddw/scripts/validate-transition.py",
+          "        if len(_nh) > len(_oh):\n"
+          "            reason = second_arrow_in_one_turn(root, old_state, new_state)",
+          "        if False:\n"
+          "            reason = second_arrow_in_one_turn(root, old_state, new_state)")),
+    ("minimal gets caught by the rule it opted out of",
+     edit("ddw/scripts/validate-transition.py",
+          '    if autonomy == "minimal":\n        return None\n    turn = _turn_now(root)',
+          '    if autonomy == "never-happens":\n        return None\n    turn = _turn_now(root)')),
+    # Las dos mitades juntas: sin contador, `_turn_now` devuelve 0 en vez de
+    # None y `_record_arrow` escribe igual, así que la primera flecha deja
+    # marca y la segunda se refusa — en toda herramienta que no escriba turnos.
+    # Mutar una sola de las dos no cambia nada, y una mutación que no puede
+    # fallar no es evidencia de nada.
+    ("a missing turn counter refuses every write instead of staying quiet",
+     multi(edit("ddw/scripts/validate-transition.py",
+                "    except (OSError, ValueError):\n        return None\n\n\ndef _record_arrow(root):",
+                "    except (OSError, ValueError):\n        return 0\n\n\ndef _record_arrow(root):"),
+           edit("ddw/scripts/validate-transition.py",
+                "    turn = _turn_now(root)\n    if turn is None:\n        return\n    try:\n"
+                "        path = os.path.join(root, \".ddw-sessions\", \"last-arrow\")",
+                "    turn = _turn_now(root)\n    if turn is None:\n        turn = 0\n    try:\n"
+                "        path = os.path.join(root, \".ddw-sessions\", \"last-arrow\")"))),
+    ("a tool stops declaring how it asks, so the question comes out as prose",
+     json_edit("adapters/opencode/adapter.json", lambda d: d.pop("choice_prompt", None))),
+    ("the orchestrator stops sending anyone to the adapter for its picker",
+     edit("ddw/orchestrator.md",
+          "its name is in that tool's `adapter.json` under `choice_prompt`",
+          "ask however you like")),
+    ("a sub-ticket bigger than the whole stops being reported",
+     edit("ddw/scripts/validate_prd.py",
+          '        if args.tier == "FEATURE" and len(acs) > 7:',
+          '        if args.tier == "FEATURE" and len(acs) > 99999:')),
     # ── The gate the six tools run ───────────────────────────────────────────
     ("the shared gate stops capping transitions per write",
      edit("ddw/scripts/hook-gate.py", "vt.decide_pre(", "vt.decide_pre_UNCAPPED(")),
@@ -1177,8 +1262,8 @@ MUTATIONS = [
           'body = open(skill_md, encoding="utf-8").read()')),
     ("the installer goes back to promising /ddw-status to every tool",
      edit("install.sh",
-          'echo "The pipeline starts on its own. See the \\"try:\\" line above for how to call it."',
-          'echo "The pipeline starts on its own. Commands: /ddw-status, /ddw-help."')),
+          'echo "  The \\"try:\\" line above shows how to call DDW by hand in your tool."',
+          'echo "  Commands: /ddw-status, /ddw-help."')),
 
     # ── The ticket a gate is earned for ──────────────────────────────────────
     ("clearing the ticket opens the six receipt gates again",
@@ -2049,12 +2134,8 @@ MUTATIONS = [
           'Do not rebase or merge without the user saying so.')),
     ("el instalador deja de decir si está instalando o actualizando",
      edit("install.sh",
-          'if [ -n "$INSTALLED" ]; then\n'
-          '  echo "DDW → updating: $TARGET"\n'
-          'else\n'
-          '  echo "DDW → installing into: $TARGET"\n'
-          'fi\n',
-          'echo "DDW → $TARGET"\n')),
+          '  echo "  DDW is updating: $TARGET"',
+          '  echo "  DDW: $TARGET"')),
     ("un rule file puede cambiar sin mover su propia versión",
      edit("scripts/check_versions.py",
           "                if m and m.group(1) == now:",
@@ -2196,15 +2277,11 @@ MUTATIONS = [
           "    if rel == INSTALL_MANIFEST:", "    if False:")),
     # Los cuatro que el libro de cuentas todavía debía.
     ("the PRD validator skill stops naming the rule it is the only one that applies",
-     multi(
-         # Dos veces en el mismo archivo: la fila del catálogo y el rango de la
-         # cabecera. Una sola edición la tapa la otra.
-         edit("skills/ddw-validate-prd/SKILL.md",
-              "| F-PRD-09 | An AC matches none of the five EARS patterns",
-              "| F-PRD-XX | An AC matches none of the five EARS patterns"),
-         edit("skills/ddw-validate-prd/SKILL.md",
-              "F-PRD-09 (FAIL) and W-PRD-01 to W-PRD-05 (WARNING)",
-              "the FAIL rules and W-PRD-01 to W-PRD-05 (WARNING)"))),
+     # La cabecera ahora nombra un rango (F-PRD-01 to F-PRD-10), así que el
+     # literal F-PRD-09 vive solo en la fila del catálogo.
+     edit("skills/ddw-validate-prd/SKILL.md",
+          "| F-PRD-09 | An AC matches none of the five EARS patterns",
+          "| F-PRD-XX | An AC matches none of the five EARS patterns")),
     ("the PRD template goes back to acceptance criteria in prose the validator cannot match",
      # Las CUATRO apariciones: el check pregunta si la palabra está en el
      # archivo, y tres ejemplos más una nota sobre el idioma la mantienen viva
@@ -2297,7 +2374,7 @@ MUTATIONS = [
      edit("ddw/rules/validation-rules.instructions.md",
           "| SAST | 19 | 1 | 20 |", "| Static Analysis | 19 | 1 | 20 |")),
     ("the rules README restates a total the catalog does not define",
-     edit("ddw/rules/README.md", "The 80 validation rules", "The 84 validation rules")),
+     edit("ddw/rules/README.md", "The 89 validation rules", "The 93 validation rules")),
     ("a phase cites a validation rule the catalog does not define",
      edit("ddw/rules/define.instructions.md", "(F-PRD-02, F-PRD-07)", "(F-PRD-02, F-PRD-77)")),
     ("a tier stops being documented in the schema of the file it is written into",

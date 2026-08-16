@@ -52,6 +52,7 @@ silently ignores half the framework:
 | `trust_note` | no | Anything the user must do by hand before enforcement is live. Codex and Gemini both fingerprint project hooks and quarantine them until approved — a recipe that stays silent about that ships a pipeline that looks installed and enforces nothing. |
 | `context_file` | no | The file the activation snippet is appended to (`CLAUDE.md`, `AGENTS.md`, …). |
 | `snippet` | no | Only when the tool needs special syntax. Omit it and the shared, tool-neutral `ddw/activation.snippet.md` is used. |
+| `choice_prompt` | no | `{tool, note}` — what this tool calls the thing that turns a question into options the user picks from. All six have one and each calls it something different, which is exactly the kind of difference this file exists to absorb: the rule that a choice is offered as a choice is written once, in `ddw/orchestrator.md`, and only the name lives here. Omit it and the fallback is a numbered list, which every terminal can render. |
 
 ## Template placeholders
 

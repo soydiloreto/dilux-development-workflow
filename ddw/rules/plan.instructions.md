@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.7.0
+version: 1.8.0
 ---
 
 # Phase 2: PLAN (Technical Planning)
@@ -94,6 +94,23 @@ because:
    - Existing files to modify
    - New dependencies
 4. Split it into numbered implementation blocks. Each block must be independently verifiable.
+   **Then ask what step 3 decided that a reader six months from now could not reconstruct**, and
+   write an ADR for each one through the `ddw-create-adr` skill (`docs/adr/adr-NNN-title.md`,
+   outside `docs/ddw/`, because the decision belongs to the project and not to the tool that helped
+   record it). Its own triggers are: choosing between two or more valid technical approaches,
+   changing a data structure or a schema, and renaming entities, tables or modules. Choosing an
+   in-process rate limit over a CAPTCHA is one; picking a library over another is one; "we used
+   FastAPI because AGENTS.md says so" is not.
+
+   The skill validates what it writes with `validate_adr.py`, applying **every rule in section 7 of
+   `.ddw/rules/validation-rules.instructions.md`** (`F-ADR-01` to `F-ADR-05`, `W-ADR-01` to
+   `W-ADR-02`). No gate reads that verdict — an ADR is written only when a decision warrants one,
+   and a gate would demand one per ticket — so closing its loop is part of this step.
+
+   This is asked here, in the phase, because it used to be asked only inside the skill — which the
+   model reads only after deciding to invoke it, so the condition for writing an ADR lived behind
+   the decision it was meant to trigger. Measured on a real run: the design chose a rate limit over
+   a CAPTCHA, explained the trade-off well, and wrote no ADR. Nobody had told it to look.
 5. **Impact check against the codebase (MANDATORY before presenting).**
 6. Present the plan to the user for iteration (include the impact report).
 7. Spawn an agent via the Agent tool with `subagent_type="ddw-arch-auditor"` to validate the
@@ -169,6 +186,17 @@ Run `ddw-threat-modeling` on the proposed design, applying **every rule in secti
 - Reference to the spec's actual architecture, not generic boilerplate (F-TM-06).
 - Encryption specified for PII/credentials (F-TM-07).
 - If it finds CRITICAL/HIGH risks → fold the mitigations into the spec before writing it.
+
+**Write the model here; validate it after the spec exists.** The threat model is written before the
+spec on purpose — it is the last step that can still add files to the plan, and it regularly does.
+But F-TM-06 checks the model against the spec's real architecture, so running the validator before
+the spec has been written fails it every time, by construction: the document it compares against is
+not there yet. That red is the documented path producing a failure nobody can act on, which is worse
+than no check at all — it teaches the reader to discount a rule that is doing its job.
+
+So the order within this phase is: write the model → fold its mitigations into the spec → write the
+spec → run `validate_threat.py --spec docs/ddw/specs/spec-{ticket}.md`. Nothing is skipped and
+nothing is softened: F-TM-06 still has to pass against the real design, and it now can.
 
 Result: `gates.threat` = `true`. The report is saved to `docs/ddw/security/threat-{ticket}.md` — in the
 template `ddw-threat-modeling` defines, because `validate_threat.py` parses that structure and a

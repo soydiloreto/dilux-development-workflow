@@ -57,8 +57,10 @@ AI-assisted: yes
    - Include the tracker ticket in parentheses at the end of the first line if
      `.ddw-state.json.tracker` is not null.
 
-7. Present the message to the user for approval.
-8. Only after approval → create the commit.
+7. Write that exact message to `.ddw-work/commit-message.txt`, present it to the user, and
+   **end your turn.** The file is the message: it is what will be committed, so what they read and
+   what lands are the same bytes.
+8. Only after they answer → `git commit -F .ddw-work/commit-message.txt`.
 9. **NEVER push automatically.** Ask the user.
 
 ## Rules
@@ -72,6 +74,14 @@ The two worth repeating, because they are about *this* skill's behaviour:
 - **Never `git add .ddw-state.json`.** It is the pipeline's runtime, it is gitignored, and a
   committed state file makes someone else's checkout claim your phase.
 - **Never push automatically.** Ask.
+
+- **Step 7 is enforced, not promised.** While `autonomy` is `assisted`, the commit gate reads
+  `.ddw-work/commit-message.txt` and allows the commit only if that exact text was on disk
+  before the user's last turn. Showing the message and creating the commit therefore cannot happen
+  in one response, and a message that changed after they read it is refused — the file is compared,
+  not trusted. It was a sentence alone for a long time, and the pre-write hook covered only the
+  write tools, so the one act the pipeline never checked was the one that writes history. Presenting
+  the message is still yours: the gate can hold the commit, it cannot show them the reasoning.
 
 ## Updating .ddw-state.json
 - `gates.commit` → `true` **when this commit is the one a closeout edge depends on — that is, in CLOSEOUT for any tier, and at the DISCOVERY closeout. Anywhere else, do not touch `gates`.** The closeout checks it

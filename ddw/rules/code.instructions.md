@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Phase 3: CODE (Implementation)
@@ -124,6 +124,12 @@ start):
 
 6. **Record the assumptions.** If the implementer declared assumptions, **show them to the user**
    before moving to the next block. An unreviewed assumption is a decision nobody made.
+
+   And if implementing the block forced a decision the spec did not already make — a different data
+   structure, a renamed module, one valid approach chosen over another — write it as an ADR through
+   the `ddw-create-adr` skill (`docs/adr/adr-NNN-title.md`) before committing, so the commit carries
+   the decision and its reasons together. PLAN asks the same question about its own design; this is
+   the half that only shows up once the code is being written.
 
 7. **Commit the block** with `Skill(skill="ddw-commit")`: its code and its tests, in one commit, with
    the tier's gitmoji. **One block = one commit** — the same rule

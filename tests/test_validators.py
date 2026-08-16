@@ -19,6 +19,7 @@ import re
 import json
 import os
 import subprocess
+import sys
 
 import pytest
 
@@ -457,3 +458,266 @@ def test_an_endpoint_owes_a_complete_contract(tmp_path):
     assert _refuses(refused, "F-SPEC-07"), \
         ("un contrato sin códigos de error ni autenticación pasó: "
          + ("\n".join(refused) or "sin rechazos"))
+
+
+# ── El ADR ──────────────────────────────────────────────────────────────────
+#
+# El único artefacto que no tenía comprobación, y por eso el único cuyo género
+# dependía de que el modelo ya lo supiera. La regla que importa es F-ADR-03: un
+# ADR explica una decisión ya tomada y no obliga a nada.
+
+ADR_SANO = """# ADR-001: Límite en proceso en lugar de CAPTCHA
+
+| Field | Value |
+|-------|-------|
+| Date | 2026-08-13 |
+| Ticket | T-1 |
+| Status | Accepted |
+
+## Context
+El formulario es público y anónimo, y cada alta cuesta una llamada al modelo.
+
+## Options considered
+
+### Option 1: CAPTCHA de un tercero
+- **Pros:** frena bots conocidos
+- **Cons:** suma un tercero a la carga inicial
+
+### Option 2: Límite por IP en proceso
+- **Pros:** sin dependencias nuevas
+- **Cons:** no distingue IPs compartidas
+
+## Decision
+Se eligió el límite en proceso: 5 altas por IP cada 10 minutos.
+
+## Consequences
+- Un aula detrás de una sola IP puede toparse con el límite.
+- Se revisa cuando entren credenciales a la misma base.
+"""
+
+
+def _adr(tmp_path, body, name="adr-001-limite.md"):
+    d = tmp_path / "docs" / "adr"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(body, encoding="utf-8")
+    r = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts/validate_adr.py"),
+                        str(d / name)], capture_output=True, text=True)
+    return r, [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+
+
+def test_un_adr_que_explica_pasa(tmp_path):
+    r, refused = _adr(tmp_path, ADR_SANO)
+    assert r.returncode == 0, "el ADR sano fue rechazado: " + "\n".join(refused)
+
+
+def test_un_adr_que_manda_es_rechazado(tmp_path):
+    """F-ADR-03, la regla por la que existe este validador. Una obligación acá
+    es un requerimiento que ningún criterio de aceptación cubre y ninguna
+    compuerta lee, compitiendo con la spec por la autoridad sobre el código."""
+    manda = ADR_SANO.replace("Se eligió el límite en proceso: 5 altas por IP cada 10 minutos.",
+                             "El sistema debe limitar a 5 altas por IP cada 10 minutos.")
+    _, refused = _adr(tmp_path, manda)
+    assert _refuses(refused, "F-ADR-03"), \
+        "un ADR que impone pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_una_obligacion_citada_no_es_del_adr(tmp_path):
+    """El mismo verbo, dicho por otro documento. Leer una cita como voz propia
+    convertía la regla más filosa del catálogo en la más ruidosa."""
+    citando = ADR_SANO.replace("## Consequences",
+                               "## Consequences\n\n> El PRD dice: el sistema debe responder en 3 s.\n")
+    r, refused = _adr(tmp_path, citando)
+    assert not _refuses(refused, "F-ADR-03"), \
+        "una obligación citada se leyó como propia: " + "\n".join(refused)
+    assert r.returncode == 0
+
+
+def test_una_sola_opcion_no_es_una_decision(tmp_path):
+    """F-ADR-02. Una opción es una preferencia; registrarla como decisión es
+    cómo una preferencia adquiere la autoridad de una."""
+    sola = re.sub(r"(?s)### Option 2.*?(?=## Decision)", "", ADR_SANO)
+    _, refused = _adr(tmp_path, sola)
+    assert _refuses(refused, "F-ADR-02"), \
+        "un ADR con una sola opción pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_dos_decisiones_no_comparten_numero(tmp_path):
+    """F-ADR-05. El número es la identidad del documento: es como un sucesor
+    nombra lo que reemplaza."""
+    _adr(tmp_path, ADR_SANO, "adr-001-limite.md")
+    _, refused = _adr(tmp_path, ADR_SANO, "adr-001-otra.md")
+    assert _refuses(refused, "F-ADR-05"), \
+        "dos ADR con el mismo número pasaron: " + ("\n".join(refused) or "sin rechazos")
+
+
+# ── El split ────────────────────────────────────────────────────────────────
+#
+# El protocolo REEMPLAZA al padre por un índice, así que la lista de criterios
+# del original desaparece en el momento en que el split aterriza. F-PRD-10 es el
+# único lugar donde se puede preguntar si las partes cubren el todo.
+
+INDICE = """# Parent PRD: Triage IA
+
+| Metric | Value |
+|--------|-------|
+| Ticket | FEAT-001 |
+| Status | Split |
+| Original acceptance criteria | 6 |
+
+## Sub-tickets
+
+| Sub-ticket | Title | PRD | ACs | Dependencies | Status |
+|---|---|---|---|---|---|
+| FEAT-001a | Ingesta | prd-FEAT-001a.md | AC-01, AC-02, AC-03 | none | active |
+| FEAT-001b | IA | prd-FEAT-001b.md | AC-04, AC-05 | depends on a | pending |
+| FEAT-001c | Envio | prd-FEAT-001c.md | AC-06 | depends on b | pending |
+"""
+
+
+def _indice(tmp_path, body, name="prd-FEAT-001.md"):
+    path = tmp_path / name
+    path.write_text(body, encoding="utf-8")
+    r = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts/validate_prd.py"),
+                        str(path), "--tier", "FEATURE"], capture_output=True, text=True,
+                       cwd=str(tmp_path))
+    return r, [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+
+
+def test_un_indice_que_particiona_pasa(tmp_path):
+    r, refused = _indice(tmp_path, INDICE)
+    assert r.returncode == 0, "el índice sano fue rechazado: " + "\n".join(refused)
+
+
+def test_un_criterio_que_no_se_lleva_nadie_es_rechazado(tmp_path):
+    """F-PRD-10. Es la única pérdida que el split puede causar y que después
+    no se puede detectar desde ningún lado: el original ya no existe."""
+    _, refused = _indice(tmp_path, INDICE.replace("| AC-06 | depends on b", "|  | depends on b"))
+    assert _refuses(refused, "F-PRD-10"), \
+        "un split que dejó un AC afuera pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_un_criterio_en_dos_sub_tickets_es_rechazado(tmp_path):
+    """El mismo AC reclamado dos veces: dos tickets creen que les toca, y en
+    VERIFY cada uno espera que lo cubra el otro."""
+    _, refused = _indice(tmp_path, INDICE.replace("AC-04, AC-05", "AC-03, AC-04, AC-05"))
+    assert _refuses(refused, "F-PRD-10"), \
+        "un AC duplicado entre hijos pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_un_indice_sin_el_total_del_original_es_rechazado(tmp_path):
+    """Sin ese número la pregunta no se puede contestar, y el documento contra
+    el que se contestaría ya fue sobrescrito."""
+    sin = "\n".join(l for l in INDICE.splitlines() if "Original acceptance" not in l)
+    _, refused = _indice(tmp_path, sin)
+    assert _refuses(refused, "F-PRD-10"), \
+        "un índice sin el total pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_un_sub_prd_mas_grande_que_el_umbral_avisa(tmp_path):
+    """W-PRD-06. El split que no achicó nada: aviso, nunca bloqueo — quedarse
+    con el ticket entero es decisión del usuario, pero el número no es suyo
+    para perderlo."""
+    base = _worked("ddw-create-prd", "## PRD Template")
+    extra = "\n".join("- AC-%02d (FR-01): WHEN algo pasa, THE sistema SHALL responder." % n
+                      for n in range(4, 13))
+    grande = base.replace("- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].",
+                          "- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].\n" + extra)
+    r, _ = _validate(tmp_path, "validate_prd.py", "prd-FEAT-099.md", grande)
+    assert "W-PRD-06" in r.stdout, \
+        "un PRD de 12 ACs no dijo nada sobre el umbral:\n" + r.stdout[-400:]
+
+
+# ── El gate del commit ──────────────────────────────────────────────────────
+#
+# `git commit` era el único acto del pipeline que ningún hook juzgaba: el
+# matcher del PreToolUse era Edit|Write|NotebookEdit y un commit es una llamada
+# a Bash. Medido: cinco documentos commiteados y el usuario leyendo el hash
+# después.
+
+GATE = os.path.join(ROOT, "ddw/scripts/hook-gate.py")
+GRAPH_PATH = os.path.join(ROOT, "ddw/rules/transition-graph.json")
+PROPOSAL = os.path.join(".ddw-work", "commit-message.txt")
+MENSAJE = "\U0001F4DD docs(prd): definir el triage\n\nRefs: F-1\nAI-assisted: yes\n"
+
+
+def _repo_en_define(tmp_path, autonomy="assisted"):
+    state = tmp_path / ".ddw-state.json"
+    state.write_text(json.dumps({"phase": "DEFINE", "tier": "FEATURE", "ticket": "F-1",
+                                 "autonomy": autonomy, "gates": {},
+                                 "history": [{"from": "IDLE", "to": "CLASSIFY", "action": "c",
+                                              "tier": "FEATURE", "ticket": "F-1"}]}),
+                     encoding="utf-8")
+    return state
+
+
+def _commit(tmp_path, command="git commit -F .ddw-work/commit-message.txt"):
+    event = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+    return subprocess.run([sys.executable, GATE, "--mode", "commit",
+                           "--state", str(tmp_path / ".ddw-state.json"),
+                           "--graph", GRAPH_PATH, "--repo", str(tmp_path)],
+                          input=event, capture_output=True, text=True)
+
+
+def _habla_el_usuario(tmp_path):
+    subprocess.run([sys.executable, GATE, "--mode", "turn",
+                    "--state", str(tmp_path / ".ddw-state.json"),
+                    "--graph", GRAPH_PATH, "--repo", str(tmp_path)],
+                   input="{}", capture_output=True, text=True)
+
+
+def _propone(tmp_path, texto=MENSAJE):
+    d = tmp_path / ".ddw-work"
+    d.mkdir(exist_ok=True)
+    (d / "commit-message.txt").write_text(texto, encoding="utf-8")
+
+
+def test_un_commit_que_el_usuario_no_vio_es_rechazado(tmp_path):
+    _repo_en_define(tmp_path)
+    _propone(tmp_path)
+    assert _commit(tmp_path).returncode == 2, \
+        "mostrar el mensaje y commitear pudieron pasar en la misma respuesta"
+
+
+def test_un_commit_visto_y_contestado_pasa_al_primer_intento(tmp_path):
+    """La primera versión rechazaba el PRIMER intento y cobraba un ida y vuelta
+    incluso al modelo que había hecho todo bien."""
+    _repo_en_define(tmp_path)
+    _propone(tmp_path)
+    _habla_el_usuario(tmp_path)
+    assert _commit(tmp_path).returncode == 0, "el commit aprobado fue rechazado igual"
+
+
+def test_mostrar_un_mensaje_y_commitear_otro_es_rechazado(tmp_path):
+    """El agujero que no cerraba nadie: los bytes se comparan."""
+    _repo_en_define(tmp_path)
+    _propone(tmp_path)
+    _habla_el_usuario(tmp_path)
+    _propone(tmp_path, "\U0001F4DD docs: otra cosa completamente distinta\n")
+    assert _commit(tmp_path).returncode == 2, "commiteó un mensaje que el usuario nunca vio"
+
+
+def test_el_permiso_se_gasta_en_un_commit(tmp_path):
+    _repo_en_define(tmp_path)
+    _propone(tmp_path)
+    _habla_el_usuario(tmp_path)
+    assert _commit(tmp_path).returncode == 0
+    assert _commit(tmp_path).returncode == 2, "un mensaje mostrado abrió el commit siguiente"
+
+
+def test_un_commit_por_fuera_del_archivo_es_rechazado(tmp_path):
+    _repo_en_define(tmp_path)
+    _propone(tmp_path)
+    _habla_el_usuario(tmp_path)
+    assert _commit(tmp_path, 'git commit -m "otra cosa"').returncode == 2
+
+
+def test_lo_que_no_es_un_commit_no_le_incumbe(tmp_path):
+    _repo_en_define(tmp_path)
+    for cmd in ("git status --short", "git log --oneline | grep commit", "git commit --dry-run"):
+        assert _commit(tmp_path, cmd).returncode == 0, cmd
+
+
+def test_minimal_no_espera(tmp_path):
+    """Lo que ese modo saca es el preguntar, y un commit es local y reversible."""
+    _repo_en_define(tmp_path, autonomy="minimal")
+    assert _commit(tmp_path, 'git commit -m "x"').returncode == 0

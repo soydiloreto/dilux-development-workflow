@@ -30,7 +30,13 @@
     "from": "hooks.json",
     "to": ".cursor/hooks.json",
     "merge_key": "hooks",
-    "base": { "version": 1 }
+    "base": {
+      "version": 1
+    }
   },
-  "context_file": "AGENTS.md"
+  "context_file": "AGENTS.md",
+  "choice_prompt": {
+    "tool": "ask question tool",
+    "note": "the ask question tool — skills and subagents can be told to use it"
+  }
 }

@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -122,7 +122,7 @@ encapsulates the template, naming, file location, `PRD loops` handling and outpu
 5. **ONLY when the PRD file is written to disk and complete** — never before,
    never in parallel with `ddw-create-prd` — invoke `ddw-validate-prd`, which
    RUNS `.ddw/scripts/validate_prd.py <prd> --tier <tier>`. The script applies
-   the catalog's mechanical rules (F-PRD-01 to F-PRD-09, W-PRD-01 to W-PRD-05)
+   the catalog's mechanical rules (F-PRD-01 to F-PRD-10, W-PRD-01 to W-PRD-06)
    and writes the receipt the `define` gate demands; the MANUAL rules
    (F-PRD-02, F-PRD-07) you judge yourself and state explicitly. Loading both
    skill files together as reading material is not a sequence: create
@@ -249,6 +249,19 @@ After drafting the PRD, assess:
 2. **Modules affected:** if it touches more than 2–3 distinct modules/areas, consider splitting.
 3. **Independence:** can each part reach production without the others?
 
+**Apply the same three to every part you are about to propose, and put each part's numbers in the
+box.** The assessment ran once, on the parent, and nothing looked at what the split produced.
+Measured across three runs of one source PRD: a split into four left children of 11, 12, 16 and 12
+ACs — every one above the threshold that caused the split — and the box said "4 sub-tickets" without
+saying that. The user approved a cut that had not made anything smaller, because the number that
+would have told them was on nobody's screen. The decision to split, and how, stays theirs; the
+numbers are not theirs to lose.
+
+The first two are signals that something needs looking at. **The third is the one that decides**,
+and it is the principle at the top of this section: a part that cannot reach production on its own
+is not a part, it is a layer. Splitting a feature into "the models", "the routes" and "the
+templates" satisfies both counts and delivers nothing at any point.
+
 **If the scope is too large:**
 
 ```
@@ -262,9 +275,15 @@ After drafting the PRD, assess:
 │  Modules affected: [list]                                │
 │                                                          │
 │  Proposed split:                                         │
-│    a. [sub-deliverable] — [ACs it covers]                │
-│    b. [sub-deliverable] — [ACs it covers]                │
-│    c. [sub-deliverable] — [ACs it covers]                │
+│    a. [sub-deliverable] — [ACs it covers] ([N] ACs)      │
+│       ships alone: [what a user can do if we stop here]  │
+│    b. [sub-deliverable] — [ACs it covers] ([N] ACs)      │
+│       ships alone: [...]                                 │
+│    c. [sub-deliverable] — [ACs it covers] ([N] ACs)      │
+│       ships alone: [...]                                 │
+│                                                          │
+│  Every AC of the original is taken by exactly one part.  │
+│  Parts still over 7 ACs: [none | which, and why]         │
 │                                                          │
 │  Dependencies: [b depends on a, c is independent]        │
 │  Suggested order: a → b → c                              │
@@ -298,14 +317,21 @@ The original PRD (`prd-{TICKET}.md`) becomes an index document:
 | Ticket | [TICKET] |
 | Date | [timestamp] |
 | Status | Split |
+| Original acceptance criteria | [N] |
 
 ## Sub-tickets
 
-| Sub-ticket | Title | PRD | Dependencies | Status |
-|---|---|---|---|---|
-| {TICKET}a | [title] | prd-{TICKET}a.md | none | active |
-| {TICKET}b | [title] | prd-{TICKET}b.md | depends on a | pending |
-| {TICKET}c | [title] | prd-{TICKET}c.md | independent | pending |
+| Sub-ticket | Title | PRD | ACs | Dependencies | Status |
+|---|---|---|---|---|---|
+| {TICKET}a | [title] | prd-{TICKET}a.md | AC-01, AC-02 | none | active |
+| {TICKET}b | [title] | prd-{TICKET}b.md | AC-03, AC-04 | depends on a | pending |
+| {TICKET}c | [title] | prd-{TICKET}c.md | AC-05 | independent | pending |
+
+> **The `ACs` column and the count above it are what make the split checkable.** This protocol
+> REPLACES the parent with this index, so the moment it lands the original list of acceptance
+> criteria is gone and "did the parts cover the whole?" can no longer be answered from anything.
+> `validate_prd.py` reads these two and refuses an index whose parts leave an AC behind or claim one
+> twice (F-PRD-10).
 
 ## Suggested implementation order
 a → b → c
@@ -326,8 +352,10 @@ the standard PRD template with its own ticket, title, FRs, ACs, and so on.
 
 **3. Validate ALL the sub-PRDs:**
 
-Run `ddw-validate-prd` on EACH sub-PRD. They all have to pass BEFORE continuing. If any fails,
-iterate until it passes.
+Run `ddw-validate-prd` on EACH sub-PRD **and on the index**. They all have to pass BEFORE
+continuing. If any fails, iterate until it passes. The index is judged by F-PRD-10 alone — it is not
+a PRD and is not held to a PRD's sections — and that rule is the only thing standing between a split
+and an acceptance criterion nobody noticed was dropped.
 
 **4. Close the parent run, then open sub-ticket `a` as its own run:**
 

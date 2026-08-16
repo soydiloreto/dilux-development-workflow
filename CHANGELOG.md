@@ -19,6 +19,223 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.22.0] — Unreleased
+
+### Added
+
+- **`validate_adr.py`, and §7 of the catalog: the ADR stops being the one
+  artifact nothing checks.** Five FAIL rules and two warnings, the first of which
+  is the reason it exists: F-ADR-03 refuses `must` / `shall` / `debe` / `tiene
+  que` in **Decision** and **Consequences**, because an obligation written in an
+  ADR is a requirement that no acceptance criterion covers and no gate reads,
+  competing with the spec for authority over the code. Quoted text and fenced
+  code are exempt — an ADR reporting what the PRD demands is an ADR doing its
+  job, and reading a quotation as its own voice turned the sharpest rule in the
+  catalog into the noisiest.
+
+  **It is deliberately not a gate.** An ADR is written only when a decision
+  warrants one; demanding one per ticket would fill `docs/adr/` with filler,
+  which is worse than the gap it closes. The skill runs it and closes its own
+  loop. It takes `--tier` like every other validator in the family, constrained
+  to the tiers the graph defines, and says on every run that no F-ADR rule varies
+  by tier rather than swallowing the flag.
+
+- **Each artifact now says what it is, and what it is not.** One paragraph in the
+  skill that writes it, loaded exactly when it is being written. A PRD is
+  behaviour and never design — the test given is whether the requirement would
+  survive a rewrite in another language. A spec is design that traces back to the
+  PRD and **introduces no requirements**: a requirement discovered while designing
+  is a corrective loop to DEFINE, not a line added here, because one smuggled in
+  is one no acceptance criterion covers. A threat model is about this design and
+  not a checklist. This is what portability across models rests on: the other
+  artifacts have validators pinning their genre, and prose is what carries the
+  ones that do not.
+
+- **`install.sh --mode plugin` installs the plugin for you, on every tool that
+  has a way in.** It was three documents telling a human — or an agent — to run
+  commands and hand-merge JSON, and the Copilot one had a step that is easy to
+  stop before: install the skills and the session looks alive while enforcing
+  nothing, because Copilot ignores the hooks in a plugin manifest. The installer
+  now calls each tool's own plugin CLI (never reimplementing its cache layout),
+  and for Copilot writes the three user-level hooks itself, resolving the plugin
+  root from `~/.copilot/config.json` — which is JSONC, a detail that cost the
+  first attempt: parsed as strict JSON it raised, and the installer reported the
+  half-install its own warning exists to describe. For OpenCode it merges one
+  entry into `opencode.json`, touching no other key.
+
+  Plugin-or-drop-in is asked before anything else, and naming a tool does not
+  answer it: which agent you work with and whether you want the method copied
+  into the repository are different questions, and the two answers leave very
+  different repositories behind. It falls to drop-in only where there is no
+  terminal to ask on, and says so when it does.
+
+  Codex, Cursor and Gemini are told plainly that no plugin install exists for
+  them. Nothing requires administrator rights on any platform.
+
+### Changed
+
+- **The installer explains itself before it writes anything.** It used to open
+  with "Which tool will you be working with in this repo?" — asking someone to
+  decide something before telling them what it is for, on a command they were
+  usually handed in one line. It now opens with a titled banner saying what DDW
+  is, then, once the targets are known, lists exactly what will land in the repo
+  and what it will not touch — with a different list for an update, which says
+  that the phase in flight is not touched. It closes the same way, with the two
+  or three things to do next. The two verbs a check and a mutation both watch
+  ("installing into", "updating:") are deliberately unchanged.
+
+### Fixed
+
+- **"One transition per response" was enforced against one of the two ways to
+  break it.** The orchestrator states the rule as hard and said how it was held:
+  "the state is written once per arrow either way, and the hook refuses a write
+  that appends two". Measured on a live run: three separate writes, one entry
+  each, thirty-seven seconds apart, on a single "avanti" — the split closed, the
+  sub-ticket opened, and DEFINE was entered, with the user having approved the
+  first. Each write was legal alone and nothing compared writes across a
+  response. The turn counter the commit gate needed turned out to be the missing
+  signal: a second arrow in the same turn is refused now. `minimal` is exempt by
+  design — there the arrows are supposed to run without anyone between them —
+  and a tool that writes no turn counter is not refused for lacking one.
+
+- **The scope check ran on the parent and never looked at what it produced.**
+  Across three runs of one source PRD, one split into four left children of 11,
+  12, 16 and 12 acceptance criteria — every one above the threshold that caused
+  the split — and the box reported "4 sub-tickets" without saying so. The user
+  approved a cut that had made nothing smaller. The same assessment now applies
+  to each proposed part with its numbers in the box, W-PRD-06 states the count on
+  every PRD, and the phase says which of the three criteria decides: a part that
+  cannot reach production on its own is not a part, it is a layer.
+
+- **A split could drop an acceptance criterion and nothing would ever know.** The
+  protocol REPLACES the parent PRD with an index, so the original list is gone
+  the moment the split lands and "did the parts cover the whole?" stops being
+  answerable from anything. The index now carries the original count and which
+  ACs each sub-ticket takes, and F-PRD-10 refuses one that leaves an AC behind or
+  lets two sub-tickets claim the same one.
+
+- **Nothing said how to ask a question.** All six supported tools have something
+  that turns a question into options the user picks from — `AskUserQuestion`,
+  `ask_user_question`, `ask_user`, Gemini's Ask User tool, OpenCode's question
+  tool, Cursor's ask question tool — and DDW named none of them. Two models were
+  asked the same thing on the same repo: one offered a picker, the other prose,
+  and neither was breaking a rule. The rule is written once in the orchestrator
+  and each adapter declares its own tool's name under `choice_prompt`; where a
+  tool has none, the fallback is a numbered list.
+
+- **CLASSIFY showed the autonomy without saying it was a choice.** A line reading
+  `autonomy: assisted` tells nobody that another mode exists or what it costs,
+  and a run that showed exactly that was following the section to the letter. The
+  box now offers both, with the cost stated once, before the user agrees.
+
+- **The mutation run could not start, and had not been able to for some time.**
+  `scripts/mutate.py` copies the tree without `.git`, and an eval test asks
+  whether certain commits are reachable from the main line — without history
+  `git merge-base` cannot run, so it failed on every unmutated copy. The runner's
+  red-baseline guard caught it and refused to inject, so no kill was ever
+  fabricated; what was lost was the whole run. That test now skips where the
+  question has no answer.
+
+- **PLAN never told anyone to consider an ADR.** The skill said "the agent MUST
+  create an ADR when it detects…" and the phase that would detect it did not
+  mention the skill — so the trigger lived inside a file the model reads only
+  after deciding to invoke it, behind the decision it was meant to cause. The
+  only mention of an ADR in `plan.instructions.md` was at the commit step, "the
+  ADR if one was written", which assumes it already happened. Measured on a real
+  run: the design chose an in-process rate limit over a CAPTCHA, argued the
+  trade-off well, and wrote nothing. PLAN now asks the question where the
+  decisions are made, and CODE asks it again for the ones that only appear while
+  implementing.
+
+- **The threat model was validated against a spec the phase had not written
+  yet.** `plan.instructions.md` puts threat modelling before the spec on purpose
+  — it is the last step that can still add files to the plan, and on a live run
+  it added two. But F-TM-06 checks the model against the spec's real
+  architecture, so the documented order fails it every time by construction. A
+  guaranteed red nobody can act on teaches the reader to discount a rule that is
+  doing its job. The phase now says what it always meant: write the model, fold
+  its mitigations into the spec, write the spec, then validate with `--spec`.
+  Nothing is skipped and no rule is softened.
+
+- **What an ADR is was left to the model to already know.** Every other artifact
+  has a validator pinning its genre — a PRD that is not a PRD fails eight checks.
+  The ADR has none, so nothing catches one that reads like a requirement: "the
+  system must rate-limit to 5 per IP" in a document no gate reads and no script
+  judges, competing with the spec for authority. The skill now states the
+  distinction it had relied on the reader already having — an ADR explains a
+  decision already taken and binds nobody; **must**/**shall** in one means the
+  sentence belongs in the spec — and gains the lifecycle it never had: superseded
+  by a new ADR, never edited to change its mind.
+
+- **The sanctioned helper wrote a state its own gate then called corrupt.**
+  Resuming out of IDLE after a `pause:` — opening a sub-ticket of a split —
+  `transition.py` recovered the paused run's tier, stamped it on the new history
+  entry, and left the header's `tier` null. Post mode reads a run's tier off the
+  entries, so it saw `FEATURE` against a null header and condemned the exact
+  bytes the helper had just emitted with exit 0. Measured live: the helper exits
+  0, the pre-write hook passes, and the post-write hook refuses the same file.
+  What made it expensive is the refusal's own instruction — do not repair, do not
+  delete — which is correct and leaves the user copying a file in by hand. One
+  missing `--tier` bricked a run mid-pipeline. The header now carries the tier
+  the entry carries; they described the same edge and were allowed to disagree.
+  A ticket that is genuinely new still inherits nothing, which is what
+  `_resumed_from` was written to protect.
+
+- **…and the same hole in the sibling field: the ticket.** Leaving IDLE after a
+  `pause:` without `--ticket`, the helper inherited the paused ticket onto the
+  new edge. For a resume that is right; for a sub-ticket of a split — the
+  ordinary way a pause ends — it stamped the parent's ID on a run about the
+  child, and two writes later post mode found one run naming two tickets and
+  condemned the state. Found the same day as the tier defect, by the same split,
+  one arrow further on. The helper no longer guesses: that edge is refused unless
+  it names its ticket, except after a `resume:`, where the word itself says which
+  ticket is meant. A resume also restores the ticket to the header, so the header
+  and its newest entry cannot disagree — the shape both of these defects had.
+
+- **`git commit` was the one act in the pipeline that no hook judged.**
+  `ddw-commit` says "present the message for approval; only after approval create
+  the commit", and `assisted` says every step waits for the user — but the
+  `PreToolUse` matcher was `Edit|Write|NotebookEdit`, and a commit is a Bash
+  call. Both sentences were enforced by nobody: a run committed five documents
+  and the user read the hash afterwards. A new gate (`hook-gate.py --mode
+  commit`, wired on Claude Code through `confirm-commit.sh`) refuses the first
+  `git commit` while autonomy is `assisted` and allows it once the user has taken
+  a turn, counted by a new `UserPromptSubmit` hook. Showing the message and
+  making the commit can no longer happen in one response, which is what step 7
+  asked for and nothing checked.
+
+  It took three tries to get right, and each wrong one is worth recording. The
+  first used the harness's permission prompt — wrong in the same shape as the
+  defect it was fixing, because a prompt only fires in the modes that prompt, so
+  under `bypassPermissions`, `dontAsk` or `auto` it would have read as covering
+  the commit and done nothing. A refusal is honoured in every mode, which is why
+  the state gate has always used one. The second counted turns and refused the
+  FIRST attempt: it enforced the same rule and charged a round trip every time,
+  including to a model that had done exactly the right thing. The third puts the
+  message in a file at the moment it is shown and seals it when the user speaks
+  — no extra round trip, and the bytes are compared, so showing one message and
+  committing another is refused too. That last hole had never been closed by
+  anything.
+
+  The proposal file went into `.ddw-sessions/` at first, and DDW's own
+  painted-door eval caught it on the next run: every write into that directory is
+  refused in every phase, because the receipts six of the eight gates read live
+  there. A skill ordering a write the guard refuses is the defect this repository
+  has spent the most time removing, and it had just been reintroduced. The file
+  is now `.ddw-work/commit-message.txt`, which is writable in every phase by
+  design; the seal stays where only a hook can write it.
+
+  `minimal` is unaffected: what that mode removes is the asking, and a commit is
+  local and reversible, so it is not one of the acts that keep their confirmation
+  in both modes.
+
+- **An update left the `.gitignore` block naming a runtime that had changed.**
+  "Already has the DDW block" was true and useless: the day the pipeline started
+  writing a new runtime file, every updated repo kept a block that did not
+  mention it, and the first `git add -A` would have committed someone's scratch.
+  The block is replaced on every run now, delimited by its own markers, with
+  every line outside them untouched.
+
 ## [0.21.0] — Unreleased
 
 ### Fixed — SECURITY

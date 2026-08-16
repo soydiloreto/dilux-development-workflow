@@ -19,6 +19,23 @@ Creates a new PRD (Product Requirements Document) or updates an existing one. Th
 will be built: functional requirements, non-functional requirements, acceptance criteria, scope and
 risks.
 
+### What a PRD is, and what it is not
+
+**A PRD says what the software has to do and why, and never how it is built.** Its sentences are
+about behaviour someone can observe from outside: what a person does, what the system answers, what
+must still hold when things go wrong. Every requirement carries an acceptance criterion, because a
+requirement nobody can test is an opinion with a number on it.
+
+It is not a design. No file names, no libraries, no schemas, no endpoints. If a sentence of yours
+names a technology, it belongs in the spec — and putting it here freezes a decision before the
+phase that weighs the alternatives has run, which is how a PRD comes to dictate an architecture
+nobody chose.
+
+It is not a plan either: no blocks, no order of work, no estimates. Those are the spec's.
+
+The test, when unsure: could this requirement still be true if the whole thing were rebuilt in
+another language? If yes it is a requirement. If no it is design.
+
 ## Inputs
 - The user's request (a description of the feature or change)
 - Existing PRDs in `docs/ddw/prd/` (to detect duplicates or to update)
@@ -124,7 +141,7 @@ every new install.
 ```
 
 > The `FR-`/`NFR-`/`AC-` prefixes and the section names are what `ddw-validate-prd` matches on
-> (rules F-PRD-01 to F-PRD-09). Write the *content* in the user's language, but keep the identifiers
+> (rules F-PRD-01 to F-PRD-10). Write the *content* in the user's language, but keep the identifiers
 > and the structure as written here — **including the EARS keywords** (`WHEN`, `WHILE`, `WHERE`,
 > `IF … THEN`, `SHALL`), which stay in English in every language, exactly as the section headings do.
 > They are the shape the validator matches on; translated, the criterion still reads fine to a human

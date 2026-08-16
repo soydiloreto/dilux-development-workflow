@@ -31,6 +31,34 @@ manifest so the drift check can see it change afterwards, and touches no wiring.
 
 ## As a plugin
 
+### Let the installer do it
+
+```
+bash install.sh . --mode plugin --target claude,copilot,opencode
+```
+
+It calls each tool's own plugin CLI rather than writing that tool's cache layout
+itself, and for Copilot it also wires the user-level hooks that the plugin
+manifest cannot carry — the step that, skipped, leaves an install looking alive
+and enforcing nothing. The marketplace it registers is the working copy you ran
+it from, so what lands is what is in front of you.
+
+Nothing here needs administrator rights on any platform: every path written is
+under `$HOME` or inside the repo you named. Run it before you open the tool and
+there is nothing to restart; OpenCode's first launch is slower because that is
+when it clones the plugin.
+
+Without `--mode` the installer always asks which of the two you want, whether or
+not you named a tool: those are different questions, and the answers leave very
+different repositories behind.
+
+`--mode plugin` covers Claude Code, Copilot CLI and OpenCode. For Codex, Cursor
+and Gemini it says so and stops — a manifest exists for them in this repository,
+but no install procedure for one has been written or driven, and running
+something plausible would be worse than saying nothing.
+
+The manual equivalents are below, and are what the installer runs.
+
 ### Claude Code
 
 ```

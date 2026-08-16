@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=556
+EXPECT_CHECKS=561
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=565
+EXPECT_MUTATIONS=582
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -842,7 +842,7 @@ python3 "$V" --mode post --state "$R/.ddw-state.json" --graph "$G" </dev/null >/
   && ok "PostToolUse accepts a legal state on disk" || bad "PostToolUse rejects a legal state"
 
 # ── The two Claude hook manifests must stay the same manifest ─────────────────
-# One wires the drop-in install, the other the (in-progress) plugin. Same five
+# One wires the drop-in install, the other the (in-progress) plugin. Same seven
 # hooks, different root variable. Two hand-maintained copies drift, and the one
 # that drifts is the one nobody runs day to day.
 python3 - "$SELF" <<'PY' && ok "the plugin hook manifest matches settings.json" || bad "the two Claude hook manifests have drifted"
@@ -3206,7 +3206,7 @@ tiers = sorted(json.load(open(os.path.join(src, "ddw/rules/transition-graph.json
 assert tiers, "the graph defines no tiers, so this check has nothing to hold the validators to"
 scripts = sorted(f for f in os.listdir(os.path.join(src, "ddw/scripts"))
                  if f.startswith("validate_") and f.endswith(".py"))
-assert len(scripts) == 6, "expected the six document validators, found: %s" % scripts
+assert len(scripts) == 7, "expected the seven document validators, found: %s" % scripts
 for name in scripts:
     path = os.path.join(src, "ddw/scripts", name)
     r = subprocess.run([sys.executable, path, os.devnull, "--tier", "WHATEVER"],
@@ -5144,19 +5144,19 @@ code, out = lint()
 assert code == 0, "the shipped tree does not lint clean, so nothing below means anything: " + out[-300:]
 
 # One area row overstated by one, exactly the shape the drift took.
-rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 9 | 5 | 14 |", "| PRD | 10 | 5 | 15 |")
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 10 | 6 | 16 |", "| PRD | 11 | 6 | 17 |")
 code, out = lint()
-assert code != 0 and "PRD" in out and "9" in out, \
+assert code != 0 and "PRD" in out and "10" in out, \
     "an area row that overcounts its own rules passed: " + out[-300:]
-rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 10 | 5 | 15 |", "| PRD | 9 | 5 | 14 |")
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 11 | 6 | 17 |", "| PRD | 10 | 6 | 16 |")
 
 # The total alone, with every row correct — the arithmetic nobody redid.
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **65** | **15** | **80** |", "| **Total** | **69** | **15** | **84** |")
+        "| **Total** | **71** | **18** | **89** |", "| **Total** | **75** | **18** | **93** |")
 code, out = lint()
-assert code != 0 and "65" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
+assert code != 0 and "71" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **69** | **15** | **84** |", "| **Total** | **65** | **15** | **80** |")
+        "| **Total** | **75** | **18** | **93** |", "| **Total** | **71** | **18** | **89** |")
 
 # Two more of the linter's checks, driven the same way. Both were added with a
 # mutation and no check: deleting the CALL left the repository linting clean,
@@ -5243,10 +5243,10 @@ assert code == 0, "the tree was not put back the way it was found: " + out[-300:
 
 # And the restatement outside the catalog, which is the line a reader of
 # `ddw/rules/` meets first.
-rewrite("ddw/rules/README.md", "The 80 validation rules", "The 84 validation rules")
+rewrite("ddw/rules/README.md", "The 89 validation rules", "The 93 validation rules")
 code, out = lint()
-assert code != 0 and "80" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
-rewrite("ddw/rules/README.md", "The 84 validation rules", "The 80 validation rules")
+assert code != 0 and "89" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
+rewrite("ddw/rules/README.md", "The 93 validation rules", "The 89 validation rules")
 
 code, out = lint()
 assert code == 0, "the probe was not restored: " + out[-300:]
@@ -5608,6 +5608,48 @@ for rel in ("ddw/rules/code.instructions.md", "skills/ddw-test/SKILL.md"):
 code, out = lint()
 assert code == 0, "the probe was not restored: " + out[-300:]
 PYRANGE
+
+# ── The phase has to route to the skill, or the skill's trigger is unreachable ─
+#
+# `ddw-create-adr` said "the agent MUST create an ADR when it detects…" and the
+# phase that would detect it never named the skill — so the condition lived
+# inside a file the model reads only after deciding to invoke it, behind the
+# decision it was meant to cause. Measured on a live run: the design chose a
+# rate limit over a CAPTCHA, argued it well, and wrote nothing.
+python3 - "$SELF" <<'PYADRROUTE' && ok "the phases that make decisions route to the ADR skill, so its trigger is reachable" || bad "a phase stopped naming ddw-create-adr, and the skill's own trigger is behind the decision it exists to catch"
+import os, sys
+src = sys.argv[1]
+for rel in ("ddw/rules/plan.instructions.md", "ddw/rules/code.instructions.md"):
+    text = open(os.path.join(src, rel), encoding="utf-8").read()
+    assert "ddw-create-adr" in text, (
+        "%s never names the ADR skill: nothing in the phase asks whether this decision needs "
+        "one, and the skill's automatic trigger is written where only its own invocation "
+        "reaches it" % rel)
+PYADRROUTE
+
+# ── The same question in six tools ────────────────────────────────────────────
+#
+# All six have something that turns a question into options the user picks from,
+# and DDW named none of them. Measured: two models asked the same thing on the
+# same repo, one offered a picker and the other prose, and neither was breaking
+# a rule — the user got two different products.
+python3 - "$SELF" <<'PYCHOICE' && ok "the rule that a choice is offered as a choice is written once, and every adapter names its own picker" || bad "an adapter stopped declaring how its tool asks, or the rule moved out of the orchestrator"
+import glob, json, os, sys
+src = sys.argv[1]
+orch = open(os.path.join(src, "ddw/orchestrator.md"), encoding="utf-8").read()
+assert "choice_prompt" in orch, (
+    "the orchestrator no longer sends the model to the adapter for its tool's picker, so the "
+    "rule is a name six recipes carry and nothing reads")
+missing = []
+for path in sorted(glob.glob(os.path.join(src, "adapters/*/adapter.json"))):
+    d = json.load(open(path, encoding="utf-8"))
+    cp = d.get("choice_prompt")
+    if not isinstance(cp, dict) or not cp.get("tool"):
+        missing.append(d.get("id") or os.path.basename(os.path.dirname(path)))
+assert not missing, (
+    "these adapters do not say how their tool asks a question with options, so the model has "
+    "nothing to reach for and falls back to prose: " + ", ".join(missing))
+PYCHOICE
 
 # Reconstructing the state from an Edit whose old_string appears more than once
 # means guessing which occurrence was meant — and the guess decides what gets
@@ -8184,7 +8226,14 @@ os.rename(os.path.join(legacy, ".ddw-installed.json"),
           os.path.join(legacy, ".ddw", ".installed.json"))
 out = subprocess.run(["bash", os.path.join(src, "install.sh"), legacy, "--target", "claude"],
                      capture_output=True, text=True).stdout
-assert "updating" in out.splitlines()[0], \
+# Anchored on the headline, not on line 0: the installer opens with a banner
+# now, and "the first line says updating" was a fact about the old layout rather
+# than about the thing being checked. Both directions are asserted, so a run
+# that called every install an update still fails — that is what the pair of
+# checks further up is for, and this one no longer depends on where in the
+# output the sentence lands.
+assert (any("is updating:" in l for l in out.splitlines())
+        and "installing into" not in out), \
     ("an upgrade from a pre-move install announced itself as a first install — it did not find "
      "the manifest, which is what tells DDW's wiring from yours:\n" + out[:200])
 
@@ -8772,7 +8821,7 @@ PYCLOSEWIPE
 # hooks decide whether a write happens, the boot is the session's first line, and
 # the installer runs half-way. Each of these crashed on input a real repo can
 # hold.
-python3 - "$SELF" <<'PYCRASH' && ok "the boot, the installer, the uninstaller and the six validators refuse odd input instead of crashing on it" || bad "an entry point answers with a traceback: a half-install, a session that starts blind, or a validator that exits 1 where its contract says 3"
+python3 - "$SELF" <<'PYCRASH' && ok "the boot, the installer, the uninstaller and the seven validators refuse odd input instead of crashing on it" || bad "an entry point answers with a traceback: a half-install, a session that starts blind, or a validator that exits 1 where its contract says 3"
 import glob, json, os, shutil, subprocess, sys, tempfile
 src = sys.argv[1]
 

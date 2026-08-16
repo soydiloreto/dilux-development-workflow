@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.9.0
+version: 1.11.0
 ---
 
 # Validation Rules — Central Catalog
@@ -83,6 +83,7 @@ Valuable, Estimable, Small, Testable), EARS (Easy Approach to Requirements Synta
 | F-PRD-07 | Undeclared dependencies | If an FR references another module, an external service, or an existing feature, that dependency must be listed in the "Dependencies" section. If there are undeclared cross-references → FAIL. | Undeclared dependencies cause implementation blockers and integration errors. |
 | F-PRD-08 | Missing structural section | The PRD must contain ALL of these sections: Context and Problem, Goals, Functional Requirements, Non-Functional Requirements, Acceptance Criteria, Out of Scope (FEATURE), Dependencies. If any is missing → FAIL. | A structurally incomplete PRD cannot be validated. Missing sections are requirements nobody thought about. |
 | F-PRD-LOOP | Corrective loop at its ceiling | The PRD header's `Loops since last human decision` reached 3 (falling back to `PRD loops` when a document predates the second counter). **Two numbers on purpose:** `PRD loops` is the running total, never reset, so six months on the document can say what it cost; the ceiling measures rounds since a person last decided something, because a round the model drove and a round a reviewer asked for are not the same event — and a review comment is already the decision this ceiling exists to provoke. The loop is mandatory while it converges; three rounds without converging means what is missing is a decision nobody wrote down, not another pass. → FAIL, and the way past it is a human answering, with the counter reset and their answer recorded. | Under `autonomy: minimal` this is one of the three stops that have no mode. A counter incremented and compared to nothing is a tally, not a stop. |
+| F-PRD-10 | Split that does not partition the original | **Only for a split index** (`Status: Split`). The index must declare `Original acceptance criteria` and each sub-ticket row must list the ACs it takes. An AC taken by nobody, or by two, → FAIL. The index is judged by this rule alone. | The split protocol REPLACES the parent with the index, so the original AC list is gone the moment it lands and "did the parts cover the whole?" stops being answerable from anything. This is the only place it can be asked. |
 | F-PRD-09 | AC not in EARS form | Every acceptance criterion must match one of the five EARS patterns (see below). An AC that matches none → FAIL, quoting it and naming the pattern it most likely wants. **Does not apply to DISCOVERY**, whose PRDs are exploratory, or to QUICK-FIX, whose artifact is the 4-line fix-brief. | EARS (Easy Approach to Requirements Syntax, Rolls-Royce) turns a criterion into a shape a reader can check rather than a sentence they have to interpret. It is what AWS's Kiro adopted for spec-driven work with agents, for the same reason: a template makes an *absent* case visible, and free prose does not. |
 
 ### WARNING rules
@@ -94,6 +95,7 @@ Valuable, Estimable, Small, Testable), EARS (Easy Approach to Requirements Synta
 | W-PRD-03 | Passive voice | A requirement uses the passive voice ("the data is validated" instead of "the system must validate the data"). The passive voice hides the responsible actor. | Clarity. Does not block, because the meaning may be inferable from context. |
 | W-PRD-04 | No unwanted-behaviour AC | **No acceptance criterion uses the EARS unwanted-behaviour pattern** (`IF … THEN … SHALL`). Count them: zero → WARNING naming the FRs whose failure modes nobody wrote down. | Completeness, made checkable. Phrased as "an FR does not mention what happens if it fails" this was a judgement the reader had to make and could quietly not make; as a count of a pattern it is either there or it is not. Still does not block at PRD level — a feature can legitimately have no error path, and the rule that *does* block is F-SPEC-16, one phase later, where the answer is actionable. |
 | W-PRD-05 | Empty "Risks and Mitigations" | The section exists but has no content, or does not exist. | Planning. Does not block, because technical risks are explored further in the spec and threat model. |
+| W-PRD-06 | More acceptance criteria than Scope Control names | More than 7 ACs on one FEATURE PRD. Reported, never blocking. | Keeping a ticket whole is the user's decision and `define.instructions.md` says so. But a split into four that left children of 11, 12, 16 and 12 ACs was reported as "4 sub-tickets" and approved, because the number that would have said the split changed nothing was on nobody's screen. |
 
 ### The five EARS patterns (for F-PRD-09 and W-PRD-04)
 
@@ -354,17 +356,54 @@ a document; whether it is a true document remains the reader's judgement, and ev
 ---
 
 
+## 7. Architecture Decision Record (`ddw-create-adr`)
+
+**Applies in:** the PLAN and CODE phases, whenever a decision is recorded.
+**Artifact:** `docs/adr/adr-NNN-title.md` — outside `docs/ddw/`, because the decision belongs to the
+project rather than to the tool that helped write it.
+
+**No gate reads this one.** An ADR is written only when a decision warrants it, so demanding one per
+ticket would fill `docs/adr/` with filler — worse than the gap it closes. `validate_adr.py` is run by
+the skill that writes the ADR, and its verdict is for the person reading it.
+
+It exists because every other artifact here has a validator pinning its genre and this one had none.
+An ADR **explains a decision already taken and binds nobody**; requirements live in the PRD and
+binding design lives in the spec, both machine-checked. Nothing was catching an ADR that issued
+orders instead — a document no gate reads, competing with the spec for authority over the code.
+
+### FAIL rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| F-ADR-01 | Sections missing or empty | Context, Options considered, Decision and Consequences must all be present and written in. Missing, empty or still a placeholder → FAIL. | The four together are what makes it a record rather than a note. Consequences is the one that gets dropped, and it is the one the future reader needs. |
+| F-ADR-02 | Fewer than two options | At least two options under `### ` headings. One or none → FAIL. | One option is a preference. Recording it as a decision is how a preference acquires the authority of one. |
+| F-ADR-03 | Normative language | No `must` / `shall` / `should` / `debe` / `tiene que` (and their forms) in **Decision** or **Consequences**. Quoted text and code are exempt. → FAIL. | This is the rule that makes it an ADR. An obligation written here is a requirement that no acceptance criterion covers and no gate reads, competing with the spec for authority over the implementation. |
+| F-ADR-04 | Status not actionable | `Status` must be `Accepted` or `Superseded by ADR-NNN`. Anything else → FAIL. | A decision is live or it was replaced by a named one. "Obsolete" with no successor leaves the reader no thread to pull. |
+| F-ADR-05 | Number missing or taken | The filename must be `adr-NNN-title.md` and NNN must be unused in `docs/adr/`. → FAIL. | The number is the document's identity: it is how a successor names what it supersedes. Two decisions on one number make every reference ambiguous. |
+
+### WARNING rules
+
+| ID | Check | Precise description | Basis |
+|---|---|---|---|
+| W-ADR-01 | Longer than it should be | More than ~45 lines of prose against the skill's ceiling of about 30. | A long ADR stops being read, and an ADR nobody reads is a decision nobody can find. What belongs to the design belongs in the spec. |
+| W-ADR-02 | No ticket | The header names no ticket. | Some decisions predate any ticket, so this is a reminder — but without it nothing connects the decision to the work that caused it. |
+
+
+---
+
+
 ## Quantitative Summary
 
 | Area | FAIL rules | WARNING rules | Total |
 |---|---|---|---|
-| PRD | 9 | 5 | 14 |
+| PRD | 10 | 6 | 16 |
 | Spec / Fix-Plan | 16 | 3 | 19 |
 | Threat Model | 7 | 2 | 9 |
 | SAST | 19 | 1 | 20 |
 | Test Run Report | 8 | 1 | 9 |
 | Module Verify | 6 | 3 | 9 |
-| **Total** | **65** | **15** | **80** |
+| ADR | 5 | 2 | 7 |
+| **Total** | **71** | **18** | **89** |
 
 ---
 

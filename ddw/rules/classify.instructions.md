@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.2.0
+version: 2.3.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -280,6 +280,13 @@ the ticket's branch, never on `main`.
 
 Along with the tier, the classification records **`autonomy`**, and the CLASSIFY box shows it so the
 user sees what they are agreeing to before anything is written.
+
+**Showing the value is not telling them there is a choice.** A line reading `autonomy: assisted`
+means nothing to somebody who does not already know the other mode exists — and one run that did
+exactly that was following this section to the letter. So when the box goes up, offer both, the
+way § *Asking* in the orchestrator says: the default, the alternative, and one sentence on what the
+alternative costs. Once, here, before they agree. **Never infer `minimal` from impatience**, and
+never let it be chosen by someone who was not told what it removes.
 
 - **`assisted`** — the default, and what DDW has always done: every arrow waits for the user. Use
   this unless the user asked otherwise, in those words or plainly equivalent ones ("no me preguntes

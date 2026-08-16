@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # install.sh — install DDW (Dilux Development Workflow) into any repo.
 #
-#   bash install.sh [/path/to/repo] [--target <tool>|all]
+#   bash install.sh [/path/to/repo] [--target <tool>|all] [--mode plugin|dropin]
+#
+# Two ways in. `--mode plugin` hands the job to each tool's own plugin CLI and
+# wires what a manifest cannot carry (Copilot's gates are user-level hooks);
+# it covers Claude Code, Copilot CLI and OpenCode. `--mode dropin` copies the
+# method into the repo and works for all six tools. Without --mode it always
+# asks — naming a tool does not answer this — and falls to drop-in only where
+# there is no terminal to ask on, saying so when it does.
 #
 # The same command installs and updates. On a repo that already has DDW it says
 # so, defaults to refreshing the tools already wired there, and names any it is
@@ -26,6 +33,7 @@ set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR=""
 TARGETS=""
+MODE=""
 
 # Every directory under adapters/ holding an adapter.json is a valid target.
 AVAILABLE=()
@@ -49,6 +57,14 @@ while [ $# -gt 0 ]; do
     # what installing and uninstalling already are: something the user runs,
     # outside the ticket, with the hooks looking on.
     --method-only) METHOD_ONLY=1; shift ;;
+    # plugin | dropin. Absent and non-interactive means dropin, which is what
+    # every caller of this script has always got.
+    --mode)
+      [ $# -ge 2 ] || { echo "--mode needs a value: plugin or dropin." >&2; exit 1; }
+      MODE="$2"; shift 2 ;;
+    --mode=*) MODE="${1#*=}"; shift ;;
+    --plugin) MODE="plugin"; shift ;;
+    --dropin) MODE="dropin"; shift ;;
     -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) TARGET_DIR="$1"; shift ;;
   esac
@@ -56,6 +72,94 @@ done
 
 TARGET="$(cd "${TARGET_DIR:-$PWD}" && pwd)"
 [ "$TARGET" = "$SELF" ] && { echo "The destination is the DDW repo itself; nothing to do." >&2; exit 1; }
+
+# ── The banner ────────────────────────────────────────────────────────────────
+#
+# Someone running this has usually been sent a one-line command and has no idea
+# what is about to be written into their repository. The installer used to open
+# with "Which tool will you be working with?", which asks them to decide
+# something before telling them what it is for. So: what DDW is, and what this
+# is about to do, before it does any of it.
+RULE="────────────────────────────────────────────────────────────────────────"
+VERSION="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['version'])" \
+  "$SELF/.claude-plugin/plugin.json" 2>/dev/null || echo "")"
+
+# What we are running on. It is printed because half of what can go wrong here
+# is environmental — a CLI that is not on PATH, a Windows shell that is not the
+# one the tool installed itself into — and a user who can see what was detected
+# can tell in one glance whether the installer is looking at the same machine
+# they think they are on.
+case "$(uname -s)" in
+  Linux)
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+      OS_NAME="WSL2 · $(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME" || echo Linux)"
+    else
+      OS_NAME="$(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME" || echo Linux)"
+    fi ;;
+  Darwin)  OS_NAME="macOS $(sw_vers -productVersion 2>/dev/null || true)" ;;
+  MINGW*|MSYS*|CYGWIN*) OS_NAME="Windows · $(uname -o 2>/dev/null || echo "POSIX shell")" ;;
+  *)       OS_NAME="$(uname -s)" ;;
+esac
+
+echo
+echo "$RULE"
+if [ -n "$VERSION" ]; then
+  echo "  Dilux Development Workflow (DDW)  ·  v$VERSION"
+else
+  echo "  Dilux Development Workflow (DDW)"
+fi
+echo "$RULE"
+cat <<'ABOUT'
+
+  A pipeline your coding agent has to walk, instead of a prompt asking it
+  nicely to be careful. Six phases, and it cannot cross into the next one
+  until the evidence for this one is on disk. Hooks refuse the writes that
+  would skip a step.
+
+ABOUT
+echo "  Running on: $OS_NAME"
+echo
+
+# ── Plugin or drop-in ─────────────────────────────────────────────────────────
+#
+# Always asked, unless --mode already answered it. Naming a tool says which
+# agent you work with; it does not say whether you want the method copied into
+# the repository or managed by that agent, and the two leave very different
+# repositories behind. A default nobody was shown is how someone ends up with
+# `.ddw/` committed when they wanted a plugin.
+#
+# With no terminal to ask on there is no decision to be had, so it falls to
+# drop-in and says which way it went. Silence is the thing being removed here.
+if [ -z "$MODE" ] && [ -t 0 ]; then
+  cat <<'MODES'
+  How do you want DDW installed?
+
+    1) Plugin   — your tool fetches and manages it. Nothing of DDW is
+                  committed to this repo, and updates come from the tool.
+                  Available for Claude Code, Copilot CLI and OpenCode.
+    2) Drop-in  — the method is copied into this repo, under .ddw/. Your
+                  teammates get it on clone, and you can edit the rules.
+                  Available for all six tools.
+
+MODES
+  printf "Choice [1]: "
+  { read -r MOPT < /dev/tty; } 2>/dev/null || MOPT=1
+  case "${MOPT:-1}" in
+    1) MODE="plugin" ;;
+    2) MODE="dropin" ;;
+    *) echo "Invalid choice." >&2; exit 1 ;;
+  esac
+  echo
+elif [ -z "$MODE" ]; then
+  echo "  No --mode given and no terminal to ask on: installing as a drop-in."
+  echo "  Pass --mode plugin to have your tool manage DDW instead."
+  echo
+fi
+MODE="${MODE:-dropin}"
+case "$MODE" in
+  plugin|dropin) ;;
+  *) echo "--mode takes plugin or dropin, not '$MODE'." >&2; exit 1 ;;
+esac
 
 label_of() {  # read the human label out of a recipe
   python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['label'])" \
@@ -97,7 +201,7 @@ PY
 )"
 
 # ── Pick target(s) ────────────────────────────────────────────────────────────
-if [ -z "$TARGETS" ] && [ -n "$INSTALLED" ]; then
+if [ -z "$TARGETS" ] && [ -n "$INSTALLED" ] && [ "$MODE" = "dropin" ]; then
   echo "DDW is already installed in this repo, wired for: $INSTALLED"
   echo
   echo "  1) Update it — refresh those and leave everything of yours alone"
@@ -151,12 +255,231 @@ for t in $TARGETS; do
   [ -f "$SELF/adapters/$t/adapter.json" ] || { echo "Unknown target: $t" >&2; exit 1; }
 done
 
-if [ -n "$INSTALLED" ]; then
-  echo "DDW → updating: $TARGET"
-else
-  echo "DDW → installing into: $TARGET"
+LABELS=""
+for t in $TARGETS; do LABELS="$LABELS, $(label_of "$t")"; done
+LABELS="${LABELS#, }"
+
+# ── Plugin mode ───────────────────────────────────────────────────────────────
+#
+# Three tools have a way in that somebody has actually driven: Claude Code and
+# Copilot CLI through their own plugin CLIs, OpenCode through one entry in its
+# config. Codex, Cursor and Gemini ship a manifest in this repository and no
+# install procedure exists for them anywhere — so this says that, rather than
+# running something plausible and reporting success.
+#
+# Nothing here needs administrator rights on any platform: every path written
+# is under $HOME or inside the repo you named.
+PLUGIN_CAPABLE=" claude copilot opencode "
+
+# Copilot's plugin manifest is read for its skills and its hooks are IGNORED, so
+# the gates have to ride user-level hooks. Written here rather than left to a
+# human following a document: an install that stops after the skills looks alive
+# and enforces nothing, which is the worst state of the three.
+copilot_hooks() {
+  python3 - "$1" <<'PY'
+import glob, json, os, re, sys
+home = os.path.expanduser("~")
+cfg = os.path.join(home, ".copilot", "config.json")
+root = None
+try:
+    with open(cfg, encoding="utf-8") as fh:
+        # JSONC: the file opens with two `//` lines saying it is managed
+        # automatically. Parsed as strict JSON it raises, the lookup fell to the
+        # "not registered yet" branch, and the install stopped one step short of
+        # the gates while reporting the skills as in — the exact half-install
+        # that branch exists to warn about.
+        raw = re.sub(r"^\s*//.*$", "", fh.read(), flags=re.M)
+    for p in (json.loads(raw) or {}).get("installedPlugins") or []:
+        if isinstance(p, dict) and str(p.get("name", "")) == "ddw":
+            root = p.get("cache_path")
+except (OSError, ValueError, AttributeError):
+    pass
+if not root:
+    # What is on disk, when the manifest cannot say. The scripts are the thing
+    # being pointed at, so their presence is the test.
+    for cand in glob.glob(os.path.join(home, ".copilot", "installed-plugins", "*", "*")):
+        if os.path.isdir(os.path.join(cand, "adapters", "copilot", "scripts")):
+            root = cand
+            break
+if not root:
+    print("  ⚠ copilot: the plugin's install path is not in ~/.copilot/config.json yet.")
+    print("    The skills are in; the GATES are not. Re-run this once the plugin is")
+    print("    registered, or the install enforces nothing.")
+    sys.exit(0)
+# settings.json, never config.json: hooks written to config.json are migrated on
+# a LATER start, and every session until then runs with no gates at all.
+path = os.path.join(home, ".copilot", "settings.json")
+try:
+    with open(path, encoding="utf-8") as fh:
+        settings = json.load(fh) or {}
+except (OSError, ValueError):
+    settings = {}
+scripts = os.path.join(root, "adapters", "copilot", "scripts")
+def hook(script, timeout):
+    return [{"type": "command",
+             "bash": "DDW_PLUGIN_ROOT=%s bash %s" % (root, os.path.join(scripts, script)),
+             "timeoutSec": timeout}]
+# Merge: touch nothing but `hooks`, and inside it nothing but ours.
+hooks = settings.get("hooks") if isinstance(settings.get("hooks"), dict) else {}
+hooks["sessionStart"] = hook("session-start.sh", 10)
+hooks["preToolUse"] = hook("pre-tool-use.sh", 15)
+hooks["postToolUse"] = hook("post-write.sh", 15)
+settings["hooks"] = hooks
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(settings, fh, indent=2)
+    fh.write("\n")
+print("  ✓ ~/.copilot/settings.json  the three gates wired to %s" % root)
+PY
+}
+
+opencode_register() {
+  python3 - <<'PY'
+import json, os, re
+home = os.path.expanduser("~")
+base = os.path.join(home, ".config", "opencode")
+path = None
+for name in ("opencode.json", "opencode.jsonc"):
+    if os.path.exists(os.path.join(base, name)):
+        path = os.path.join(base, name)
+        break
+path = path or os.path.join(base, "opencode.json")
+raw = ""
+try:
+    with open(path, encoding="utf-8") as fh:
+        raw = fh.read()
+except OSError:
+    pass
+try:
+    # jsonc: strip whole-line comments only, which is what this file ever has.
+    cfg = json.loads(re.sub(r"^\s*//.*$", "", raw, flags=re.M)) if raw.strip() else {}
+except ValueError:
+    print("  ⚠ opencode: %s is not readable as JSON, so it was left untouched." % path)
+    print("    Add \"plugin\": [\"ddw@git+https://github.com/soydiloreto/"
+          "dilux-development-workflow.git\"] by hand.")
+    raise SystemExit(0)
+entry = "ddw@git+https://github.com/soydiloreto/dilux-development-workflow.git"
+plugins = cfg.get("plugin")
+plugins = list(plugins) if isinstance(plugins, list) else []
+if not any(isinstance(p, str) and p.startswith("ddw@") for p in plugins):
+    plugins.append(entry)
+cfg["plugin"] = plugins          # merge: every other key of yours is preserved
+os.makedirs(base, exist_ok=True)
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(cfg, fh, indent=2)
+    fh.write("\n")
+print("  ✓ %s  plugin registered" % path)
+print("    OpenCode clones it on the next start, so that first launch is slower.")
+PY
+}
+
+if [ "$MODE" = "plugin" ]; then
+  echo "$RULE"
+  echo "  DDW is installing as a plugin"
+  echo "  Wiring for:  $LABELS"
+  echo "  Into:        $TARGET"
+  echo "$RULE"
+  echo
+  echo "  Nothing of DDW is written into your repo. The pipeline appears when"
+  echo "  you open your agent; the first ticket is what creates .ddw-state.json."
+  echo
+  PLUGIN_FAILED=""
+  for t in $TARGETS; do
+    case "$PLUGIN_CAPABLE" in
+      *" $t "*) ;;
+      *)
+        echo "  ⚠ $(label_of "$t"): no plugin install exists for it."
+        echo "    The manifest is in this repository, but no procedure for putting it"
+        echo "    in place has been written or driven. Use --mode dropin for this one."
+        PLUGIN_FAILED="yes"; continue ;;
+    esac
+    echo "  ── $(label_of "$t")"
+    case "$t" in
+      claude|copilot)
+        # The tool's own package manager, not a reimplementation of it: writing
+        # its cache layout and manifests by hand is how an installer comes to own
+        # a format that belongs to somebody else's product.
+        if ! command -v "$t" >/dev/null 2>&1; then
+          echo "  ⚠ \`$t\` is not on PATH, so its plugin CLI cannot be reached."
+          echo "    Install the CLI first, or use --mode dropin."
+          PLUGIN_FAILED="yes"; continue
+        fi
+        # The marketplace is this working copy, so what gets installed is what is
+        # in front of you — including changes not pushed anywhere yet.
+        "$t" plugin marketplace add "$SELF" >/dev/null 2>&1 \
+          || "$t" plugin marketplace update dilux >/dev/null 2>&1 || true
+        if [ "$t" = "claude" ]; then
+          ( cd "$TARGET" && claude plugin install ddw@dilux --scope project ) \
+            && echo "  ✓ installed  ddw@dilux (scope: project — your teammates get it on clone)" \
+            || { echo "  ⚠ claude: the plugin install did not complete."; PLUGIN_FAILED="yes"; }
+        else
+          copilot plugin install ddw@dilux \
+            && echo "  ✓ installed  ddw@dilux (the 17 skills)" \
+            || { echo "  ⚠ copilot: the plugin install did not complete."; PLUGIN_FAILED="yes"; }
+          copilot_hooks "$SELF"
+        fi ;;
+      opencode) opencode_register ;;
+    esac
+    echo
+  done
+  echo "$RULE"
+  echo "  DDW installed as a plugin"
+  echo "$RULE"
+  echo
+  echo "  Open your agent in $TARGET and ask for the work you want done."
+  echo "  If a session was already open, it is running the previous wiring:"
+  echo "  hooks and settings are read at startup."
+  echo
+  [ -n "$PLUGIN_FAILED" ] && exit 1
+  exit 0
 fi
-echo "       target(s): $TARGETS"
+
+echo "$RULE"
+if [ -n "$INSTALLED" ]; then
+  # The two verbs stay exactly as they were. A check asserts a first run says
+  # one and a re-run the other, and a mutation flips them to prove the check
+  # bites; rewording them here would have made that mutation a no-op — an
+  # unkillable mutant reads as a hole in the suite, and it is not one.
+  echo "  DDW is updating: $TARGET"
+  echo "  Wiring for:      $LABELS"
+  echo "$RULE"
+  cat <<'PLAN_UPDATE'
+
+  What this refreshes
+    .ddw/                the method — rules, phase graph, validators
+    the tool's wiring    skills, agents, hooks, settings
+
+  What it leaves exactly as it is
+    Your code, your documents, and your phase: `.ddw-state.json` is never
+    touched, so a ticket in flight stays where it is. Any file of yours
+    whose name DDW also uses is reported and left alone.
+
+  Nothing is deleted. `uninstall.sh` reverses the install using the
+  manifest it wrote.
+
+PLAN_UPDATE
+else
+  echo "  DDW is installing into: $TARGET"
+  echo "  Wiring for:             $LABELS"
+  echo "$RULE"
+  cat <<'PLAN_INSTALL'
+
+  What lands in your repo
+    .ddw/                the method — rules, phase graph, validators
+    the tool's directory skills, agents, hooks and settings for your agent
+    .ddw-installed.json  the manifest of everything DDW put here
+    AGENTS.md            a short activation block appended at the end
+    .gitignore           a block so the pipeline's runtime is never committed
+
+  What it will not touch
+    Your code and your documents. If you already have a file whose name DDW
+    also uses, yours stays and the collision is reported at the end.
+
+  Nothing is deleted, here or on an update. `uninstall.sh` reverses this
+  using the manifest.
+
+PLAN_INSTALL
+fi
 
 # A tool that is wired into this repo and not in this run keeps the wiring it
 # had. That is fine on purpose — but silently fine is how one tool ends up
@@ -252,6 +575,34 @@ done
 # ── 4. .gitignore ─────────────────────────────────────────────────────────────
 echo
 GITIGNORE="$TARGET/.gitignore"
+# An existing block is REPLACED, not left alone. "Already has the DDW block" was
+# true and useless: the day the pipeline started writing a new runtime file, an
+# updated repo kept a block that did not mention it, and the first `git add -A`
+# committed somebody's scratch. The block is DDW's, delimited by its own markers,
+# and every line outside them is untouched.
+if [ -f "$GITIGNORE" ] && grep -qF "# BEGIN DDW" "$GITIGNORE"; then
+  python3 - "$GITIGNORE" <<'PY'
+import sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    lines = fh.read().splitlines()
+out, skipping = [], False
+for line in lines:
+    if line.startswith("# BEGIN DDW"):
+        skipping = True
+        continue
+    if skipping:
+        if line.startswith("# END DDW"):
+            skipping = False
+        continue
+    out.append(line)
+while out and not out[-1].strip():
+    out.pop()
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(out) + ("\n" if out else ""))
+PY
+  DDW_GITIGNORE_NOTE="refreshed"
+fi
 if [ -f "$GITIGNORE" ] && grep -qF "# BEGIN DDW" "$GITIGNORE"; then
   echo "  ✓ .gitignore             already has the DDW block"
 else
@@ -261,16 +612,22 @@ else
       '#   .ddw-state.json  = which phase you are in; yours, not the repo'"'"'s' \
       '#   .ddw-paused/     = paused tickets' \
       '#   .ddw-sessions/   = live session markers' \
+      '#   .ddw-work/       = scratch the pipeline writes and re-reads (the commit message)' \
       '#   .ddw-journal.jsonl = transitions that landed; outlives the state file' \
       '#   .ddw/**/__pycache__/ = bytecode from running the method'"'"'s own scripts' \
       '.ddw-state.json' \
       '.ddw-paused/' \
       '.ddw-sessions/' \
+      '.ddw-work/' \
       '.ddw-journal.jsonl' \
       '.ddw/**/__pycache__/' \
       '# END DDW'
   } >> "$GITIGNORE"
-  echo "  ✓ .gitignore             DDW block added (the state is never committed)"
+  if [ "${DDW_GITIGNORE_NOTE:-}" = "refreshed" ]; then
+    echo "  ✓ .gitignore             DDW block refreshed (the runtime it names has changed)"
+  else
+    echo "  ✓ .gitignore             DDW block added (the state is never committed)"
+  fi
 fi
 
 if [ -n "$COLLISIONS" ]; then
@@ -282,8 +639,38 @@ if [ -n "$COLLISIONS" ]; then
 fi
 
 echo
-echo "Done. Fill in the \"Stack\" section of AGENTS.md and open your agent in $TARGET."
+echo "$RULE"
+if [ -n "$INSTALLED" ]; then
+  echo "  DDW updated  ·  $TARGET"
+else
+  echo "  DDW installed  ·  $TARGET"
+fi
+echo "$RULE"
+echo
+if [ -z "$INSTALLED" ]; then
+  cat <<'NEXT'
+  Before you start
+    1. Fill in the "Stack" section of AGENTS.md — how your project is built,
+       how its tests run, how it is linted. The pipeline reads that section
+       to know which commands are yours; guessing them is not allowed.
+    2. Open your agent in this repo. The pipeline activates on its own, on
+       your first message. You do not have to invoke it.
+    3. Ask for the work you want done, in your own words. It classifies the
+       request and takes it from there, one step at a time, waiting for you
+       at each one.
+
+NEXT
+else
+  cat <<'NEXT_UPDATE'
+  Next
+    1. Restart any agent session open on this repo — hooks and settings are
+       read at startup, so a running session keeps the previous wiring.
+    2. Carry on where you were. Your phase was not touched.
+
+NEXT_UPDATE
+fi
 # How to invoke DDW is printed per target above, by the adapter that knows: not
 # every tool exposes skills as /name, and this line used to promise /ddw-status
 # to all six.
-echo "The pipeline starts on its own. See the \"try:\" line above for how to call it."
+echo "  The \"try:\" line above shows how to call DDW by hand in your tool."
+echo

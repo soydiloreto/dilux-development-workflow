@@ -32,5 +32,9 @@
     "merge_key": "hooks"
   },
   "context_file": "AGENTS.md",
-  "trust_note": "Codex requires you to trust a command hook before it runs, and re-arms that gate whenever the hook's definition changes. Run /hooks in Codex and approve DDW's, or the pipeline is advisory only."
+  "trust_note": "Codex requires you to trust a command hook before it runs, and re-arms that gate whenever the hook's definition changes. Run /hooks in Codex and approve DDW's, or the pipeline is advisory only.",
+  "choice_prompt": {
+    "tool": "ask_user_question",
+    "note": "the ask_user_question tool (tabbed questionnaire)"
+  }
 }
