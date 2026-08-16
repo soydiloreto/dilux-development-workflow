@@ -211,6 +211,28 @@ MUTATIONS = [
      edit("ddw/scripts/hook-gate.py",
           "    if sealed != digest:",
           "    if False:")),
+    ("the spent proposal is consumed on the gate's word again, not the commit's",
+     # El defecto medido: git falla después del allow y la aprobación ya no
+     # está. Acá el consumo deja de mirar si HEAD lleva los bytes aprobados.
+     edit("ddw/scripts/hook-gate.py",
+          '    if head.returncode != 0:\n'
+          '        return\n'
+          '    if hashlib.sha256(head.stdout.strip().encode("utf-8")).hexdigest() != digest:\n'
+          '        return',
+          '    if head.returncode != 0:\n'
+          '        return')),
+    ("the post hook stops asking whether an approved commit has landed",
+     edit("ddw/scripts/hook-gate.py",
+          "        consume_spent_proposal(args.repo)",
+          "        pass")),
+    ("the turn that waits goes back to an arrow in the noise",
+     edit("ddw/orchestrator.md",
+          "## Your turn",
+          "## Ending a phase")),
+    ("a gated approval can arrive through the picker no hook can see",
+     edit("ddw/orchestrator.md",
+          "**The approvals the hooks measure are answered with a message, never with the picker.**",
+          "**Any approval may be taken from the picker like any other answer.**")),
     ("an ADR can order the implementation around again",
      edit("ddw/scripts/validate_adr.py", "    if offenders:", "    if False:")),
     ("one option is a decision again",

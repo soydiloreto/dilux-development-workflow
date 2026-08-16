@@ -696,12 +696,53 @@ def test_mostrar_un_mensaje_y_commitear_otro_es_rechazado(tmp_path):
     assert _commit(tmp_path).returncode == 2, "commiteó un mensaje que el usuario nunca vio"
 
 
-def test_el_permiso_se_gasta_en_un_commit(tmp_path):
+def _post(tmp_path):
+    """El PostToolUse que corre después de cada Bash — consumidor del permiso."""
+    return subprocess.run([sys.executable, GATE, "--mode", "post",
+                           "--state", str(tmp_path / ".ddw-state.json"),
+                           "--graph", GRAPH_PATH, "--repo", str(tmp_path)],
+                          input="{}", capture_output=True, text=True)
+
+
+def _git_commitea(tmp_path, mensaje=MENSAJE):
+    """Un commit real con los bytes aprobados, como lo dejaría `git commit -F`."""
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], env=env, check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "commit.gpgsign", "false"],
+                   env=env, check=True)
+    (tmp_path / "doc.md").write_text("x", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "doc.md"], env=env, check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", mensaje],
+                   env=env, check=True)
+
+
+def test_el_permiso_se_gasta_cuando_el_commit_existe(tmp_path):
+    """Gastarlo al PERMITIR era el defecto: el permiso lo gasta el commit en HEAD."""
     _repo_en_define(tmp_path)
     _propone(tmp_path)
     _habla_el_usuario(tmp_path)
     assert _commit(tmp_path).returncode == 0
-    assert _commit(tmp_path).returncode == 2, "un mensaje mostrado abrió el commit siguiente"
+    _git_commitea(tmp_path)          # el commit aprobado landeó de verdad
+    _post(tmp_path)                  # exit code ajeno: acá solo importa el consumo
+    assert _commit(tmp_path).returncode == 2, "un mensaje ya commiteado abrió el commit siguiente"
+
+
+def test_un_commit_que_fallo_no_gasta_el_permiso(tmp_path):
+    """El gate permitió, git falló (GPG sin TTY, pre-commit, índice vacío): la
+    aprobación tiene que seguir en pie y el reintento pasar sin otro turno.
+    La primera versión borraba proposal y sello al permitir, el modelo
+    encontraba `.ddw-work/` vacío, reescribía los mismos bytes y era rechazado
+    como nunca-visto. Medido, en la primera corrida manual que llegó acá."""
+    _repo_en_define(tmp_path)
+    _propone(tmp_path)
+    _habla_el_usuario(tmp_path)
+    assert _commit(tmp_path).returncode == 0
+    _git_commitea(tmp_path, "otro mensaje: el aprobado nunca llegó a HEAD")
+    _post(tmp_path)                  # corre igual tras el Bash fallido
+    assert (tmp_path / PROPOSAL).exists(), "el post consumió un permiso que ningún commit gastó"
+    assert _commit(tmp_path).returncode == 0, \
+        "el reintento del commit aprobado fue rechazado: el gate se comió la aprobación"
 
 
 def test_un_commit_por_fuera_del_archivo_es_rechazado(tmp_path):

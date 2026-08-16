@@ -23,6 +23,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -419,12 +420,45 @@ def commit_verdict(repo, command):
             "command: the refusal is the pause, not an obstacle to route around.\n"
             "If the user wants commits to stop waiting, that is `autonomy: minimal`, decided in "
             "CLASSIFY with the cost stated, not something to infer from impatience.")
+    # NOT consumed here. This runs before `git commit` does, and the first
+    # version unlinked proposal and seal at this point — so a commit that the
+    # gate allowed and git then refused (GPG signing with no TTY, a pre-commit
+    # hook, an empty index) had already lost both files. The model found
+    # `.ddw-work/` empty, rewrote the same approved bytes, and was refused as
+    # never-seen: the gate ate the approval and then blamed the user for its
+    # absence. Measured, on the first manual run that reached this gate. The
+    # permission is spent by the commit EXISTING — `consume_spent_proposal`,
+    # from the post hook — not by the gate agreeing.
+    return None
+
+
+def consume_spent_proposal(repo):
+    """Unlink proposal and seal once the commit they approved is on HEAD.
+
+    Called from `--mode post`, which fires after every tool call — so right
+    after the `git commit` that used them. Compares HEAD's message to the
+    proposal the same way the seal does (stripped bytes), and touches nothing
+    unless they match: a failed commit leaves the approval standing, and the
+    same `git commit -F` can be retried without costing the user another turn.
+    """
+    proposal, seal = _paths(repo)
+    digest = _digest(proposal)
+    if digest is None:
+        return
+    try:
+        head = subprocess.run(["git", "-C", repo or ".", "log", "-1", "--format=%B"],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return                       # no repo, no git, no verdict — leave it be
+    if head.returncode != 0:
+        return
+    if hashlib.sha256(head.stdout.strip().encode("utf-8")).hexdigest() != digest:
+        return
     for path in (proposal, seal):    # spent: the next commit is proposed afresh
         try:
             os.unlink(path)
         except OSError:
             pass
-    return None
 
 
 def allow(dialect):
@@ -489,6 +523,10 @@ def main():
     _VALIDATOR = vt = _load_validator()
 
     if args.mode == "post":
+        # Bookkeeping before judgment: if the commit the user approved now
+        # exists on HEAD, its proposal and seal are spent. This decides nothing
+        # about the state and never fails the hook.
+        consume_spent_proposal(args.repo)
         # Not every tool's post hook can refuse. On the ones that cannot, saying
         # it is all there is — and saying it is still worth doing.
         _refuse = report_post if args.dialect in POST_CANNOT_BLOCK else deny
