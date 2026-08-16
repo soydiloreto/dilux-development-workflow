@@ -74,9 +74,15 @@ wins.
   - **QUERY** (informational question) → `💬` Answer directly. Do not touch state. Done.
     - Allowed tools: reading files, searching the codebase.
     - Blocked actions: writing files, creating branches, running tests, committing.
-  - **A request that touches code** → transition to `CLASSIFY`. The tier is determined there.
+  - **A request that touches code** → write `IDLE→CLASSIFY` **in this same response, before the
+    classification work**. The tier is determined there. The request you are answering is the
+    approval for this arrow — the things worth confirming (tier, ticket, autonomy) do not exist
+    until CLASSIFY produces them. Classifying while the state still says IDLE defers this arrow to
+    the user's ok, and that ok then owes two transitions where the hook lands one: the user pays an
+    extra turn to approve bookkeeping. Measured on two consecutive manual runs.
   - **A product ideation/definition request** (explore an idea, define functionality, write PRDs
-    without implementing) → transition to `CLASSIFY`. The tier resolves to `DISCOVERY` there.
+    without implementing) → the same arrow, at the same moment. The tier resolves to `DISCOVERY`
+    there.
   - **Flow continuation** ("yes", "go ahead", "sure") → do NOT reclassify. Continue the active flow.
 
 ### If `phase` is NOT `IDLE` (work in progress)
@@ -286,7 +292,10 @@ the pipeline behind it.
 
 `.ddw-state.json` carries `autonomy`, set in CLASSIFY. Absent or `null` reads as `"assisted"`.
 
-**`assisted`** — what everything above describes: every arrow waits for the user.
+**`assisted`** — what everything above describes: every arrow waits for the user. The arrow the
+user's own message just took — `IDLE→CLASSIFY` in the response to the request that names it — is
+the waiting already answered, not skipped: asking permission to classify what was just asked of you
+is a rubber stamp, and the section below says what rubber stamps do to approvals.
 
 **`minimal`** — the arrows stop waiting, and **nothing else changes**. Same eight gates, same
 receipts, refused by the same hook over the same bytes. What goes away is asking a person to

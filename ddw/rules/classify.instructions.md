@@ -1,12 +1,31 @@
 ---
 applyTo: '**'
-version: 2.3.0
+version: 2.4.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
 
 **Goal:** understand the codebase, classify the user's request, and prepare the state for the
 pipeline.
+
+---
+
+## Step 0: Enter the phase first
+
+Write `IDLE → CLASSIFY` **before any classification work**, in the same response that answers the
+user's request:
+
+```bash
+.ddw/scripts/transition.py --to CLASSIFY --action "clasificar: <the request, in a few words>"
+```
+
+Nothing here waits, in either autonomy mode: the user just spoke, and this arrow is what their
+message asked for. What waits under `assisted` is the NEXT one — the ok that closes this phase pays
+`CLASSIFY → DEFINE` and nothing else, which is also all the closing banner may promise. Classifying
+while the state still says IDLE looks harmless and costs the user a turn: their ok then owes two
+transitions, the hook (correctly) lands only one, and the second sits until an ok that decides
+nothing. Measured on two consecutive manual runs, with the banner promising an arrow the
+enforcement could not let it deliver.
 
 ---
 
