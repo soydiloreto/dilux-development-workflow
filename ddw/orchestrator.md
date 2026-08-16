@@ -254,6 +254,34 @@ two different products.
 Free text is still right where the answer is genuinely open — a title, a reason, a decision nobody
 has framed yet. The rule is about the questions whose answers you could list.
 
+**The approvals the hooks measure are answered with a message, never with the picker.** An arrow
+under `assisted`, and the commit whose message the user was shown, are held by hooks that count the
+user's turns — and the only turn a hook can see is a submitted message. A picker answer fires no
+event any hook receives: the user would click "yes" and the enforcement would still be waiting for
+a person, refusing the very act they just approved. So the picker is for decisions about content —
+tier, stack, whether to split — and the go-ahead for a gated act is a turn: show the banner below,
+END YOUR RESPONSE, and act when the user's message arrives.
+
+## Your turn
+
+When a response ends waiting on the user — an arrow to approve, a commit to confirm, a question a
+gate hangs on — its last lines are this banner, and nothing comes after it:
+
+```
+────────────────────────────────────────
+🙋 YOUR TURN — <the one question being asked>
+   On your OK: <what that answer buys — the arrow, the commit, the phase>
+────────────────────────────────────────
+```
+
+The `🙋` marker is fixed; the words follow the language of the conversation (`TU TURNO — … Al
+confirmar: …`). One banner per response, and only when the response actually waits: a banner over
+a question that was already answered, or none at all, teaches the reader that the banner means
+nothing — and the reader it exists for is the one skimming a long run for the moment they are
+needed. The second line exists so that approving is never approving blind: it names what the
+confirmation sets in motion, which is also the bound on what it approves — the immediate step, not
+the pipeline behind it.
+
 ## Autonomy
 
 `.ddw-state.json` carries `autonomy`, set in CLASSIFY. Absent or `null` reads as `"assisted"`.

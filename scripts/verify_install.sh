@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=561
+EXPECT_CHECKS=563
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=582
+EXPECT_MUTATIONS=586
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5650,6 +5650,22 @@ assert not missing, (
     "these adapters do not say how their tool asks a question with options, so the model has "
     "nothing to reach for and falls back to prose: " + ", ".join(missing))
 PYCHOICE
+
+# ── The turn that waits says so, and the picker cannot approve a gated act ────
+#
+# Measured on the first manual run: the moment the pipeline needed the user was
+# marked with an arrow character among forty lines of summary, and the user
+# asked for something they could not miss. And the obvious "make every
+# confirmation a picker" is a trap: no hook receives a picker answer, so the
+# turn counter holding the commit gate would never move and the gate would
+# refuse the act the user just approved.
+grep -q '^## Your turn' "$SELF/ddw/orchestrator.md" \
+  && grep -q '🙋 YOUR TURN' "$SELF/ddw/orchestrator.md" \
+  && ok "a response that ends waiting on the user ends in the banner that says so" \
+  || bad "the orchestrator no longer tells the model how to mark the turn that waits, and the ask goes back to an arrow in the noise"
+grep -q 'answered with a message, never with the picker' "$SELF/ddw/orchestrator.md" \
+  && ok "the approvals the hooks measure are kept out of the picker no hook can see" \
+  || bad "nothing stops a gated approval from moving into the picker, whose answer fires no event any hook receives"
 
 # Reconstructing the state from an Edit whose old_string appears more than once
 # means guessing which occurrence was meant — and the guess decides what gets

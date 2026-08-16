@@ -19,6 +19,38 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.23.0] — Unreleased
+
+### Fixed
+
+- **The commit gate ate the approval when git failed after the allow.** The gate
+  unlinked proposal and seal the moment it permitted the commit — before `git
+  commit` had run. A commit that then failed (measured: GPG signing with no TTY
+  for the pinentry) had already lost both files; the model found `.ddw-work/`
+  empty, rewrote the same approved bytes, and was refused as never-seen — the
+  gate consumed the user's approval and then blamed its absence on the user.
+  The permission is now spent by the commit EXISTING: the post hook, which runs
+  after every shell call, unlinks the pair only once HEAD carries the approved
+  bytes. A failed commit leaves the approval standing and the same
+  `git commit -F` retries without costing the user another turn.
+
+### Added
+
+- **The turn that waits says so.** When a response ends waiting on the user —
+  an arrow to approve, a commit to confirm — its last lines are now a fixed
+  banner (`🙋 YOUR TURN — …`, worded in the conversation's language) naming the
+  one question asked and what the confirmation sets in motion. Measured on the
+  first manual run: the moment the pipeline needed a human was an arrow
+  character among forty lines of summary.
+
+- **And the picker cannot approve a gated act.** The obvious next step —
+  "make every confirmation a picker" — is written down as the trap it is: no
+  hook receives a picker answer (Claude Code closed the feature request as not
+  planned), so the turn counter holding the commit gate would never move and
+  the gate would refuse the very act the user just approved. Content decisions
+  go to the picker; the go-ahead for a gated act is a message, and the
+  orchestrator now says which is which and why.
+
 ## [0.22.0] — Unreleased
 
 ### Added
