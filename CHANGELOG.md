@@ -19,7 +19,7 @@ move at different speeds. So the promise is specific:
 
 ---
 
-## [0.21.0] — Unreleased
+## [0.22.0] — Unreleased
 
 ### Added
 
@@ -235,6 +235,8 @@ move at different speeds. So the promise is specific:
   mention it, and the first `git add -A` would have committed someone's scratch.
   The block is replaced on every run now, delimited by its own markers, with
   every line outside them untouched.
+
+## [0.21.0] — Unreleased
 
 ### Fixed — SECURITY
 

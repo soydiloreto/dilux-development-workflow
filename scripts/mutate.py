@@ -2277,15 +2277,11 @@ MUTATIONS = [
           "    if rel == INSTALL_MANIFEST:", "    if False:")),
     # Los cuatro que el libro de cuentas todavía debía.
     ("the PRD validator skill stops naming the rule it is the only one that applies",
-     multi(
-         # Dos veces en el mismo archivo: la fila del catálogo y el rango de la
-         # cabecera. Una sola edición la tapa la otra.
-         edit("skills/ddw-validate-prd/SKILL.md",
-              "| F-PRD-09 | An AC matches none of the five EARS patterns",
-              "| F-PRD-XX | An AC matches none of the five EARS patterns"),
-         edit("skills/ddw-validate-prd/SKILL.md",
-              "F-PRD-09 (FAIL) and W-PRD-01 to W-PRD-05 (WARNING)",
-              "the FAIL rules and W-PRD-01 to W-PRD-05 (WARNING)"))),
+     # La cabecera ahora nombra un rango (F-PRD-01 to F-PRD-10), así que el
+     # literal F-PRD-09 vive solo en la fila del catálogo.
+     edit("skills/ddw-validate-prd/SKILL.md",
+          "| F-PRD-09 | An AC matches none of the five EARS patterns",
+          "| F-PRD-XX | An AC matches none of the five EARS patterns")),
     ("the PRD template goes back to acceptance criteria in prose the validator cannot match",
      # Las CUATRO apariciones: el check pregunta si la palabra está en el
      # archivo, y tres ejemplos más una nota sobre el idioma la mantienen viva
