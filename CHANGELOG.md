@@ -19,6 +19,23 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.24.0] — Unreleased
+
+### Fixed
+
+- **The user's ok owed two arrows, and the banner promised one it could not
+  deliver.** Nothing said when `IDLE→CLASSIFY` is written, so the model
+  classified while the state still said IDLE and deferred the arrow to the
+  user's confirmation — which then owed two transitions where the hook
+  (correctly) lands one. The user paid an extra ok that decided nothing, on two
+  consecutive manual runs, with the closing banner promising "transición a
+  DEFINE" while the enforcement could only land the bookkeeping. Now the arrow
+  into CLASSIFY is taken in the response that answers the request — the request
+  is the approval; the things worth confirming do not exist until CLASSIFY
+  produces them — and the single ok pays `CLASSIFY→DEFINE`, which is also all
+  the banner may promise. Written in the orchestrator's IDLE section, the
+  `assisted` definition, and CLASSIFY's new Step 0.
+
 ## [0.23.0] — Unreleased
 
 ### Fixed

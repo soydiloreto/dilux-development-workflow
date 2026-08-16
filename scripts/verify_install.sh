@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=563
+EXPECT_CHECKS=565
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=586
+EXPECT_MUTATIONS=588
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5666,6 +5666,21 @@ grep -q '^## Your turn' "$SELF/ddw/orchestrator.md" \
 grep -q 'answered with a message, never with the picker' "$SELF/ddw/orchestrator.md" \
   && ok "the approvals the hooks measure are kept out of the picker no hook can see" \
   || bad "nothing stops a gated approval from moving into the picker, whose answer fires no event any hook receives"
+
+# ── The arrow into CLASSIFY is taken by the request, not owed to the ok ───────
+#
+# Measured on two consecutive manual runs: the model classified while the state
+# still said IDLE, so the user's single ok owed two transitions, the hook
+# (correctly) landed one, and the second sat waiting for an ok that decided
+# nothing — with the banner promising an arrow the enforcement could not let it
+# deliver.
+grep -q '^## Step 0: Enter the phase first' "$SELF/ddw/rules/classify.instructions.md" \
+  && grep -q -- '--to CLASSIFY' "$SELF/ddw/rules/classify.instructions.md" \
+  && ok "CLASSIFY is entered before the classification work, in the response that answers the request" \
+  || bad "nothing tells the model when IDLE→CLASSIFY is written, so it defers the arrow and the user's ok owes two transitions"
+grep -q 'in this same response, before the' "$SELF/ddw/orchestrator.md" \
+  && ok "the orchestrator's IDLE section takes the arrow the user's request already approved" \
+  || bad "the orchestrator went back to a timeless 'transition to CLASSIFY', and the extra ok that decides nothing returns"
 
 # Reconstructing the state from an Edit whose old_string appears more than once
 # means guessing which occurrence was meant — and the guess decides what gets
