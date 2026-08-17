@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=565
+EXPECT_CHECKS=567
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=588
+EXPECT_MUTATIONS=594
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5681,6 +5681,22 @@ grep -q '^## Step 0: Enter the phase first' "$SELF/ddw/rules/classify.instructio
 grep -q 'in this same response, before the' "$SELF/ddw/orchestrator.md" \
   && ok "the orchestrator's IDLE section takes the arrow the user's request already approved" \
   || bad "the orchestrator went back to a timeless 'transition to CLASSIFY', and the extra ok that decides nothing returns"
+
+# ── The banner promises one arrow, and a split child skips the rubber stamp ───
+#
+# Measured on the fourth manual run: one banner promised "commit + close the
+# run + open in DEFINE", the hook (correctly) landed one arrow, and the user
+# paid two extra oks. And the child's trip through CLASSIFY re-decided nothing:
+# tier, ticket and autonomy all existed before it — the split that named the
+# child was approved by the user, in a box, once.
+grep -q 'promises at most ONE arrow' "$SELF/ddw/orchestrator.md" \
+  && ok "the banner's promise is bounded to one arrow, said where every banner is defined" \
+  || bad "nothing stops a banner from promising a chain the hook will refuse, and the user pays the difference in oks"
+grep -q 'directly in the phase the split paused from' "$SELF/ddw/rules/define.instructions.md" \
+  && grep -q -- '--action "split: abrir' "$SELF/ddw/rules/define.instructions.md" \
+  && grep -q '_split_open_allowed' "$SELF/ddw/scripts/validate-transition.py" \
+  && ok "the split child opens where the split paused, and the edge the prose orders is one the gate proves" \
+  || bad "the Split Protocol and the validator disagree about how a child opens — prose ordering an edge the gate refuses is this repo's oldest defect"
 
 # Reconstructing the state from an Edit whose old_string appears more than once
 # means guessing which occurrence was meant — and the guess decides what gets

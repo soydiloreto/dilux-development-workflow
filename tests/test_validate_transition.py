@@ -792,3 +792,100 @@ def test_el_guard_de_pre_write_es_el_que_refusa_la_segunda_flecha(tmp_path):
     reason = write("--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1", "--action", "d")
     assert reason and "already landed in this turn" in reason, \
         "el guard dejó pasar la segunda flecha del turno: %r" % reason
+
+
+# ── El hijo de un split abre directo en la fase que el split pausó ───────────
+#
+# CLASSIFY existe para producir tier, ticket y autonomy — y para un hijo de
+# split los tres ya existen: los produjo el run del padre y el usuario aprobó
+# el split que nombró al hijo. Mandarlo por CLASSIFY re-decidía nada y cobraba
+# un turno que no decidía nada. La flecha `split:` salta el grafo como un
+# resume, así que cada parte de la prueba tiene que estar en el registro.
+
+def _split_history():
+    return [
+        entry("IDLE", "CLASSIFY", "clasificar"),
+        entry("CLASSIFY", "DEFINE", "clasificado FEATURE", tier="FEATURE", ticket="F-1"),
+        entry("DEFINE", "IDLE", "pause: split into F-1a/b", tier="FEATURE", ticket="F-1"),
+    ]
+
+
+def _open_child(dst="DEFINE", ticket="F-1a", tier="FEATURE", gates=None):
+    hist = _split_history()
+    old = state(history=list(hist))
+    new = state(phase=dst, tier=tier, ticket=ticket, gates=gates,
+                history=hist + [entry("IDLE", dst, "split: abrir %s" % ticket,
+                                      tier=tier, ticket=ticket)])
+    return old, new
+
+
+def test_el_hijo_de_un_split_abre_directo_donde_el_split_pauso():
+    old, new = _open_child()
+    assert refusal(old, new) is None
+
+
+def test_split_sin_pause_de_split_es_una_llave_maestra_refusada():
+    old = state()
+    new = state(phase="DEFINE", tier="FEATURE", ticket="F-1a",
+                history=[entry("IDLE", "DEFINE", "split: abrir F-1a",
+                               tier="FEATURE", ticket="F-1a")])
+    assert refusal(old, new), "split: sin pause del padre abrió DEFINE desde la nada"
+
+
+def test_el_hijo_abre_en_la_fase_del_pause_y_en_ninguna_otra():
+    old, new = _open_child(dst="PLAN")
+    assert refusal(old, new), "el hijo eligió fase: abrió en PLAN un split pausado en DEFINE"
+
+
+def test_un_ticket_que_no_deriva_del_padre_no_es_hijo():
+    old, new = _open_child(ticket="OTRA-9")
+    assert refusal(old, new), "un ticket ajeno pasó como hijo del split"
+
+
+def test_el_hijo_no_hereda_gates():
+    # Dos capas lo agarran — `_check_gate_owner` primero (IDLE no gana nada) y
+    # la rama del split después. El test fija el VEREDICTO, no cuál capa habla.
+    old, new = _open_child(gates={"define": True})
+    why = refusal(old, new)
+    assert why and "gate" in why.lower(), \
+        "el hijo abrió con gates que nunca ganó: %r" % why
+
+
+def test_el_tier_del_hijo_es_el_del_pause():
+    old, new = _open_child(tier="FIX")
+    assert refusal(old, new), "un split re-clasificó el trabajo al abrir el hijo"
+
+
+def test_un_split_que_el_journal_nunca_vio_es_refusado(tmp_path):
+    old, new = _open_child()
+    sp = tmp_path / ".ddw-state.json"
+    sp.write_text("{}", encoding="utf-8")
+    (tmp_path / ".ddw-journal.jsonl").write_text(
+        json.dumps(entry("IDLE", "CLASSIFY", "c")) + "\n", encoding="utf-8")
+    why = refusal(old, new, state_path=str(sp))
+    assert why and "journal" in why.lower(), \
+        "un pause forjado por shell avaló la apertura: %r" % why
+
+
+def test_el_journal_que_vio_el_split_lo_avala(tmp_path):
+    old, new = _open_child()
+    sp = tmp_path / ".ddw-state.json"
+    sp.write_text("{}", encoding="utf-8")
+    (tmp_path / ".ddw-journal.jsonl").write_text(
+        "\n".join(json.dumps(e) for e in _split_history()) + "\n", encoding="utf-8")
+    assert refusal(old, new, state_path=str(sp)) is None
+
+
+def test_un_pause_comun_del_padre_no_autoriza_un_split():
+    """La prueba es el pause DEL SPLIT, no cualquier pause: un padre pausado por
+    otra razón no tiene hijos que abrir."""
+    hist = [
+        entry("IDLE", "CLASSIFY", "clasificar"),
+        entry("CLASSIFY", "DEFINE", "clasificado FEATURE", tier="FEATURE", ticket="F-1"),
+        entry("DEFINE", "IDLE", "pause: lo retomo mañana", tier="FEATURE", ticket="F-1"),
+    ]
+    old = state(history=list(hist))
+    new = state(phase="DEFINE", tier="FEATURE", ticket="F-1a",
+                history=hist + [entry("IDLE", "DEFINE", "split: abrir F-1a",
+                                      tier="FEATURE", ticket="F-1a")])
+    assert refusal(old, new), "un pause cualquiera del padre avaló abrir un hijo de split"
