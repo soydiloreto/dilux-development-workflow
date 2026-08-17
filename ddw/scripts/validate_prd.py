@@ -303,22 +303,33 @@ def main():
         else:
             ok("F-PRD-08", "all mandatory sections present and written in")
 
-        # F-PRD-05: unique, gapless IDs.
-        dup_msgs = []
-        for prefix, items in (("FR", frs), ("NFR", nfrs), ("AC", acs)):
-            ids = [i for i, _ in items]
-            dupes = sorted({i for i in ids if ids.count(i) > 1})
-            if dupes:
-                dup_msgs.append(f"duplicated {', '.join(dupes)}")
-            nums = sorted(int(i.split('-')[1]) for i in set(ids))
-            gaps = [f"{prefix}-{n:02d}" for n in range(1, nums[-1] + 1)
-                    if nums and n not in nums] if nums else []
-            if gaps:
-                dup_msgs.append(f"missing {', '.join(gaps)}")
-        if dup_msgs:
-            fail("F-PRD-05", "; ".join(dup_msgs))
+        # F-PRD-05: unique, gapless IDs — of which there must BE some. Zero
+        # parsed used to read as "0 FR, 0 NFR, 0 AC — unique, gapless", a PASS,
+        # and with it F-PRD-01/03/06/09 all passed over empty lists: a PRD whose
+        # requirement lines miss the ID format cleared the whole battery having
+        # had nothing measured. Emptiness the document contradicts is a FAIL.
+        empty = [p for p, items in (("FR", frs), ("NFR", nfrs), ("AC", acs)) if not items]
+        if empty:
+            fail("F-PRD-05", "no %s parsed from the document. A PRD names its requirements as "
+                             "`FR-01:` / `NFR-01:` / `AC-01 (FR-xx):` bullets; lines in any "
+                             "other shape are invisible to every rule here, and a battery that "
+                             "measured nothing must not pass" % ", ".join(empty))
         else:
-            ok("F-PRD-05", f"{len(frs)} FR, {len(nfrs)} NFR, {len(acs)} AC — unique, gapless")
+            dup_msgs = []
+            for prefix, items in (("FR", frs), ("NFR", nfrs), ("AC", acs)):
+                ids = [i for i, _ in items]
+                dupes = sorted({i for i in ids if ids.count(i) > 1})
+                if dupes:
+                    dup_msgs.append(f"duplicated {', '.join(dupes)}")
+                nums = sorted(int(i.split('-')[1]) for i in set(ids))
+                gaps = [f"{prefix}-{n:02d}" for n in range(1, nums[-1] + 1)
+                        if nums and n not in nums] if nums else []
+                if gaps:
+                    dup_msgs.append(f"missing {', '.join(gaps)}")
+            if dup_msgs:
+                fail("F-PRD-05", "; ".join(dup_msgs))
+            else:
+                ok("F-PRD-05", f"{len(frs)} FR, {len(nfrs)} NFR, {len(acs)} AC — unique, gapless")
 
         # F-PRD-01: every FR referenced by at least one AC.
         ac_text = " ".join(t for _, t in acs)

@@ -889,3 +889,93 @@ def test_un_pause_comun_del_padre_no_autoriza_un_split():
                 history=hist + [entry("IDLE", "DEFINE", "split: abrir F-1a",
                                       tier="FEATURE", ticket="F-1a")])
     assert refusal(old, new), "un pause cualquiera del padre avaló abrir un hijo de split"
+
+
+# ── El gate pr resuelve por receipt, no por la rama del momento ──────────────
+#
+# El happy path del closeout DESTRUYE la rama (merge + delete), y el check
+# resolvía el PR por la rama actual: la corrida 4 terminó con el modelo
+# recreando la rama borrada para satisfacer al gate — un gate que enseña a
+# rodearlo. El receipt nombra el PR por número; el forge sigue siendo quien
+# dice en qué estado está.
+
+def _gh_stub(tmp_path):
+    b = tmp_path / "bin"
+    b.mkdir(exist_ok=True)
+    gh = b / "gh"
+    gh.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "$*" in\n'
+        '  *view*) out="${GH_VIEW_OUT}"; [ -z "$out" ] && out="{}"\n'
+        '          echo "$out"; exit "${GH_VIEW_RC:-0}";;\n'
+        '  *)      echo "${GH_LIST_OUT:-[]}"; exit "${GH_LIST_RC:-0}";;\n'
+        "esac\n", encoding="utf-8")
+    gh.chmod(0o755)
+    return str(b)
+
+
+def _pr_repo(tmp_path):
+    r = str(tmp_path / "prrepo")
+    os.makedirs(r)
+    subprocess.run(["git", "-C", r, "init", "-q"], check=True)
+    subprocess.run(["git", "-C", r, "-c", "user.email=t@t", "-c", "user.name=t",
+                    "-c", "commit.gpgsign=false", "commit", "-q",
+                    "--allow-empty", "-m", "base"], check=True)
+    subprocess.run(["git", "-C", r, "remote", "add", "origin",
+                    "https://github.com/example/example.git"], check=True)
+    subprocess.run(["git", "-C", r, "checkout", "-q", "-b", "feat/T-1-x"], check=True)
+    return r
+
+
+def _ask_pr(repo, binpath, **stub_env):
+    old = os.environ.copy()
+    os.environ["PATH"] = binpath + os.pathsep + os.environ["PATH"]
+    for k, v in stub_env.items():
+        os.environ[k] = v
+    try:
+        return vt._pr_evidence_missing(repo, {"ticket": "T-1"})
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+
+
+def test_el_gate_pr_sobrevive_al_merge_que_borra_la_rama(tmp_path):
+    repo, binpath = _pr_repo(tmp_path), _gh_stub(tmp_path)
+    # Se gana en la rama del ticket: el receipt queda escrito.
+    assert _ask_pr(repo, binpath, GH_LIST_OUT='[{"number":7,"state":"OPEN"}]') is None
+    assert os.path.exists(os.path.join(repo, ".ddw-sessions", "pr-T-1.json"))
+    # El happy path del cierre: merge, rama borrada, parados en la base.
+    subprocess.run(["git", "-C", repo, "checkout", "-q", "-b", "landing"], check=True)
+    subprocess.run(["git", "-C", repo, "branch", "-q", "-D", "feat/T-1-x"], check=True)
+    why = _ask_pr(repo, binpath, GH_LIST_OUT="[]",
+                  GH_VIEW_OUT='{"state":"MERGED","headRefName":"feat/T-1-x"}')
+    assert why is None, "el gate quedó ciego tras el merge otra vez: %r" % why
+
+
+def test_un_receipt_que_nombra_el_pr_de_otro_ticket_es_refusado(tmp_path):
+    repo, binpath = _pr_repo(tmp_path), _gh_stub(tmp_path)
+    os.makedirs(os.path.join(repo, ".ddw-sessions"), exist_ok=True)
+    with open(os.path.join(repo, ".ddw-sessions", "pr-T-1.json"), "w") as fh:
+        json.dump({"number": 99, "head": "feat/OTRO-9-x"}, fh)
+    why = _ask_pr(repo, binpath,
+                  GH_VIEW_OUT='{"state":"MERGED","headRefName":"feat/OTRO-9-x"}')
+    assert why and "T-1" in why, "el PR de otro ticket pasó como evidencia: %r" % why
+
+
+def test_un_pr_cerrado_sin_mergear_no_sostiene_el_gate(tmp_path):
+    repo, binpath = _pr_repo(tmp_path), _gh_stub(tmp_path)
+    os.makedirs(os.path.join(repo, ".ddw-sessions"), exist_ok=True)
+    with open(os.path.join(repo, ".ddw-sessions", "pr-T-1.json"), "w") as fh:
+        json.dump({"number": 7, "head": "feat/T-1-x"}, fh)
+    why = _ask_pr(repo, binpath,
+                  GH_VIEW_OUT='{"state":"CLOSED","headRefName":"feat/T-1-x"}')
+    assert why and "CLOSED" in why
+
+
+def test_un_gh_roto_con_receipt_sigue_sin_ser_un_veredicto(tmp_path):
+    repo, binpath = _pr_repo(tmp_path), _gh_stub(tmp_path)
+    os.makedirs(os.path.join(repo, ".ddw-sessions"), exist_ok=True)
+    with open(os.path.join(repo, ".ddw-sessions", "pr-T-1.json"), "w") as fh:
+        json.dump({"number": 7, "head": "feat/T-1-x"}, fh)
+    assert _ask_pr(repo, binpath, GH_VIEW_RC="1", GH_LIST_RC="1") is None, \
+        "un gh caído se leyó como veredicto"

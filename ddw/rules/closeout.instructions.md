@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Phase 5: CLOSEOUT (Commit, PR and Closeout)
@@ -118,14 +118,21 @@ Then resolve, out loud:
 └─────────────────────────────────────────────────────────┘
 ```
 
-- **Option 2** → merge only after the user confirms, and never force. If it conflicts, stop and hand
-  it back: a conflict resolved by an agent nobody is watching is worse than a conflict.
+- **Option 2** → merge only after the user confirms **with a message**, and never force. Choosing
+  the destination may go through the picker — that is a content decision — but EXECUTING the merge
+  is the one act in this pipeline that leaves the repository and that nobody here can revert, and
+  the hook that holds it counts the user's messages, which no picker answer moves. The sequence is
+  fixed: write `merge PR #<n> into <base>` with the PR's title to `.ddw-work/merge-proposal.txt`,
+  show it, END YOUR TURN with the banner, and run `gh pr merge` only after their answer — the hook
+  refuses it otherwise, in `assisted` AND in `minimal` alike. If it conflicts, stop and hand it
+  back: a conflict resolved by an agent nobody is watching is worse than a conflict.
 - **Option 3** → this is the honest answer for a chain of sub-tickets in a repo with no PR flow. Say
   it plainly, because the next ticket's branch check reads it as its base.
 
 **The answer is recorded in the closeout summary and — for a sub-ticket — in the parent PRD's
-index.** Recording it is the whole point: no gate can verify that a human merged something, but
-nobody should have to guess afterwards whether anyone did.
+index.** Recording it is the whole point: no gate can verify WHO merged at the forge, but the hook
+above does verify that a person saw and answered for this merge — and nobody should have to guess
+afterwards whether anyone did.
 
 ---
 

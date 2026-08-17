@@ -266,7 +266,9 @@ user's turns — and the only turn a hook can see is a submitted message. A pick
 event any hook receives: the user would click "yes" and the enforcement would still be waiting for
 a person, refusing the very act they just approved. So the picker is for decisions about content —
 tier, stack, whether to split — and the go-ahead for a gated act is a turn: show the banner below,
-END YOUR RESPONSE, and act when the user's message arrives.
+END YOUR RESPONSE, and act when the user's message arrives. The same holds for the acts that leave
+the repository — merging a pull request above all: the picker may choose the destination, and the
+execution waits for the message that seals it, in both autonomy modes.
 
 ## Your turn
 
