@@ -116,15 +116,32 @@ Drop `--target` and it asks. Valid values: `claude`, `codex`, `copilot`, `cursor
 
 Installing **is** activating — there is no separate enable step.
 
-**If the repo is git-tracked, the installer offers to commit the installation
-right there** — exactly the paths its manifest says it wrote, nothing of yours:
-a file that already had uncommitted changes before the run is left out and
-named, for you to review. Say no and it reminds you why yes was the offer: an
-installation that is never committed surfaces at the first ticket's closeout,
-whose commit gate demands a clean tree — and that ticket's pull request ends up
-carrying the whole framework alongside its own change. Measured: 68 files of
-DDW inside a PR about a web form. Without a terminal to ask on, it prints the
-same warning and touches nothing.
+**If the repo is git-tracked, a fresh install asks — before writing a byte —
+where the installation lands:**
+
+1. **A new setup branch** (`ddw-setup-` + 6 random hex, recommended): created
+   on the spot, installed and committed there, your branches untouched. After
+   the commit it asks whether to push the branch and open a draft PR; say no
+   and the branch stays local, with the merge command printed.
+2. **The current branch**, named out loud: installed and committed right there.
+3. **Files only**: everything lands, nothing is committed, git stays yours.
+
+Either committing path offers to commit the installation as exactly the paths
+its manifest says it wrote, nothing of yours: a file that already had
+uncommitted changes before the run is left out and named, for you to review.
+The reason the offer exists: an installation that is never committed surfaces
+at the first ticket's closeout, whose commit gate demands a clean tree — and
+that ticket's pull request ends up carrying the whole framework alongside its
+own change. Measured: 68 files of DDW inside a PR about a web form.
+
+A repo with no commits yet skips the branch question (there is no base to
+branch from) and offers the installation as the repository's first commit.
+Updates skip it too — a refresh is committed where the branch already lives.
+Without a terminal the installer asks nothing and touches git not at all; set
+`DDW_GIT_FLOW=setup|current|none` (and `DDW_GIT_PUSH=y|n`) to answer the
+questions from a script. Not a git repository at all? One warning, dropin
+only: the pipeline branches, commits and opens PRs, so `git init` before the
+first ticket.
 
 ### What lands in your repo
 

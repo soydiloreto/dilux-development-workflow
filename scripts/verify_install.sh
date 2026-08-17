@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=569
+EXPECT_CHECKS=570
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=608
+EXPECT_MUTATIONS=612
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5720,6 +5720,11 @@ grep -q 'Commit the installation now?' "$SELF/install.sh" \
   && grep -q 'offers to commit the installation' "$SELF/docs/INSTALL.md" \
   && ok "the installer offers to commit exactly what it wrote, and warns when it cannot ask" \
   || bad "the installation is left uncommitted in silence again, and the first ticket's PR will carry the framework"
+grep -q 'Where should the installation land?' "$SELF/install.sh" \
+  && grep -q 'ddw-setup-' "$SELF/install.sh" \
+  && grep -q 'DDW_GIT_FLOW' "$SELF/install.sh" \
+  && ok "a fresh install asks where it lands — setup branch, current branch, or files only — before writing" \
+  || bad "the installer stopped asking where the installation lands, and it goes back to landing on whatever branch the user happened to be on"
 
 # Reconstructing the state from an Edit whose old_string appears more than once
 # means guessing which occurrence was meant — and the guess decides what gets

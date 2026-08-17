@@ -939,3 +939,90 @@ def test_sin_tty_el_instalador_avisa_que_la_instalacion_no_esta_commiteada(tmp_p
     assert r.returncode == 0, r.stderr[-300:]
     assert "not committed" in r.stdout, \
         "el instalador dejó la instalación sin commitear y no dijo nada"
+
+
+def test_instalar_en_un_directorio_sin_git_instala_y_avisa(tmp_path):
+    """Regresión medida el mismo día del fix del installer: `set -euo pipefail`
+    + una captura de git sin guardar = el instalador moría en rc 128 SIN
+    IMPRIMIR UNA LÍNEA sobre un destino no-git. Instalar debe funcionar, y el
+    aviso debe existir: el pipeline branchea/commitea/abre PRs y el primer
+    ticket muere en CLASSIFY si no hay git."""
+    target = tmp_path / "nogit"
+    target.mkdir()
+    r = subprocess.run(["bash", os.path.join(ROOT, "install.sh"), str(target),
+                        "--target", "claude", "--mode", "dropin"],
+                       stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    assert r.returncode == 0, "el instalador murió en un destino sin git: rc=%s %s" % (
+        r.returncode, r.stderr[-200:])
+    assert (target / ".ddw" / "orchestrator.md").exists(), "no instaló nada"
+    assert "not a git repository" in r.stdout, \
+        "instaló en silencio donde el primer ticket va a morir en CLASSIFY"
+
+
+# ── El flujo git del instalador (DDW_GIT_FLOW es la ortografía sin terminal) ─
+
+def _repo_para_instalar(tmp_path, con_commit=True):
+    r = tmp_path / "repo"
+    r.mkdir()
+    subprocess.run(["git", "-C", str(r), "init", "-q"], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
+        subprocess.run(["git", "-C", str(r), "config", k, v], check=True)
+    if con_commit:
+        subprocess.run(["git", "-C", str(r), "commit", "-q", "--allow-empty",
+                        "-m", "base"], check=True)
+    return r
+
+
+def _instala(r, flow, push=None):
+    env = dict(os.environ, DDW_GIT_FLOW=flow)
+    if push is not None:
+        env["DDW_GIT_PUSH"] = push
+    return subprocess.run(["bash", os.path.join(ROOT, "install.sh"), str(r),
+                           "--target", "claude", "--mode", "dropin"],
+                          stdin=subprocess.DEVNULL, env=env,
+                          capture_output=True, text=True)
+
+
+def _rama(r):
+    return subprocess.run(["git", "-C", str(r), "branch", "--show-current"],
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _sucios(r):
+    out = subprocess.run(["git", "-C", str(r), "status", "--short"],
+                         capture_output=True, text=True).stdout
+    return len([ln for ln in out.splitlines() if ln.strip()])
+
+
+def test_flow_setup_instala_commitea_en_su_rama_y_deja_limpio(tmp_path):
+    r = _repo_para_instalar(tmp_path)
+    res = _instala(r, "setup", push="n")
+    assert res.returncode == 0, res.stderr[-300:]
+    assert _rama(r).startswith("ddw-setup-"), \
+        "eligió rama setup y quedó en %r" % _rama(r)
+    assert _sucios(r) == 0, "la instalación no quedó commiteada en la rama setup"
+    assert "stays local" in res.stdout, "no dijo qué pasa con la rama sin push"
+
+
+def test_flow_current_commitea_en_la_rama_actual(tmp_path):
+    r = _repo_para_instalar(tmp_path)
+    res = _instala(r, "current")
+    assert res.returncode == 0, res.stderr[-300:]
+    assert _rama(r) in ("main", "master"), "se movió de rama sin que nadie lo pida"
+    assert _sucios(r) == 0, "eligió commit en la rama actual y quedó sin commitear"
+
+
+def test_flow_none_deja_los_archivos_sin_commitear(tmp_path):
+    r = _repo_para_instalar(tmp_path)
+    res = _instala(r, "none")
+    assert res.returncode == 0, res.stderr[-300:]
+    assert _sucios(r) > 0, "eligió no commitear y algo commiteó igual"
+    assert "nothing committed" in res.stdout, "no dijo que quedó sin commitear"
+
+
+def test_un_git_init_sin_commits_ofrece_el_primer_commit(tmp_path):
+    r = _repo_para_instalar(tmp_path, con_commit=False)
+    res = _instala(r, "setup")   # pide setup, pero sin base no hay rama posible
+    assert res.returncode == 0, res.stderr[-300:]
+    assert "no commits yet" in res.stdout, "no explicó por qué no hay pregunta de rama"
+    assert _sucios(r) == 0, "el primer commit del repo no se hizo"

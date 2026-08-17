@@ -78,7 +78,10 @@ TARGET="$(cd "${TARGET_DIR:-$PWD}" && pwd)"
 # "dirty" no longer distinguishes the user's own uncommitted work from the
 # block the installer appended, and staging a file that mixes both would sweep
 # somebody's half-written notes into an installation commit.
-PREDIRTY="$(git -C "$TARGET" status --porcelain -- AGENTS.md CLAUDE.md GEMINI.md .gitignore .claude/settings.json opencode.json 2>/dev/null | awk '{print $2}')"
+# `|| true` is load-bearing: this file runs under `set -euo pipefail`, and on a
+# target that is not a git repository this pipeline exits 128 — which killed
+# the WHOLE installer, silently, before it had printed one line. Measured.
+PREDIRTY="$(git -C "$TARGET" status --porcelain -- AGENTS.md CLAUDE.md GEMINI.md .gitignore .claude/settings.json opencode.json 2>/dev/null | awk '{print $2}' || true)"
 
 # ── The banner ────────────────────────────────────────────────────────────────
 #
@@ -516,6 +519,66 @@ for t in $TARGETS; do
   python3 "$SELF/scripts/install_target.py" --self "$SELF" --target "$TARGET" --id "$t" --preflight || exit 1
 done
 
+# ── Where does the installation land, git-wise? ───────────────────────────────
+#
+# Asked BEFORE a byte is written, because the answer decides where the bytes
+# go: a setup branch is created now, so even a half-failed install lands on it
+# and not on the user's branch. Fresh installs only — an update is a refresh of
+# what a branch already carries, and a new branch per refresh would be noise.
+# `DDW_GIT_FLOW=setup|current|none` answers the question without a terminal
+# (tests, scripted installs); the prompt is the interactive spelling of it.
+DDW_GIT_CHOICE=""            # setup | current | none | "" (never asked)
+DDW_SETUP_BRANCH=""
+CURBRANCH=""
+if [ -z "$INSTALLED" ] && git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+   && { [ -n "${DDW_GIT_FLOW:-}" ] || [ -t 0 ]; }; then
+  if git -C "$TARGET" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    CURBRANCH="$(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+    DDW_SETUP_BRANCH="ddw-setup-$( (LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null || true) | head -c6)"
+    [ "$DDW_SETUP_BRANCH" = "ddw-setup-" ] && DDW_SETUP_BRANCH="ddw-setup-$$"
+    case "${DDW_GIT_FLOW:-}" in
+      setup)   GOPT=1 ;;
+      current) GOPT=2 ;;
+      none)    GOPT=3 ;;
+      *)
+        echo "  This is a git repository · current branch: $CURBRANCH"
+        echo
+        echo "  Where should the installation land?"
+        echo "    1. On a new setup branch — $DDW_SETUP_BRANCH   (recommended)"
+        echo "       Installed and committed there; your branches stay untouched."
+        echo "       After the commit you choose: push it & open a PR, or keep it local."
+        echo "    2. On the current branch ($CURBRANCH)"
+        echo "       Installed and committed right here."
+        echo "    3. Files only — no commit"
+        echo "       Everything lands, nothing is committed; you handle git yourself."
+        printf "  [1/2/3] (1): "
+        { read -r GOPT < /dev/tty; } 2>/dev/null || GOPT=1
+        echo ;;
+    esac
+    case "$GOPT" in
+      2) DDW_GIT_CHOICE="current" ;;
+      3) DDW_GIT_CHOICE="none" ;;
+      *) DDW_GIT_CHOICE="setup"
+         if git -C "$TARGET" checkout -q -b "$DDW_SETUP_BRANCH" 2>/dev/null; then
+           echo "  ✓ On $DDW_SETUP_BRANCH — installing here."
+           echo
+         else
+           echo "  ⚠ Could not create $DDW_SETUP_BRANCH — staying on $CURBRANCH, committing nothing."
+           echo
+           DDW_GIT_CHOICE="none"
+         fi ;;
+    esac
+  else
+    # `git init` with no commits yet: there is no base to branch from or open
+    # a PR against, so the branch question would offer choices that cannot be
+    # kept. The installation is offered as this repository's first commit.
+    echo "  This is a git repository with no commits yet: the installation will be"
+    echo "  offered as its first commit, on the branch you are on."
+    echo
+    DDW_GIT_CHOICE="current"
+  fi
+fi
+
 # ── 1. THE METHOD (identical for every tool) ─────────────────────────────────
 mkdir -p "$TARGET/.ddw"
 # Skills and agents are the adapters' business, not the method payload's: they
@@ -691,7 +754,9 @@ echo
 # moment the user can still say no cheaply is now — so ask now, stage exactly
 # what the manifest says was written, and leave anything that was already dirty
 # before this run alone, with a warning naming it.
-if [ -t 0 ] && git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+DDW_IS_GIT=0
+git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 && DDW_IS_GIT=1
+if [ "$DDW_IS_GIT" = 1 ] && { [ -t 0 ] || [ -n "${DDW_GIT_FLOW:-}" ]; }; then
   DDW_COMMIT_PATHS="$(python3 - "$TARGET" "$PREDIRTY" <<'PYPATHS'
 import json, os, subprocess, sys
 target, predirty = sys.argv[1], set(filter(None, sys.argv[2].split("\n")))
@@ -727,38 +792,104 @@ print("\n".join(sorted(p for p in paths
                        if p in dirty or any(d.startswith(p + "/") for d in dirty))))
 PYPATHS
 )"
+  DDW_DID_COMMIT=0
   if [ -n "$DDW_COMMIT_PATHS" ]; then
     N_PATHS="$(printf '%s\n' "$DDW_COMMIT_PATHS" | sed '/^$/d' | wc -l | tr -d ' ')"
-    echo "  The installation is not committed yet ($N_PATHS path(s)). Left uncommitted, the"
-    echo "  first ticket's closeout will sweep it into that ticket's own pull request."
     if [ -n "$PREDIRTY" ]; then
       echo "  ⚠ Left out (they were already modified before this run — review them yourself):"
       printf '%s\n' "$PREDIRTY" | sed '/^$/d' | sed 's/^/      /'
     fi
-    printf "  Commit the installation now? [Y/n] "
-    { read -r DOCOMMIT < /dev/tty; } 2>/dev/null || DOCOMMIT=n
-    case "$DOCOMMIT" in
-      n|N|no|NO) echo "  Skipped. Commit it yourself before the first ticket closes." ;;
-      *)
-        ADDED=1
-        while IFS= read -r p; do
-          [ -z "$p" ] && continue
-          git -C "$TARGET" add -- "$p" || ADDED=0
-        done <<EOF_DDW_PATHS
+    if [ "$DDW_GIT_CHOICE" = "none" ]; then
+      echo "  Files landed on $(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?'); nothing committed — your choice."
+      echo "  Commit the $N_PATHS path(s) yourself before the first ticket closes, or its"
+      echo "  PR will carry the framework."
+    elif [ "$DDW_GIT_CHOICE" = "setup" ] || [ "$DDW_GIT_CHOICE" = "current" ]; then
+      # The consent was given up front, with the destination named: the choice
+      # WAS "installed and committed there". Asking again would be the second
+      # signature on the same line.
+      ADDED=1
+      while IFS= read -r p; do
+        [ -z "$p" ] && continue
+        git -C "$TARGET" add -- "$p" || ADDED=0
+      done <<EOF_DDW_PATHS
 $DDW_COMMIT_PATHS
 EOF_DDW_PATHS
-        if [ "$ADDED" = 1 ] \
-           && git -C "$TARGET" commit -q -m "🔧 chore(ddw): install DDW v${VERSION:-?} (drop-in)"; then
-          echo "  ✓ Installation committed: $(git -C "$TARGET" rev-parse --short HEAD)"
+      if [ "$ADDED" = 1 ] \
+         && git -C "$TARGET" commit -q -m "🔧 chore(ddw): install DDW v${VERSION:-?} (drop-in)"; then
+        echo "  ✓ Installation committed on $(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?'): $N_PATHS path(s) ($(git -C "$TARGET" rev-parse --short HEAD))"
+        DDW_DID_COMMIT=1
+      else
+        echo "  ⚠ The commit did not land (a signing prompt, a hook?). The paths are"
+        echo "    staged; commit them yourself before the first ticket closes."
+      fi
+    else
+      # An update run, or a fresh install where the question was never asked:
+      # the standing offer, on whatever branch the repo is on.
+      echo "  The installation is not committed yet ($N_PATHS path(s)). Left uncommitted, the"
+      echo "  first ticket's closeout will sweep it into that ticket's own pull request."
+      printf "  Commit the installation now? [Y/n] "
+      { read -r DOCOMMIT < /dev/tty; } 2>/dev/null || DOCOMMIT=n
+      case "$DOCOMMIT" in
+        n|N|no|NO) echo "  Skipped. Commit it yourself before the first ticket closes." ;;
+        *)
+          ADDED=1
+          while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            git -C "$TARGET" add -- "$p" || ADDED=0
+          done <<EOF_DDW_PATHS2
+$DDW_COMMIT_PATHS
+EOF_DDW_PATHS2
+          if [ "$ADDED" = 1 ] \
+             && git -C "$TARGET" commit -q -m "🔧 chore(ddw): install DDW v${VERSION:-?} (drop-in)"; then
+            echo "  ✓ Installation committed: $(git -C "$TARGET" rev-parse --short HEAD)"
+          else
+            echo "  ⚠ The commit did not land (a signing prompt, a hook?). The paths are"
+            echo "    staged; commit them yourself before the first ticket closes."
+          fi ;;
+      esac
+    fi
+    echo
+  fi
+  if [ "$DDW_GIT_CHOICE" = "setup" ] && [ "$DDW_DID_COMMIT" = 1 ]; then
+    PUSHOPT="${DDW_GIT_PUSH:-}"
+    if [ -z "$PUSHOPT" ]; then
+      printf "  Push %s and open a draft PR? [y/N] " "$DDW_SETUP_BRANCH"
+      { read -r PUSHOPT < /dev/tty; } 2>/dev/null || PUSHOPT=n
+    fi
+    case "$PUSHOPT" in
+      y|Y|yes|YES)
+        if git -C "$TARGET" push -q -u origin "$DDW_SETUP_BRANCH" 2>/dev/null; then
+          if (cd "$TARGET" && gh pr create --draft \
+                --title "🔧 Install DDW v${VERSION:-?}" \
+                --body "Drop-in installation of DDW v${VERSION:-?}: the method under .ddw/, the agent wiring, and the activation blocks. Committed by the installer, exactly the paths its manifest names." \
+                >/dev/null 2>&1); then
+            echo "  ✓ Pushed and draft PR opened."
+          else
+            echo "  ✓ Pushed. The PR could not be opened (no gh? not authenticated?) —"
+            echo "    open it yourself from $DDW_SETUP_BRANCH."
+          fi
         else
-          echo "  ⚠ The commit did not land (a signing prompt, a hook?). The paths are"
-          echo "    staged; commit them yourself before the first ticket closes."
+          echo "  ⚠ Push failed (no remote? no permission?). The branch stays local:"
+          echo "    git checkout $CURBRANCH && git merge $DDW_SETUP_BRANCH"
         fi ;;
+      *)
+        echo "  The branch stays local. Merge it when you like:"
+        echo "    git checkout $CURBRANCH && git merge $DDW_SETUP_BRANCH" ;;
     esac
     echo
   fi
-elif git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+elif [ "$DDW_IS_GIT" = 1 ]; then
   echo "  Note: this repo is git-tracked and the installation is not committed."
   echo "  Commit it before the first ticket closes, or that ticket's PR will carry it."
+  echo
+else
+  # Not validated away on purpose: DDW installs fine into a bare directory,
+  # but its pipeline branches, commits and opens pull requests — the first
+  # ticket dies at CLASSIFY creating a branch that has nowhere to exist.
+  # Installing silently and letting that happen two steps later would blame
+  # the pipeline for the installer's silence.
+  echo "  ⚠ This directory is not a git repository. DDW's pipeline branches, commits"
+  echo "    and opens pull requests — run \`git init\` (and make a first commit) before"
+  echo "    the first ticket, or it will fail at CLASSIFY creating its branch."
   echo
 fi
