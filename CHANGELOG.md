@@ -19,6 +19,28 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.27.0] — Unreleased
+
+### Added
+
+- **A fresh drop-in install asks where it lands, before writing a byte.** On a
+  git repo with a terminal (or `DDW_GIT_FLOW=setup|current|none` without one):
+  a new `ddw-setup-<hex>` branch — created on the spot, installed and committed
+  there, then offered a push and a draft PR (`DDW_GIT_PUSH=y|n`), staying local
+  with the merge command printed if declined; the current branch, named out
+  loud; or files only, nothing committed. A repo with no commits yet skips the
+  question and offers the installation as its first commit; updates commit
+  where the branch already lives. Consent is given once, with the destination
+  named — the choice IS the commit approval, so nothing asks twice.
+
+### Fixed
+
+- **The installer died silently on a target that is not a git repository.**
+  `set -euo pipefail` plus an unguarded `git status` capture: exit 128, zero
+  lines printed, nothing installed. It now installs fine and says the one thing
+  worth saying — DDW's pipeline branches, commits and opens PRs, so `git init`
+  before the first ticket or CLASSIFY fails creating its branch.
+
 ## [0.26.0] — Unreleased
 
 All four came out of the first ticket DDW closed end to end (FEAT-001a,
