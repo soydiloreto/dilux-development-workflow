@@ -288,6 +288,12 @@ needed. The second line exists so that approving is never approving blind: it na
 confirmation sets in motion, which is also the bound on what it approves — the immediate step, not
 the pipeline behind it.
 
+**And it promises at most ONE arrow.** The hook lands one transition per response, so a banner
+promising a chain — "commit + close the run + open the sub-ticket" — promises what the enforcement
+will refuse: the first arrow lands, the rest sit, and the user pays extra oks for the difference.
+Measured, on the run that made this a rule. A commit, a validation, a file written are not arrows
+and may share the promise; the arrows themselves go one per banner, one per ok.
+
 ## Autonomy
 
 `.ddw-state.json` carries `autonomy`, set in CLASSIFY. Absent or `null` reads as `"assisted"`.

@@ -241,6 +241,85 @@ def _resume_allowed(entry, history, upto):
     return True
 
 
+def _is_split_open(entry):
+    """Does this entry declare itself as opening a sub-ticket of a split?"""
+    action = entry.get("action")
+    if not isinstance(action, str):
+        return False
+    return action.strip().lower().split(":", 1)[0].strip() == "split"
+
+
+def _split_parent(ticket):
+    """`FEAT-001a` → `FEAT-001`, or None when the name derives from no parent."""
+    if (isinstance(ticket, str) and len(ticket) > 1
+            and ticket[-1].isalpha() and ticket[-1].islower()):
+        return ticket[:-1]
+    return None
+
+
+def _split_pause_of(history, upto, parent):
+    """The parent's newest entry, IF it is the split's own pause; else None.
+
+    Deliberately not consumed by being used: every child of one split rests on
+    the same pause, and closing child `a` — a whole run of its own, ending at
+    IDLE under the child's ticket — does not spend the parent's proof. What DOES
+    end the claim is the parent doing anything newer: its newest entry must BE
+    the split-pause, or the split is not the parent's standing last word.
+    """
+    for entry in reversed(list(history)[:upto]):
+        if not isinstance(entry, dict) or entry.get("ticket") != parent:
+            continue
+        if (entry.get("to") == IDLE and _is_pause(entry)
+                and "split" in (entry.get("action") or "").lower()):
+            return entry
+        return None
+    return None
+
+
+def _split_open_allowed(entry, history, upto):
+    """Is this a real split-child opening, or `split:` used as a skeleton key?
+
+    Same bargain as `_resume_allowed`: this edge skips the graph, so every part
+    of it has to be proven by the record. CLASSIFY exists to produce tier,
+    ticket and autonomy — and for a split child all three already exist: the
+    parent's run produced them and the user approved the split that named this
+    child. Sending the child through CLASSIFY re-decided nothing and cost the
+    user a turn that decided nothing — the rubber stamp the method itself
+    argues against. So the child opens directly in the phase its parent paused
+    from, and the proof is the pause: the child's name derives from the
+    parent's, the parent's newest entry is the split's own pause, the
+    destination is the phase that pause left, and the tier is the pause's.
+    """
+    child = entry.get("ticket")
+    parent = _split_parent(child)
+    if not parent:
+        raise Block(
+            f"`split:` opens a sub-ticket of a split, and {child!r} names no parent: a "
+            "sub-ticket is its parent's ID plus one lowercase letter (FEAT-001a). Anything "
+            "else is not a split child and starts at CLASSIFY like every ticket."
+        )
+    pause = _split_pause_of(history, upto, parent)
+    if pause is None:
+        raise Block(
+            f"this history has no standing split-pause for {parent}: `split:` rests on the "
+            'parent\'s own `pause: split into …` entry being its newest word, and it is not. '
+            "A split that did not happen cannot be opened into; classify the work instead."
+        )
+    dst = entry.get("to")
+    if pause.get("from") != dst:
+        raise Block(
+            f"the split paused {parent} at {pause.get('from')}, so its children open there — "
+            f"not at {dst}. The phase is part of the proof, exactly as it is for a resume."
+        )
+    if pause.get("tier") and entry.get("tier") != pause.get("tier"):
+        raise Block(
+            f"the split was taken under tier {pause.get('tier')} and this entry says "
+            f"{entry.get('tier')!r}. A split does not reclassify the work: the child rides "
+            "the parent's tier or it is not its child."
+        )
+    return True
+
+
 def _is_walkaway(entry):
     """Does this entry declare itself as leaving the ticket, rather than closing it?
 
@@ -453,7 +532,15 @@ def _check_autonomy(old_state, new_state, appended):
     # free. Caught by the check written alongside this, before it shipped.
     resuming = any(_is_resume(e) and e.get("from") == IDLE
                    for e in appended if isinstance(e, dict))
-    if in_classify or entering_classify or touches_classify or reaching_idle or resuming:
+    # Opening a split child is that child's CLASSIFY-moment: the edge replaces
+    # the CLASSIFY the child never passes through, so the mode is chosen here or
+    # it cannot be chosen at all. Narrow for the resume's reason: `from` must be
+    # IDLE, because `_split_open_allowed` only ever judges the edges out of
+    # IDLE, and the word alone on any other edge is the same skeleton key.
+    split_opening = any(_is_split_open(e) and e.get("from") == IDLE
+                        for e in appended if isinstance(e, dict))
+    if (in_classify or entering_classify or touches_classify or reaching_idle
+            or resuming or split_opening):
         return
     raise Block(
         f"`autonomy` changed {old_auto!r}→{raw_new!r} outside CLASSIFY. How much of this run "
@@ -907,6 +994,24 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
                         "may have been closed and the branch may have moved. Drop them and earn "
                         "them again; both are instant."
                     )
+            continue
+        if src == IDLE and dst != CLASSIFY and _is_split_open(entry):
+            # Opening a sub-ticket of an approved split, directly in the phase
+            # its parent paused from. Skips the graph the way a resume does, and
+            # rests on the same kind of proof — see `_split_open_allowed`.
+            _split_open_allowed(entry, old_h + appended, len(old_h) + idx)
+            if state_path:
+                _split_needs_a_recorded_pause(state_path, entry, dst)
+            # A resume RESTORES gates already earned; a split child has earned
+            # nothing — its run starts on this edge. Gates riding in on it were
+            # written, not earned.
+            if idx == len(appended) - 1 and any(v is True for v in gates.values()):
+                raise Block(
+                    "a split child opens with no gates: its run starts on this edge, and "
+                    f"{', '.join(sorted(g for g, v in gates.items() if v is True))} rode in "
+                    "already true. Whatever the parent earned closed with the parent; the "
+                    "child earns its own."
+                )
             continue
         if dst == IDLE and _is_walkaway(entry):
             # Walking away — abandon or pause. Always allowed, from anywhere the
@@ -2004,6 +2109,38 @@ def _resume_needs_a_recorded_pause(state_path, entry, dst):
         "that happened is in both records. If the journal was lost, restore it or start the work "
         "again from CLASSIFY; it cannot be resumed on the strength of the file the resume is "
         "asking about."
+    )
+
+
+def _split_needs_a_recorded_pause(state_path, entry, dst):
+    """The split-pause a child opening rests on has to be one the journal saw.
+
+    Same bargain as `_resume_needs_a_recorded_pause`, for the same reason: the
+    history lives in the state file, which is what a shell rewrites, and this
+    edge skips the graph — so the proof has to come from the record only landed
+    transitions write. A missing journal is not evidence of forgery; a journal
+    that EXISTS and never saw the parent's split-pause is.
+    """
+    parent = _split_parent(entry.get("ticket"))
+    recorded = _journal_entries(state_path)
+    if not recorded:
+        return
+    for line in recorded:
+        if line.get("to") != IDLE or line.get("from") != dst:
+            continue
+        if line.get("ticket") != parent:
+            continue
+        action = line.get("action")
+        if (isinstance(action, str)
+                and action.strip().lower().split(":", 1)[0].strip() in ("pause", "paused")
+                and "split" in action.lower()):
+            return
+    raise Block(
+        f"this `split:` opening points at a split-pause of {parent} the journal never recorded. "
+        "The append-only record of what actually landed has no such pause, and this is the one "
+        "other edge that skips the graph — it rests on a split that happened, and a split that "
+        "happened is in both records. If the journal was lost, restore it or open the child "
+        "through CLASSIFY like any ticket."
     )
 
 

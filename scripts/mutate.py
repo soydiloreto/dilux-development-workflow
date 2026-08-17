@@ -241,6 +241,37 @@ MUTATIONS = [
      edit("ddw/orchestrator.md",
           "write `IDLE→CLASSIFY` **in this same response, before the\n    classification work**",
           "transition to `CLASSIFY` once the user has confirmed the classification")),
+    ("any pause of the parent authorizes opening a split child",
+     edit("ddw/scripts/validate-transition.py",
+          '        if (entry.get("to") == IDLE and _is_pause(entry)\n'
+          '                and "split" in (entry.get("action") or "").lower()):\n'
+          '            return entry',
+          '        if entry.get("to") == IDLE and _is_pause(entry):\n'
+          '            return entry')),
+    ("a split child opening stops asking the journal whether the split landed",
+     edit("ddw/scripts/validate-transition.py",
+          "            _split_open_allowed(entry, old_h + appended, len(old_h) + idx)\n"
+          "            if state_path:\n"
+          "                _split_needs_a_recorded_pause(state_path, entry, dst)",
+          "            _split_open_allowed(entry, old_h + appended, len(old_h) + idx)\n"
+          "            if False:\n"
+          "                _split_needs_a_recorded_pause(state_path, entry, dst)")),
+    ("a split child opens in whatever phase the write cares to name",
+     edit("ddw/scripts/validate-transition.py",
+          '    if pause.get("from") != dst:',
+          "    if False:")),
+    ("a split reclassifies the work on the way into the child",
+     edit("ddw/scripts/validate-transition.py",
+          '    if pause.get("tier") and entry.get("tier") != pause.get("tier"):',
+          "    if False:")),
+    ("the banner goes back to promising the chain the hook will refuse",
+     edit("ddw/orchestrator.md",
+          "**And it promises at most ONE arrow.**",
+          "**And it may promise the whole of what follows.**")),
+    ("the split child is sent back through the CLASSIFY that decides nothing",
+     edit("ddw/rules/define.instructions.md",
+          "2. **Open the sub-ticket, directly in the phase the split paused from.**",
+          "2. **Open the sub-ticket through CLASSIFY, like every ticket.**")),
     ("an ADR can order the implementation around again",
      edit("ddw/scripts/validate_adr.py", "    if offenders:", "    if False:")),
     ("one option is a decision again",

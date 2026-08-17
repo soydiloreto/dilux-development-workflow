@@ -19,6 +19,37 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.25.0] — Unreleased
+
+### Added
+
+- **A split child opens directly in the phase its parent paused from.** Its
+  trip through CLASSIFY re-decided nothing — tier, ticket and autonomy all
+  existed before it, produced by the parent's run and approved in the split —
+  and cost the user a turn that decided nothing, the rubber stamp the method
+  itself argues against. The new `split:` edge skips the graph the way a resume
+  does and rests on the same kind of proof, all of it verified by both hooks:
+  the parent's newest entry must be its own `pause: split into …`, the
+  destination is the phase that pause left, the child's name derives from the
+  parent's (`FEAT-001` + one lowercase letter), the tier is the pause's, the
+  gates come in empty, and the journal must have seen the pause land — a pause
+  only the state file claims is a forgery, not a proof. The mode is chosen on
+  this edge the way it is on a resume, because it is the child's
+  CLASSIFY-moment. Nine tests, six mutations.
+
+### Fixed
+
+- **The banner promised three arrows on one ok.** "Commit + close the run +
+  open in DEFINE" — the hook (correctly) landed the first arrow and the user
+  paid two extra oks for the difference. The banner rule now says it in the
+  orchestrator, where every banner is defined: the promise is bounded to ONE
+  arrow — commits, validations and files may share it; arrows go one per
+  banner, one per ok. The Split Protocol carries the same accounting where the
+  chain is choreographed, plus the instruction the fourth manual run showed was
+  missing: paste the helper's output verbatim, and never touch an existing
+  history entry to make it "fit" — that mutation is exactly what the
+  append-only check refuses, and it was tried.
+
 ## [0.24.0] — Unreleased
 
 ### Fixed

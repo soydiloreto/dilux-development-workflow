@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.1.0
+version: 2.2.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -360,16 +360,40 @@ and an acceptance criterion nobody noticed was dropped.
 **4. Close the parent run, then open sub-ticket `a` as its own run:**
 
 The parent ticket is finished as a unit of work — it became an index. So it is **left**, not
-edited into something else, and `{TICKET}a` starts the way every ticket starts.
+edited into something else.
 
-Two writes, in this order:
+Two writes, and under `assisted` each one is A TURN — one arrow per response is the hook's rule,
+so the banner that closes each turn promises exactly the one arrow the next ok will take, never
+the chain. Measured before this sentence existed: one banner promised "commit + close + open in
+DEFINE", the hook (correctly) landed the first arrow, and the user paid two extra oks for a
+promise the enforcement could never let the model keep.
 
 1. **Leave the parent.** One transition to `IDLE` whose entry declares the walk-away:
    `"action": "pause: split into {TICKET}a/b/c"`, stamped `"ticket": "{TICKET}"`. At IDLE, `tier`
    is null and `gates` is `{}` — that is the invariant, and `transition.py` writes it for you.
-2. **Open the sub-ticket.** `IDLE → CLASSIFY` with `ticket` = `{TICKET}a` and the sub-ticket's
-   title, then `CLASSIFY → DEFINE`. The tier is the parent's — a split does not reclassify the
-   work, it divides it.
+   The phase commit (the PRDs and their reports) goes in this same turn — a commit is not an
+   arrow. End the turn; the banner offers opening `{TICKET}a`.
+2. **Open the sub-ticket, directly in the phase the split paused from.** A split child does NOT
+   pass through CLASSIFY: that phase exists to produce tier, ticket and autonomy, and all three
+   already exist — the parent's run produced them and the user approved the split that named this
+   child. Sending it through CLASSIFY re-decides nothing and costs the user a turn that decides
+   nothing. One transition, built with the helper:
+
+   ```bash
+   .ddw/scripts/transition.py --to DEFINE --tier <TIER> --ticket {TICKET}a \
+       --autonomy <the mode this child runs under> \
+       --action "split: abrir {TICKET}a — <title>"
+   ```
+
+   The `split:` verb is the declaration the hook verifies: the parent's newest entry must be its
+   own `pause: split into …`, the destination must be the phase that pause left, the child's name
+   must derive from the parent's (`{TICKET}` + one lowercase letter), the tier must be the
+   pause's, and the journal must have seen the pause land. The child opens with `gates: {}` —
+   whatever the parent earned closed with the parent.
+
+   **Paste the helper's output VERBATIM**, filling in only `title`/`tracker` in that same write.
+   Never touch an existing history entry — editing the pause's stamp to "fit" the child is
+   exactly the mutation the append-only check refuses, and it was tried.
 
 Then rename the branch to `feat/{TICKET}a-short-name` (or create it and discard the previous).
 
@@ -386,9 +410,10 @@ Then rename the branch to `feat/{TICKET}a-short-name` (or create it and discard 
 
 **5. Continue the pipeline with sub-ticket `a`.**
 
-Sub-tickets b, c, d are independent future pipelines. When they start, they come in through
-CLASSIFY → DEFINE as usual. In DEFINE, the PRD already exists — it gets re-validated (non-negotiable
-rule) and work continues.
+Sub-tickets b, c, d are independent future pipelines. When they start, they open the same way `a`
+did — `split:` directly into the phase the split paused from; the parent's pause is every child's
+proof, and closing one child does not spend it. In DEFINE, the PRD already exists — it gets
+re-validated (non-negotiable rule) and work continues.
 
 ### For FIX
 
