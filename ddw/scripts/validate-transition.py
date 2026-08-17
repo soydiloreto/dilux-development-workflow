@@ -1891,6 +1891,26 @@ def _pr_evidence_missing(root, state):
     """
     if not _git(root, "remote"):
         return None                                   # nothing to open a PR against
+    # A receipt from the moment the gate was earned makes this check independent
+    # of where the repository is standing NOW. Without it, the check resolved
+    # the PR through the CURRENT branch — and the closeout's own happy path
+    # destroys that branch: the user merges, the forge deletes it, the repo sits
+    # on main, and the final transition finds "no PR" for work whose PR it is
+    # LOOKING AT. Measured: the model un-stuck itself by recreating the deleted
+    # branch, satisfying the check, and deleting it again — a gate that teaches
+    # the model to route around it. The receipt names the PR by NUMBER, and the
+    # forge — never the receipt — still says what state that PR is in.
+    ticket = (state or {}).get("ticket") if isinstance(state, dict) else None
+    if ticket:
+        try:
+            with open(_pr_receipt_path(root, ticket), encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            rec = None
+        if isinstance(rec, dict) and rec.get("number"):
+            verdict = _pr_by_number_missing(root, ticket, rec)
+            if verdict is not _NO_VERDICT:
+                return verdict                        # None (pass) or the refusal
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     if not branch or branch == "HEAD":
         return None                                   # detached: not a branch that has a PR
@@ -1920,11 +1940,70 @@ def _pr_evidence_missing(root, state):
     # already being requested from the API and then thrown away.
     live = [p for p in prs if str(p.get("state", "")).upper() in ("OPEN", "MERGED")]
     if live:
+        # Earned: remember WHICH pull request, so every later re-check — the
+        # closeout edge, a resume — asks the forge about this PR by number
+        # instead of about whatever branch the repo happens to be on then.
+        if ticket:
+            try:
+                path = _pr_receipt_path(root, ticket)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump({"number": live[0].get("number"), "head": branch}, fh)
+            except OSError:
+                pass                     # never fail a claim over bookkeeping
         return None
     closed = " (there is a CLOSED one, which is not the same thing)" if prs else ""
     return ("the pr gate says a pull request was opened for `%s`, and the forge has none%s. "
             "Open it, or close this ticket without claiming the gate — a PR that only exists "
             "in the report is the one thing this gate is for." % (branch, closed))
+
+
+_NO_VERDICT = object()
+
+
+def _pr_receipt_path(root, ticket):
+    # `.ddw-sessions/` because only hooks and the helper write there: a receipt
+    # the model could write itself would be the model vouching for the model.
+    return os.path.join(root, ".ddw-sessions", "pr-%s.json" % ticket)
+
+
+def _pr_by_number_missing(root, ticket, rec):
+    """The receipt's PR, asked about at the forge. Returns None (pass), a
+    refusal, or _NO_VERDICT when gh cannot answer — the same three states the
+    branch-based check distinguishes, for the same reason.
+
+    The forge stays the authority: the receipt only says WHERE to ask. A forged
+    receipt naming somebody else's pull request dies on the head check — the
+    branch a PR was opened from names the ticket it was opened for, and that is
+    the naming convention every branch in this method carries.
+    """
+    try:
+        out = subprocess.run(["gh", "pr", "view", str(rec.get("number")),
+                              "--json", "state,headRefName"],
+                             cwd=root, capture_output=True, text=True, timeout=15,
+                             stdin=subprocess.DEVNULL)
+    except Exception:
+        return _NO_VERDICT
+    if out.returncode != 0:
+        return _NO_VERDICT
+    try:
+        pr = json.loads(out.stdout or "{}")
+    except ValueError:
+        return _NO_VERDICT
+    if not isinstance(pr, dict) or not pr.get("state") or not pr.get("headRefName"):
+        return _NO_VERDICT               # not the shape `gh pr view` answers with
+    head = str(pr.get("headRefName") or "")
+    if ticket.lower() not in head.lower():
+        return ("the pr gate's receipt points at PR #%s, whose branch `%s` does not name "
+                "ticket %s. A receipt for another ticket's pull request is not evidence for "
+                "this one; open this ticket's PR and earn the gate against it."
+                % (rec.get("number"), head, ticket))
+    if str(pr.get("state", "")).upper() in ("OPEN", "MERGED"):
+        return None
+    return ("the pr gate was earned against PR #%s and the forge now says it is %s. A closed, "
+            "unmerged pull request is not the one this ticket shipped on; open it again or "
+            "close the ticket without claiming the gate."
+            % (rec.get("number"), pr.get("state")))
 
 
 def _sast_receipt_missing(root, state):

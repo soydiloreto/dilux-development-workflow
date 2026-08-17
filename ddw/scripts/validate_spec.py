@@ -254,6 +254,7 @@ def main():
         except (OSError, UnicodeDecodeError):
             prd_text = ""
 
+    frs = nfrs = acs = None            # set only when a PRD parsed to something
     if is_fix:
         # The catalog scopes §2.1 to FEATURE: a fix-plan answers to an RCA, not
         # to a PRD's FR/NFR/AC. Demanding a PRD here failed every fix-plan for
@@ -266,7 +267,21 @@ def main():
                                 "Pass --prd <path> and run again")
     else:
         frs, nfrs, acs = (_prd_ids(prd_text, p) for p in ("FR", "NFR", "AC"))
+        # A readable PRD that parses to zero IDs is the same emptiness as an
+        # unreadable one, one step later: "all 0 FR are referenced" is a rule
+        # that measured nothing vouching anyway. `validate_prd.py` refuses such
+        # a document too (F-PRD-05), so getting here with empty lists means the
+        # wrong file — or a format this parser cannot read. Both are a NO.
+        if not frs or not acs:
+            fail("F-SPEC-01/02/03", "the PRD at %s parses to %s, so coverage cannot be "
+                                    "checked against it. Point --prd at this ticket's "
+                                    "validated PRD" % (
+                                        _repo_relative(prd_path),
+                                        " and ".join(p for p, i in (("no FR", frs), ("no AC", acs))
+                                                     if not i)))
+            frs = nfrs = acs = None    # sentinel: skip the three rules below
 
+    if frs is not None and prd_text and not is_fix:
         uncovered = [i for i in frs if not re.search(r"\b%s\b" % i, text)]
         if uncovered:
             fail("F-SPEC-01", f"FR from the PRD covered by no block: {', '.join(uncovered)}")

@@ -19,6 +19,60 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.26.0] — Unreleased
+
+All four came out of the first ticket DDW closed end to end (FEAT-001a,
+17-ago), and every one carries its tests and its mutations.
+
+### Fixed — the rules that passed having measured nothing
+
+- **F-VER-06 read 13 promised tests as zero and went green.** The spec skill
+  writes every test name in backticks; the rule's regex wanted them bare. On
+  the live run it said "all 0 test(s) the spec promised are reported" — and
+  re-run fixed, it found THREE promised tests genuinely absent from the shipped
+  verification report. The regex now reads backticks, and a spec whose
+  'Required tests' sections yield no parseable name is a FAIL, not a vacuous
+  pass. The same guard now holds the whole family: **F-PRD-05 refuses a PRD
+  that parses to zero FR/NFR/AC** (it used to say "0 FR, 0 NFR, 0 AC — unique,
+  gapless", and with the empty lists F-PRD-01/03/06/09 all passed over
+  nothing), and **F-SPEC-01/02/03 refuse coverage claims against a PRD that
+  parses to nothing**.
+
+### Fixed — the pr gate that taught the model to route around it
+
+- The gate resolved the pull request through the CURRENT branch, and the
+  closeout's own happy path destroys that branch: merge, forge deletes it, repo
+  sits on main — and the final transition found "no PR" for work whose PR it
+  was looking at. The model un-stuck itself by RECREATING the deleted branch,
+  satisfying the check, and deleting it again. The gate now writes a receipt
+  when it is earned — PR number and head branch, in `.ddw-sessions/` where only
+  hooks write — and every later re-check asks the forge about THAT pull request
+  by number, wherever the repo is standing. The forge stays the authority; a
+  receipt naming another ticket's PR dies on the head check.
+
+### Added — the merge gate
+
+- **`gh pr merge` ran with no hook watching.** The one act the method calls
+  irreversible-and-outward had less protection than the local, revertible
+  commit — and the user's confirmation arrived through a picker, which no hook
+  receives, so the merge ran mid-turn. It now carries the commit gate's shape:
+  the proposal (`merge PR #<n> into <base>`, the PR's title) is written to
+  `.ddw-work/merge-proposal.txt`, shown, and sealed by the user's next message;
+  the hook refuses the command without the seal — **in `assisted` and in
+  `minimal` alike**, which is the sentence the prose had carried since
+  `minimal` existed and nothing held. The approval is spent only when the forge
+  says MERGED, read by the post hook: a failed merge leaves it standing.
+
+### Added — the installer commits itself, or says why it should have
+
+- An installation that is never committed surfaces at the first closeout, whose
+  commit gate demands a clean tree — and that ticket's PR carries the whole
+  framework (measured: 68 files, 16,568 lines, inside a pull request about a
+  web form). On a git repo with a terminal, the installer now offers to commit
+  exactly the paths its manifest names — a file already dirty before the run is
+  left out and named for review. Without a terminal it warns and touches
+  nothing.
+
 ## [0.25.0] — Unreleased
 
 ### Added

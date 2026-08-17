@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=567
+EXPECT_CHECKS=569
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=594
+EXPECT_MUTATIONS=608
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5697,6 +5697,29 @@ grep -q 'directly in the phase the split paused from' "$SELF/ddw/rules/define.in
   && grep -q '_split_open_allowed' "$SELF/ddw/scripts/validate-transition.py" \
   && ok "the split child opens where the split paused, and the edge the prose orders is one the gate proves" \
   || bad "the Split Protocol and the validator disagree about how a child opens — prose ordering an edge the gate refuses is this repo's oldest defect"
+
+# ── The merge keeps its confirmation, and now something holds it ──────────────
+#
+# Measured on the first end-to-end run: the user chose "merge" in a picker —
+# which no hook receives — and `gh pr merge` ran mid-turn, ungated, while the
+# local revertible commit had a byte-sealed gate. The prose had said "in both
+# modes" since `minimal` existed; this is the pair that makes it true.
+grep -q '_IS_PR_MERGE' "$SELF/ddw/scripts/hook-gate.py" \
+  && grep -q 'confirms \*\*with a message\*\*' "$SELF/ddw/rules/closeout.instructions.md" \
+  && ok "the merge is held by the same seal the commit is, and the closeout says so where the merge is chosen" \
+  || bad "gh pr merge runs with no hook watching, or the closeout stopped saying the execution waits for a message"
+
+# ── The installation offers to commit itself, or says why it should have ─────
+#
+# Left uncommitted, the framework surfaces at the first closeout — whose commit
+# gate demands a clean tree — and that ticket's PR carries all of it. Measured:
+# 68 files of DDW inside a pull request about a web form. With a terminal the
+# installer asks; without one it warns; a repo without git hears nothing.
+grep -q 'Commit the installation now?' "$SELF/install.sh" \
+  && grep -q 'this repo is git-tracked and the installation is not committed' "$SELF/install.sh" \
+  && grep -q 'offers to commit the installation' "$SELF/docs/INSTALL.md" \
+  && ok "the installer offers to commit exactly what it wrote, and warns when it cannot ask" \
+  || bad "the installation is left uncommitted in silence again, and the first ticket's PR will carry the framework"
 
 # Reconstructing the state from an Edit whose old_string appears more than once
 # means guessing which occurrence was meant — and the guess decides what gets

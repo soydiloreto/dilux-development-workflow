@@ -232,6 +232,13 @@ POST_CANNOT_BLOCK = {"copilot"}
 # the one spelling that is let through.
 _IS_COMMIT = re.compile(r"\bgit\b(?![^|&;]*--dry-run)[^|&;]*\bcommit\b")
 
+# `gh … pr … merge`, same matching bargain. The merge is the ONE act in the
+# pipeline the method itself calls irreversible-and-outward — and it shipped
+# with less protection than the local, revertible commit: no hook saw it at
+# all. Measured on the first end-to-end run: the user chose "merge" in a
+# picker, no hook receives a picker answer, and the merge ran mid-turn.
+_IS_PR_MERGE = re.compile(r"\bgh\b[^|&;]*\bpr\b[^|&;]*\bmerge\b")
+
 
 # What a corrupt state is: an incident to report, never a task to take on.
 #
@@ -372,17 +379,21 @@ def _digest(path):
 
 
 def seal_proposal(repo):
-    """The user just spoke: whatever is being proposed, they have now seen it."""
-    proposal, seal = _paths(repo)
-    digest = _digest(proposal)
-    if digest is None:
-        return
-    try:
-        os.makedirs(os.path.dirname(seal), exist_ok=True)
-        with open(seal, "w", encoding="utf-8") as fh:
-            fh.write(digest)
-    except OSError:
-        pass                         # never fail a turn over bookkeeping
+    """The user just spoke: whatever is being proposed, they have now seen it.
+
+    Both proposals — the commit message and the merge. Each seal binds the
+    exact bytes that were on screen when the user answered.
+    """
+    for proposal, seal in (_paths(repo), _merge_paths(repo)):
+        digest = _digest(proposal)
+        if digest is None:
+            continue
+        try:
+            os.makedirs(os.path.dirname(seal), exist_ok=True)
+            with open(seal, "w", encoding="utf-8") as fh:
+                fh.write(digest)
+        except OSError:
+            pass                     # never fail a turn over bookkeeping
 
 
 def commit_verdict(repo, command):
@@ -430,6 +441,88 @@ def commit_verdict(repo, command):
     # permission is spent by the commit EXISTING — `consume_spent_proposal`,
     # from the post hook — not by the gate agreeing.
     return None
+
+
+def _merge_paths(repo):
+    """The merge proposal and its seal — the commit gate's shape, second act."""
+    base = repo or "."
+    return (os.path.join(base, ".ddw-work", "merge-proposal.txt"),
+            os.path.join(base, ".ddw-sessions", "merge-seen"))
+
+
+def merge_verdict(repo, command):
+    """None to allow a `gh pr merge`, or the reason to refuse.
+
+    Unlike the commit gate, this one applies under BOTH autonomy modes — the
+    method has said so in prose from the day `minimal` existed ("merging a pull
+    request keeps its confirmation in both modes") and this is the hook that
+    makes the sentence true. And nothing is consumed here: the commit gate
+    taught that lesson — the permission is spent by the act EXISTING, which for
+    a merge means the forge saying MERGED, read by the post hook.
+    """
+    proposal, seal = _merge_paths(repo)
+    rel = os.path.join(".ddw-work", "merge-proposal.txt")
+    howto = (
+        "\nHow this works: write what is about to happen — `merge PR #<n> into <base>` and the "
+        "PR's title — to `%s`, show it to the user, and END YOUR TURN. When they answer, run "
+        "the same `gh pr merge` again. A merge leaves the repository and nobody here can "
+        "revert it, so it waits for a person in EVERY autonomy mode: `minimal` removes the "
+        "pauses on arrows, not this. A picker choice is not the answer — no hook receives "
+        "one; the message is." % rel)
+    digest = _digest(proposal)
+    if digest is None:
+        return ("DDW: a merge runs only after the user has seen, in this conversation, exactly "
+                "what will be merged." + howto)
+    try:
+        with open(seal, encoding="utf-8") as fh:
+            sealed = fh.read().strip()
+    except OSError:
+        sealed = ""
+    if sealed != digest:
+        return (
+            "DDW: this merge proposal has not been in front of the user yet — it was written "
+            "during the turn you are still in. Show it, end your turn, and run the same "
+            "command once they have answered. The refusal is the pause, not an obstacle to "
+            "route around." + howto)
+    return None
+
+
+def consume_spent_merge(repo):
+    """Unlink the merge proposal and seal once the forge says MERGED.
+
+    Reads the PR number out of the proposal itself — the text the user approved
+    names the act — and asks `gh`. No answer, no consumption: a failed or
+    still-pending merge leaves the approval standing, and the same command
+    retries without costing another turn.
+    """
+    proposal, seal = _merge_paths(repo)
+    try:
+        with open(proposal, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return
+    m = re.search(r"#(\d+)", text)
+    if not m:
+        return
+    try:
+        out = subprocess.run(["gh", "pr", "view", m.group(1), "--json", "state"],
+                             cwd=repo or ".", capture_output=True, text=True, timeout=10,
+                             stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return
+    if out.returncode != 0:
+        return
+    try:
+        state = json.loads(out.stdout or "{}").get("state")
+    except (ValueError, AttributeError):
+        return
+    if str(state).upper() != "MERGED":
+        return
+    for path in (proposal, seal):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def consume_spent_proposal(repo):
@@ -524,9 +617,11 @@ def main():
 
     if args.mode == "post":
         # Bookkeeping before judgment: if the commit the user approved now
-        # exists on HEAD, its proposal and seal are spent. This decides nothing
-        # about the state and never fails the hook.
+        # exists on HEAD — or the merge they approved is MERGED at the forge —
+        # its proposal and seal are spent. This decides nothing about the state
+        # and never fails the hook.
         consume_spent_proposal(args.repo)
+        consume_spent_merge(args.repo)
         # Not every tool's post hook can refuse. On the ones that cannot, saying
         # it is all there is — and saying it is still worth doing.
         _refuse = report_post if args.dialect in POST_CANNOT_BLOCK else deny
@@ -583,10 +678,21 @@ def main():
     tool_name, tool_input, paths, typed_but_wrong, raw_name = normalize(event, args.dialect)
 
     if args.mode == "commit":
-        # Anything that is not a commit is not this gate's business. The matcher
-        # fires on every shell call, so silence on the other 99% is the point.
+        # Anything that is not a commit or a merge is not this gate's business.
+        # The matcher fires on every shell call, so silence on the rest is the
+        # point.
         command = tool_input.get("command")
-        if not isinstance(command, str) or not _IS_COMMIT.search(command):
+        if not isinstance(command, str):
+            allow(args.dialect)
+        # The merge first, and OUTSIDE the autonomy exemption below: a merge
+        # keeps its confirmation in both modes, which is the method's own
+        # sentence — this is the hook that makes it true.
+        if _IS_PR_MERGE.search(command):
+            reason = merge_verdict(args.repo, command)
+            if reason:
+                deny(args.dialect, reason)
+            allow(args.dialect)
+        if not _IS_COMMIT.search(command):
             allow(args.dialect)
         # `minimal` was opted into with the cost stated out loud, and what it
         # removes is the asking, not the showing. A commit is local and

@@ -762,3 +762,180 @@ def test_minimal_no_espera(tmp_path):
     """Lo que ese modo saca es el preguntar, y un commit es local y reversible."""
     _repo_en_define(tmp_path, autonomy="minimal")
     assert _commit(tmp_path, 'git commit -m "x"').returncode == 0
+
+
+# ── Las reglas que pasaban en vacío ──────────────────────────────────────────
+#
+# El patrón medido en la ronda 4: una regla cuyo parser extrae cero elementos
+# reportaba "all 0 ... " y daba verde. Un check que midió nada no avala nada.
+
+def test_un_prd_cuyos_ids_no_parsean_no_pasa_la_bateria(tmp_path):
+    """F-PRD-05: "0 FR, 0 NFR, 0 AC — unique, gapless" era PASS, y con las
+    listas vacías F-PRD-01/03/06/09 pasaban también."""
+    body = _fixture('cat > "$VP/docs/ddw/prd/prd-FEAT-001.md" <<\'PRDEOF\'', "PRDEOF")
+    sin_ids = body.replace("FR-", "Req ").replace("NFR-", "NReq ").replace("AC-", "Crit ")
+    r, refused = _validate(tmp_path, "validate_prd.py", "prd-FEAT-002.md", sin_ids)
+    assert _refuses(refused, "F-PRD-05"), \
+        "un PRD sin un solo ID parseable pasó la batería entera: " + "\n".join(refused)
+
+
+def test_una_spec_contra_un_prd_que_parsea_vacio_no_reporta_cobertura(tmp_path):
+    """F-SPEC-01/02/03: "all 0 FR are referenced" era cobertura declarada sobre
+    nada. Un PRD legible que parsea a cero IDs es el documento equivocado."""
+    base = _spec()
+    vacio = tmp_path / "prd-vacio.md"
+    vacio.write_text("# PRD FEAT-001\n\nRequisitos en prosa, sin IDs con formato.\n",
+                     encoding="utf-8")
+    r, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-020.md", base,
+                           "--prd", str(vacio))
+    assert _refuses(refused, "F-SPEC-01/02/03"), \
+        "una spec validó cobertura contra un PRD que parsea vacío: " + "\n".join(refused)
+
+
+def _f_ver_06(tmp_path, report, spec):
+    rp = tmp_path / "verify.md"
+    rp.write_text(report, encoding="utf-8")
+    sp = tmp_path / "spec.md"
+    sp.write_text(spec, encoding="utf-8")
+    r = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts/validate_verify.py"),
+                        str(rp), "--spec", str(sp)],
+                       capture_output=True, text=True, cwd=str(tmp_path))
+    return [ln for ln in r.stdout.splitlines() if "F-VER-06" in ln]
+
+
+SPEC_BACKTICKS = ("# Spec\n\n## Block 1 — x\n**Required tests**\n"
+                  "- [ ] `test_uno` — valida AC-01\n- [ ] `test_dos` — valida AC-02\n")
+
+
+def test_los_tests_prometidos_con_backticks_se_leen(tmp_path):
+    """F-VER-06: la skill de spec emite `test_x` con backticks y la regex leía
+    cero — "all 0 test(s) the spec promised" fue verde en una corrida real que
+    tenía 13 prometidos y 3 ausentes del reporte."""
+    rows = _f_ver_06(tmp_path, "# V\nblock 1: test_uno y test_dos verificados\n",
+                     SPEC_BACKTICKS)
+    assert rows and "✅" in rows[0] and "2 test(s)" in rows[0], \
+        "los nombres con backticks siguen invisibles: %r" % rows
+
+
+def test_un_test_prometido_ausente_del_reporte_refusa(tmp_path):
+    rows = _f_ver_06(tmp_path, "# V\nblock 1: solo test_uno\n", SPEC_BACKTICKS)
+    assert rows and "❌" in rows[0] and "test_dos" in rows[0], \
+        "un test prometido y ausente pasó: %r" % rows
+
+
+def test_required_tests_ilegibles_no_es_un_pass(tmp_path):
+    """La mitad honesta del fix: si hay secciones Required tests y el parser
+    extrae cero nombres, eso es un NO — no un "all 0" en verde."""
+    spec = "# Spec\n**Required tests**\n- [ ] «prueba_uno» — nombre sin formato\n"
+    rows = _f_ver_06(tmp_path, "# V\n", spec)
+    assert rows and "❌" in rows[0], \
+        "una spec con promesas ilegibles avaló el reporte: %r" % rows
+
+
+# ── El gate del merge ────────────────────────────────────────────────────────
+#
+# El único acto del pipeline que sale del repo y que nadie acá puede revertir
+# corría sin que ningún hook lo viera; la elección llegaba por picker, que
+# ningún hook recibe. Mismo diseño que el gate del commit — proposal + sello —
+# con la diferencia que el acto exige: rige en AMBOS modos de autonomía.
+
+MERGE_PROP = os.path.join(".ddw-work", "merge-proposal.txt")
+PROPUESTA_MERGE = "merge PR #7 into main — Recepción de tickets\n"
+
+
+def _merge(tmp_path, command="gh pr merge 7 --squash", env=None):
+    event = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+    return subprocess.run([sys.executable, GATE, "--mode", "commit",
+                           "--state", str(tmp_path / ".ddw-state.json"),
+                           "--graph", GRAPH_PATH, "--repo", str(tmp_path)],
+                          input=event, capture_output=True, text=True, env=env)
+
+
+def _propone_merge(tmp_path, texto=PROPUESTA_MERGE):
+    d = tmp_path / ".ddw-work"
+    d.mkdir(exist_ok=True)
+    (d / "merge-proposal.txt").write_text(texto, encoding="utf-8")
+
+
+def _post_hook(tmp_path, env=None):
+    return subprocess.run([sys.executable, GATE, "--mode", "post",
+                           "--state", str(tmp_path / ".ddw-state.json"),
+                           "--graph", GRAPH_PATH, "--repo", str(tmp_path)],
+                          input="{}", capture_output=True, text=True, env=env)
+
+
+def _gh_estado(tmp_path, estado):
+    b = tmp_path / "ghbin"
+    b.mkdir(exist_ok=True)
+    gh = b / "gh"
+    gh.write_text('#!/usr/bin/env bash\necho "{\\"state\\":\\"%s\\"}"\n' % estado,
+                  encoding="utf-8")
+    gh.chmod(0o755)
+    return dict(os.environ, PATH=str(b) + os.pathsep + os.environ["PATH"])
+
+
+def test_un_merge_que_el_usuario_no_vio_es_rechazado(tmp_path):
+    _repo_en_define(tmp_path)
+    assert _merge(tmp_path).returncode == 2, "un merge corrió sin que nadie lo viera"
+
+
+def test_un_merge_visto_y_contestado_pasa(tmp_path):
+    _repo_en_define(tmp_path)
+    _propone_merge(tmp_path)
+    _habla_el_usuario(tmp_path)
+    assert _merge(tmp_path).returncode == 0, "el merge aprobado fue rechazado igual"
+
+
+def test_minimal_no_exime_al_merge(tmp_path):
+    """La frase que la prosa dijo siempre y nada sostenía: el merge conserva su
+    confirmación en ambos modos."""
+    _repo_en_define(tmp_path, autonomy="minimal")
+    assert _merge(tmp_path).returncode == 2, \
+        "minimal eximió al acto que la prosa dice que nunca exime"
+
+
+def test_un_merge_propuesto_en_el_mismo_turno_es_rechazado(tmp_path):
+    _repo_en_define(tmp_path)
+    _propone_merge(tmp_path)
+    assert _merge(tmp_path).returncode == 2, \
+        "mostrar la propuesta y mergear pudieron pasar en la misma respuesta"
+
+
+def test_un_merge_fallido_no_gasta_la_aprobacion(tmp_path):
+    _repo_en_define(tmp_path)
+    _propone_merge(tmp_path)
+    _habla_el_usuario(tmp_path)
+    assert _merge(tmp_path).returncode == 0
+    _post_hook(tmp_path, env=_gh_estado(tmp_path, "OPEN"))   # el merge NO landeó
+    assert (tmp_path / MERGE_PROP).exists(), "el post consumió un merge que no existe"
+    assert _merge(tmp_path).returncode == 0, "el reintento del merge aprobado fue rechazado"
+
+
+def test_el_permiso_del_merge_se_gasta_cuando_el_forge_dice_merged(tmp_path):
+    _repo_en_define(tmp_path)
+    _propone_merge(tmp_path)
+    _habla_el_usuario(tmp_path)
+    assert _merge(tmp_path).returncode == 0
+    _post_hook(tmp_path, env=_gh_estado(tmp_path, "MERGED"))
+    assert not (tmp_path / MERGE_PROP).exists(), "el post no consumió un merge landeado"
+    assert _merge(tmp_path).returncode == 2, "una aprobación gastada abrió el merge siguiente"
+
+
+# ── El instalador y la instalación sin commitear ─────────────────────────────
+
+def test_sin_tty_el_instalador_avisa_que_la_instalacion_no_esta_commiteada(tmp_path):
+    """La bomba de la ronda 4: instalación nunca commiteada → el primer closeout
+    la barre adentro del PR de la feature (68 archivos). Sin terminal no puede
+    preguntar, pero callarse era el defecto."""
+    repo = tmp_path / "r"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty",
+                    "-m", "base"], check=True)
+    r = subprocess.run(["bash", os.path.join(ROOT, "install.sh"), str(repo),
+                        "--target", "claude", "--mode", "dropin"],
+                       stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-300:]
+    assert "not committed" in r.stdout, \
+        "el instalador dejó la instalación sin commitear y no dijo nada"

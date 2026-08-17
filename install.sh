@@ -73,6 +73,13 @@ done
 TARGET="$(cd "${TARGET_DIR:-$PWD}" && pwd)"
 [ "$TARGET" = "$SELF" ] && { echo "The destination is the DDW repo itself; nothing to do." >&2; exit 1; }
 
+# Which of the files this installer EDITS (rather than creates) were already
+# dirty before it ran. Captured now, because at offer time — after the write —
+# "dirty" no longer distinguishes the user's own uncommitted work from the
+# block the installer appended, and staging a file that mixes both would sweep
+# somebody's half-written notes into an installation commit.
+PREDIRTY="$(git -C "$TARGET" status --porcelain -- AGENTS.md CLAUDE.md GEMINI.md .gitignore .claude/settings.json opencode.json 2>/dev/null | awk '{print $2}')"
+
 # ── The banner ────────────────────────────────────────────────────────────────
 #
 # Someone running this has usually been sent a one-line command and has no idea
@@ -674,3 +681,84 @@ fi
 # to all six.
 echo "  The \"try:\" line above shows how to call DDW by hand in your tool."
 echo
+
+# ── Offer to commit the installation ──────────────────────────────────────────
+#
+# An installation that is never committed is a bomb with a long fuse: the first
+# closeout's commit gate demands a clean tree, and the first ticket unlucky
+# enough to get there sweeps the WHOLE framework into its feature PR. Measured:
+# 68 files and 16,568 lines of DDW inside a pull request about a web form. The
+# moment the user can still say no cheaply is now — so ask now, stage exactly
+# what the manifest says was written, and leave anything that was already dirty
+# before this run alone, with a warning naming it.
+if [ -t 0 ] && git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  DDW_COMMIT_PATHS="$(python3 - "$TARGET" "$PREDIRTY" <<'PYPATHS'
+import json, os, subprocess, sys
+target, predirty = sys.argv[1], set(filter(None, sys.argv[2].split("\n")))
+paths = set()
+mp = os.path.join(target, ".ddw-installed.json")
+if os.path.exists(mp):
+    try:
+        for key in json.load(open(mp, encoding="utf-8")):
+            paths.add(key.split(":", 1)[1] if ":" in key else key)
+    except ValueError:
+        pass
+    paths.add(".ddw-installed.json")
+# The files DDW writes or edits OUTSIDE the manifest: the activation blocks,
+# the gitignore block, and the settings the adapter merges rather than copies.
+for extra in ("AGENTS.md", "CLAUDE.md", "GEMINI.md", ".gitignore",
+              ".claude/settings.json", "opencode.json"):
+    if extra not in predirty and os.path.exists(os.path.join(target, extra)):
+        paths.add(extra)
+# Only what git actually sees as new or changed: an update run that rewrote
+# nothing should not offer an empty commit.
+try:
+    # `-uall`: untracked files are listed one by one — without it an untracked
+    # DIRECTORY collapses to one `?? .claude/skills/` line and every file
+    # beneath it silently misses the commit. Measured on the first dry run.
+    out = subprocess.run(["git", "-C", target, "status", "--porcelain", "-uall", "--"] + sorted(paths),
+                         capture_output=True, text=True, timeout=15)
+    dirty = {ln[3:].strip().strip('"') for ln in out.stdout.splitlines() if len(ln) > 3}
+except Exception:
+    dirty = set()
+# A manifest entry can be a DIRECTORY (`.claude/skills/ddw-commit`): what git
+# reports dirty is the files beneath it, so the match is by prefix.
+print("\n".join(sorted(p for p in paths
+                       if p in dirty or any(d.startswith(p + "/") for d in dirty))))
+PYPATHS
+)"
+  if [ -n "$DDW_COMMIT_PATHS" ]; then
+    N_PATHS="$(printf '%s\n' "$DDW_COMMIT_PATHS" | sed '/^$/d' | wc -l | tr -d ' ')"
+    echo "  The installation is not committed yet ($N_PATHS path(s)). Left uncommitted, the"
+    echo "  first ticket's closeout will sweep it into that ticket's own pull request."
+    if [ -n "$PREDIRTY" ]; then
+      echo "  ⚠ Left out (they were already modified before this run — review them yourself):"
+      printf '%s\n' "$PREDIRTY" | sed '/^$/d' | sed 's/^/      /'
+    fi
+    printf "  Commit the installation now? [Y/n] "
+    { read -r DOCOMMIT < /dev/tty; } 2>/dev/null || DOCOMMIT=n
+    case "$DOCOMMIT" in
+      n|N|no|NO) echo "  Skipped. Commit it yourself before the first ticket closes." ;;
+      *)
+        ADDED=1
+        while IFS= read -r p; do
+          [ -z "$p" ] && continue
+          git -C "$TARGET" add -- "$p" || ADDED=0
+        done <<EOF_DDW_PATHS
+$DDW_COMMIT_PATHS
+EOF_DDW_PATHS
+        if [ "$ADDED" = 1 ] \
+           && git -C "$TARGET" commit -q -m "🔧 chore(ddw): install DDW v${VERSION:-?} (drop-in)"; then
+          echo "  ✓ Installation committed: $(git -C "$TARGET" rev-parse --short HEAD)"
+        else
+          echo "  ⚠ The commit did not land (a signing prompt, a hook?). The paths are"
+          echo "    staged; commit them yourself before the first ticket closes."
+        fi ;;
+    esac
+    echo
+  fi
+elif git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "  Note: this repo is git-tracked and the installation is not committed."
+  echo "  Commit it before the first ticket closes, or that ticket's PR will carry it."
+  echo
+fi

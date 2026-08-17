@@ -213,14 +213,25 @@ def main():
         else:
             ok("F-VER-02", f"all {len(blocks)} spec block(s) are accounted for")
 
-        promised = re.findall(r"^[ \t]*[-*]\s+(?:\[[ x]\]\s*)?(test[\w./:-]*)", spec_text,
+        # The optional backtick is not decoration: the spec skill writes every
+        # test name as `` `test_x` ``, and without it this rule read 13 promised
+        # tests as zero — and "all 0 test(s) the spec promised are reported"
+        # went green on a live run. A rule that measures nothing must not vouch.
+        promised = re.findall(r"^[ \t]*[-*]\s+(?:\[[ x]\]\s*)?`?(test[\w./:-]*)", spec_text,
                               re.MULTILINE | re.IGNORECASE)
-        absent = [t for t in dict.fromkeys(promised) if t not in text]
-        if absent:
-            fail("F-VER-06", f"test promised by the spec and absent from the report: "
-                             f"{', '.join(absent[:5])}{' (and others)' if len(absent) > 5 else ''}")
+        if not promised and re.search(r"required tests", spec_text, re.IGNORECASE):
+            fail("F-VER-06", "the spec has 'Required tests' sections and not one test name "
+                             "could be read from them. Either the spec promises no tests — "
+                             "which F-SPEC-06 refuses — or the names are in a format this "
+                             "rule cannot parse; both are a NO from a rule that would "
+                             "otherwise pass having measured nothing")
         else:
-            ok("F-VER-06", f"all {len(set(promised))} test(s) the spec promised are reported")
+            absent = [t for t in dict.fromkeys(promised) if t not in text]
+            if absent:
+                fail("F-VER-06", f"test promised by the spec and absent from the report: "
+                                 f"{', '.join(absent[:5])}{' (and others)' if len(absent) > 5 else ''}")
+            else:
+                ok("F-VER-06", f"all {len(set(promised))} test(s) the spec promised are reported")
 
     # F-VER-03: the three numbers, and the floor they have to clear.
     cov = _coverage(text)

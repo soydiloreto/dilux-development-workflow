@@ -116,6 +116,16 @@ Drop `--target` and it asks. Valid values: `claude`, `codex`, `copilot`, `cursor
 
 Installing **is** activating — there is no separate enable step.
 
+**If the repo is git-tracked, the installer offers to commit the installation
+right there** — exactly the paths its manifest says it wrote, nothing of yours:
+a file that already had uncommitted changes before the run is left out and
+named, for you to review. Say no and it reminds you why yes was the offer: an
+installation that is never committed surfaces at the first ticket's closeout,
+whose commit gate demands a clean tree — and that ticket's pull request ends up
+carrying the whole framework alongside its own change. Measured: 68 files of
+DDW inside a PR about a web form. Without a terminal to ask on, it prints the
+same warning and touches nothing.
+
 ### What lands in your repo
 
 ```
