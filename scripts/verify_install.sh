@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=570
+EXPECT_CHECKS=576
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=612
+EXPECT_MUTATIONS=621
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5709,6 +5709,30 @@ grep -q '_IS_PR_MERGE' "$SELF/ddw/scripts/hook-gate.py" \
   && ok "the merge is held by the same seal the commit is, and the closeout says so where the merge is chosen" \
   || bad "gh pr merge runs with no hook watching, or the closeout stopped saying the execution waits for a message"
 
+# ── The PR is born answerable, and the closeout finishes what it started ──────
+#
+# Round 5 closed a ticket whose PR was a draft nobody could approve, whose body
+# went through a shell heredoc no hook saw, whose integration box never plainly
+# asked the one thing the user cared about — feedback, or merge? — and whose
+# final index commit stayed stranded on the machine, one commit ahead of the
+# PR it had just presented.
+grep -Fq 'ready for review — NOT a draft' "$SELF/skills/ddw-create-pr/SKILL.md" \
+  && ! grep -Fq 'ALWAYS create the PR as a **draft**' "$SELF/skills/ddw-create-pr/SKILL.md" \
+  && grep -Fq -- '--body-file .ddw-work/pr-body.md' "$SELF/skills/ddw-create-pr/SKILL.md" \
+  && grep -Fq 'never a shell heredoc' "$SELF/skills/ddw-create-pr/SKILL.md" \
+  && ok "the PR is created ready for review, its body written with the Write tool and passed by file" \
+  || bad "the PR is born a draft nobody can approve, or its body goes through a shell heredoc no hook sees"
+grep -Fq 'Are you waiting for feedback on' "$SELF/ddw/rules/closeout.instructions.md" \
+  && grep -Fq 'ready for review, not a draft' "$SELF/ddw/rules/closeout.instructions.md" \
+  && ok "the integration step asks the user's actual question — waiting for feedback, or merge it now" \
+  || bad "the integration box went back to jargon, and the feedback-or-merge decision hides behind option numbers"
+grep -Fq 'Then push the branch.' "$SELF/ddw/rules/closeout.instructions.md" \
+  && ok "the closeout pushes the index commit it makes after the PR, so the PR shows the whole ticket" \
+  || bad "the closeout's own last commit strands on the machine again, and the PR reviews a branch already one commit stale"
+grep -Fq 'And aim for balance.' "$SELF/ddw/rules/define.instructions.md" \
+  && ok "the scope check aims for a balanced cut, and an over-ceiling part is approved knowingly or not at all" \
+  || bad "an 11/6/2 cut sails through the scope check with nobody told the big part never shrank"
+
 # ── The installation offers to commit itself, or says why it should have ─────
 #
 # Left uncommitted, the framework surfaces at the first closeout — whose commit
@@ -5725,6 +5749,18 @@ grep -q 'Where should the installation land?' "$SELF/install.sh" \
   && grep -q 'DDW_GIT_FLOW' "$SELF/install.sh" \
   && ok "a fresh install asks where it lands — setup branch, current branch, or files only — before writing" \
   || bad "the installer stopped asking where the installation lands, and it goes back to landing on whatever branch the user happened to be on"
+# Round 5's expensive lesson: the commit landed — on the LOCAL default branch —
+# and nobody pushed it. The ticket branched off that base, and its PR showed 66
+# framework files to the feature's reviewer. Committing was never the whole
+# job; reaching the remote is.
+grep -Fq 'THIS COMMIT IS NOT ON YOUR REMOTE' "$SELF/install.sh" \
+  && grep -Fq 'Push %s to origin now?' "$SELF/install.sh" \
+  && ok "an installation committed on the current branch offers the push, and declined, warns that the commit must reach the remote before the first ticket" \
+  || bad "the installer went quiet about a commit the remote never got — that silence already cost a PR 66 framework files"
+grep -Fq 'Two questions come BEFORE the branch exists' "$SELF/ddw/rules/branches.instructions.md" \
+  && grep -Fq 'git rev-list --count origin/{base}..{base}' "$SELF/ddw/rules/branches.instructions.md" \
+  && ok "creating the ticket branch asks about a non-default base and stops on local-only commits the PR would drag along" \
+  || bad "the branch gets created from whatever base happens to be checked out, and local-only commits ride into the ticket's PR unannounced"
 
 # Reconstructing the state from an Edit whose old_string appears more than once
 # means guessing which occurrence was meant — and the guess decides what gets

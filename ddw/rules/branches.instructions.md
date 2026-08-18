@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Branch Conventions
@@ -93,6 +93,21 @@ convention and the user's call. DDW reports the distance and asks; it never rewr
 own.
 
 ### 1. Creating the branch (CLASSIFY)
+
+Two questions come BEFORE the branch exists, both out loud:
+
+1. **Are you standing where the user thinks you are?** If the current branch is
+   not `{base}` (`main`, `master`, or the project's declared base), do not
+   assume — ask: *"We are on `<branch>`, not `{base}`. Start the ticket from
+   here?"* A sub-ticket deliberately chaining off its predecessor answers yes
+   in one word; an accident answers no before it costs a PR full of surprises.
+2. **Does the remote have everything the local base has?** Measure it:
+   `git rev-list --count origin/{base}..{base}` (after the fetch below). If it
+   is not 0, STOP and say so: those commits exist only on this machine, and a
+   branch cut from the local base carries every one of them into the ticket's
+   pull request — measured live, an installation committed locally and never
+   pushed put 66 framework files in front of the feature's reviewer. The cure
+   is one `git push origin {base}` BEFORE the branch exists; offer it.
 
 ```bash
 git fetch origin

@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.2.0
+version: 2.3.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -256,6 +256,12 @@ ACs — every one above the threshold that caused the split — and the box said
 saying that. The user approved a cut that had not made anything smaller, because the number that
 would have told them was on nobody's screen. The decision to split, and how, stays theirs; the
 numbers are not theirs to lose.
+
+**And aim for balance.** A proposed cut of 11/6/2 has not split the problem, it has renamed it:
+the big part is still over the ceiling that triggered the split, and the smallest was never a
+ticket. Before proposing, look for the most even cut that keeps every part independently
+shippable; a part still over the ceiling goes in the box on its own line — with the reason no
+smaller cut ships — so the user approves it knowingly, not by not seeing it.
 
 The first two are signals that something needs looking at. **The third is the one that decides**,
 and it is the principle at the top of this section: a part that cannot reach production on its own

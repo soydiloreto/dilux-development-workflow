@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.1.0
+version: 2.2.0
 ---
 
 # Phase 5: CLOSEOUT (Commit, PR and Closeout)
@@ -80,8 +80,8 @@ the step in silence.
      - A link to the PRD if there is one (derived path: `docs/ddw/prd/prd-{ticket}.md`).
      - A summary of the changes.
      - For FIX: the root cause, from `docs/ddw/specs/rca-{ticket}.md`.
-   - The PR is always created as a **draft**. Marking it "Ready for Review" is a later manual
-     action, once the branch is ready to merge.
+   - The PR is created **ready for review, not a draft**: every gate is green by now, and step 4
+     immediately asks whether this PR waits for feedback or merges — a draft can do neither.
 2. Ask the user to confirm before creating the PR.
 3. Add the `pr` gate to `.ddw-state.json.gates`.
 
@@ -109,9 +109,12 @@ Then resolve, out loud:
 │  Base:   [base] — [N commits ahead of this branch]       │
 │  PR:     [url or "none"]                                 │
 │                                                          │
-│  Where does this land?                                   │
-│    1. It merges when the PR merges — nothing to do now   │
-│    2. Merge it into [base] now (--no-ff)                 │
+│  Every gate is green. Are you waiting for feedback on    │
+│  this PR, or do we merge it into [base] now?             │
+│    1. Waiting for feedback — it merges when reviewers    │
+│       approve it; nothing else to do now                 │
+│    2. Merge it now (gh pr merge — gated: the merge       │
+│       proposal below, then your answer)                  │
 │    3. Leave the branch; the next ticket branches off it  │
 │    4. Leave it — you will handle the integration         │
 │                                                          │
@@ -198,6 +201,11 @@ Only after the user confirms:
    beside it, and the next one in the order to `active`. Commit it with the CHANGELOG. The index is
    the human-readable half of "what is left"; the machine derives the same thing from the history,
    and the two should not be allowed to disagree.
+   **Then push the branch.** Any commit made here was born AFTER the PR: without a push the PR
+   never shows it, and the ticket closes with work its reviewer cannot see — measured live, a
+   closeout left its own index commit stranded on the machine and the branch a commit ahead of the
+   PR it had just presented. If there is no remote, say so; if the push fails, say so and stop —
+   IDLE can wait one push.
 2. Add an entry to `history`: transition CLOSEOUT → IDLE, **stamped with this `ticket` and `tier`**
    (see `.ddw/rules/state.instructions.md`). The reset on the next line wipes `ticket`, so this
    entry is where the finished ticket's name survives — and what stops the session boot from

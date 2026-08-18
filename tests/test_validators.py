@@ -1026,3 +1026,90 @@ def test_un_git_init_sin_commits_ofrece_el_primer_commit(tmp_path):
     assert res.returncode == 0, res.stderr[-300:]
     assert "no commits yet" in res.stdout, "no explicó por qué no hay pregunta de rama"
     assert _sucios(r) == 0, "el primer commit del repo no se hizo"
+
+
+# ── El vocabulario de caminos tristes lee palabras reales (F-SPEC-16) ────────
+
+_BULLET_VIVO = "- [ ] test_email_invalido_devuelve_422 — email con formato invalido"
+
+
+def test_un_test_que_dice_rechazado_cuenta_como_camino_triste(tmp_path):
+    """Regresión de la ronda 5: `rechaz` seguido de `\\b` no matchea ninguna
+    forma escrita ("rechazado", "rechaza"), y la spec real terminó cambiando su
+    vocabulario para complacer al validador. El gate no legisla palabras."""
+    base = _spec()
+    probe = base.replace(
+        _BULLET_VIVO,
+        "- [ ] test_email_mal_formado_es_devuelto — el email mal formado es rechazado")
+    assert probe != base, "la sonda no cambió el bullet"
+    _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md",
+                           probe, *_prd(tmp_path))
+    assert not _refuses(refused, "F-SPEC-16"), \
+        '"rechazado" no cuenta como camino triste: ' + "\n".join(refused)
+
+
+def test_la_palabra_triste_en_la_segunda_linea_del_bullet_cuenta(tmp_path):
+    """La otra mitad de la misma regresión: un checkbox envuelto a dos líneas
+    dejaba la palabra clave fuera del conteo — el ítem se lee entero."""
+    base = _spec()
+    probe = base.replace(
+        _BULLET_VIVO,
+        "- [ ] test_email_mal_formado_es_devuelto — el email mal formado\n"
+        "      es rechazado con un aviso por campo")
+    assert probe != base, "la sonda no cambió el bullet"
+    _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md",
+                           probe, *_prd(tmp_path))
+    assert not _refuses(refused, "F-SPEC-16"), \
+        "la palabra triste en la continuación del bullet no contó: " + "\n".join(refused)
+
+
+def test_dos_errores_con_un_solo_test_triste_siguen_refusados(tmp_path):
+    """La dirección que impide aflojar el matcher hasta que matchee todo: un
+    test de camino feliz no paga la deuda de un error documentado."""
+    base = _spec()
+    probe = base.replace(
+        _BULLET_VIVO,
+        "- [ ] test_email_guardado — el email se persiste normalizado")
+    assert probe != base, "la sonda no cambió el bullet"
+    _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md",
+                           probe, *_prd(tmp_path))
+    assert _refuses(refused, "F-SPEC-16"), \
+        "dos errores documentados con un solo test triste pasaron: " + \
+        ("\n".join(refused) or "sin refusals")
+
+
+# ── El commit de instalación tiene que llegar al remoto ──────────────────────
+
+def _con_remoto(r, tmp_path):
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    subprocess.run(["git", "-C", str(r), "remote", "add", "origin", str(bare)],
+                   check=True)
+    subprocess.run(["git", "-C", str(r), "push", "-q", "-u", "origin", "HEAD"],
+                   check=True)
+    return bare
+
+
+def test_flow_current_con_remoto_avisa_que_el_commit_debe_llegar_al_remoto(tmp_path):
+    """Ronda 5: la instalación commiteada en el main LOCAL y nunca pusheada
+    terminó como 66 archivos de framework en el PR de la feature. Si el user
+    no pushea acá, el aviso tiene que ser imposible de no ver."""
+    r = _repo_para_instalar(tmp_path)
+    _con_remoto(r, tmp_path)
+    res = _instala(r, "current", push="n")
+    assert res.returncode == 0, res.stderr[-300:]
+    assert "YOU MUST GET IT ONTO YOUR DEFAULT" in res.stdout, \
+        "el commit quedó solo local y el instalador no gritó nada"
+
+
+def test_flow_current_con_remoto_ofrece_push_y_pushea(tmp_path):
+    r = _repo_para_instalar(tmp_path)
+    bare = _con_remoto(r, tmp_path)
+    res = _instala(r, "current", push="y")
+    assert res.returncode == 0, res.stderr[-300:]
+    local = subprocess.run(["git", "-C", str(r), "rev-parse", "HEAD"],
+                           capture_output=True, text=True).stdout.strip()
+    remote = subprocess.run(["git", "-C", str(bare), "rev-parse", _rama(r)],
+                            capture_output=True, text=True).stdout.strip()
+    assert local and local == remote, \
+        "dijo que pusheaba y el remoto no tiene el commit de instalación"
