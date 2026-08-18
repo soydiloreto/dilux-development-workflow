@@ -19,6 +19,52 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.28.0] — Unreleased
+
+Round 5 — the first full pipeline run on a fresh install — closed its ticket
+clean and left five findings, every one about the road between a green gate
+and a pull request a reviewer can actually read.
+
+### Added
+
+- **Creating the ticket branch asks two questions before the branch exists.**
+  Standing on a branch that is not the base gets asked about in words; local
+  commits the remote does not have (`git rev-list --count origin/{base}..{base}`)
+  stop the creation until the user pushes them or owns carrying them — round 5
+  branched off a local base holding the unpushed installation commit, and the
+  feature's PR showed 66 framework files to its reviewer.
+- **An installation committed on the current branch now offers the push** (same
+  `DDW_GIT_PUSH` spelling), and if it stays local the installer says, in
+  capitals, that the commit must reach the default branch on the remote before
+  the first ticket starts. The setup-branch flow says the same wherever its
+  commit stays local, and its PR is no longer born a draft.
+- **The scope check aims for balance.** A proposed cut of 11/6/2 has not split
+  the problem; the most even cut that keeps every part shippable is the
+  proposal, and a part still over the ceiling is approved knowingly — on its
+  own line, with the reason no smaller cut ships — or not at all.
+
+### Changed
+
+- **The PR is created ready for review, not as a draft.** Every gate is green
+  by the time `ddw-create-pr` runs, and the closeout's integration box now asks
+  the user's actual question in words: are you waiting for feedback on this PR,
+  or do we merge it now? A draft can do neither. `--draft` remains available on
+  request. The PR body travels by file — `.ddw-work/pr-body.md`, written with
+  the Write tool, never a shell heredoc — and lands via `--body-file`.
+
+### Fixed
+
+- **The closeout's own last commit never reached the PR.** The split-index
+  commit is made after the push that opened the PR, so the branch closed one
+  commit ahead of the review it had just requested. The closeout now pushes the
+  branch after that commit, and stops instead of resetting to IDLE if the push
+  fails.
+- **F-SPEC-16's sad-path vocabulary matched no written word.** The stems
+  (`rechaz`, `duplicad`, `unauthor`) were followed by a word boundary, so
+  "rechazado" never counted and a real spec rewrote itself to please the gate.
+  Stems now take their inflections, plurals count, and a bullet wrapped onto a
+  second line is read whole — the keyword on line two was invisible before.
+
 ## [0.27.0] — Unreleased
 
 ### Added

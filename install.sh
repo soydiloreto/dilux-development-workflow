@@ -756,6 +756,16 @@ echo
 # before this run alone, with a warning naming it.
 DDW_IS_GIT=0
 git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 && DDW_IS_GIT=1
+# The warning that survives the commit landing: a commit the remote never got
+# rides into the first ticket's pull request. Round 5 proved it the expensive
+# way — the installation was committed on the LOCAL default branch, nobody
+# pushed it, and the ticket's PR showed 66 framework files to its reviewer.
+ddw_warn_unpushed() {
+  echo "  ⚠ THIS COMMIT IS NOT ON YOUR REMOTE. YOU MUST GET IT ONTO YOUR DEFAULT"
+  echo "    BRANCH — push it, or open and merge its PR — BEFORE THE FIRST TICKET"
+  echo "    STARTS. A ticket branched off a base the remote does not have drags"
+  echo "    every missing commit into its own pull request."
+}
 if [ "$DDW_IS_GIT" = 1 ] && { [ -t 0 ] || [ -n "${DDW_GIT_FLOW:-}" ]; }; then
   DDW_COMMIT_PATHS="$(python3 - "$TARGET" "$PREDIRTY" <<'PYPATHS'
 import json, os, subprocess, sys
@@ -859,24 +869,50 @@ EOF_DDW_PATHS2
     case "$PUSHOPT" in
       y|Y|yes|YES)
         if git -C "$TARGET" push -q -u origin "$DDW_SETUP_BRANCH" 2>/dev/null; then
-          if (cd "$TARGET" && gh pr create --draft \
+          if (cd "$TARGET" && gh pr create \
                 --title "🔧 Install DDW v${VERSION:-?}" \
                 --body "Drop-in installation of DDW v${VERSION:-?}: the method under .ddw/, the agent wiring, and the activation blocks. Committed by the installer, exactly the paths its manifest names." \
                 >/dev/null 2>&1); then
-            echo "  ✓ Pushed and draft PR opened."
+            echo "  ✓ Pushed and PR opened. Merge that PR into your default branch BEFORE"
+            echo "    the first ticket starts — a ticket branched off a base without it"
+            echo "    drags the framework into its own pull request."
           else
             echo "  ✓ Pushed. The PR could not be opened (no gh? not authenticated?) —"
-            echo "    open it yourself from $DDW_SETUP_BRANCH."
+            echo "    open it yourself from $DDW_SETUP_BRANCH and merge it before the"
+            echo "    first ticket starts."
           fi
         else
           echo "  ⚠ Push failed (no remote? no permission?). The branch stays local:"
           echo "    git checkout $CURBRANCH && git merge $DDW_SETUP_BRANCH"
+          ddw_warn_unpushed
         fi ;;
       *)
         echo "  The branch stays local. Merge it when you like:"
-        echo "    git checkout $CURBRANCH && git merge $DDW_SETUP_BRANCH" ;;
+        echo "    git checkout $CURBRANCH && git merge $DDW_SETUP_BRANCH"
+        ddw_warn_unpushed ;;
     esac
     echo
+  fi
+  if [ "$DDW_GIT_CHOICE" = "current" ] && [ "$DDW_DID_COMMIT" = 1 ]; then
+    if git -C "$TARGET" remote get-url origin >/dev/null 2>&1; then
+      DDW_CURB="$(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+      PUSHOPT="${DDW_GIT_PUSH:-}"
+      if [ -z "$PUSHOPT" ]; then
+        printf "  Push %s to origin now? [y/N] " "$DDW_CURB"
+        { read -r PUSHOPT < /dev/tty; } 2>/dev/null || PUSHOPT=n
+      fi
+      case "$PUSHOPT" in
+        y|Y|yes|YES)
+          if git -C "$TARGET" push -q origin "$DDW_CURB" 2>/dev/null; then
+            echo "  ✓ Pushed: origin/$DDW_CURB now carries the installation."
+          else
+            echo "  ⚠ Push failed (no permission? branch protection?)."
+            ddw_warn_unpushed
+          fi ;;
+        *) ddw_warn_unpushed ;;
+      esac
+      echo
+    fi
   fi
 elif [ "$DDW_IS_GIT" = 1 ]; then
   echo "  Note: this repo is git-tracked and the installation is not committed."

@@ -75,7 +75,10 @@ missing and offer the options:
    - If they do not exist → create them with `gh label create`.
 4. Write the PR title and body.
 5. Present them to the user for approval.
-6. Only after approval → create it with `gh pr create --draft --label <AI-assisted|AI-full>`.
+6. Only after approval → save the body to `.ddw-work/pr-body.md` **with the Write
+   tool** (never a shell heredoc — a file written through the shell is a file no
+   hook saw happen), then create it with
+   `gh pr create --label <AI-assisted|AI-full> --body-file .ddw-work/pr-body.md`.
 7. Return the PR's URL.
 
 ## PR Format
@@ -108,8 +111,11 @@ Body:
 ## Rules
 
 - Title ≤ 70 characters.
-- ALWAYS create the PR as a **draft** (`--draft`). Moving it to *Ready for Review* is a manual
-  action, once the branch is ready to merge.
+- Create the PR **ready for review — NOT a draft**. Every gate is already green by the time this
+  skill runs; a draft PR is one nobody can approve or merge, and the closeout's very next step asks
+  whether this PR waits for feedback or merges now. Use `--draft` only if the user asks for it.
+- The body travels by file: `.ddw-work/pr-body.md`, written with the Write tool — NEVER a shell
+  heredoc — and passed with `--body-file`.
 - ALWAYS include the `AI-assisted` or `AI-full` label with `--label`.
 - ALWAYS include the Attribution section in the body.
 - NEVER create a PR without the user's confirmation.
@@ -128,7 +134,7 @@ Body:
 │  URL: [url]                                              │
 │  Title: [title]                                          │
 │  Label: [AI-assisted | AI-full]                          │
-│  Status: Draft                                           │
+│  Status: Open — ready for review                         │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
 ```

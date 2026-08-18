@@ -284,11 +284,15 @@ If the user objects:
 
 Only after the user confirms, **BEFORE updating the state:**
 
-1. Create the branch per `.ddw/rules/branches.instructions.md`:
+1. Create the branch per `.ddw/rules/branches.instructions.md` — including its
+   two out-loud questions BEFORE the branch exists: a current branch that is
+   not the base gets asked about, and local-only commits on the base
+   (`git rev-list --count origin/{base}..{base}` ≠ 0) stop the creation until
+   the user pushes them or owns carrying them into the ticket's PR.
    - FEATURE → `feat/<ticket>-<short-name>`
    - FIX and QUICK-FIX → `fix/<ticket>-<short-name>`
    - DISCOVERY → `discovery/<ticket>-<short-name>`
-2. Confirm to the user: "Branch created: `[name]`"
+2. Confirm to the user: "Branch created: `[name]` from `[base]`"
 
 **Reason:** starting in DEFINE, artifacts are written to disk (PRDs, RCAs). Everything must live on
 the ticket's branch, never on `main`.

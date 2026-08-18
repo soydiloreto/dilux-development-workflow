@@ -52,9 +52,14 @@ CONSTRAINT = re.compile(r"\b(nullable|unique|[uú]nico|foreign key|fk|primary ke
                         r"index|[ií]ndice|not null|no nulo|check)\b", re.IGNORECASE)
 INPUT_SURFACE = re.compile(r"\b(input|entrada|form|formulario|request body|payload|par[aá]metros|"
                            r"params|query string|upload|campo del usuario)\b", re.IGNORECASE)
-SAD_PATH = re.compile(r"\b(invalid|inv[aá]lid[oa]|error|fail|falla|fallo|missing|faltante|"
-                      r"reject|rechaz|duplicate|duplicad|unauthor|no autorizado|forbidden|"
-                      r"prohibido|timeout|conflict|conflicto|sad[ -]path|camino triste|"
+# The stems take `\w*` because a stem followed by `\b` is a word that does not
+# exist: `rechaz\b` matched no Spanish form ever written, and round 5 watched a
+# spec swap "rechazado" for "error" just to please this list — the gate was
+# legislating vocabulary, and the artifact deformed to fit it.
+SAD_PATH = re.compile(r"\b(invalid\w*|inv[aá]lid\w*|error\w*|fail\w*|falla\w*|fallos?|missing|"
+                      r"faltantes?|reject\w*|rechaz\w*|duplicate[sd]?|duplicad\w*|unauthor\w*|"
+                      r"no autorizad\w*|forbidden|prohibid\w*|timeouts?|conflict\w*|"
+                      r"sad[ -]path|camino triste|"
                       r"400|401|403|404|409|422|429|500)\b", re.IGNORECASE)
 REGRESSION = re.compile(r"\bregression|regresi[oó]n\b", re.IGNORECASE)
 ROLLBACK = re.compile(r"\brollback|revert|reversa|reverse migration|migraci[oó]n inversa\b",
@@ -114,6 +119,13 @@ def _bullets(body):
     for ln in body.splitlines():
         m = re.match(r"\s*(?:[-*]|\d+\.)\s+(?:\[[ x]\]\s*)?(.+)$", ln)
         if not m:
+            # A wrapped bullet carries its tail on an indented, marker-less
+            # line. Cut there, the tail's words never reach the rules that read
+            # items whole: F-SPEC-16 counted a sad-path test as happy because
+            # its keyword sat on the second line. Measured in round 5.
+            cont = re.match(r"[ \t]+([^-*\s].*)$", ln)
+            if cont and out:
+                out[-1] += " " + cont.group(1).strip()
             continue
         item = m.group(1).strip()
         if re.fullmatch(r"\[.*\]", item):      # a bare placeholder, nothing else
