@@ -399,6 +399,14 @@ MUTATIONS = [
      edit("ddw/rules/define.instructions.md",
           "**And aim for balance.**",
           "**And that is enough.**")),
+    # Measured on a workflow-only dependency bump: --changed named 3 mutations,
+    # and 21 of 24 shards died red for holding none of them — the guard against
+    # measuring nothing refused shards whose empty slice WAS the answer.
+    ("a shard whose slice holds none of the diff's mutations dies red instead of answering empty",
+     edit("scripts/mutate.py",
+          "    if not chosen and touched and wanted is not None:",
+          "    if False:",
+          last=True)),
     ("an ADR can order the implementation around again",
      edit("ddw/scripts/validate_adr.py", "    if offenders:", "    if False:")),
     ("one option is a decision again",
@@ -3387,6 +3395,16 @@ def main():
         # guard below refuses. It is still worth saying out loud.
         print("Nothing in this diff is named by a mutation, so this run injects nothing. "
               "The list is unchanged and main still measures it whole.")
+        return 0
+    if not chosen and touched and wanted is not None:
+        # The diff DOES name mutations — just none in this shard's slice. For a
+        # sharded PR run that is an ordinary answer, not a refused measurement:
+        # the shards holding them answer the PR's question. Measured on a
+        # workflow-only dependency bump: 3 touched mutations, and 21 of 24
+        # shards died red for holding none of them.
+        print("This shard's slice holds none of the %d mutation(s) this diff touches; "
+              "nothing to inject here. The shard(s) holding them answer the PR's question."
+              % len(touched))
         return 0
     if not chosen:
         raise SystemExit("the selection matched no mutation — nothing was injected, and a run "

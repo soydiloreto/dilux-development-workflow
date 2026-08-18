@@ -18,6 +18,7 @@ import importlib.util
 import re
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -1113,3 +1114,50 @@ def test_flow_current_con_remoto_ofrece_push_y_pushea(tmp_path):
                             capture_output=True, text=True).stdout.strip()
     assert local and local == remote, \
         "dijo que pusheaba y el remoto no tiene el commit de instalación"
+
+
+# ── Un shard sin mutaciones del diff es una respuesta, no una falla ──────────
+
+def test_un_shard_sin_mutaciones_del_diff_contesta_vacio_y_no_muere(tmp_path):
+    """Medido en los PRs de dependabot: un diff que tocaba 3 mutaciones dejó a
+    los otros 21 shards con selección vacía, y la guardia anti-"medí nada" los
+    mató en rojo. Un shard sin trabajo en un run shardeado con --changed es una
+    respuesta ordinaria — los shards que sí las tienen contestan la pregunta."""
+    spec_ = importlib.util.spec_from_file_location(
+        "mut_shard", os.path.join(ROOT, "scripts/mutate.py"))
+    mut = importlib.util.module_from_spec(spec_)
+    spec_.loader.exec_module(mut)
+    objetivo = "ddw/rules/define.instructions.md"
+    tocadas = {i for i, (_l, m) in enumerate(mut.MUTATIONS, 1)
+               if getattr(m, "probe", None) is None or m.probe[1] == objetivo}
+    assert tocadas, "ningún fault nombra el archivo del escenario"
+    n = 24
+    vacios = [s for s in range(1, n + 1)
+              if not tocadas & set(mut.slice_of("%d/%d" % (s, n), len(mut.MUTATIONS)))]
+    assert vacios, "el diff del escenario toca mutaciones en los 24 shards; elegir otro archivo"
+    # Un repo sintético mínimo: el runner solo necesita existir en un git cuyo
+    # último commit toque el archivo del escenario. Nada de clonar ROOT — la
+    # suite de mutaciones corre estos tests dentro de una copia SIN .git, y un
+    # clone de esa copia moría en 128 antes de medir nada.
+    clone = tmp_path / "repo"
+    (clone / "scripts").mkdir(parents=True)
+    (clone / os.path.dirname(objetivo)).mkdir(parents=True)
+    shutil.copy(os.path.join(ROOT, "scripts/mutate.py"),
+                str(clone / "scripts" / "mutate.py"))
+    subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
+        subprocess.run(["git", "-C", str(clone), "config", k, v], check=True)
+    (clone / objetivo).write_text("# base\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(clone), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(clone), "commit", "-qm", "base"], check=True)
+    with open(clone / objetivo, "a", encoding="utf-8") as f:
+        f.write("\n<!-- tocado por el escenario del shard vacío -->\n")
+    subprocess.run(["git", "-C", str(clone), "add", "--", objetivo], check=True)
+    subprocess.run(["git", "-C", str(clone), "commit", "-qm", "toca define"], check=True)
+    r = subprocess.run(["python3", "scripts/mutate.py",
+                        "--shard", "%d/%d" % (vacios[0], n), "--changed", "HEAD~1"],
+                       cwd=str(clone), capture_output=True, text=True)
+    assert r.returncode == 0, \
+        "el shard sin trabajo murió en rojo otra vez: " + (r.stdout + r.stderr)[-300:]
+    assert "holds none of the" in r.stdout, \
+        "el shard vacío no dijo por qué no inyectó nada: " + r.stdout[-300:]
