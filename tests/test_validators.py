@@ -1135,15 +1135,21 @@ def test_un_shard_sin_mutaciones_del_diff_contesta_vacio_y_no_muere(tmp_path):
     vacios = [s for s in range(1, n + 1)
               if not tocadas & set(mut.slice_of("%d/%d" % (s, n), len(mut.MUTATIONS)))]
     assert vacios, "el diff del escenario toca mutaciones en los 24 shards; elegir otro archivo"
-    clone = tmp_path / "clon"
-    subprocess.run(["git", "clone", "-q", ROOT, str(clone)], check=True)
-    for k, v in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
-        subprocess.run(["git", "-C", str(clone), "config", k, v], check=True)
-    # El runner bajo prueba es el del árbol de trabajo, no el del último commit
-    # — copiado por fuera del diff, así el diff del clon sigue tocando solo el
-    # archivo del escenario.
+    # Un repo sintético mínimo: el runner solo necesita existir en un git cuyo
+    # último commit toque el archivo del escenario. Nada de clonar ROOT — la
+    # suite de mutaciones corre estos tests dentro de una copia SIN .git, y un
+    # clone de esa copia moría en 128 antes de medir nada.
+    clone = tmp_path / "repo"
+    (clone / "scripts").mkdir(parents=True)
+    (clone / os.path.dirname(objetivo)).mkdir(parents=True)
     shutil.copy(os.path.join(ROOT, "scripts/mutate.py"),
                 str(clone / "scripts" / "mutate.py"))
+    subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
+        subprocess.run(["git", "-C", str(clone), "config", k, v], check=True)
+    (clone / objetivo).write_text("# base\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(clone), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(clone), "commit", "-qm", "base"], check=True)
     with open(clone / objetivo, "a", encoding="utf-8") as f:
         f.write("\n<!-- tocado por el escenario del shard vacío -->\n")
     subprocess.run(["git", "-C", str(clone), "add", "--", objetivo], check=True)
