@@ -59,6 +59,13 @@ and a pull request a reviewer can actually read.
   commit ahead of the review it had just requested. The closeout now pushes the
   branch after that commit, and stops instead of resetting to IDLE if the push
   fails.
+- **A shard with none of the diff's mutations died red instead of answering
+  empty.** On a pull request, `--changed` narrows the list to the mutations the
+  diff touches; a shard whose slice held none of them fell into the guard
+  against measuring nothing and failed. Measured on a workflow-only dependency
+  bump: 3 touched mutations, 21 of 24 shards red for holding no work. An empty
+  slice in a sharded `--changed` run is now an ordinary answer, said out loud —
+  the shards holding the mutations answer the PR's question.
 - **F-SPEC-16's sad-path vocabulary matched no written word.** The stems
   (`rechaz`, `duplicad`, `unauthor`) were followed by a word boundary, so
   "rechazado" never counted and a real spec rewrote itself to please the gate.
