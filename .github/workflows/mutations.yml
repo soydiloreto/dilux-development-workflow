@@ -154,7 +154,7 @@ jobs:
       - run: |
           python3 scripts/mutate.py --shard ${{ matrix.shard }}/24 --no-fast \
                   --kill-map "kill-map-${{ matrix.shard }}.json"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kill-map-${{ matrix.shard }}
           path: kill-map-${{ matrix.shard }}.json
@@ -184,7 +184,7 @@ jobs:
       # prohíbe, obliga a decirlo.
       - run: python3 -m pip install --quiet pyyaml
       - run: python3 scripts/kill_map_ledger.py --parts parts --ledger docs/CHECKS-THAT-CANNOT-FAIL.md
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: kill-map-merged
