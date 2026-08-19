@@ -31,6 +31,61 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ddw_receipt  # noqa: E402 — same directory, resolved above
 
+def _promised_tests(spec_text):
+    """The test NAMES a spec promises — read only where it promises them.
+
+    Two things are deliberate here, and both were paid for.
+
+    **Where it looks.** Scanning the whole document for anything starting with
+    `test` also read each block's **Files** — so `tests/fakes.py`, which holds
+    no test at all, counted as one. Round 6 measured the result: "all 19 test(s)
+    the spec promised are reported" over a spec promising 16 and a suite running
+    16. Worse than the wrong number was what it taught: the FAIL before it was
+    closed by adding the FILE NAMES to the report, which is precisely what this
+    rule had misread. A count nobody can reproduce is the same defect as a count
+    measured from nothing, one direction over.
+
+    **What counts as a name.** A path is not a test. `tests/test_x.py::test_y`
+    keeps the half after `::` — that IS a test — and what is left has to be an
+    identifier, which no path can be. The optional backtick is not decoration
+    either: the
+    spec skill writes every name as `` `test_x` ``, and without it this rule
+    once read 13 promised tests as zero and vouched for all of them.
+    """
+    names = []
+    for body in _required_tests_parts(spec_text):
+        for raw in re.findall(r"^[ \t]*[-*]\s+(?:\[[ x]\]\s*)?([^\s,]+)", body, re.MULTILINE):
+            name = raw.strip("`").rsplit("::", 1)[-1].strip("`")
+            # An identifier, which is what excludes the paths: `/` and `.` are
+            # not word characters, so `tests/fakes.py` — a file holding no test
+            # at all — cannot pass this and be counted as one.
+            if re.fullmatch(r"test[\w-]+", name, re.IGNORECASE):
+                names.append(name)
+    return list(dict.fromkeys(names))
+
+
+def _required_tests_parts(spec_text):
+    """Every part of a spec where required tests are listed.
+
+    Both shapes the templates use: the bold label inside a block, and the
+    section heading a fix-plan writes instead. A fix-plan whose tests live under
+    `## Tests` is not a spec that promised nothing — and reading it as one is
+    how this rule would go green having looked in the wrong place.
+    """
+    parts = []
+    for m in re.finditer(r"^[ \t]*\*\*\s*(?:required tests|tests? requeridos?)\s*\*\*.*$",
+                         spec_text, re.MULTILINE | re.IGNORECASE):
+        rest = spec_text[m.end():]
+        nxt = re.search(r"^[ \t]*(?:\*\*|#{2,4}\s)", rest, re.MULTILINE)
+        parts.append(rest[:nxt.start()] if nxt else rest)
+    for m in re.finditer(r"^[ \t]*#{2,4}\s+(?:required tests|tests?|pruebas)\b.*$",
+                         spec_text, re.MULTILINE | re.IGNORECASE):
+        rest = spec_text[m.end():]
+        nxt = re.search(r"^[ \t]*#{2,4}\s", rest, re.MULTILINE)
+        parts.append(rest[:nxt.start()] if nxt else rest)
+    return parts
+
+
 MINIMUM = 80        # line, branch and function coverage — testing.instructions.md
 # `❌` is not a word character, so inside a `\b(...)\b` group it demanded a word
 # character on BOTH sides of it — and every shape the verify skill tells the
@@ -213,18 +268,12 @@ def main():
         else:
             ok("F-VER-02", f"all {len(blocks)} spec block(s) are accounted for")
 
-        # The optional backtick is not decoration: the spec skill writes every
-        # test name as `` `test_x` ``, and without it this rule read 13 promised
-        # tests as zero — and "all 0 test(s) the spec promised are reported"
-        # went green on a live run. A rule that measures nothing must not vouch.
-        promised = re.findall(r"^[ \t]*[-*]\s+(?:\[[ x]\]\s*)?`?(test[\w./:-]*)", spec_text,
-                              re.MULTILINE | re.IGNORECASE)
-        if not promised and re.search(r"required tests", spec_text, re.IGNORECASE):
-            fail("F-VER-06", "the spec has 'Required tests' sections and not one test name "
-                             "could be read from them. Either the spec promises no tests — "
-                             "which F-SPEC-06 refuses — or the names are in a format this "
-                             "rule cannot parse; both are a NO from a rule that would "
-                             "otherwise pass having measured nothing")
+        promised = _promised_tests(spec_text)
+        if not promised:
+            fail("F-VER-06", "not one test name could be read from the spec's 'Required tests'. "
+                             "Either the spec promises no tests — which F-SPEC-06 refuses — or "
+                             "the names are in a format this rule cannot parse; both are a NO "
+                             "from a rule that would otherwise pass having measured nothing")
         else:
             absent = [t for t in dict.fromkeys(promised) if t not in text]
             if absent:

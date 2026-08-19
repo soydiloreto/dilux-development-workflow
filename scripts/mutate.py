@@ -275,12 +275,12 @@ MUTATIONS = [
     # La familia de la ronda 4: reglas que median cero y avalaban igual.
     ("the backticked test names go back to being invisible to F-VER-06",
      edit("ddw/scripts/validate_verify.py",
-          r'`?(test[\w./:-]*)"',
-          r'(test[\w./:-]*)"')),
+          '            name = raw.strip("`").rsplit("::", 1)[-1].strip("`")',
+          '            name = raw.rsplit("::", 1)[-1]')),
     ("a spec whose promised tests cannot be read goes back to vouching anyway",
      edit("ddw/scripts/validate_verify.py",
-          '        if not promised and re.search(r"required tests", spec_text, re.IGNORECASE):',
-          "        if False:")),
+          "        promised = _promised_tests(spec_text)\n        if not promised:",
+          "        promised = _promised_tests(spec_text)\n        if False:")),
     ("a PRD parsing to zero IDs clears the whole battery again",
      edit("ddw/scripts/validate_prd.py",
           '        empty = [p for p, items in (("FR", frs), ("NFR", nfrs), ("AC", acs)) if not items]',
@@ -2126,8 +2126,8 @@ MUTATIONS = [
           '    raw = re.sub(r"(\\d),(\\d{3})\\b", r"\\1\\2", raw)\n', "\n")),
     ("a spec block stops owing what can go wrong with it",
      edit("ddw/scripts/validate_spec.py",
-          "        if not errors:\n            no_errors.append(label)",
-          "        if False:\n            no_errors.append(label)")),
+          "        elif not errors:\n            no_errors.append(label)",
+          "        elif False:\n            no_errors.append(label)")),
     ("a spec stops owing the order its blocks run in",
      edit("ddw/scripts/validate_spec.py", "    if deps:", "    if True:")),
     ("the PRD template earns its own gate with one field filled in",
@@ -2868,6 +2868,31 @@ MUTATIONS = [
           "        # Only ranges that START at 01.",
           "    for path in sorted(glob.glob(os.path.join(root, \"ddw/**/*.md\"), recursive=True)):\n"
           "        body = read(path)\n        # Only ranges that START at 01.")),
+    # ── Ronda 6 ─────────────────────────────────────────────────────────────
+    ("a block with no error conditions of its own has nowhere to say so again",
+     edit("ddw/scripts/validate_spec.py",
+          "        if len(errors) == 1 and NO_ERRORS.search(errors[0]):",
+          "        if False:")),
+    ("the declaration of absence becomes a magic word any block can claim",
+     edit("ddw/scripts/validate_spec.py",
+          "            if INPUT_SURFACE.search(surface) or SCHEMA.search(surface):\n"
+          "                no_errors.append(f\"{label} (declares no error conditions, yet it takes input \"",
+          "            if False:\n"
+          "                no_errors.append(f\"{label} (declares no error conditions, yet it takes input \"")),
+    ("the promised tests go back to being read from the whole spec, paths and all",
+     edit("ddw/scripts/validate_verify.py",
+          "    for body in _required_tests_parts(spec_text):",
+          "    for body in [spec_text]:")),
+    ("the approved spec stays writable from the phase that implements it",
+     edit("ddw/scripts/validate-transition.py",
+          "        reason = sealed_artifact_denied(target, root, disk)\n"
+          "        if reason:\n            return reason\n", "")),
+    ("the seal stops asking whether the gate is standing, and locks the phase that writes it",
+     edit("ddw/scripts/validate-transition.py",
+          "        if not gates.get(gate):\n"
+          "            continue                                 # not earned yet",
+          "        if False:\n"
+          "            continue                                 # not earned yet")),
 ]
 
 

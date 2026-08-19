@@ -410,6 +410,60 @@ def test_a_spec_block_owes_what_can_go_wrong_with_it(tmp_path):
         "un bloque sin manejo de errores pasó: " + ("\n".join(refused) or "no refusals at all")
 
 
+# Un bloque que no tiene errores propios. Medido en la ronda 6: la verdad no
+# entraba en ningún lado —en prosa la rechaza F-SPEC-10, en bullet la cobra
+# F-SPEC-16 pidiéndole un test— así que un bloque de render estático se inventó
+# un 404 de otro bloque, con su test, para poner la compuerta en verde.
+
+QUIETO = """
+## Block 2 — Pagina de ayuda estatica
+
+**Files**
+- `app/templates/help.html` (new) — texto de ayuda
+
+**Logic**
+Renderiza un texto fijo. No recibe nada del usuario ni toca la base.
+
+**Error handling**
+- Sin condiciones de error propias: el render es estatico.
+
+**Required tests**
+- [ ] test_ayuda_devuelve_200 — validates AC-01
+
+**Completion criterion**
+Pasa test_ayuda_devuelve_200.
+"""
+
+
+def test_un_bloque_sin_errores_propios_puede_decirlo(tmp_path):
+    """F-SPEC-10/16. La declaración satisface la regla y cuenta como CERO
+    errores: si contara como uno, F-SPEC-16 le pediría un camino triste que el
+    bloque no tiene, que es el callejón que obligó a inventar el error."""
+    base = _spec()
+    cuerpo = base.replace("\n## Rollback", QUIETO + "\n## Rollback")
+    assert cuerpo != base, "la spec sana ya no trae `## Rollback` donde colgar el bloque"
+    r, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-030.md", cuerpo,
+                           *_prd(tmp_path))
+    assert r.returncode == 0 and not refused, \
+        "un bloque que declara no tener errores fue rechazado: " + (
+            "\n".join(refused) or r.stderr[-200:])
+
+
+def test_la_declaracion_se_refusa_donde_no_puede_ser_cierta(tmp_path):
+    """La otra mitad, y la que impide que sea una palabra mágica: el bloque sano
+    recibe un formulario, y lo que llega puede llegar mal."""
+    base = _spec()
+    miente = re.sub(r"^\*\*Error handling\*\*\n(?:- .*\n)+",
+                    "**Error handling**\n- Sin condiciones de error propias.\n",
+                    base, flags=re.M)
+    assert miente != base, "la spec sana ya no trae bullets de `**Error handling**`"
+    _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-031.md", miente,
+                           *_prd(tmp_path))
+    assert _refuses(refused, "F-SPEC-10"), \
+        "un bloque con entrada declaró no tener errores y pasó: " + (
+            "\n".join(refused) or "sin rechazos")
+
+
 def test_a_spec_owes_the_order_its_blocks_run_in(tmp_path):
     """F-SPEC-11. Una sola vez para todo el documento, y sin ella el orden de
     ejecución queda sin declarar."""
@@ -816,6 +870,46 @@ def test_los_tests_prometidos_con_backticks_se_leen(tmp_path):
                      SPEC_BACKTICKS)
     assert rows and "✅" in rows[0] and "2 test(s)" in rows[0], \
         "los nombres con backticks siguen invisibles: %r" % rows
+
+
+# Las dos mitades del fix se tapan entre sí si se las mide con el mismo
+# documento: acotar a `Required tests` esconde que la ruta se filtra, y filtrar
+# la ruta esconde que se lee de más. Un fixture por mitad, o la mutación que
+# reinyecta cada una sobrevive sobre la defensa de la otra.
+
+SPEC_RUTA_PROMETIDA = ("# Spec\n\n## Block 1 — x\n"
+                       "**Required tests**\n"
+                       "- [ ] `test_uno` — valida AC-01\n"
+                       "- [ ] `test_dos` — valida AC-02\n"
+                       "- [ ] `tests/fakes.py` — el doble del repositorio\n")
+
+
+def test_una_ruta_de_archivo_no_es_un_test_prometido(tmp_path):
+    """F-VER-06. `tests/fakes.py` no tiene un solo test, y contarlo infló la
+    cuenta: la ronda 6 midió "all 19 test(s) the spec promised" sobre una spec
+    que prometía 16. El ❌ previo se cerró agregando los NOMBRES DE ARCHIVO al
+    reporte — justo lo que la regla malleía. Escrito DENTRO de `Required tests`
+    a propósito: acotar la búsqueda no alcanza para esto."""
+    rows = _f_ver_06(tmp_path, "# V\nblock 1: test_uno y test_dos verificados\n",
+                     SPEC_RUTA_PROMETIDA)
+    assert rows and "✅" in rows[0] and "2 test(s)" in rows[0], \
+        "una ruta de archivo sigue contando como test prometido: %r" % rows
+
+
+SPEC_NOMBRE_FUERA = ("# Spec\n\n## Block 1 — x\n"
+                     "**Required tests**\n- [ ] `test_uno` — valida AC-01\n"
+                     "## Rollback\n- `test_smoke_legacy` queda como estaba\n")
+
+
+def test_un_test_nombrado_fuera_de_required_tests_no_es_una_promesa(tmp_path):
+    """La otra mitad: la promesa vive en `Required tests` y en ningún otro lado.
+    Leído el documento entero, un test que la spec MENCIONA —el de humo que
+    queda igual tras el rollback— se vuelve una promesa que el reporte de
+    verificación tiene que nombrar, y VERIFY refusa por algo que nadie
+    prometió."""
+    rows = _f_ver_06(tmp_path, "# V\nblock 1: test_uno verificado\n", SPEC_NOMBRE_FUERA)
+    assert rows and "✅" in rows[0] and "1 test(s)" in rows[0], \
+        "un test nombrado fuera de Required tests se cobró como promesa: %r" % rows
 
 
 def test_un_test_prometido_ausente_del_reporte_refusa(tmp_path):

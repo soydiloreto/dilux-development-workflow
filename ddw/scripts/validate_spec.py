@@ -61,6 +61,24 @@ SAD_PATH = re.compile(r"\b(invalid\w*|inv[aá]lid\w*|error\w*|fail\w*|falla\w*|f
                       r"no autorizad\w*|forbidden|prohibid\w*|timeouts?|conflict\w*|"
                       r"sad[ -]path|camino triste|"
                       r"400|401|403|404|409|422|429|500)\b", re.IGNORECASE)
+# The one thing a block with no error conditions of its own is allowed to say.
+# Round 6 measured what its absence cost: a static-render block wrote the truth
+# as prose and F-SPEC-10 refused it (prose is not a bullet); written as a bullet
+# instead, F-SPEC-16 counted it as an error and demanded a sad-path test for it.
+# The truth was unwritable in both directions, so the spec grew a 404 belonging
+# to another block, with its test, to please the gate.
+#
+# Anchored at the start of the bullet and immediately followed by what is
+# absent: `- Sin conexión a la DB → error 500` is a real error-handling entry
+# that a looser pattern read as a declaration of absence, which would have
+# exempted the block from F-SPEC-16 — failing open, in the rule whose whole job
+# is to notice a missing test.
+NO_ERRORS = re.compile(r"^[ \t]*(?:"
+                       r"(?:none|n/?a)\b"
+                       r"|(?:no|sin|ninguna|ning[uú]n)\b[\s:,.—–-]*"
+                       r"(?:errors?|errores|failure modes?|fallos?|fallas?|"
+                       r"condici[oó]n(?:es)?\s+de\s+error|error conditions?)\b"
+                       r")", re.IGNORECASE)
 REGRESSION = re.compile(r"\bregression|regresi[oó]n\b", re.IGNORECASE)
 ROLLBACK = re.compile(r"\brollback|revert|reversa|reverse migration|migraci[oó]n inversa\b",
                       re.IGNORECASE)
@@ -344,15 +362,6 @@ def main():
             _section_body(body, ("error handling", "manejo de errores")))
         criterion = _part(body, "Completion criterion")
 
-        if not any(("/" in f or "`" in f or re.search(r"\.\w{1,5}\b", f)) for f in files):
-            no_files.append(label)
-        if not criterion and not is_fix:
-            no_criterion.append(label)
-        if not tests:
-            no_tests.append(label)
-        if not errors:
-            no_errors.append(label)
-
         # What this unit BUILDS, which is where an endpoint, a schema or an input
         # surface is actually introduced. Matching the whole body instead read
         # the rollback note "no toca el esquema" as a schema change and failed a
@@ -361,6 +370,29 @@ def main():
         surface = _part(body, "Files") + "\n" + _part(body, "Logic")
         if is_fix and not surface.strip():
             surface = _part(body, "Solution") or _section_body(body, ("solution", "soluci"))
+
+        if not any(("/" in f or "`" in f or re.search(r"\.\w{1,5}\b", f)) for f in files):
+            no_files.append(label)
+        if not criterion and not is_fix:
+            no_criterion.append(label)
+        if not tests:
+            no_tests.append(label)
+
+        # A block MAY have no error conditions of its own, and saying so is not
+        # the same as saying nothing. It is judged here, once, so that F-SPEC-16
+        # below is never handed a declaration of absence to demand a test for.
+        #
+        # And only where it can be true: a block that takes input or touches a
+        # schema has at least one way to receive that data wrong, so there the
+        # declaration is itself the failure — the block is claiming an exemption
+        # its own surface contradicts.
+        if len(errors) == 1 and NO_ERRORS.search(errors[0]):
+            if INPUT_SURFACE.search(surface) or SCHEMA.search(surface):
+                no_errors.append(f"{label} (declares no error conditions, yet it takes input "
+                                 f"or touches a schema — data that arrives can arrive wrong)")
+            errors = []
+        elif not errors:
+            no_errors.append(label)
 
         api = _part(body, "API contract")
         if api:

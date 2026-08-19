@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.1.0
+version: 2.2.0
 ---
 
 # Phase 3: CODE (Implementation)
@@ -153,6 +153,43 @@ start):
 > once per block, at step 7, after the reviews it ran itself came back green — **and so does the
 > state**. The invariant is who commits, not how often: if a subagent could move either, the state
 > machine would break from the inside.
+
+### When the spec is the thing that is wrong
+
+Implementation is what finds the errors a spec could not: a block that names the wrong file, a
+contract that contradicts the PRD, a test assigned to the block that cannot run it. **This is not a
+question.** A failed validation never asks permission to be corrected — the corrective loop is
+mandatory everywhere else in this method — and neither does this. What the loop is NOT allowed to be
+is silent, and what it is NOT allowed to skip is the approval at the other end.
+
+**The spec is not writable from CODE.** The write gate refuses it while the `spec` gate stands, and
+the refusal is the point: a document that changes shape under a gate nobody re-earned is the one
+thing the pipeline promises cannot happen. There is no version of this you fix in place.
+
+So, on finding it:
+
+1. **Stop the block.** Not at the end of the phase, not "noted for VERIFY" — there is no such place,
+   and a deviation promised to a phase that has nowhere to put it is a deviation lost. Round 6
+   measured exactly that: CODE found a real spec error, announced it would be recorded in VERIFY,
+   and it never was.
+2. **Say it out loud, with the flag up.** Name the discrepancy, what the spec says, what the code
+   needs, and that you are going back to PLAN because of it. This is the signpost — the user is
+   about to approve a spec for the second time, and an approval that does not know it is a
+   re-approval is a rubber stamp.
+3. **Take `CODE → PLAN`.** It is in the graph and it `clears` the `spec` and `threat` gates. Update
+   the state through the helper like any other transition. **`block` stays where it is** — you are
+   coming back to the same block, not restarting the phase.
+4. **In PLAN: correct, re-validate, re-approve.** The spec's `Loops since last human decision`
+   counter goes up like any other corrective loop, `F-SPEC-LOOP` caps it at 3, and the banner that
+   asks for the approval says what brought you back:
+   `🙋 TU TURNO — ¿Aprobás la spec corregida? (volvimos de CODE · Block 2: <la discrepancia>)`.
+5. **Return to CODE** by the ordinary edge, re-earning `spec` and `threat`, and resume the block you
+   left.
+
+> **What does NOT come back here.** A block whose CODE is wrong against a spec that is right is a
+> correction inside CODE — dispatch the implementer again (step 4). The trip to PLAN is for when the
+> document is wrong, and the test of which one it is: after the change, does the spec say something
+> different from what it said before? If yes, it is PLAN's.
 
 ### Session Rule
 The user can say "stop here" or close the session between blocks. Progress is recorded in the

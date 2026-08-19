@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.8.0
+version: 1.9.0
 ---
 
 # Phase 2: PLAN (Technical Planning)
@@ -307,6 +307,33 @@ Requirements to advance:
 4. The user approved the spec/fix-plan, **having seen the validator's whole checklist** — every rule
    ID with its ✅ / ⚠️ / ❌ — and the link to `<artifact>.validation.md`. An approval given on a
    summary is an approval of the summary.
+
+## Re-entry from CODE (the spec was wrong)
+
+CODE does not rewrite the spec — the write gate refuses it while the `spec` gate stands — so a spec
+error found during implementation comes back here. `.ddw/rules/code.instructions.md` owns the trip;
+this is the half that happens on arrival.
+
+- **`block` is not yours.** It stays exactly as CODE left it: the return is to the same block, and
+  resetting it turns a corrective loop into a restart.
+- **Correct only what the discrepancy is about.** Coming back with a spec that also grew three
+  improvements nobody asked for makes the re-approval meaningless — the user cannot tell what they
+  are agreeing to.
+- **Re-validate** with `ddw-validate-spec` (and the threat model if the change touches it — its gate
+  came off too and is re-earned the same way). `Spec loops` goes up; `Loops since last human
+  decision` resets only when a person decides something, and returning from CODE is the model's
+  finding, not theirs.
+- **The banner says where it came from.** An approval that does not know it is a re-approval is a
+  rubber stamp, so the ask carries the origin and the reason:
+
+  ```
+  🙋 TU TURNO — ¿Aprobás la spec corregida?
+     Volvimos de CODE (Block 2): [the discrepancy, in one line]
+     Cambió: [what the spec says now that it did not say before]
+     Al confirmar: PLAN → CODE, se re-ganan `spec` y `threat`, y sigue el Block 2
+  ```
+
+---
 
 ### Transition summary (MANDATORY before asking for confirmation)
 

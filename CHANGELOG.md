@@ -19,6 +19,54 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.29.0] — Unreleased
+
+Round 6 — a second full run, this time on a repository whose installation had
+already reached the remote. The two findings round 5 left about the road to the
+pull request came back clean: the PR carried 42 files and not one of DDW's, and
+the closeout's own last commit reached the review it had asked for. What round 6
+found instead is three gates each measuring something other than what they
+claim.
+
+### Added
+
+- **A block may have no error conditions of its own, and say so.** One bullet
+  declaring the absence (`Sin condiciones de error propias: …`, `None — …`)
+  satisfies `F-SPEC-10` and counts as zero errors for `F-SPEC-16`, which is what
+  makes it writable at all: as prose it failed the first rule, as a bullet it
+  failed the second, and round 6 watched a static-render block grow a 404
+  belonging to another block, with its test, because the truth fit nowhere. The
+  declaration is refused where it cannot be true — a block that takes input or
+  touches a schema has at least one way to receive that data wrong.
+- **A spec error found during CODE goes back to PLAN.** The corrective loop is
+  mandatory, not a question, and the edge it takes (`CODE → PLAN`) already
+  existed and already clears `spec` and `threat`. What is new is that CODE is
+  told to use it, that the return is announced rather than asked, and that the
+  approval waiting at the other end says what brought it back — an approval that
+  does not know it is a re-approval is a rubber stamp. Round 6 found a real spec
+  error mid-implementation, announced it would be "recorded in VERIFY", and it
+  never was: there is no such place.
+
+### Changed
+
+- **The approved spec and threat model are sealed while their gate stands.** The
+  write gate refuses them from CODE, VERIFY and CLOSEOUT — everywhere the `spec`
+  or `threat` gate is standing — and releases them exactly where the graph
+  clears it. A document that changes shape under a gate nobody re-earned is the
+  laundering `clears` was written to stop, arriving by another door.
+
+### Fixed
+
+- **`F-VER-06` counted file paths as promised tests.** It scanned the whole spec
+  for anything beginning with `test`, so each block's **Files** contributed its
+  test files — including `tests/fakes.py`, which holds no test at all. Round 6
+  measured "all 19 test(s) the spec promised are reported" over a spec promising
+  16 and a suite running 16, and the ❌ before it was closed by adding the file
+  names to the report, which is precisely what the rule had misread. The names
+  are now read only from `Required tests`, and only names.
+
+---
+
 ## [0.28.0] — Unreleased
 
 Round 5 — the first full pipeline run on a fresh install — closed its ticket
