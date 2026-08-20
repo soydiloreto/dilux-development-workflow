@@ -27,5 +27,3 @@ in [LINT-CHECKS-THAT-CANNOT-FAIL.md](LINT-CHECKS-THAT-CANNOT-FAIL.md).
       **Entorno.** Sólo falla si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito — y ahí un skip se cuenta aparte y no suma a un verde.
 - [ ] `the commit-gate fixture never committed: the three checks below measure the fixture, not the gate`
       **Guardia de fixture.** Las dos condiciones que lo hacen fallar —`commit.gpgsign` y la identidad de git— las neutraliza el propio fixture dos líneas antes, y nada en este repo instala hooks de git. No hay camino de producto que lo encienda.
-- [ ] `the template still writes ACs the validator cannot match on`
-      **Fault escrito en esta rama**, todavía sin medir en la nube: la palabra `SHALL` aparece cuatro veces en el skill y el check pregunta si está en el archivo, así que hacía falta romper las cuatro. Verificado en local: 1/1.
