@@ -44,6 +44,13 @@ and a question nobody should have been asked.
   the user's is WHAT the corrected artifact says, and that question waits at the
   far end, where the re-approval earns back the gate the edge cleared — with the
   banner saying where it came back from.
+- **Whether to ask is no longer a question about stdin.** Every read in the
+  installer reads `/dev/tty`, which is right — under `curl | bash`, stdin is the
+  script. The three decisions of *whether* to ask tested `[ -t 0 ]`, which is
+  stdin: piped in, with the terminal right there, the installer went
+  non-interactive in silence. It picked a mode without saying so and skipped the
+  whole question of where the installation lands — the branch, the commit and
+  the pull request, all decided for you and none of it announced.
 - **`lint_kill_map.py --write` no longer eats the reasons it exists to keep.**
   It preserved one line of each written explanation, and the explanations run
   five and six lines: one regeneration would have left forty-four excuses cut
@@ -73,6 +80,15 @@ and a question nobody should have been asked.
 
 ### Added
 
+- **The drop-in install is one line, pasted from a URL.**
+  `curl -fsSL …/install.sh | bash -s -- . --target claude` now works: the
+  installer copies the method out of its own tree, so pasted from a URL it has
+  no tree — it fetches one into a temporary directory, runs itself from there
+  and removes it on the way out. `DDW_REF` picks the branch or tag. The plugin
+  path was already one line; the drop-in path, which is **the only door Codex
+  CLI, Cursor and Gemini CLI have**, asked you to clone first. It did not even
+  fail clearly: under `bash -s` there is no `BASH_SOURCE[0]`, and under `set -u`
+  that is an "unbound variable" with not one word about what happened.
 - **The linter holds every description of going back to the same shape**: none
   may ask permission, and each must say the move is not optional — read one
   phase at a time, which is how they are read, a section that says neither

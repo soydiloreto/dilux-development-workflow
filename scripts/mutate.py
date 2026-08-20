@@ -2955,6 +2955,14 @@ MUTATIONS = [
           "    timeout-minutes: 75",
           "    # mutaciones y a ningún otro. El shard más lento tardó 38.\n"
           "    timeout-minutes: 45")),
+    ("el instalador pegado desde una URL vuelve a no encontrarse a sí mismo",
+     edit("install.sh",
+          'if ! { [ -f "$SELF/.claude-plugin/plugin.json" ]',
+          'if false && { [ -f "$SELF/.claude-plugin/plugin.json" ]')),
+    ("preguntar vuelve a depender de stdin y no de la terminal",
+     edit("install.sh",
+          'have_tty() { { : < /dev/tty; } 2>/dev/null; }',
+          'have_tty() { [ -t 0 ]; }')),
 ]
 
 

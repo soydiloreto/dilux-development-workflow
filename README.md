@@ -34,7 +34,13 @@ instead — install the skills and stop, and it looks alive while enforcing noth
 > **Codex CLI, Cursor and Gemini CLI are next.** All three already run the method, and the test
 > suite drives each one's real hook with that tool's own event format — what is not finished is the
 > plugin path end to end. Today they install by copying the method into the repository, which works
-> and is one command: see [`docs/INSTALL.md`](docs/INSTALL.md).
+> and is one line:
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/soydiloreto/dilux-development-workflow/main/install.sh | bash -s -- . --target codex
+> ```
+>
+> See [`docs/INSTALL.md`](docs/INSTALL.md) for what it does and how to pin what it fetches.
 
 Copying the method in is also what you want on **any** of the six once you need to **change** how
 the method works, rather than only use it. Both ways, and what each one costs, are in

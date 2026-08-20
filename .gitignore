@@ -4,3 +4,10 @@
 .ddw-sessions/
 .ddw-state.json
 __pycache__/
+
+# Salida cruda del mapa de kills. `kill_map_ledger.py` la escribe en el
+# directorio donde lo corras, así que corrido desde la raíz aterriza acá — y así
+# fue como una medición de agosto quedó commiteada dieciocho pull requests,
+# siendo exactamente lo que el libro que produce advierte en su primer párrafo.
+kill-map-merged.json
+kill-map-*.json

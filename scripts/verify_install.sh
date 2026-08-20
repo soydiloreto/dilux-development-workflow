@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=576
+EXPECT_CHECKS=578
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=639
+EXPECT_MUTATIONS=641
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -6097,6 +6097,91 @@ case "$RERUN" in
   *"updating:"*) ok "a second run reports itself as an update, not an install" ;;
   *) bad "a re-run still says 'installing into' — nothing tells the user this repo already had DDW" ;;
 esac
+
+# ── The line somebody pastes has to BE the installer ─────────────────────────
+#
+# `install.sh` copies `ddw/`, `adapters/`, `scripts/` and the manifest out of its
+# own tree, so pasted from a URL it has none of the four. It used to die on
+# `${BASH_SOURCE[0]}` — unset under `bash -s`, and under `set -u` that is an
+# "unbound variable" with not one word about what happened. The plugin path was
+# already one line; the drop-in path, which is the only door three of the six
+# tools have, asked you to clone first.
+#
+# Offline on purpose: the tarball is built from this tree and served over
+# `file://`. A check that reaches the network measures GitHub's morning.
+python3 - "$SELF" <<'PYBOOT' && ok "install.sh run with no tree around it fetches the method and installs from it" || bad "the installer pasted from a URL cannot install — the drop-in path still requires cloning first"
+import os, shutil, subprocess, sys, tarfile, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+tar = os.path.join(work, "ddw.tar.gz")
+with tarfile.open(tar, "w:gz") as t:
+    t.add(src, arcname="dilux-development-workflow-main",
+          filter=lambda ti: None if "/.git/" in ti.name + "/" else ti)
+alone = os.path.join(work, "alone")
+os.makedirs(alone)
+shutil.copy(os.path.join(src, "install.sh"), os.path.join(alone, "install.sh"))
+repo = os.path.join(work, "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+env = dict(os.environ, DDW_TARBALL="file://" + tar, DDW_GIT_FLOW="none")
+r = subprocess.run(["bash", os.path.join(alone, "install.sh"), repo, "--target", "claude",
+                    "--mode", "dropin"], capture_output=True, text=True, env=env, timeout=300)
+assert r.returncode == 0, "the pasted installer failed: " + (r.stdout + r.stderr)[-400:]
+assert os.path.isdir(os.path.join(repo, ".ddw")), \
+    "it reported success and the method is not there: " + r.stdout[-300:]
+# And it does not leave the tree it downloaded behind.
+assert not [d for d in os.listdir(work) if d.startswith("tmp")], \
+    "the bootstrap left its download in place: %s" % os.listdir(work)
+PYBOOT
+
+# ── Whether to ASK is not a question about stdin ─────────────────────────────
+#
+# Every read in the installer reads `/dev/tty`, and that is right: under
+# `curl | bash`, stdin is the script itself. But the three decisions of WHETHER
+# to ask tested `[ -t 0 ]`, which is stdin — so with the installer arriving down
+# a pipe, with the terminal right there, it went non-interactive in silence: it
+# picked a mode without saying so and skipped the whole question of where the
+# installation lands. The probe is the real shape: stdin is a pipe, a
+# controlling terminal exists, and the answer travels over the terminal.
+python3 - "$SELF" <<'PYTTY' && ok "the installer asks when a terminal exists, even though stdin is the pipe it arrived down" || bad "piped in, the installer decides the mode and the git flow by itself and never says it did"
+import os, pty, subprocess, sys, tarfile, tempfile
+src = sys.argv[1]
+work = tempfile.mkdtemp(dir=os.environ["WORK"])
+tar = os.path.join(work, "ddw.tar.gz")
+with tarfile.open(tar, "w:gz") as t:
+    t.add(src, arcname="dilux-development-workflow-main",
+          filter=lambda ti: None if "/.git/" in ti.name + "/" else ti)
+repo = os.path.join(work, "repo")
+os.makedirs(repo)
+subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+master, slave = pty.openpty()
+name = os.ttyname(slave)
+
+
+def preexec():
+    os.setsid()
+    # No O_NOCTTY, and that is the whole trick: a session leader opening a tty
+    # takes it as its controlling terminal, which is what `/dev/tty` resolves to.
+    fd = os.open(name, os.O_RDWR)
+    os.close(fd)
+
+
+env = dict(os.environ, DDW_TARBALL="file://" + tar, DDW_GIT_FLOW="none")
+p = subprocess.Popen(["bash", "-s", "--", repo, "--target", "claude"],
+                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                     text=True, preexec_fn=preexec, env=env)
+os.write(master, b"2\n")
+try:
+    out, _ = p.communicate(open(os.path.join(src, "install.sh"), encoding="utf-8").read(),
+                           timeout=300)
+finally:
+    os.close(master)
+    os.close(slave)
+assert "How do you want DDW installed?" in out, \
+    "it never asked which way in, and answered for the user: " + out[-400:]
+assert os.path.isdir(os.path.join(repo, ".ddw")), \
+    "the answer given over the terminal was not the one it used: " + out[-400:]
+PYTTY
 
 MENU="$(printf '1\n' | bash "$SELF/install.sh" "$UPG" 2>&1)"
 case "$MENU" in
