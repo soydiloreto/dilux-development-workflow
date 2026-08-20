@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=636
+EXPECT_MUTATIONS=639
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -9489,15 +9489,41 @@ _past_end = "%d/%d" % (len(_mut.MUTATIONS) + 1, len(_mut.MUTATIONS) + 1)
 import math
 import yaml
 _wf = yaml.safe_load(open(os.path.join(src, ".github/workflows/mutations.yml"), encoding="utf-8"))
-_job = _wf["jobs"]["mutations"]
-_shards = len(_job["strategy"]["matrix"]["shard"])
-_ceiling = int(_job["timeout-minutes"])
-_per_shard = math.ceil(len(_mut.MUTATIONS) / _shards) + 1
-assert _per_shard * 2 < _ceiling, (
-    "a shard runs %d suite runs (%d faults over %d shards, plus the baseline), which is about "
-    "%d minutes against a timeout of %d. It will be killed and reported as cancelled. Add "
-    "shards — never fewer faults." % (_per_shard, len(_mut.MUTATIONS), _shards,
-                                      _per_shard * 2, _ceiling))
+# Of EVERY job that shards the list, not of one named by hand. The arithmetic
+# was asked of `mutations` and of nothing else, so `kill-map` — which pays the
+# whole suite per fault instead of asking tests/ first — sat at twenty-eight
+# runs against a ceiling of forty-five for as long as it existed, and the check
+# written to catch exactly that was looking one job over. Measured before the
+# ceiling moved: the slowest shard took thirty-eight of its forty-five minutes.
+_sharded = {name: job for name, job in _wf["jobs"].items()
+            if "shard" in job.get("strategy", {}).get("matrix", {})}
+assert len(_sharded) > 1, (
+    "only %d job shards the list; this check was written because asking it of one job by name "
+    "is how the other one went unmeasured" % len(_sharded))
+for _name, _job in sorted(_sharded.items()):
+    _shards = len(_job["strategy"]["matrix"]["shard"])
+    _ceiling = int(_job["timeout-minutes"])
+    _per_shard = math.ceil(len(_mut.MUTATIONS) / _shards) + 1
+    assert _per_shard * 2 < _ceiling, (
+        "in `%s`, a shard runs %d suite runs (%d faults over %d shards, plus the baseline), "
+        "which is about %d minutes against a timeout of %d. It will be killed and reported as "
+        "cancelled. Add shards — never fewer faults." % (_name, _per_shard, len(_mut.MUTATIONS),
+                                                         _shards, _per_shard * 2, _ceiling))
+
+# And no job that measures the list may be conditional. `--cover` already refuses
+# a conditional `mutations` job — a job that does not run is not coverage — and
+# the two jobs that produce and compare `docs/CHECKS-THAT-CANNOT-FAIL.md` carried
+# `if: github.event_name == 'workflow_dispatch'` for seventeen pull requests
+# under the argument that the suite does not change on every push. It changes on
+# almost every push here: a new `bad` and a new fault are half of what lands. The
+# book went untouched from PR #7 to PR #25, and the only job that could have said
+# so was the one switched off.
+for _name in ("kill-map", "kill-map-ledger"):
+    _cond = _wf["jobs"][_name].get("if")
+    assert _cond is None, (
+        "`%s` runs only when `%s`. The book it produces is an expectation the CI compares, and a "
+        "comparison that happens on request is one nobody makes: it is how the file aged eighteen "
+        "pull requests without a single red." % (_name, _cond))
 for argv in (["--only", "999999"], ["--only"], ["--shard", _past_end]):
     # With a timeout, and it is load-bearing. Each of these is supposed to be
     # refused in milliseconds, from the arguments alone. Take the guard away and

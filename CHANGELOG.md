@@ -48,6 +48,28 @@ and a question nobody should have been asked.
   It preserved one line of each written explanation, and the explanations run
   five and six lines: one regeneration would have left forty-four excuses cut
   mid-sentence, each still excusing its site. Green, and no longer saying why.
+- **The book of checks that cannot fail is compared where somebody reads it.**
+  `docs/CHECKS-THAT-CANNOT-FAIL.md` says it is "compared by CI rather than
+  trusted" — and both jobs that produce and compare it carried
+  `if: github.event_name == 'workflow_dispatch'`, so neither ran on a pull
+  request or on `main`. The file went untouched from PR #7 to PR #25 and the one
+  job that could have said so was switched off. It ran once, by hand, and had
+  two things to say immediately: a `bad` no fault provokes, and an entry that
+  had become measurable. A job that does not run is not a gate — the rule
+  `--cover` already applies to the mutation job two jobs above it. The pull
+  request gate goes from about twenty minutes to about forty-seven; measured,
+  and worth it.
+- **Every job that shards the list is asked whether its shard fits.** The
+  arithmetic existed and named one job by hand, so `kill-map` — which pays the
+  whole suite per fault instead of asking `tests/` first — sat at twenty-eight
+  runs against a ceiling of forty-five for as long as it existed. Measured on
+  its first real run: the slowest shard took thirty-eight of its forty-five
+  minutes, seven from being killed and reported as `cancelled`, which is the
+  shape this repository already named as not an answer.
+- **The first install's silence is provokable.** The `case` that reads what a
+  first run announced has three arms and only two were reachable: a fault flips
+  the update message, none flipped the install one, so the arm that says the run
+  announced neither could not fire. Written, and it fires exactly that check.
 
 ### Added
 

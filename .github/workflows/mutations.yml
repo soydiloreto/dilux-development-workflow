@@ -120,14 +120,26 @@ jobs:
   # es la pregunta equivocada). Local son ~2,5 horas; repartido en veinticuatro,
   # quince minutos.
   #
-  # A pedido, no en cada push: contesta una pregunta sobre la SUITE, y la suite
-  # no cambia en cada push.
+  # Donde corre todo lo demás, y no a pedido. Estuvo diecisiete pull requests
+  # detrás de `if: workflow_dispatch`, con el argumento de que contesta una
+  # pregunta sobre la SUITE y la suite no cambia en cada push. La suite de este
+  # repositorio cambia en casi cada push: los `bad` nuevos y los faults nuevos
+  # son la mitad de lo que se mergea acá. `docs/CHECKS-THAT-CANNOT-FAIL.md` no
+  # se tocó desde el PR #7, y el job que lo compara es el único que podía
+  # decirlo. Un job que no corre no es una compuerta — que es exactamente la
+  # regla que `--cover` le aplica al job de mutaciones, dos jobs más arriba.
+  #
+  # Lo que cuesta, dicho y no descubierto: el gate del pull request pasa de unos
+  # veinte minutos a unos cuarenta y siete. Medido el 20-ago-2026, no estimado.
   kill-map:
     name: which checks can never fail? (shard ${{ matrix.shard }}/24)
-    if: github.event_name == 'workflow_dispatch'
     needs: anchors
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 75, igual que el job de mutaciones y por la misma cuenta: veintiocho
+    # corridas por shard a dos minutos son cincuenta y seis. Estaba en 45 y
+    # nadie hacía la cuenta, porque la suite se la preguntaba al job de
+    # mutaciones y a ningún otro. El shard más lento tardó 38.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -162,7 +174,6 @@ jobs:
 
   kill-map-ledger:
     name: does the ledger still describe the suite?
-    if: github.event_name == 'workflow_dispatch'
     needs: kill-map
     runs-on: ubuntu-latest
     timeout-minutes: 10

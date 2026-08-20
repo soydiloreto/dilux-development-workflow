@@ -2933,6 +2933,28 @@ MUTATIONS = [
      edit("ddw/rules/state.instructions.md",
           '**And taking one is not a question.** A backward edge exists because something already approved\nturned out to be wrong, and asking permission to correct a known defect is a rubber stamp — the\ncorrective loop is mandatory everywhere the catalog describes one\n(`validation-rules.instructions.md` §2). So the move is ANNOUNCED, with the reason, and what waits\nat the far end is the real approval: the corrected artifact re-earning the gate the edge just\ncleared. The banner that asks for it says where it came back from, because an approval that does\nnot know it is a re-approval is the same rubber stamp one document later.\n\n',
           "")),
+    # El gemelo del fault de más arriba, que sólo tocaba el mensaje de la
+    # actualización: el `case` de la suite tiene tres brazos y el tercero —el
+    # que dice que la corrida no se anunció de ninguna de las dos maneras— no
+    # lo provocaba nada. Lo pidió el libro de checks, en voz alta, la primera
+    # vez que su job corrió fuera de un dispatch a mano.
+    ("el instalador deja de decir que está instalando, en la primera corrida",
+     edit("install.sh",
+          '  echo "  DDW is installing into: $TARGET"',
+          '  echo "  DDW: $TARGET"')),
+    ("el mapa de kills vuelve a correr sólo cuando alguien lo pide",
+     edit(".github/workflows/mutations.yml",
+          "    name: which checks can never fail? (shard ${{ matrix.shard }}/24)\n"
+          "    needs: anchors",
+          "    name: which checks can never fail? (shard ${{ matrix.shard }}/24)\n"
+          "    if: github.event_name == 'workflow_dispatch'\n"
+          "    needs: anchors")),
+    ("el shard del mapa de kills vuelve a un techo donde no entra",
+     edit(".github/workflows/mutations.yml",
+          "    # mutaciones y a ningún otro. El shard más lento tardó 38.\n"
+          "    timeout-minutes: 75",
+          "    # mutaciones y a ningún otro. El shard más lento tardó 38.\n"
+          "    timeout-minutes: 45")),
 ]
 
 
