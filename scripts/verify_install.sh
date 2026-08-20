@@ -6179,11 +6179,26 @@ p = subprocess.Popen(["bash", "-s", "--", repo, "--target", "claude"],
                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                      text=True, preexec_fn=preexec, env=env)
 seen = []
-# Los dos en hilos: el instalador son cincuenta kilobytes y el buffer de un pipe
-# no los aguanta, así que escribirlo de una se traba contra un hijo que todavía
-# no lee — y leer de a poco es lo que permite contestar CUANDO la pregunta está
-# en pantalla, en vez de a ciegas después de N segundos.
-threading.Thread(target=lambda: [seen.append(l) for l in p.stdout], daemon=True).start()
+# Se lee CRUDO, no por líneas, y ésa es la corrección que costó dos corridas de
+# macOS: un prompt no termina en newline (`printf "… [y/N] "`), así que iterando
+# líneas la pregunta nunca aparece — y lo único que se ve es un hijo que no
+# avanza, sin decir qué está esperando. Un check sobre preguntas que no puede
+# ver una pregunta a medio renglón mira para otro lado.
+_fd = p.stdout.fileno()
+
+
+def drain():
+    while True:
+        try:
+            chunk = os.read(_fd, 4096)
+        except OSError:
+            return
+        if not chunk:
+            return
+        seen.append(chunk.decode("utf-8", "replace"))
+
+
+threading.Thread(target=drain, daemon=True).start()
 
 
 def feed():
@@ -6204,11 +6219,22 @@ threading.Thread(target=feed, daemon=True).start()
 # sobre todo lo capturado.
 QUESTION = "How do you want DDW installed?"
 sent = False
+nudged = 0.0
 deadline = time.time() + 90
 while p.poll() is None and time.time() < deadline:
-    if not sent and (QUESTION in "".join(seen) or time.time() > deadline - 70):
+    now = time.time()
+    if not sent and (QUESTION in "".join(seen) or now > deadline - 70):
         os.write(master, b"2\n")
         sent = True
+        nudged = now
+    # Y después, el default a cualquier otra pregunta. El instalador ofrece
+    # commitear y ofrece pushear, y las dos esperan en `/dev/tty`: una sonda que
+    # contesta la primera y deja colgadas las que siguen mide su propia paciencia.
+    # Lo que esta comprobación afirma —que preguntó— se afirma al final, sobre
+    # todo lo que imprimió, así que mandar Enter no puede volverla verde sola.
+    elif sent and now - nudged > 2:
+        os.write(master, b"\n")
+        nudged = now
     time.sleep(0.2)
 alive = p.poll() is None
 out = "".join(seen)
