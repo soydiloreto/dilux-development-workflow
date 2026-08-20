@@ -6218,69 +6218,60 @@ threading.Thread(target=feed, daemon=True).start()
 # cinco minutos— sino "la pregunta está en lo que imprimió". Se afirma al final,
 # sobre todo lo capturado.
 QUESTION = "How do you want DDW installed?"
+
+# Lo que esta comprobación afirma es que PREGUNTA, y que usa la respuesta. Ni
+# una cosa ni la otra necesitan que el proceso termine — y esperarlo fue lo que
+# costó cuatro corridas de macOS, donde `poll()` decía vivo y `getpgid` del
+# mismo pid contestaba "no such process": eso acusa al arnés, no al producto, y
+# no es lo que este check está mirando. Así que se mira la pantalla y se mira el
+# disco, que son las dos mitades de la afirmación, y después se lo mata.
 sent = False
+landed = False
 nudged = 0.0
 deadline = time.time() + 90
-while p.poll() is None and time.time() < deadline:
+while time.time() < deadline:
     now = time.time()
-    if not sent and (QUESTION in "".join(seen) or now > deadline - 70):
+    if not sent and QUESTION in "".join(seen):
         os.write(master, b"2\n")
         sent = True
         nudged = now
-    # Y después, el default a cualquier otra pregunta. El instalador ofrece
-    # commitear y ofrece pushear, y las dos esperan en `/dev/tty`: una sonda que
-    # contesta la primera y deja colgadas las que siguen mide su propia paciencia.
-    # Lo que esta comprobación afirma —que preguntó— se afirma al final, sobre
-    # todo lo que imprimió, así que mandar Enter no puede volverla verde sola.
     elif sent and now - nudged > 2:
+        # El default a todo lo que venga después: el instalador ofrece commitear
+        # y ofrece pushear, y las dos esperan en `/dev/tty`.
         os.write(master, b"\n")
         nudged = now
+    if sent and os.path.isdir(os.path.join(repo, ".ddw")):
+        landed = True
+        break
     time.sleep(0.2)
-alive = p.poll() is None
 out = "".join(seen)
 
-# Si sigue vivo, QUÉ está vivo. Tres corridas de macOS se fueron en deducir a
-# ciegas dónde se quedaba: el árbol de procesos lo dice de una — el estado
-# distingue detenido (T, que es una señal de terminal) de dormido, y la línea de
-# comando de cualquier nieto nombra al que no volvió.
-tree = ""
-if alive:
+# Best-effort, y en grupo: el hijo es líder de sesión —eso es lo que le da la
+# terminal de control— y arrancó un segundo bash para el bootstrap. Matar el pid
+# deja al nieto vivo con el pipe abierto. Nada de esto puede tirar el
+# diagnóstico, que ya está armado.
+try:
+    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+except OSError:
     try:
-        pgid = os.getpgid(p.pid)
-        ps = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid=,stat=,command="],
-                            capture_output=True, text=True, timeout=30).stdout
-        tree = "\n".join(ln for ln in ps.splitlines()
-                          if len(ln.split(None, 3)) > 3 and ln.split()[2] == str(pgid))
-    except Exception as exc:                      # noqa: BLE001 — es un diagnóstico
-        tree = "(no se pudo leer el árbol de procesos: %s)" % exc
-
-# El mensaje se arma ANTES de limpiar, y la limpieza no puede tirar nada: en la
-# corrida anterior el diagnóstico se perdió porque el `wait` posterior al kill
-# expiró primero, y lo único que quedó fue un traceback sobre el timeout. Y se
-# mata el GRUPO, porque el hijo es líder de sesión y arrancó otro bash: matar el
-# PID deja al nieto vivo con el pipe abierto.
-if alive:
-    try:
-        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+        p.kill()
     except OSError:
         pass
-    try:
-        p.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        pass
+try:
+    p.wait(timeout=30)
+except Exception:                                 # noqa: BLE001 — es la limpieza
+    pass
 for _fd in (master, slave):
     try:
         os.close(_fd)
     except OSError:
         pass
-assert not alive, ("the installer never finished in ninety seconds (the answer %s sent).\n"
-                   "Still alive in its process group:\n%s\n\nWhat it printed:\n%s"
-                   % ("was" if sent else "was NOT", tree or "(nothing)",
-                      out[-1500:] or "nothing at all"))
+
 assert QUESTION in out, \
-    "it never asked which way in, and answered for the user:\n" + (out[-900:] or "no output")
-assert os.path.isdir(os.path.join(repo, ".ddw")), \
-    "the answer given over the terminal was not the one it used:\n" + out[-900:]
+    ("it never asked which way in, and answered for the user. What it printed:\n"
+     + (out[-1200:] or "nothing at all"))
+assert landed, ("it asked, and the answer given over the terminal was not the one it used: "
+                "no .ddw after ninety seconds. What it printed:\n" + out[-1200:])
 PYTTY
 
 MENU="$(printf '1\n' | bash "$SELF/install.sh" "$UPG" 2>&1)"
