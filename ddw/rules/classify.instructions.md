@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.5.0
+version: 2.6.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -273,6 +273,14 @@ If the tier is stateful (QUICK-FIX, FIX, FEATURE, DISCOVERY or FREE):
 Wait for explicit confirmation **of this specific classification**. Generic phrases like "go ahead",
 "next one", "continue" said in the context of ANOTHER ticket do NOT constitute approval of this
 classification. The user has to answer THIS table.
+> **Under `autonomy: "minimal"` this arrow does not wait.** The mode was chosen
+> in this very phase, one question earlier, so the answer that set it is the
+> last one owed here: the table is still SHOWN and the classification still
+> lands in the history, what goes away is the pause. Its four sibling phases
+> already said this and this one did not — the only exit of the six that read
+> as waiting in every mode. Three things stop the run anyway, in either mode: a
+> decision nobody wrote down, a corrective loop at its ceiling, and a corrupt
+> state. See `.ddw/orchestrator.md` § Autonomy.
 
 If the user objects:
 1. Briefly explain your reasoning.

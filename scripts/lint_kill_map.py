@@ -192,6 +192,23 @@ def measure(root, sites):
 _LEDGER_LINE = re.compile(r"^- \[ \] `([^`]+)`", re.M)
 
 
+def existing_reason(old, name):
+    """La razón escrita para un sitio, ENTERA.
+
+    Capturaba una sola línea (`( +.*)$`, y `.` no cruza el salto), así que
+    regenerar el ledger recortaba cada explicación a su primer renglón — las
+    razones son de cinco o seis. Una regeneración habría dejado cuarenta y
+    cuatro excusas truncadas a media frase, cada una todavía excusando su sitio:
+    el archivo seguiría verde y ya no diría por qué. Un registro que pierde lo
+    único que registra es peor que no tenerlo, porque nadie vuelve a mirarlo.
+
+    Se toma el bloque indentado completo que sigue al nombre, hasta el próximo
+    ítem o el final.
+    """
+    m = re.search(r"^- \[ \] `%s`\n((?:[ \t]+.*(?:\n|$))*)" % re.escape(name), old, re.M)
+    return m.group(1).rstrip("\n") if m else ""
+
+
 def read_ledger(path):
     if not os.path.exists(path):
         return set()
@@ -232,10 +249,7 @@ def main():
         body = [LEDGER_HEADER, f"<!-- {len(names)} site(s), {ran} fault(s) measured -->\n"]
         old = open(ledger_path, encoding="utf-8").read() if os.path.exists(ledger_path) else ""
         for name in naked:
-            reason = ""
-            m = re.search(r"^- \[ \] `%s`\n( +.*)$" % re.escape(name), old, re.M)
-            if m:
-                reason = m.group(1)
+            reason = existing_reason(old, name)
             body.append(f"- [ ] `{name}`\n{reason or '      **Sin razón escrita todavía.**'}")
         open(ledger_path, "w", encoding="utf-8").write("\n".join(body) + "\n")
         print(f"  wrote {ledger_path} — {len(naked)} site(s) with no fault")

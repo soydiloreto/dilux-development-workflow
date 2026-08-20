@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.2.0
+version: 2.3.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`
@@ -117,6 +117,14 @@ Keeping a gate the edge clears is refused, so a write built from a shorter list 
 rejected — this paragraph named one gate for `CLOSEOUT→VERIFY` where the graph names three, and the
 model that believed it had its write bounced with no idea why. Read `clears` from
 `transition-graph.json` rather than from here if the two ever disagree again.
+
+**And taking one is not a question.** A backward edge exists because something already approved
+turned out to be wrong, and asking permission to correct a known defect is a rubber stamp — the
+corrective loop is mandatory everywhere the catalog describes one
+(`validation-rules.instructions.md` §2). So the move is ANNOUNCED, with the reason, and what waits
+at the far end is the real approval: the corrected artifact re-earning the gate the edge just
+cleared. The banner that asks for it says where it came back from, because an approval that does
+not know it is a re-approval is the same rubber stamp one document later.
 
 Stepping out of CODE backwards also clears `block` — you are not implementing one any more.
 

@@ -19,6 +19,85 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.31.0] — Unreleased
+
+Three things round 6 found and wrote down without fixing, cleaned up together.
+Two of them are the same defect in different documents: a number nobody checked,
+and a question nobody should have been asked.
+
+### Fixed
+
+- **The split index's count is checked against the rows beneath it.** It was
+  written by hand and compared to nothing, so an index could declare one number
+  and hand out criteria above it — measured: 22 declared where the source
+  document had 17, five having been added with the user during DEFINE, and the
+  receipt then vouched for "the 22 **of the original**". Criteria above the
+  declared count are now refused, the field is named for what it holds
+  (`Acceptance criteria to cover` — the source's plus whatever DEFINE added),
+  and the receipt claims only what it measured: that each criterion the index
+  puts up is taken by exactly one sub-ticket.
+- **Going back a phase is announced, not asked.** PLAN's return to DEFINE ended
+  its box with "Do we proceed with the corrective loop?" while CODE's return to
+  PLAN announced the move and took it — the same event, two shapes. The
+  corrective loop is mandatory (`validation-rules.instructions.md` §2) and
+  asking permission to correct a known defect is a rubber stamp. What is still
+  the user's is WHAT the corrected artifact says, and that question waits at the
+  far end, where the re-approval earns back the gate the edge cleared — with the
+  banner saying where it came back from.
+- **`lint_kill_map.py --write` no longer eats the reasons it exists to keep.**
+  It preserved one line of each written explanation, and the explanations run
+  five and six lines: one regeneration would have left forty-four excuses cut
+  mid-sentence, each still excusing its site. Green, and no longer saying why.
+
+### Added
+
+- **The linter holds every description of going back to the same shape**: none
+  may ask permission, and each must say the move is not optional — read one
+  phase at a time, which is how they are read, a section that says neither
+  leaves the model to decide, and both answers have shipped.
+
+---
+
+## [0.30.0] — Unreleased
+
+`minimal` was `assisted` with different wording, and nothing was broken to make
+it so. The enforcement had been right from the day the mode existed — the guard
+exempts it by name, the commit gate exempts it by name — and the prose said the
+opposite, so the prose won: measured on a live `minimal` run, one arrow, end of
+turn, a 🙋 banner asking to continue, and a person paying an ok for every step
+the mode was chosen to stop asking about.
+
+### Fixed
+
+- **The one-arrow-per-response limit is `assisted` only, and now says so.** Two
+  limits had been collapsed into one sentence: one arrow per WRITE (both modes —
+  the hook refuses a write appending two entries) and one arrow per RESPONSE
+  (`assisted` — `second_arrow_in_one_turn` returns nothing under `minimal`).
+  Under `minimal` the arrows chain: one response carries as many as the work
+  reaches, each written on its own, each with its evidence on disk.
+- **The 🙋 banner stops appearing over arrows that need no approval.** Under
+  `minimal` it is for the three stops that have no mode and for the acts that
+  leave the repository — a banner over a transition nobody has to approve is the
+  rubber stamp that mode exists to remove, and it costs the same turn.
+- **CLASSIFY's exit carries the exemption its four sibling phases already had.**
+  Its rules file said "wait for explicit confirmation" and nothing else, and that
+  file — not the orchestrator — is what is open when the model decides to stop.
+
+### Added
+
+- **The linter checks the autonomy claim against the guard, driven.** It spends a
+  turn in a temporary repo and asks `second_arrow_in_one_turn` in each mode, then
+  holds the prose to the answer: an exemption the prose does not mention, or one
+  it mentions and the guard does not grant, are both findings. Every statement of
+  the per-response limit must name the mode it belongs to, and none may state it
+  as holding either way. Paragraphs are flattened before matching — the method
+  wraps at a hundred columns, and the sentence this rule exists for straddles a
+  line break, which is how the first version of the rule read it as absent.
+- **And that every exempted exit says so where it is read**, not only in the
+  orchestrator's router table.
+
+---
+
 ## [0.29.0] — Unreleased
 
 Round 6 — a second full run, this time on a repository whose installation had

@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.3.0
+version: 2.4.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -323,7 +323,7 @@ The original PRD (`prd-{TICKET}.md`) becomes an index document:
 | Ticket | [TICKET] |
 | Date | [timestamp] |
 | Status | Split |
-| Original acceptance criteria | [N] |
+| Acceptance criteria to cover | [N] |
 
 ## Sub-tickets
 
@@ -338,6 +338,14 @@ The original PRD (`prd-{TICKET}.md`) becomes an index document:
 > criteria is gone and "did the parts cover the whole?" can no longer be answered from anything.
 > `validate_prd.py` reads these two and refuses an index whose parts leave an AC behind or claim one
 > twice (F-PRD-10).
+>
+> **The count is everything the parts must cover**, which is not always what the source document
+> had: DEFINE legitimately adds criteria the user decided on, and those are covered by a part like
+> any other. So the two have to agree with each other — an index that declares one number and hands
+> out criteria above it is refused (F-PRD-10), because whichever of the two is wrong, reconciling
+> them is a sentence somebody has to write. When criteria WERE added, write that sentence under the
+> table: which range came from the source and which was decided here, with the date. Measured: an
+> index declared 22 where its source had 17, and the receipt vouched for "the 22 of the original".
 
 ## Suggested implementation order
 a → b → c

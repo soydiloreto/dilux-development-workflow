@@ -233,12 +233,21 @@ the corresponding Skill.`
 - If the user asks for something belonging to another phase, answer: "That action belongs to phase
   [X]. We are currently in [Y]. Let's finish this phase first."
 - NEVER resume work automatically without asking the user.
-- NEVER run more than one phase transition in a single response. Finish the current phase, show the
-  closing summary, wait for EXPLICIT confirmation, and only then start the next phase. Phrases like
-  "go ahead", "next one", "continue" approve ONLY the immediate step proposed — they do NOT approve
-  a classification, a transition, or skipping steps. Under `minimal` the confirmation is what goes
-  away; **one transition per response does not** — the state is written once per arrow either way,
-  and the hook refuses a write that appends two.
+- Under `assisted`, NEVER run more than one phase transition in a single response. Finish the
+  current phase, show the closing summary, wait for EXPLICIT confirmation, and only then start the
+  next phase. Phrases like "go ahead", "next one", "continue" approve ONLY the immediate step
+  proposed — they do NOT approve a classification, a transition, or skipping steps.
+
+  **Under `minimal` that limit is lifted, and the hook is what lifts it** —
+  `second_arrow_in_one_turn` returns nothing when `autonomy` is `minimal`, and the commit gate
+  allows there too. Keep going: take the next arrow in the same response until the work runs out
+  or one of the three stops below is reached.
+
+  Two limits live here and they are not the same one. **One arrow per WRITE** holds in both modes:
+  the state is written once per arrow, and the hook refuses a write that appends two. **One arrow
+  per RESPONSE** is `assisted` only. Reading the second as the first is what a measured `minimal`
+  run did: one arrow, end of turn, a 🙋 banner asking to continue — `assisted` with different
+  wording, and a person paying an ok for every step the mode was chosen to stop asking about.
 
 ## Asking
 
@@ -273,7 +282,12 @@ execution waits for the message that seals it, in both autonomy modes.
 ## Your turn
 
 When a response ends waiting on the user — an arrow to approve, a commit to confirm, a question a
-gate hangs on — its last lines are this banner, and nothing comes after it:
+gate hangs on — its last lines are this banner, and nothing comes after it.
+
+**Under `minimal` an arrow is not one of those.** A response that took one is not waiting on
+anybody: there the banner is for the three stops in § Autonomy and for the acts that leave the
+repository, and for nothing else. A 🙋 over a transition that needs no approval is the rubber stamp
+that mode exists to remove — and it costs the user the same turn `assisted` would have.
 
 ```
 ────────────────────────────────────────
@@ -290,8 +304,8 @@ needed. The second line exists so that approving is never approving blind: it na
 confirmation sets in motion, which is also the bound on what it approves — the immediate step, not
 the pipeline behind it.
 
-**And it promises at most ONE arrow.** The hook lands one transition per response, so a banner
-promising a chain — "commit + close the run + open the sub-ticket" — promises what the enforcement
+**And under `assisted` it promises at most ONE arrow.** There the hook lands one transition per
+response, so a banner promising a chain — "commit + close the run + open the sub-ticket" — promises what the enforcement
 will refuse: the first arrow lands, the rest sit, and the user pays extra oks for the difference.
 Measured, on the run that made this a rule. A commit, a validation, a file written are not arrows
 and may share the promise; the arrows themselves go one per banner, one per ok.
@@ -309,6 +323,12 @@ is a rubber stamp, and the section below says what rubber stamps do to approvals
 receipts, refused by the same hook over the same bytes. What goes away is asking a person to
 approve a transition whose evidence is already on disk, which is a rubber stamp, and rubber stamps
 are how approvals come to mean nothing.
+
+**Stopping is what goes away, not only asking.** An arrow that waits for a message it does not need
+is the same interruption under another name, so under `minimal` the arrows CHAIN: one response
+carries as many as the work reaches, each written on its own, each with its evidence on disk. The
+hook agrees — `second_arrow_in_one_turn` exempts this mode from the one-arrow-per-turn
+refusal by name, and the commit gate does the same.
 
 **What `minimal` does NOT touch: acts that leave the repository.** Merging a pull request and
 closing a tracker ticket are not arrows in this graph — they are irreversible things done to systems
