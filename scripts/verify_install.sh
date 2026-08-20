@@ -6144,7 +6144,7 @@ PYBOOT
 # installation lands. The probe is the real shape: stdin is a pipe, a
 # controlling terminal exists, and the answer travels over the terminal.
 python3 - "$SELF" <<'PYTTY' && ok "the installer asks when a terminal exists, even though stdin is the pipe it arrived down" || bad "piped in, the installer decides the mode and the git flow by itself and never says it did"
-import fcntl, os, pty, subprocess, sys, tarfile, tempfile, termios, threading, time
+import fcntl, os, pty, signal, subprocess, sys, tarfile, tempfile, termios, threading, time
 src = sys.argv[1]
 work = tempfile.mkdtemp(dir=os.environ["WORK"])
 tar = os.path.join(work, "ddw.tar.gz")
@@ -6197,26 +6197,48 @@ def feed():
 
 threading.Thread(target=feed, daemon=True).start()
 
-answered = False
-deadline = time.time() + 150
+# Contestar cuando la pregunta aparece; y si a los veinte segundos no apareció,
+# contestar igual. La afirmación de esta comprobación NO es "yo vi la pregunta a
+# tiempo" —eso es una carrera contra el buffer de un pipe, y perderla colgaba
+# cinco minutos— sino "la pregunta está en lo que imprimió". Se afirma al final,
+# sobre todo lo capturado.
+QUESTION = "How do you want DDW installed?"
+sent = False
+deadline = time.time() + 90
 while p.poll() is None and time.time() < deadline:
-    if not answered and "How do you want DDW installed?" in "".join(seen):
+    if not sent and (QUESTION in "".join(seen) or time.time() > deadline - 70):
         os.write(master, b"2\n")
-        answered = True
+        sent = True
     time.sleep(0.2)
 alive = p.poll() is None
-if alive:
-    p.kill()
-    p.wait(timeout=30)
-time.sleep(0.5)
-os.close(master)
-os.close(slave)
 out = "".join(seen)
-assert not alive, ("the installer never finished (it %s asked). What it printed:\n%s"
-                   % ("had" if answered else "had NOT", out[-1200:] or "nothing at all"))
-assert answered, "it never asked which way in, and answered for the user: " + (out[-600:] or "no output")
+
+# El mensaje se arma ANTES de limpiar, y la limpieza no puede tirar nada: en la
+# corrida anterior el diagnóstico se perdió porque el `wait` posterior al kill
+# expiró primero, y lo único que quedó fue un traceback sobre el timeout. Y se
+# mata el GRUPO, porque el hijo es líder de sesión y arrancó otro bash: matar el
+# PID deja al nieto vivo con el pipe abierto.
+if alive:
+    try:
+        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+    except OSError:
+        pass
+    try:
+        p.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        pass
+for _fd in (master, slave):
+    try:
+        os.close(_fd)
+    except OSError:
+        pass
+assert not alive, ("the installer never finished in ninety seconds (the answer %s sent). "
+                   "What it printed:\n%s"
+                   % ("was" if sent else "was NOT", out[-1500:] or "nothing at all"))
+assert QUESTION in out, \
+    "it never asked which way in, and answered for the user:\n" + (out[-900:] or "no output")
 assert os.path.isdir(os.path.join(repo, ".ddw")), \
-    "the answer given over the terminal was not the one it used: " + out[-600:]
+    "the answer given over the terminal was not the one it used:\n" + out[-900:]
 PYTTY
 
 MENU="$(printf '1\n' | bash "$SELF/install.sh" "$UPG" 2>&1)"
