@@ -6144,7 +6144,7 @@ PYBOOT
 # installation lands. The probe is the real shape: stdin is a pipe, a
 # controlling terminal exists, and the answer travels over the terminal.
 python3 - "$SELF" <<'PYTTY' && ok "the installer asks when a terminal exists, even though stdin is the pipe it arrived down" || bad "piped in, the installer decides the mode and the git flow by itself and never says it did"
-import os, pty, subprocess, sys, tarfile, tempfile
+import fcntl, os, pty, subprocess, sys, tarfile, tempfile, termios, threading, time
 src = sys.argv[1]
 work = tempfile.mkdtemp(dir=os.environ["WORK"])
 tar = os.path.join(work, "ddw.tar.gz")
@@ -6154,15 +6154,23 @@ with tarfile.open(tar, "w:gz") as t:
 repo = os.path.join(work, "repo")
 os.makedirs(repo)
 subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
+script = open(os.path.join(src, "install.sh"), encoding="utf-8").read()
+
 master, slave = pty.openpty()
 name = os.ttyname(slave)
 
 
 def preexec():
     os.setsid()
-    # No O_NOCTTY, and that is the whole trick: a session leader opening a tty
-    # takes it as its controlling terminal, which is what `/dev/tty` resolves to.
+    # Sin O_NOCTTY, y después el ioctl: Linux se la queda con el open, los BSD
+    # (macOS es uno) exigen TIOCSCTTY y sin él `/dev/tty` no abre. Costó una
+    # corrida entera de CI descubrirlo, porque la sonda se colgaba cinco minutos
+    # y no decía qué había visto.
     fd = os.open(name, os.O_RDWR)
+    try:
+        fcntl.ioctl(fd, termios.TIOCSCTTY, 0)
+    except OSError:
+        pass
     os.close(fd)
 
 
@@ -6170,17 +6178,45 @@ env = dict(os.environ, DDW_TARBALL="file://" + tar, DDW_GIT_FLOW="none")
 p = subprocess.Popen(["bash", "-s", "--", repo, "--target", "claude"],
                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                      text=True, preexec_fn=preexec, env=env)
-os.write(master, b"2\n")
-try:
-    out, _ = p.communicate(open(os.path.join(src, "install.sh"), encoding="utf-8").read(),
-                           timeout=300)
-finally:
-    os.close(master)
-    os.close(slave)
-assert "How do you want DDW installed?" in out, \
-    "it never asked which way in, and answered for the user: " + out[-400:]
+seen = []
+# Los dos en hilos: el instalador son cincuenta kilobytes y el buffer de un pipe
+# no los aguanta, así que escribirlo de una se traba contra un hijo que todavía
+# no lee — y leer de a poco es lo que permite contestar CUANDO la pregunta está
+# en pantalla, en vez de a ciegas después de N segundos.
+threading.Thread(target=lambda: [seen.append(l) for l in p.stdout], daemon=True).start()
+
+
+def feed():
+    try:
+        p.stdin.write(script)
+        p.stdin.flush()
+        p.stdin.close()
+    except (BrokenPipeError, ValueError):
+        pass
+
+
+threading.Thread(target=feed, daemon=True).start()
+
+answered = False
+deadline = time.time() + 150
+while p.poll() is None and time.time() < deadline:
+    if not answered and "How do you want DDW installed?" in "".join(seen):
+        os.write(master, b"2\n")
+        answered = True
+    time.sleep(0.2)
+alive = p.poll() is None
+if alive:
+    p.kill()
+    p.wait(timeout=30)
+time.sleep(0.5)
+os.close(master)
+os.close(slave)
+out = "".join(seen)
+assert not alive, ("the installer never finished (it %s asked). What it printed:\n%s"
+                   % ("had" if answered else "had NOT", out[-1200:] or "nothing at all"))
+assert answered, "it never asked which way in, and answered for the user: " + (out[-600:] or "no output")
 assert os.path.isdir(os.path.join(repo, ".ddw")), \
-    "the answer given over the terminal was not the one it used: " + out[-400:]
+    "the answer given over the terminal was not the one it used: " + out[-600:]
 PYTTY
 
 MENU="$(printf '1\n' | bash "$SELF/install.sh" "$UPG" 2>&1)"
