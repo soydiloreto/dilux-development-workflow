@@ -30,7 +30,66 @@
 # list below is discovered from the adapters directory.
 set -euo pipefail
 
-SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ── Pegado desde una URL, sin repositorio alrededor ───────────────────────────
+#
+# El instalador no se basta solo: copia `ddw/`, `adapters/`, `scripts/` y el
+# manifiesto desde su propio árbol. Una línea pegada en una terminal no tiene
+# ninguno de los cuatro — y hasta hoy ni siquiera llegaba a decirlo: bajo
+# `bash -s` la variable `BASH_SOURCE[0]` no existe, y con `set -u` eso es un
+# "unbound variable" en la línea siguiente, sin una palabra sobre qué pasó.
+#
+# Así que si no se encuentra a sí mismo, se trae el árbol y se vuelve a correr
+# desde ahí. Es el patrón de rustup y de nvm, por el mismo motivo: la línea que
+# alguien pega tiene que SER el instalador, no un paso previo al instalador. El
+# camino de plugin ya era una línea y el drop-in pedía clonar primero, que es la
+# única puerta que tienen tres de las seis herramientas.
+#
+# `DDW_REF` elige qué se trae. Por defecto `main`, y eso es una deuda dicha en
+# voz alta: `release.yml` corta releases con tags `v*` y todavía no se cortó
+# ninguno, así que hoy no hay una versión a la que apuntar.
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
+DDW_REF="${DDW_REF:-main}"
+if ! { [ -f "$SELF/.claude-plugin/plugin.json" ] && [ -d "$SELF/ddw" ] && [ -d "$SELF/adapters" ]; }; then
+  # Una sola vez. Si el árbol que bajó tampoco los tiene, el problema no se
+  # arregla bajándolo de nuevo, y un bootstrap que se llama a sí mismo es una
+  # recursión sin fondo — la forma que este repositorio ya pagó una vez.
+  if [ -n "${DDW_BOOTSTRAPPED:-}" ]; then
+    echo "install.sh: lo que se descargó de '$DDW_REF' no trae el método (ddw/, adapters/)." >&2
+    echo "  Revisá que la ref exista, o cloná el repositorio y corré install.sh desde ahí." >&2
+    exit 1
+  fi
+  FETCH=""
+  if command -v curl >/dev/null 2>&1; then FETCH="curl -fsSL"
+  elif command -v wget >/dev/null 2>&1; then FETCH="wget -qO-"
+  else
+    echo "install.sh: hace falta curl o wget para traer el método, y no hay ninguno." >&2
+    exit 1
+  fi
+  command -v tar >/dev/null 2>&1 || {
+    echo "install.sh: hace falta tar para desempaquetar el método, y no está." >&2; exit 1; }
+  DDW_TARBALL="${DDW_TARBALL:-https://codeload.github.com/soydiloreto/dilux-development-workflow/tar.gz/$DDW_REF}"
+  DDW_BOOT_DIR="$(mktemp -d)"
+  trap 'rm -rf "$DDW_BOOT_DIR"' EXIT
+  echo "  Trayendo DDW ($DDW_REF)…"
+  $FETCH "$DDW_TARBALL" | tar xz -C "$DDW_BOOT_DIR" || {
+    echo "install.sh: no se pudo traer $DDW_TARBALL" >&2; exit 1; }
+  DDW_REAL="$(find "$DDW_BOOT_DIR" -maxdepth 2 -name install.sh -type f | head -1)"
+  [ -n "$DDW_REAL" ] || {
+    echo "install.sh: el árbol descargado no trae un install.sh." >&2; exit 1; }
+  DDW_BOOT_RC=0
+  DDW_BOOTSTRAPPED=1 bash "$DDW_REAL" "$@" || DDW_BOOT_RC=$?
+  exit $DDW_BOOT_RC
+fi
+
+# ¿Hay una terminal a la que preguntarle? La respuesta NO es stdin.
+#
+# Las ocho lecturas de este archivo leen de `/dev/tty`, y está bien: bajo
+# `curl | bash` stdin es el script. Pero las tres decisiones de SI preguntar
+# miraban `[ -t 0 ]`, que es stdin — así que con el instalador llegando por un
+# pipe, con la terminal ahí al lado, se iba a modo no-interactivo en silencio:
+# elegía drop-in sin decirlo y se salteaba entera la pregunta de dónde aterriza
+# la instalación. Se pregunta por el mismo canal del que se lee.
+have_tty() { { : < /dev/tty; } 2>/dev/null; }
 TARGET_DIR=""
 TARGETS=""
 MODE=""
@@ -140,7 +199,7 @@ echo
 #
 # With no terminal to ask on there is no decision to be had, so it falls to
 # drop-in and says which way it went. Silence is the thing being removed here.
-if [ -z "$MODE" ] && [ -t 0 ]; then
+if [ -z "$MODE" ] && have_tty; then
   cat <<'MODES'
   How do you want DDW installed?
 
@@ -531,7 +590,7 @@ DDW_GIT_CHOICE=""            # setup | current | none | "" (never asked)
 DDW_SETUP_BRANCH=""
 CURBRANCH=""
 if [ -z "$INSTALLED" ] && git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-   && { [ -n "${DDW_GIT_FLOW:-}" ] || [ -t 0 ]; }; then
+   && { [ -n "${DDW_GIT_FLOW:-}" ] || have_tty; }; then
   if git -C "$TARGET" rev-parse -q --verify HEAD >/dev/null 2>&1; then
     CURBRANCH="$(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
     DDW_SETUP_BRANCH="ddw-setup-$( (LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null || true) | head -c6)"
@@ -766,7 +825,7 @@ ddw_warn_unpushed() {
   echo "    STARTS. A ticket branched off a base the remote does not have drags"
   echo "    every missing commit into its own pull request."
 }
-if [ "$DDW_IS_GIT" = 1 ] && { [ -t 0 ] || [ -n "${DDW_GIT_FLOW:-}" ]; }; then
+if [ "$DDW_IS_GIT" = 1 ] && { have_tty || [ -n "${DDW_GIT_FLOW:-}" ]; }; then
   DDW_COMMIT_PATHS="$(python3 - "$TARGET" "$PREDIRTY" <<'PYPATHS'
 import json, os, subprocess, sys
 target, predirty = sys.argv[1], set(filter(None, sys.argv[2].split("\n")))

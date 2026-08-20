@@ -105,6 +105,18 @@ Either way the file is yours: DDW never puts its blocks, phases or boilerplate i
 ## Or into your repository
 
 ```bash
+cd /path/to/your/project
+curl -fsSL https://raw.githubusercontent.com/soydiloreto/dilux-development-workflow/main/install.sh | bash -s -- . --target claude
+```
+
+The installer copies the method out of its own tree, so pasted from a URL it has no tree: it
+fetches one into a temporary directory, runs itself from there and removes it on the way out. It
+still asks its questions — every read goes to your terminal, not to the pipe it arrived down.
+
+`DDW_REF` picks what gets fetched (a branch or a tag; `main` by default). If you already have the
+repository, run the same script out of it and nothing is downloaded:
+
+```bash
 git clone https://github.com/soydiloreto/dilux-development-workflow.git
 
 cd /path/to/your/project
