@@ -6239,6 +6239,21 @@ while p.poll() is None and time.time() < deadline:
 alive = p.poll() is None
 out = "".join(seen)
 
+# Si sigue vivo, QUÉ está vivo. Tres corridas de macOS se fueron en deducir a
+# ciegas dónde se quedaba: el árbol de procesos lo dice de una — el estado
+# distingue detenido (T, que es una señal de terminal) de dormido, y la línea de
+# comando de cualquier nieto nombra al que no volvió.
+tree = ""
+if alive:
+    try:
+        pgid = os.getpgid(p.pid)
+        ps = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid=,stat=,command="],
+                            capture_output=True, text=True, timeout=30).stdout
+        tree = "\n".join(ln for ln in ps.splitlines()
+                          if len(ln.split(None, 3)) > 3 and ln.split()[2] == str(pgid))
+    except Exception as exc:                      # noqa: BLE001 — es un diagnóstico
+        tree = "(no se pudo leer el árbol de procesos: %s)" % exc
+
 # El mensaje se arma ANTES de limpiar, y la limpieza no puede tirar nada: en la
 # corrida anterior el diagnóstico se perdió porque el `wait` posterior al kill
 # expiró primero, y lo único que quedó fue un traceback sobre el timeout. Y se
@@ -6258,9 +6273,10 @@ for _fd in (master, slave):
         os.close(_fd)
     except OSError:
         pass
-assert not alive, ("the installer never finished in ninety seconds (the answer %s sent). "
-                   "What it printed:\n%s"
-                   % ("was" if sent else "was NOT", out[-1500:] or "nothing at all"))
+assert not alive, ("the installer never finished in ninety seconds (the answer %s sent).\n"
+                   "Still alive in its process group:\n%s\n\nWhat it printed:\n%s"
+                   % ("was" if sent else "was NOT", tree or "(nothing)",
+                      out[-1500:] or "nothing at all"))
 assert QUESTION in out, \
     "it never asked which way in, and answered for the user:\n" + (out[-900:] or "no output")
 assert os.path.isdir(os.path.join(repo, ".ddw")), \
