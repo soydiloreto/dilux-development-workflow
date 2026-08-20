@@ -266,8 +266,8 @@ MUTATIONS = [
           "    if False:")),
     ("the banner goes back to promising the chain the hook will refuse",
      edit("ddw/orchestrator.md",
-          "**And it promises at most ONE arrow.**",
-          "**And it may promise the whole of what follows.**")),
+          "**And under `assisted` it promises at most ONE arrow.**",
+          "**And under `assisted` it may promise the whole of what follows.**")),
     ("the split child is sent back through the CLASSIFY that decides nothing",
      edit("ddw/rules/define.instructions.md",
           "2. **Open the sub-ticket, directly in the phase the split paused from.**",
@@ -2893,6 +2893,18 @@ MUTATIONS = [
           "            continue                                 # not earned yet",
           "        if False:\n"
           "            continue                                 # not earned yet")),
+    ("the per-response arrow limit goes back to being stated as universal",
+     edit("ddw/orchestrator.md",
+          "**One arrow\n  per RESPONSE** is `assisted` only.",
+          "**One arrow\n  per RESPONSE** holds either way.")),
+    ("the autonomy section stops naming the guard that exempts `minimal`",
+     edit("ddw/orchestrator.md",
+          "hook agrees — `second_arrow_in_one_turn` exempts this mode",
+          "hook agrees — the enforcement exempts this mode")),
+    ("CLASSIFY goes back to reading as an exit that waits in every mode",
+     edit("ddw/rules/classify.instructions.md",
+          '> **Under `autonomy: "minimal"` this arrow does not wait.** The mode was chosen\n',
+          "")),
 ]
 
 

@@ -802,6 +802,143 @@ def check_blocked_marks_enforcement(root):
                  "the same kind of rule as the ones nothing enforces")
 
 
+def check_autonomy_prose_matches_the_hook(root):
+    """The per-response arrow limit, as the prose states it and as the hook applies it.
+
+    These drifted apart and the prose won, because the prose is what the model
+    reads. `second_arrow_in_one_turn` exempts `minimal` by name — the arrows are
+    meant to run with nobody between them, which is what that mode is — while
+    the orchestrator said the limit held "either way". Measured on a live
+    `minimal` run: one arrow, end of turn, a 🙋 banner asking to continue, and a
+    person paying an ok for every step the mode was chosen to stop asking about.
+    `minimal` was `assisted` with different wording, and nothing was broken —
+    the enforcement was right the whole time and unreachable.
+
+    So the claim is checked against the guard itself, driven, not read: a repo
+    with a turn already spent, asked once in each mode.
+    """
+    import importlib.util
+    import tempfile
+
+    path = os.path.join(root, "ddw/scripts/validate-transition.py")
+    if not os.path.exists(path):
+        return                              # check_paths owns a missing file
+    spec = importlib.util.spec_from_file_location("_vt_autonomy", path)
+    vt = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(vt)
+    except Exception as exc:                # noqa: BLE001 — a broken guard is not this check's to name
+        fail(rel(root, path), "could not be loaded, so the autonomy claim went unchecked (%s)"
+                              % exc.__class__.__name__)
+        return
+
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, ".ddw-sessions"))
+        for name in ("turn", "last-arrow"):
+            with open(os.path.join(tmp, ".ddw-sessions", name), "w", encoding="utf-8") as fh:
+                fh.write("7")               # an arrow already landed in this turn
+        nxt = {"phase": "DEFINE", "ticket": "T-1", "tier": "FEATURE", "gates": {}, "history": []}
+
+        def asked(mode):
+            old = {"phase": "CLASSIFY", "ticket": "T-1", "tier": "FEATURE",
+                   "autonomy": mode, "gates": {}, "history": []}
+            return vt.second_arrow_in_one_turn(tmp, old, dict(nxt, autonomy=mode))
+
+        if asked("assisted") is None:
+            fail(rel(root, path),
+                 "the guard lets a second arrow through under `assisted`, so the limit the method "
+                 "states everywhere is not enforced anywhere")
+            return
+        exempt = asked("minimal") is None
+
+    orch = os.path.join(root, "ddw/orchestrator.md")
+    text = read(orch)
+    section = text.split("## Autonomy", 1)[-1] if "## Autonomy" in text else ""
+    if not section:
+        fail(rel(root, orch), "no `## Autonomy` section, so what each mode does is stated nowhere")
+        return
+    names_guard = "second_arrow_in_one_turn" in section
+    if exempt and not names_guard:
+        fail(rel(root, orch),
+             "the hook exempts `minimal` from the one-arrow-per-turn refusal and the mode's own "
+             "section does not say so. A reader who has only the prose stops at every arrow and "
+             "pays a turn for each — which is `assisted`, under another name")
+    if not exempt and names_guard:
+        fail(rel(root, orch),
+             "the section says the hook lifts the per-turn limit for `minimal` and the guard "
+             "refuses there too, so the mode promises a run nothing will let it take")
+
+    # …and no statement of the limit may read as universal — neither by leaving
+    # the mode out nor by spelling out that it holds anyway. Both shapes were on
+    # the page at once: one paragraph said the limit applied under `minimal` too
+    # ("either way"), the next stated it with no mode at all, and the run obeyed
+    # them.
+    limit = re.compile(r"transition per response|phase transition in a single response"
+                       r"|lands one transition|one arrow per response", re.I)
+    universal = re.compile(r"either way|both modes|in both|regardless|whatever the mode"
+                           r"|any mode|does not (?:change|apply|go away)", re.I)
+    for doc in method_prose(root):
+        body = read(doc)
+        for para in re.split(r"\n\s*\n", body):
+            # Flattened first: the method wraps at a hundred columns, so any
+            # phrase of more than one word can straddle a line break — and this
+            # one does. Matched against the raw paragraph, the rule read the
+            # sentence it exists for as absent and went green over it.
+            flat = re.sub(r"\s+", " ", para)
+            if not limit.search(flat):
+                continue
+            where = f"{rel(root, doc)}:{body[:body.index(para)].count(chr(10)) + 1}"
+            for sentence in re.split(r"(?<=[.;])\s+", flat):
+                if limit.search(sentence) and universal.search(sentence):
+                    fail(where,
+                         "states the one-arrow-per-response limit as holding in every mode. It is "
+                         "`assisted` only — the hook exempts `minimal` — and this is the sentence "
+                         "a measured run cited while paying a turn per arrow in a mode chosen to "
+                         "stop asking")
+                    break
+            else:
+                if not re.search(r"assisted|minimal", flat, re.I):
+                    fail(where,
+                         "states the one-arrow-per-response limit without saying which autonomy "
+                         "mode it belongs to. It is `assisted` only, and read as universal it "
+                         "turns `minimal` into `assisted` with a different banner")
+
+
+def check_minimal_exemption_reaches_the_phase_rules(root):
+    """Every exit the orchestrator exempts from waiting says so where it is read.
+
+    The orchestrator lists them — "user confirms (not under `minimal` — see
+    § Autonomy)" — but the phase's own rules file is what the model has open at
+    the moment it decides whether to stop, and that file's line is "Wait for the
+    user's explicit confirmation." Five of the six carried the exemption as a
+    note under exactly that line; CLASSIFY did not, and read on its own it says
+    the arrow waits in every mode.
+    """
+    orch = os.path.join(root, "ddw/orchestrator.md")
+    text = read(orch)
+    exempt = []
+    for m in re.finditer(r"^## Router: Phase `([A-Z-]+)`\n(.*?)(?=^## |\Z)", text, re.M | re.S):
+        if "not under `minimal`" in m.group(2):
+            exempt.append(m.group(1))
+    if not exempt:
+        fail(rel(root, orch), "no phase exit says it is exempt from waiting under `minimal`, so "
+                              "the mode changes nothing anywhere the phases are described")
+        return
+    for phase in exempt:
+        rules = os.path.join(root, "ddw/rules/%s.instructions.md" % phase.lower())
+        if not os.path.exists(rules):
+            continue                      # check_paths owns the missing file
+        body = read(rules)
+        waits = [m for m in re.finditer(r"^Wait for .{0,80}(confirmation|approval)", body, re.M)]
+        if not waits:
+            continue                      # this phase does not state the wait in its own words
+        if not any("minimal" in body[m.end():m.end() + 700] for m in waits):
+            fail(f"{rel(root, rules)}:{body[:waits[0].start()].count(chr(10)) + 1}",
+                 "tells the reader to wait for a confirmation and never says that `minimal` does "
+                 "not — and this file, not the orchestrator, is what is open when the model "
+                 "decides whether to stop")
+
+
 def check_free_tiers_explained_to_people(root, graph):
     """Un tier que no pide NINGUNA compuerta tiene que estar explicado en
     `docs/METHOD.md`.
@@ -964,6 +1101,8 @@ def main():
     check_free_tiers_explained_to_people(root, graph)
     check_compaction_envelopes(root)
     check_ticket_retarget(root)
+    check_autonomy_prose_matches_the_hook(root)
+    check_minimal_exemption_reaches_the_phase_rules(root)
 
     if not FINDINGS:
         print("lint_method: every claim in the prose checks out against the graph, the catalog "

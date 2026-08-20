@@ -19,6 +19,46 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.30.0] — Unreleased
+
+`minimal` was `assisted` with different wording, and nothing was broken to make
+it so. The enforcement had been right from the day the mode existed — the guard
+exempts it by name, the commit gate exempts it by name — and the prose said the
+opposite, so the prose won: measured on a live `minimal` run, one arrow, end of
+turn, a 🙋 banner asking to continue, and a person paying an ok for every step
+the mode was chosen to stop asking about.
+
+### Fixed
+
+- **The one-arrow-per-response limit is `assisted` only, and now says so.** Two
+  limits had been collapsed into one sentence: one arrow per WRITE (both modes —
+  the hook refuses a write appending two entries) and one arrow per RESPONSE
+  (`assisted` — `second_arrow_in_one_turn` returns nothing under `minimal`).
+  Under `minimal` the arrows chain: one response carries as many as the work
+  reaches, each written on its own, each with its evidence on disk.
+- **The 🙋 banner stops appearing over arrows that need no approval.** Under
+  `minimal` it is for the three stops that have no mode and for the acts that
+  leave the repository — a banner over a transition nobody has to approve is the
+  rubber stamp that mode exists to remove, and it costs the same turn.
+- **CLASSIFY's exit carries the exemption its four sibling phases already had.**
+  Its rules file said "wait for explicit confirmation" and nothing else, and that
+  file — not the orchestrator — is what is open when the model decides to stop.
+
+### Added
+
+- **The linter checks the autonomy claim against the guard, driven.** It spends a
+  turn in a temporary repo and asks `second_arrow_in_one_turn` in each mode, then
+  holds the prose to the answer: an exemption the prose does not mention, or one
+  it mentions and the guard does not grant, are both findings. Every statement of
+  the per-response limit must name the mode it belongs to, and none may state it
+  as holding either way. Paragraphs are flattened before matching — the method
+  wraps at a hundred columns, and the sentence this rule exists for straddles a
+  line break, which is how the first version of the rule read it as absent.
+- **And that every exempted exit says so where it is read**, not only in the
+  orchestrator's router table.
+
+---
+
 ## [0.29.0] — Unreleased
 
 Round 6 — a second full run, this time on a repository whose installation had
