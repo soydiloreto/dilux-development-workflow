@@ -115,6 +115,10 @@ changes too small to deserve one, and it has no PLAN phase at all.
 
 **Error handling**
 - [Which errors can occur, and how each is handled.]
+- [If this block has none of its own, say exactly that in ONE bullet — "Sin condiciones de error
+  propias: …" / "None — …" — and nothing else. Do not borrow an error from another block to fill
+  the section. A block that takes input or touches a schema may not declare this: data that
+  arrives can arrive wrong.]
 
 **Required tests**
 - [ ] [test name] — validates AC-xx

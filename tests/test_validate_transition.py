@@ -289,6 +289,51 @@ def test_a_read_is_not_judged_as_a_write(tmp_path):
                          repo=repo, raw_tool="Read") is None
 
 
+# ── El artefacto que sostiene una compuerta ganada ───────────────────────────
+#
+# Medido en la ronda 6: CODE encontró un error real en la spec, anunció que
+# quedaría "registrado en VERIFY" —un lugar que no existe— y siguió. Corregirla
+# ahí mismo habría sido peor: el documento cambiaba de forma bajo una compuerta
+# que nadie volvió a ganar, que es exactamente el lavado que el `clears` del
+# grafo existe para impedir, entrando por otra puerta.
+
+def test_la_spec_no_se_reescribe_con_su_compuerta_en_pie(tmp_path):
+    repo = _repo_at(tmp_path, phase="CODE", ticket="T-1",
+                    gates={"define": True, "spec": True, "threat": True})
+    why = _pre(repo, os.path.join(repo, "docs/ddw/specs/spec-T-1.md"), "corregida a mano")
+    assert why and "PLAN" in why, \
+        "la spec aprobada se reescribió desde CODE sin volver a ganar la compuerta: %r" % why
+
+
+def test_el_modelo_de_amenazas_tambien_esta_sellado(tmp_path):
+    """`CODE->PLAN` limpia `spec` Y `threat`: los dos son artefactos de PLAN, y
+    sellar uno solo deja el otro reescribible bajo su propia compuerta."""
+    repo = _repo_at(tmp_path, phase="CODE", ticket="T-1",
+                    gates={"define": True, "spec": True, "threat": True})
+    why = _pre(repo, os.path.join(repo, "docs/ddw/security/threat-T-1.md"), "x")
+    assert why, "el modelo de amenazas aprobado se reescribió desde CODE"
+
+
+def test_en_PLAN_la_spec_se_escribe_porque_su_compuerta_no_esta_ganada(tmp_path):
+    """La otra mitad, y la que impide que el sello sea un candado: PLAN es donde
+    la spec se escribe, y la vuelta desde CODE limpia la compuerta justamente
+    para que se pueda corregir. Un sello que también muerde acá no deja arreglar
+    nada — deja el ticket muerto."""
+    repo = _repo_at(tmp_path, phase="PLAN", ticket="T-1", gates={"define": True})
+    assert _pre(repo, os.path.join(repo, "docs/ddw/specs/spec-T-1.md"), "x") is None, \
+        "la spec no se puede escribir en la fase que la escribe"
+
+
+def test_la_spec_de_otro_ticket_no_es_este_sello(tmp_path):
+    """El sello es sobre el artefacto de ESTE ticket. El índice del padre de un
+    split y la spec del hermano son otros documentos; sellarlos por parecido de
+    nombre rompe el cierre del split, que edita el índice del padre."""
+    repo = _repo_at(tmp_path, phase="CODE", ticket="T-1",
+                    gates={"define": True, "spec": True, "threat": True})
+    assert _pre(repo, os.path.join(repo, "docs/ddw/specs/spec-T-2.md"), "x") is None, \
+        "el sello del ticket activo alcanzó al documento de otro ticket"
+
+
 # ── Three guards nothing else drives ─────────────────────────────────────────
 #
 # Each of these had a fault in `scripts/mutate.py` and no check anywhere: the

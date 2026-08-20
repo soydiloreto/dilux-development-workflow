@@ -1531,6 +1531,53 @@ def quickfix_scope_denied(target, root, state):
     return None
 
 
+# The artifacts a standing gate rests on, and the phase that owns each. The
+# graph already clears these gates on the way back — `CODE->PLAN` clears `spec`
+# and `threat` — so the seal and the release are the same fact read twice.
+SEALED_BY_GATE = (
+    ("spec", "PLAN", "docs/ddw/specs/spec-{ticket}.md"),
+    ("threat", "PLAN", "docs/ddw/security/threat-{ticket}.md"),
+)
+
+
+def sealed_artifact_denied(target, root, state):
+    """Is this a write to an artifact whose gate is already standing?
+
+    `target` and `root` must already be realpath-resolved. Returns the reason to
+    refuse, or None to allow.
+
+    A gate is a claim about a document a human approved. Round 6 measured what
+    happens while the document stays writable underneath it: CODE found a real
+    error in the spec, said it would "leave it recorded in VERIFY" — a place
+    that does not exist — and moved on. The gap survived to the end of the
+    ticket. Editing it in place would have been worse: the spec would have
+    changed shape under a `spec` gate nobody re-earned, which is the laundering
+    the graph's `clears` was written to stop, arriving by another door.
+    Correcting the spec is not forbidden; correcting it HERE is. The way is the
+    edge that already exists, and it costs the approval it should cost.
+    """
+    ticket = (state.get("ticket") or "").strip()
+    if not ticket:
+        return None                                  # no ticket, no artifact of its own
+    if _outside_repo(target, root):
+        return None
+    gates = state.get("gates") or {}
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
+    phase = state.get("phase", IDLE)
+    for gate, owner, template in SEALED_BY_GATE:
+        if not gates.get(gate):
+            continue                                 # not earned yet — this is where it is written
+        if rel.lower() != template.format(ticket=ticket).lower():
+            continue
+        return (f"`{rel}` is what the `{gate}` gate was earned on, and that gate is standing. "
+                f"{phase} does not rewrite an approved artifact — a document that changes shape "
+                f"under a gate nobody re-earned is exactly what the pipeline promises cannot "
+                f"happen. If it is wrong, it is wrong for everyone downstream: go back to "
+                f"{owner} (the {phase}→{owner} edge is in the graph and clears `{gate}`), fix it "
+                f"there, re-validate, and re-earn the gate. Say out loud that you are going back "
+                f"and why, so the approval that follows is read as the re-approval it is.")
+
+
 # ── The two decisions, in one place each ──────────────────────────────────────
 #
 # Everything above is machinery; these two functions are the policy. They exist
@@ -2647,6 +2694,9 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
         if reason:
             return reason
         reason = quickfix_scope_denied(target, root, disk)
+        if reason:
+            return reason
+        reason = sealed_artifact_denied(target, root, disk)
         if reason:
             return reason
 
