@@ -714,6 +714,24 @@ def test_un_indice_sin_el_total_a_cubrir_es_rechazado(tmp_path):
         "un índice sin el total pasó: " + ("\n".join(refused) or "sin rechazos")
 
 
+def test_un_indice_que_no_declara_ni_reparte_nada_es_rechazado(tmp_path):
+    """El mismo F-PRD-10 en el único caso que las filas no alcanzan a cubrir.
+
+    Sin el total, el reparto de abajo se compara contra el conjunto vacío: nada
+    falta, nada sobra, y un índice a medio escribir sale con recibo verde
+    diciendo que sus «0 criterios» los toma exactamente un sub-ticket cada uno.
+    El índice ya reemplazó al padre, así que ese verde se da sobre una lista de
+    criterios que en ese momento no existe en ningún lado.
+    """
+    vacio = "\n".join(l for l in INDICE.splitlines()
+                       if "criteria to cover" not in l and not l.startswith("| FEAT-001"))
+    assert "AC-01" not in vacio and "criteria to cover" not in vacio, \
+        "el índice de prueba todavía declara o reparte algo, que es lo contrario del caso"
+    r, refused = _indice(tmp_path, vacio)
+    assert _refuses(refused, "F-PRD-10"), \
+        ("un índice que no declara ni reparte nada pasó con recibo verde:\n" + r.stdout)
+
+
 def test_un_sub_prd_mas_grande_que_el_umbral_avisa(tmp_path):
     """W-PRD-06. El split que no achicó nada: aviso, nunca bloqueo — quedarse
     con el ticket entero es decisión del usuario, pero el número no es suyo
