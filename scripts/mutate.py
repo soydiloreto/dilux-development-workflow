@@ -2905,6 +2905,10 @@ MUTATIONS = [
      edit("ddw/rules/classify.instructions.md",
           '> **Under `autonomy: "minimal"` this arrow does not wait.** The mode was chosen\n',
           "")),
+    ("the banner's arrow limit goes back to naming no autonomy mode at all",
+     edit("ddw/orchestrator.md",
+          "**And under `assisted` it promises at most ONE arrow.** There the hook lands",
+          "**And it promises at most ONE arrow.** The hook lands")),
 ]
 
 
