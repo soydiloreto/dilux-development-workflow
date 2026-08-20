@@ -2909,6 +2909,30 @@ MUTATIONS = [
      edit("ddw/orchestrator.md",
           "**And under `assisted` it promises at most ONE arrow.** There the hook lands",
           "**And it promises at most ONE arrow.** The hook lands")),
+    ("regenerating the ledger goes back to keeping one line of each written reason",
+     edit("scripts/lint_kill_map.py",
+          r'    m = re.search(r"^- \[ \] `%s`\n((?:[ \t]+.*(?:\n|$))*)" % re.escape(name), old, re.M)'
+          "\n"
+          r'    return m.group(1).rstrip("\n") if m else ""',
+          r'    m = re.search(r"^- \[ \] `%s`\n( +.*)$" % re.escape(name), old, re.M)'
+          "\n"
+          r'    return m.group(1) if m else ""')),
+    ("the split index goes back to handing out criteria its own count never declared",
+     edit("ddw/scripts/validate_prd.py",
+          "            extra = sorted(set(taken) - want)",
+          "            extra = []")),
+    ("the split receipt goes back to vouching for where the criteria came from",
+     edit("ddw/scripts/validate_prd.py",
+          'f"the {len(taken)} acceptance criteria the index puts up are "',
+          'f"the {len(taken)} acceptance criteria of the original are "')),
+    ("the loop back to DEFINE goes back to asking permission to correct a known defect",
+     edit("ddw/rules/plan.instructions.md",
+          "   │  The PRD is DEFINE's to change, so that is where this    │",
+          "   │  Do we proceed with the corrective loop?                 │")),
+    ("going back a phase stops being described as the mandatory move it is",
+     edit("ddw/rules/state.instructions.md",
+          '**And taking one is not a question.** A backward edge exists because something already approved\nturned out to be wrong, and asking permission to correct a known defect is a rubber stamp — the\ncorrective loop is mandatory everywhere the catalog describes one\n(`validation-rules.instructions.md` §2). So the move is ANNOUNCED, with the reason, and what waits\nat the far end is the real approval: the corrected artifact re-earning the gate the edge just\ncleared. The banner that asks for it says where it came back from, because an approval that does\nnot know it is a re-approval is the same rubber stamp one document later.\n\n',
+          "")),
 ]
 
 

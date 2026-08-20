@@ -228,6 +228,30 @@ def _refuses(refused, rule):
     return any(rule in ln for ln in refused)
 
 
+# ── El ledger que registra por qué un check no puede fallar ──────────────────
+
+def test_regenerar_el_ledger_conserva_la_razon_entera(tmp_path):
+    """`--write` guardaba UNA línea de cada explicación, y las razones son de
+    cinco o seis. Regenerar dejaba cuarenta y cuatro excusas cortadas a media
+    frase, cada una todavía excusando su sitio: verde, y sin decir por qué."""
+    lkm = _load("lkm", "scripts/lint_kill_map.py")
+    ledger = ("# Lint checks that cannot fail\n\n"
+              "- [ ] `check_uno[0]`\n"
+              "      **Guardia de forma.** Salta cuando el archivo entero\n"
+              "      dejó de tener la forma que la tabla promete, que son\n"
+              "      todas sus filas a la vez y no una línea.\n"
+              "- [ ] `check_dos[1]`\n"
+              "      Otra razón, de un solo renglón.\n")
+    entera = lkm.existing_reason(ledger, "check_uno[0]")
+    assert len(entera.splitlines()) == 3, \
+        "la razón se regeneraría truncada: %r" % entera
+    assert "todas sus filas" in entera, "se perdió el final de la explicación"
+    assert "check_dos" not in entera, "la razón se comió el ítem siguiente"
+    assert lkm.existing_reason(ledger, "check_dos[1]").strip() == "Otra razón, de un solo renglón."
+    assert lkm.existing_reason(ledger, "check_tres[0]") == "", \
+        "un sitio sin razón escrita no puede inventarse una"
+
+
 # ── El modelo de amenazas ────────────────────────────────────────────────────
 
 THREAT = "### The threat model, in the shape the validator reads"
@@ -617,7 +641,7 @@ INDICE = """# Parent PRD: Triage IA
 |--------|-------|
 | Ticket | FEAT-001 |
 | Status | Split |
-| Original acceptance criteria | 6 |
+| Acceptance criteria to cover | 6 |
 
 ## Sub-tickets
 
@@ -659,10 +683,32 @@ def test_un_criterio_en_dos_sub_tickets_es_rechazado(tmp_path):
         "un AC duplicado entre hijos pasó: " + ("\n".join(refused) or "sin rechazos")
 
 
-def test_un_indice_sin_el_total_del_original_es_rechazado(tmp_path):
+def test_un_indice_que_reparte_mas_de_lo_que_declara_es_rechazado(tmp_path):
+    """F-PRD-10. El número lo escribe el modelo y no se comparaba con NADA, ni
+    con las filas de abajo. Medido: un índice declaró 22 donde el documento de
+    origen tenía 17 —cinco decididos con el usuario en DEFINE— y el recibo salió
+    certificando «los 22 del original»."""
+    de_mas = INDICE.replace("| AC-06 | depends on b", "| AC-06, AC-07 | depends on b")
+    assert de_mas != INDICE, "el índice sano ya no reparte AC-06 en la fila de c"
+    _, refused = _indice(tmp_path, de_mas)
+    assert _refuses(refused, "F-PRD-10"), \
+        "un índice que declara 6 y reparte 7 pasó: " + ("\n".join(refused) or "sin rechazos")
+
+
+def test_el_recibo_del_split_no_habla_del_original(tmp_path):
+    """Lo que la regla mide es que las partes se reparten lo que el índice pone
+    sobre la mesa. Decir «del original» sobre criterios que nacieron en DEFINE
+    es certificar algo que no se comprobó."""
+    r, _ = _indice(tmp_path, INDICE)
+    fila = [ln for ln in r.stdout.splitlines() if "F-PRD-10" in ln]
+    assert fila and "of the original" not in fila[0], \
+        "el recibo sigue afirmando el origen de los criterios: %r" % fila
+
+
+def test_un_indice_sin_el_total_a_cubrir_es_rechazado(tmp_path):
     """Sin ese número la pregunta no se puede contestar, y el documento contra
     el que se contestaría ya fue sobrescrito."""
-    sin = "\n".join(l for l in INDICE.splitlines() if "Original acceptance" not in l)
+    sin = "\n".join(l for l in INDICE.splitlines() if "criteria to cover" not in l)
     _, refused = _indice(tmp_path, sin)
     assert _refuses(refused, "F-PRD-10"), \
         "un índice sin el total pasó: " + ("\n".join(refused) or "sin rechazos")

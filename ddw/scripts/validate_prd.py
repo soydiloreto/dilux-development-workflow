@@ -216,7 +216,7 @@ def main():
     if re.search(r"^\|\s*Status\s*\|\s*Split\s*\|", text, re.MULTILINE | re.IGNORECASE):
         # The header is a table here, like every other field of the index, so it
         # is read as one — `_after_label` reads `label:` prose and found nothing.
-        m = re.search(r"^\|\s*Original acceptance criteria\s*\|\s*(\d+)",
+        m = re.search(r"^\|\s*Acceptance criteria to cover\s*\|\s*(\d+)",
                       text, re.MULTILINE | re.IGNORECASE)
         total = int(m.group(1)) if m else 0
         taken, dupes = {}, []
@@ -230,22 +230,37 @@ def main():
                     dupes.append(f"{ac} is in {taken[ac]} and {sub}")
                 taken[ac] = sub
         if not total:
-            fail("F-PRD-10", "the index does not say how many acceptance criteria the original PRD "
-                             "had (`| Original acceptance criteria | N |`), so whether the parts "
-                             "cover the whole cannot be answered — and the original is gone")
+            fail("F-PRD-10", "the index does not say how many acceptance criteria the parts have "
+                             "to cover (`| Acceptance criteria to cover | N |`), so whether they "
+                             "cover the whole cannot be answered — and the parent's own list is "
+                             "gone the moment this index replaces it")
         else:
             want = {f"AC-{n:02d}" for n in range(1, total + 1)}
             lost = sorted(want - set(taken))
+            # …and nothing above the declared number, which is the half that was
+            # missing. The count is written by hand and was checked against
+            # nothing — not even the rows under it. Measured: an index declared
+            # 22 where the source document had 17, five having been added with
+            # the user during DEFINE, and the receipt then vouched for "the 22
+            # of the original". Either number can be the right one; the two
+            # disagreeing is what nobody may pass, because whichever is wrong,
+            # the reconciliation is a sentence somebody has to write.
+            extra = sorted(set(taken) - want)
             problems = []
             if lost:
                 problems.append("no sub-ticket takes " + ", ".join(lost))
+            if extra:
+                problems.append("the index declares %d criteria to cover and hands out %s — "
+                                "raise the count or drop them, and say where they came from"
+                                % (total, ", ".join(extra)))
             if dupes:
                 problems.append("; ".join(dupes))
             if problems:
                 fail("F-PRD-10", "the split does not partition the original: " + " · ".join(problems))
             else:
-                ok("F-PRD-10", f"the {len(taken)} acceptance criteria of the original are taken by "
-                               f"exactly one sub-ticket each ({len(set(taken.values()))} sub-tickets)")
+                ok("F-PRD-10", f"the {len(taken)} acceptance criteria the index puts up are "
+                               f"taken by exactly one sub-ticket each "
+                               f"({len(set(taken.values()))} sub-tickets)")
         print(f"\n/ddw-validate-prd {args.prd} — {'FAILED' if fails else 'PASSED'} (split index)")
         print("─" * 64)
         for row in rows:

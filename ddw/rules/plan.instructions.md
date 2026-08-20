@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.9.0
+version: 1.10.0
 ---
 
 # Phase 2: PLAN (Technical Planning)
@@ -37,24 +37,33 @@ because:
 
 **Protocol:**
 
-1. **Detect and communicate:**
+1. **Announce it — this is not a question.** A corrective loop is mandatory everywhere else in this
+   method (`validation-rules.instructions.md` §2: "the loop is mandatory"), and going back for a
+   PRD that turned out wrong is the same event: asking permission to correct something known to be
+   wrong is a rubber stamp, and the answer that matters comes later, when the corrected PRD is
+   approved. Same shape as CODE's return to PLAN (`code.instructions.md`).
+
    ```
    ┌─────────────────────────────────────────────────────────┐
-   │  PLAN — Corrective loop back to DEFINE required          │
+   │  PLAN — Going back to DEFINE (corrective loop)           │
    ├─────────────────────────────────────────────────────────┤
    │                                                          │
    │  Reason: [description of the change impacting the PRD]   │
    │  FRs affected: [list of FR-xx that change]               │
    │  ACs affected: [list of AC-xx that change]               │
    │                                                          │
-   │  To modify the PRD we need to go back to the DEFINE      │
-   │  phase, apply the changes, re-validate, and return.      │
-   │                                                          │
-   │  Do we proceed with the corrective loop?                 │
+   │  The PRD is DEFINE's to change, so that is where this    │
+   │  goes: apply the change, re-validate, and come back.     │
+   │  The `define` gate comes off and is earned again — your  │
+   │  approval of the corrected PRD is what pays for it.      │
    └─────────────────────────────────────────────────────────┘
    ```
 
-2. **On confirming the corrective loop:**
+   **What is still the user's, and is asked:** WHAT the requirement becomes. A loop back does not
+   authorise inventing the new wording — that is a decision nobody wrote down, and it stops the run
+   in either autonomy mode.
+
+2. **Taking the loop:**
    - Update `.ddw-state.json`:
      - `phase` → `"DEFINE"`
      - Remove `define` from `gates` (it will be re-validated)
@@ -64,6 +73,9 @@ because:
 
 3. **In DEFINE (re-entry):**
    - Apply the modifications to the PRD.
+   - **The banner that asks for the approval says what brought it back** — an approval that does
+     not know it is a re-approval is a rubber stamp: `🙋 TU TURNO — ¿Aprobás el PRD corregido?
+     Volvimos de PLAN: [la razón]. Cambió: [qué dice ahora que antes no decía]`.
    - Increment `PRD loops` in the header, and reset `Loops since last human decision` to 0: coming
      back from PLAN is a decision a person made, which is exactly what the ceiling waits for.
    - Run `ddw-validate-prd` (MANDATORY — no exceptions).

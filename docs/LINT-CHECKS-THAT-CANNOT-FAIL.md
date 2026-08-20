@@ -13,7 +13,7 @@ Every line is a `fail(…)` of `lint_method.py` that **no fault in
 `scripts/mutate.py` provokes**. Either write a fault that makes it fire, or say
 here why there is not one.
 
-<!-- 53 site(s), 232 fault(s) measured -->
+<!-- 56 site(s), 234 fault(s) measured -->
 
 - [ ] `check_boot_reads_every_state_field[0]`
       **Guardia de forma, y la forma es una tabla entera.** Salta cuando

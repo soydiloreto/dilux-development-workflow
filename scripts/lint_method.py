@@ -939,6 +939,50 @@ def check_minimal_exemption_reaches_the_phase_rules(root):
                  "decides whether to stop")
 
 
+def check_corrective_loops_are_not_asked(root):
+    """Going back is announced, and every place that describes it says so.
+
+    The two shapes were both on the page: CODE's return to PLAN announced the
+    move and took it, and PLAN's return to DEFINE opened a box ending "Do we
+    proceed with the corrective loop?" — the same event, one asking permission
+    to correct a known defect and the other not. The catalog settles it for the
+    validators' own loop ("the loop is mandatory"), and a backward edge is that
+    loop one artifact up.
+
+    What is still asked is what the corrected artifact SAYS, and that question
+    lives at the far end: the re-approval that earns the cleared gate back.
+    """
+    catalog = os.path.join(root, "ddw/rules/validation-rules.instructions.md")
+    if "the loop is mandatory" not in read(catalog):
+        fail(rel(root, catalog),
+             "the catalog no longer says the corrective loop is mandatory, so every prose that "
+             "leans on it — going back a phase, above all — is leaning on nothing")
+        return
+
+    asking = re.compile(r"do we proceed|shall we (?:proceed|go back)|¿(?:procedemos|seguimos|"
+                        r"volvemos|hacemos el loop)", re.I)
+    says_so = re.compile(r"not a question|mandatory|no es una pregunta|obligatori", re.I)
+    for doc in method_prose(root):
+        body = read(doc)
+        for m in re.finditer(r"^(#{2,4})\s+(.*(?:corrective loop|going back).*)$",
+                             body, re.M | re.I):
+            start = m.end()
+            nxt = re.search(r"^#{1,%d}\s" % len(m.group(1)), body[start:], re.M)
+            section = body[start:start + nxt.start()] if nxt else body[start:]
+            line = body[:m.start()].count("\n") + 1
+            if asking.search(section):
+                fail(f"{rel(root, doc)}:{line}",
+                     "asks permission to take a corrective loop. It is mandatory — the catalog "
+                     "says so for the loop this one is a phase-sized version of — and asking to "
+                     "correct a known defect is a rubber stamp. Announce it; the approval that "
+                     "counts is the corrected artifact re-earning its gate")
+            elif not says_so.search(section):
+                fail(f"{rel(root, doc)}:{line}",
+                     "describes going back a phase without saying it is not optional. Read on its "
+                     "own — and it is read on its own, one phase at a time — it leaves the model "
+                     "to decide whether to ask, and the two answers have both been shipped")
+
+
 def check_free_tiers_explained_to_people(root, graph):
     """Un tier que no pide NINGUNA compuerta tiene que estar explicado en
     `docs/METHOD.md`.
@@ -1103,6 +1147,7 @@ def main():
     check_ticket_retarget(root)
     check_autonomy_prose_matches_the_hook(root)
     check_minimal_exemption_reaches_the_phase_rules(root)
+    check_corrective_loops_are_not_asked(root)
 
     if not FINDINGS:
         print("lint_method: every claim in the prose checks out against the graph, the catalog "
