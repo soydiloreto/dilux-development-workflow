@@ -567,6 +567,10 @@ MUTATIONS = [
      edit("ddw/scripts/transition.py",
           "        os.replace(tmp, args.state)",
           "        pass")),
+    ("ripgrep is a write again: `rg` over the method comes back refused",
+     edit("ddw/scripts/validate-transition.py",
+          'READ_TOOLS = ("rg",)',
+          'READ_TOOLS = ()')),
     ("the method guard judges reads again and the agent cannot load the orchestrator",
      edit("ddw/scripts/validate-transition.py",
           "    if writing:\n"
@@ -1410,16 +1414,16 @@ MUTATIONS = [
     # tool through as a read.
     ("unknown tools go back to being read as reads, and walk past the guard",
      edit("ddw/scripts/validate-transition.py",
-          "    writing = payload_writes or not any(r in _verb for r in READ_VERBS)",
-          "    writing = payload_writes or any(r in _verb for r in READ_VERBS)")),
+          "    writing = payload_writes or not reading",
+          "    writing = payload_writes and not reading")),
     ("a viewer stops being recognised, so the agent cannot read",
      edit("ddw/scripts/validate-transition.py",
           'READ_VERBS = ("read", "view", "list", "ls", "cat", "search", "grep", "glob",',
           'READ_VERBS = ("nothing_matches",  # was: "read", "view", "list", "ls", "cat",')),
     ("the payload stops overruling a read-sounding name",
      edit("ddw/scripts/validate-transition.py",
-          "    writing = payload_writes or not any(r in _verb for r in READ_VERBS)",
-          "    writing = not any(r in _verb for r in READ_VERBS)")),
+          "    writing = payload_writes or not reading",
+          "    writing = not reading")),
 
     # ── The post net's channel ───────────────────────────────────────────────
     ("Copilot is sent a refusal its post hook ignores",

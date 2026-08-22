@@ -33,6 +33,23 @@ import sys
 READ_VERBS = ("read", "view", "list", "ls", "cat", "search", "grep", "glob",
               "find", "show", "open", "get", "fetch", "head", "tail", "stat")
 
+# …and the ones that spell it in no word at all. The list above is matched as
+# SUBSTRINGS, which covers `read_file`, `file_search`, `grep_search` and every
+# other compound — and misses a name that is an abbreviation. Copilot CLI calls
+# ripgrep `rg`, and `rg` contains none of the words above, so the search that
+# reads a file was judged a write to it.
+#
+# Measured live, one release after reads were let through: `view` of
+# `.ddw/orchestrator.md` passed and `rg` over the same file came back "DDW
+# blocked this write". The agent recovered through `bash grep`, which is the
+# part worth reading twice — the refusal did not stop the read, it moved it to
+# the one door PreToolUse cannot see through.
+#
+# Matched WHOLE, not as a substring: two letters inside somebody's `purge` or
+# `merge_files` would turn a write into a read, which is the failure this list
+# must never have.
+READ_TOOLS = ("rg",)
+
 # The only phase constants in code (everything else comes from the graph):
 IDLE = "IDLE"
 # Where the path of the file being written hides, across every tool's envelope.
@@ -2634,7 +2651,8 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
     _verb = (raw_tool if raw_tool is not None else tool_name or "").lower()
     payload_writes = (tool_input.get("content") is not None
                       or "old_string" in tool_input or "new_string" in tool_input)
-    writing = payload_writes or not any(r in _verb for r in READ_VERBS)
+    reading = _verb in READ_TOOLS or any(r in _verb for r in READ_VERBS)
+    writing = payload_writes or not reading
 
     # Asked BEFORE the early return below, because that return is exactly what
     # let this through: under a plugin install the method is outside the repo,
