@@ -19,25 +19,12 @@ move at different speeds. So the promise is specific:
 
 ---
 
-## [0.32.0] — Unreleased
+## [0.32.1] — Unreleased
 
-The line somebody pastes is the installer, not a step before it — and the reason
-it could not be was two defects deep.
-
-### Added
-
-- **The drop-in install is one line, pasted from a URL.**
-  `curl -fsSL …/install.sh | bash -s -- . --target claude` now works: the
-  installer copies the method out of its own tree, so pasted from a URL it has
-  no tree — it fetches one into a temporary directory, runs itself from there
-  and removes it on the way out. `DDW_REF` picks the branch or tag. The plugin
-  path was already one line; the drop-in path, which is **the only door Codex
-  CLI, Cursor and Gemini CLI have**, asked you to clone first. It did not even
-  fail clearly: under `bash -s` there is no `BASH_SOURCE[0]`, and under `set -u`
-  that is an "unbound variable" with not one word about what happened.
+Two defects a Copilot run apart, both invisible under Claude: the method refused
+to be read, and a transition printed success without happening.
 
 ### Fixed
-
 - **The agent may READ the method it is being held to.** `decide_pre` asks two
   questions — is this path DDW's own, and is this event a write at all — and the
   first one had been hoisted above the second to close the plugin hole. Under
@@ -62,6 +49,26 @@ it could not be was two defects deep.
   stderr naming the missing step, and `classify.instructions.md` — the file that
   is actually loaded in that phase — carries the same sentence beside the
   command.
+
+## [0.32.0] — Unreleased
+
+The line somebody pastes is the installer, not a step before it — and the reason
+it could not be was two defects deep.
+
+### Added
+
+- **The drop-in install is one line, pasted from a URL.**
+  `curl -fsSL …/install.sh | bash -s -- . --target claude` now works: the
+  installer copies the method out of its own tree, so pasted from a URL it has
+  no tree — it fetches one into a temporary directory, runs itself from there
+  and removes it on the way out. `DDW_REF` picks the branch or tag. The plugin
+  path was already one line; the drop-in path, which is **the only door Codex
+  CLI, Cursor and Gemini CLI have**, asked you to clone first. It did not even
+  fail clearly: under `bash -s` there is no `BASH_SOURCE[0]`, and under `set -u`
+  that is an "unbound variable" with not one word about what happened.
+
+### Fixed
+
 - **Whether to ask is no longer a question about stdin.** Every read in the
   installer reads `/dev/tty`, which is right — under `curl | bash`, stdin is the
   script. The three decisions of *whether* to ask tested `[ -t 0 ]`, which is
