@@ -289,6 +289,43 @@ def test_a_read_is_not_judged_as_a_write(tmp_path):
                          repo=repo, raw_tool="Read") is None
 
 
+def test_the_agent_may_read_the_method_it_is_held_to(tmp_path):
+    """El test de arriba mide un path de PRODUCTO, y por eso este defecto vivió.
+
+    `decide_pre` tiene dos guardas y una sola pregunta de "¿esto es una
+    escritura?". La guarda del método fue subida al tope de la función para
+    cerrar el agujero del plugin y quedó ADELANTE de esa pregunta, así que
+    cualquier tool que nombrara un path bajo `.ddw/` —un `view` incluido— se
+    rechazaba. En Claude no se ve: el matcher del hook manda sólo Edit|Write.
+    En Copilot el preToolUse no tiene matcher y recibe todas.
+
+    Medido en vivo: el hook de sessionStart inyecta "read `.ddw/orchestrator.md`
+    now and run its Boot Sequence" y la tool siguiente volvió con "DDW blocked
+    this write: orchestrator.md is part of DDW itself". El agente no pudo cargar
+    la máquina de estados a la que estaba sometido, y la corrida entera se vio
+    como DDW no instalado — con los rechazos escritos con las palabras de DDW.
+    """
+    repo = _repo_at(tmp_path, phase="IDLE", gates={})
+    method = os.path.join(repo, ".ddw")
+    os.makedirs(method, exist_ok=True)
+    orch = os.path.join(method, "orchestrator.md")
+    with open(orch, "w", encoding="utf-8") as fh:
+        fh.write("# el orquestador\n")
+    graph = os.path.join(ROOT, "ddw/rules/transition-graph.json")
+    state_path = os.path.join(repo, ".ddw-state.json")
+
+    leer = vt.decide_pre(state_path, graph, "Edit", {"path": orch}, [orch],
+                         repo=repo, raw_tool="view", method=method)
+    assert leer is None, \
+        "el agente no puede LEER el orquestador que el hook le ordena leer: " + str(leer)
+
+    # …y la regla que la guarda sí impone sigue en pie: escribirlo se rechaza.
+    escribir = vt.decide_pre(state_path, graph, "Write",
+                             {"path": orch, "content": "otras reglas"}, [orch],
+                             repo=repo, raw_tool="create", method=method)
+    assert escribir, "el método quedó escribible desde adentro del pipeline"
+
+
 # ── El artefacto que sostiene una compuerta ganada ───────────────────────────
 #
 # Medido en la ronda 6: CODE encontró un error real en la spec, anunció que
@@ -674,6 +711,37 @@ def test_the_helper_never_stamps_an_entry_before_the_one_it_follows(tmp_path):
 # media docena de tests lo usan como dict.
 _TRANSITION_PY = os.path.join(ROOT, "ddw/scripts/transition.py")
 _GRAPH_PATH = os.path.join(ROOT, "ddw/rules/transition-graph.json")
+
+
+def test_el_helper_sin_write_dice_que_no_escribio(tmp_path):
+    """Una salida que no se distingue de un éxito es un éxito falso.
+
+    El helper IMPRIME a propósito: el estado tiene que aterrizar por un `Write`,
+    que es la puerta que PreToolUse vigila. Lo que no hacía era decirlo, y su
+    stdout es un archivo de estado completo y válido.
+
+    Medido en vivo sobre Copilot: el modelo corrió el comando documentado, leyó
+    un estado que decía `"phase": "CLASSIFY"`, le avisó al usuario que el
+    pipeline había avanzado y siguió clasificando. En disco la fase seguía en
+    IDLE, `history` estaba vacío y no existía una línea de journal. Exit 0, el
+    JSON de DDW, y una transición que nunca ocurrió.
+    """
+    p = str(tmp_path / ".ddw-state.json")
+    open(p, "w", encoding="utf-8").write(json.dumps(state()))
+    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p, "--graph", _GRAPH_PATH,
+                        "--to", "CLASSIFY", "--action", "clasificar: probar"],
+                       capture_output=True, text=True, cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr[-300:]
+    assert json.loads(r.stdout)["phase"] == "CLASSIFY", \
+        "el helper dejó de emitir el estado siguiente, que es para lo que existe"
+    on_disk = json.load(open(p, encoding="utf-8"))
+    assert on_disk["phase"] == "IDLE" and on_disk["history"] == [], \
+        "sin --write el helper escribió igual, salteando la puerta que PreToolUse vigila"
+    aviso = r.stderr.lower()
+    assert "nothing was written" in aviso or "not been written" in aviso, \
+        ("el helper imprime un estado que parece haber aterrizado y no dice que no lo hizo: "
+         + repr(r.stderr))
+    assert "write" in aviso, "el aviso no dice cuál es el paso que falta: " + repr(r.stderr)
 
 
 def _step(state_path, *args):

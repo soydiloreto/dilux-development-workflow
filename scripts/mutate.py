@@ -567,6 +567,21 @@ MUTATIONS = [
      edit("ddw/scripts/transition.py",
           "        os.replace(tmp, args.state)",
           "        pass")),
+    ("the method guard judges reads again and the agent cannot load the orchestrator",
+     edit("ddw/scripts/validate-transition.py",
+          "    if writing:\n"
+          "        for target in targets:\n"
+          "            denied = _method_write_denied(target, method, repo)\n"
+          "            if denied:\n"
+          "                return denied\n",
+          "    for target in targets:\n"
+          "        denied = _method_write_denied(target, method, repo)\n"
+          "        if denied:\n"
+          "            return denied\n")),
+    ("the helper goes back to printing a state that looks like it landed",
+     edit("ddw/scripts/transition.py",
+          "    if not args.write:",
+          "    if False:")),
     ("Copilot's raw-text apply_patch is unjudged again (the M4 hole)",
      edit("ddw/scripts/hook-gate.py",
           '    if not paths and raw_args and "*** Begin Patch" in raw_args:',

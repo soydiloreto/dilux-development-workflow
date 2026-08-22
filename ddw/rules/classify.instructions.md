@@ -19,6 +19,13 @@ user's request:
 .ddw/scripts/transition.py --to CLASSIFY --action "clasificar: <the request, in a few words>"
 ```
 
+**The helper PRINTS the next state; it does not write it.** Copy its stdout into a `Write` of
+`.ddw-state.json` — that `Write` is the transition, and it is what PreToolUse judges. Running the
+command and moving on leaves the phase where it was: measured live, a model read back a state
+saying `"phase": "CLASSIFY"`, announced the pipeline had advanced, and on disk the phase was still
+IDLE with an empty history. The helper now says so on stderr; this line is here because the phase
+rule is what gets loaded, and a warning only reaches whoever runs the command.
+
 Nothing here waits, in either autonomy mode: the user just spoke, and this arrow is what their
 message asked for. What waits under `assisted` is the NEXT one — the ok that closes this phase pays
 `CLASSIFY → DEFINE` and nothing else, which is also all the closing banner may promise. Classifying

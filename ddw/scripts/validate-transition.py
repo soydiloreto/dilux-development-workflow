@@ -2614,37 +2614,6 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
     if not targets:
         return None                                   # no path to judge
 
-    # Asked BEFORE the early return below, because that return is exactly what
-    # let this through: under a plugin install the method is outside the repo,
-    # so "nothing here is in the repository" was true of a write to DDW's own
-    # graph. The scratch path the corrupt-state recovery prescribes is not under
-    # the method root, so that door stays open.
-    for target in targets:
-        denied = _method_write_denied(target, method, repo)
-        if denied:
-            return denied
-
-    # Nothing this event names is in the repository, so none of it is DDW's to
-    # judge. The per-target guards below already say that — but they run after
-    # the state is read, and a corrupt state refuses before any target is looked
-    # at. That turned the one recovery this product prescribes into a painted
-    # door: the refusal tells the model to write the corrected state to a scratch
-    # path OUTSIDE the repo and hand the user a copy command, and then the same
-    # guard refuses that write too. Measured live — the model tried exactly what
-    # it had just been told to do, and was stopped.
-    #
-    # This does not soften the corrupt-state rule. Every path inside the repo,
-    # the state file first, stays refused until a human restores it.
-    #
-    # Judged on BOTH readings of each path. A `.ddw` symlinked to a directory
-    # outside the repository made every write to the method resolve outside it,
-    # so this returned "none of it is DDW's to judge" about DDW's own graph —
-    # while `src/app.ts` in the same phase was refused. A path that is in the
-    # repo under either reading is one this has to look at.
-    if (all(_outside_repo(t, root) for t in targets)
-            and all(_outside_repo(lex, root) for lex in lexicals)):
-        return None
-
     # Is this event a WRITE at all?
     #
     # It has to be asked, because not every tool a hook sees is one. Claude's
@@ -2666,6 +2635,50 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
     payload_writes = (tool_input.get("content") is not None
                       or "old_string" in tool_input or "new_string" in tool_input)
     writing = payload_writes or not any(r in _verb for r in READ_VERBS)
+
+    # Asked BEFORE the early return below, because that return is exactly what
+    # let this through: under a plugin install the method is outside the repo,
+    # so "nothing here is in the repository" was true of a write to DDW's own
+    # graph. The scratch path the corrupt-state recovery prescribes is not under
+    # the method root, so that door stays open.
+    #
+    # And asked only of a WRITE, which is why the question above had to move up
+    # here. This guard was hoisted to the top of the function to close the
+    # plugin hole and left ahead of it, so on Copilot — whose preToolUse carries
+    # no matcher — it refused every READ of a path under the method. Measured
+    # live: the sessionStart hook injects "read `.ddw/orchestrator.md` now and
+    # run its Boot Sequence", and the very next tool call came back "DDW blocked
+    # this write: orchestrator.md is part of DDW itself". The agent could not
+    # load the state machine it was being held to, so nothing enforced a phase
+    # and the run looked like DDW was not installed at all — while the refusals
+    # printed DDW's own words. Sealing the method against writes is the rule;
+    # sealing it against reads is the method refusing to be read.
+    if writing:
+        for target in targets:
+            denied = _method_write_denied(target, method, repo)
+            if denied:
+                return denied
+
+    # Nothing this event names is in the repository, so none of it is DDW's to
+    # judge. The per-target guards below already say that — but they run after
+    # the state is read, and a corrupt state refuses before any target is looked
+    # at. That turned the one recovery this product prescribes into a painted
+    # door: the refusal tells the model to write the corrected state to a scratch
+    # path OUTSIDE the repo and hand the user a copy command, and then the same
+    # guard refuses that write too. Measured live — the model tried exactly what
+    # it had just been told to do, and was stopped.
+    #
+    # This does not soften the corrupt-state rule. Every path inside the repo,
+    # the state file first, stays refused until a human restores it.
+    #
+    # Judged on BOTH readings of each path. A `.ddw` symlinked to a directory
+    # outside the repository made every write to the method resolve outside it,
+    # so this returned "none of it is DDW's to judge" about DDW's own graph —
+    # while `src/app.ts` in the same phase was refused. A path that is in the
+    # repo under either reading is one this has to look at.
+    if (all(_outside_repo(t, root) for t in targets)
+            and all(_outside_repo(lex, root) for lex in lexicals)):
+        return None
 
     # Judge the source guard on every target that is NOT the state file, always.
     # Returning early once the state was recognised meant an envelope naming the
