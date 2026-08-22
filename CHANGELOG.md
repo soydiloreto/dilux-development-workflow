@@ -25,6 +25,11 @@ Two defects a Copilot run apart, both invisible under Claude: the method refused
 to be read, and a transition printed success without happening.
 
 ### Fixed
+- **`.ddw-journal.jsonl` is out of the repository.** Seventeen receipt lines from
+  this project's own test tickets, committed once and carried by every clone
+  since. The file is runtime — the `.gitignore` block DDW writes says so, in this
+  very repo — and a method that ships its own leftovers is teaching the habit it
+  refuses in its gate.
 - **The agent may READ the method it is being held to.** `decide_pre` asks two
   questions — is this path DDW's own, and is this event a write at all — and the
   first one had been hoisted above the second to close the plugin hole. Under
