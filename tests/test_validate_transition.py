@@ -319,6 +319,22 @@ def test_the_agent_may_read_the_method_it_is_held_to(tmp_path):
     assert leer is None, \
         "el agente no puede LEER el orquestador que el hook le ordena leer: " + str(leer)
 
+    # `rg` no dice "read" ni "grep" en ninguna letra: la lista de arriba se
+    # matchea por substring y una abreviatura no matchea nada. Copilot llama
+    # así a ripgrep, y medido en vivo una release después de dejar pasar las
+    # lecturas: `view` del orquestador pasaba y `rg` sobre el mismo archivo
+    # volvía "DDW blocked this write". El agente se recuperó por `bash grep`,
+    # que es lo que hay que leer dos veces — el rechazo no frenó la lectura, la
+    # mudó a la única puerta que PreToolUse no ve.
+    assert vt.decide_pre(state_path, graph, "Edit", {"path": orch}, [orch],
+                         repo=repo, raw_tool="rg", method=method) is None, \
+        "`rg` sobre el método se juzga como escritura"
+    # Y la abreviatura se matchea ENTERA: dos letras adentro de otro nombre no
+    # pueden convertir una escritura en una lectura.
+    assert vt.decide_pre(state_path, graph, "Edit", {"path": orch}, [orch],
+                         repo=repo, raw_tool="purge", method=method), \
+        "un nombre que sólo CONTIENE `rg` pasó como lectura"
+
     # …y la regla que la guarda sí impone sigue en pie: escribirlo se rechaza.
     escribir = vt.decide_pre(state_path, graph, "Write",
                              {"path": orch, "content": "otras reglas"}, [orch],

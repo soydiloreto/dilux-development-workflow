@@ -19,6 +19,22 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.32.2] — Unreleased
+
+### Fixed
+
+- **`rg` is a read.** The list of read verbs is matched as substrings, which
+  covers `read_file`, `file_search`, `grep_search` and every other compound —
+  and misses a name that is an abbreviation. Copilot CLI calls ripgrep `rg`,
+  which contains none of those words, so a search that reads a file was judged a
+  write to it. Measured live one release after reads were let through: `view` of
+  `.ddw/orchestrator.md` passed and `rg` over the same file came back "DDW
+  blocked this write". The agent then recovered through `bash grep`, which is
+  the part worth reading twice — the refusal did not stop the read, it moved it
+  to the one door `PreToolUse` cannot see through. Abbreviations are matched
+  whole, never as substrings: two letters inside somebody's `purge` must not
+  turn a write into a read.
+
 ## [0.32.1] — Unreleased
 
 Two defects a Copilot run apart, both invisible under Claude: the method refused
