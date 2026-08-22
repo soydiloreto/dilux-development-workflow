@@ -330,6 +330,27 @@ def _emit(args, state, seen=None):
                 pass
             raise
     print(emitted)
+    if not args.write:
+        # The helper PRINTS by design: the state has to land through a `Write`,
+        # because that is the door PreToolUse guards. What it did not do was say
+        # so, and its stdout is a complete, valid state file — indistinguishable
+        # from one that landed.
+        #
+        # Measured live on Copilot: the model ran the documented command, read
+        # back a state saying `"phase": "CLASSIFY"`, told the user the pipeline
+        # had advanced, and went on classifying. On disk the phase was still
+        # IDLE, `history` was empty and no journal line existed. Exit 0, DDW's
+        # own JSON, and a transition that never happened — the failure that
+        # looks exactly like success.
+        #
+        # On stderr so nothing that parses stdout has to change, and next to the
+        # output it governs, which is the only place a rule is certain to be
+        # read.
+        print("ddw-transition: PREVIEW — nothing was written. The JSON above is the state to "
+              "write; the write itself goes through a `Write` of .ddw-state.json on purpose, "
+              "because that is the door PreToolUse guards. It has NOT been written yet: copy "
+              "the JSON into that Write. A shell redirect (`>`, tee, sed -i) bypasses the guard "
+              "and is refused.", file=sys.stderr)
 
 
 def main():

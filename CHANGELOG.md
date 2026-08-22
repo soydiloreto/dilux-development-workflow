@@ -19,6 +19,42 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.32.1] — Unreleased
+
+Two defects a Copilot run apart, both invisible under Claude: the method refused
+to be read, and a transition printed success without happening.
+
+### Fixed
+- **`.ddw-journal.jsonl` is out of the repository.** Seventeen receipt lines from
+  this project's own test tickets, committed once and carried by every clone
+  since. The file is runtime — the `.gitignore` block DDW writes says so, in this
+  very repo — and a method that ships its own leftovers is teaching the habit it
+  refuses in its gate.
+- **The agent may READ the method it is being held to.** `decide_pre` asks two
+  questions — is this path DDW's own, and is this event a write at all — and the
+  first one had been hoisted above the second to close the plugin hole. Under
+  Claude nothing showed: its hook matcher filters to `Edit|Write|NotebookEdit`
+  before the gate is ever called. Copilot CLI's `preToolUse` carries no matcher
+  and hands over EVERY tool, so a plain `view` of a path under `.ddw/` came back
+  "DDW blocked this write". Measured live: the `sessionStart` hook injects *read
+  `.ddw/orchestrator.md` now and run its Boot Sequence*, and the very next tool
+  call was refused — the agent could not load the state machine it was being
+  held to, so nothing enforced a phase for the rest of the run while the
+  refusals printed DDW's own words. Sealing the method against writes is the
+  rule; sealing it against reads is the method refusing to be read.
+- **The transition helper says when it has not written anything.**
+  `transition.py` prints the next state and leaves the write to a `Write` of
+  `.ddw-state.json`, on purpose: that `Write` is the door `PreToolUse` guards.
+  What it never said was that nothing had landed — and its stdout is a complete,
+  valid state file, indistinguishable from one that did. Measured live: a model
+  ran the documented command, read back `"phase": "CLASSIFY"`, told the user the
+  pipeline had advanced and carried on; on disk the phase was IDLE, `history`
+  was empty and no journal line existed. Exit 0, DDW's own JSON, and a
+  transition that never happened. The helper now prints a PREVIEW notice on
+  stderr naming the missing step, and `classify.instructions.md` — the file that
+  is actually loaded in that phase — carries the same sentence beside the
+  command.
+
 ## [0.32.0] — Unreleased
 
 The line somebody pastes is the installer, not a step before it — and the reason
