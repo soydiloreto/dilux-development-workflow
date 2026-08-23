@@ -349,7 +349,7 @@ MUTATIONS = [
               '  echo "  Done."'))),
     ("the installer stops asking where the installation lands",
      edit("install.sh",
-          '        echo "  Where should the installation land?"',
+          '        echo "  Where should the $DDW_LANDS land?"',
           '        :')),
     ("choosing the setup branch lands the installation on the current branch anyway",
      edit("install.sh",
@@ -1996,6 +1996,36 @@ MUTATIONS = [
      edit("scripts/uninstall_repo.py",
           "                or os.path.commonpath([real, repo_real]) != repo_real\n", "")),
 
+    ("an update stops being asked where it lands, and commits the framework onto the branch of "
+     "whatever ticket was open",
+     edit("install.sh",
+          'if git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 \\\n   && { [ -n "${DDW_GIT_FLOW:-}" ] || have_tty; }; then',
+          'if [ -z "$INSTALLED" ] && git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 \\\n   && { [ -n "${DDW_GIT_FLOW:-}" ] || have_tty; }; then')),
+    ("an update's commit calls itself an install, and the log says the wrong thing about every "
+     "refresh",
+     edit("install.sh",
+          '  [ -n "$INSTALLED" ] && DDW_COMMIT_MSG="🔧 chore(ddw): update DDW to v${VERSION:-?} (drop-in)"\n',
+          "")),
+    ("a refresh that writes nothing strands you on the empty setup branch it made for the commit "
+     "it never wrote",
+     edit("install.sh",
+          '    if git -C "$TARGET" checkout -q "$CURBRANCH" 2>/dev/null; then',
+          "    if false; then")),
+    ("the standing commit offer goes back to a bare sha: no branch named, no word that the remote "
+     "does not have it",
+     edit("install.sh",
+          '            echo "  ✓ Committed on $(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo \'?\'): $N_PATHS path(s) ($(git -C "$TARGET" rev-parse --short HEAD))"\n            ddw_warn_unpushed',
+          '            echo "  ✓ Installation committed: $(git -C "$TARGET" rev-parse --short HEAD)"')),
+    ("the setup branch stops being six hex characters, so the name the installer offers is not the "
+     "name it makes",
+     edit("install.sh",
+          "import secrets; print(secrets.token_hex(3))",
+          "import secrets; print(secrets.token_hex(8))")),
+    ("the setup branch goes back to a constant that merely looks random, and the second install "
+     "collides with the first",
+     edit("install.sh",
+          "import secrets; print(secrets.token_hex(3))",
+          "print('abc123')")),
     ("the installer crashes on a context file that mentions the marker in prose",
      edit("scripts/install_target.py",
           '        if "<!-- BEGIN DDW" in existing:', '        if "BEGIN DDW" in existing:')),
@@ -2259,6 +2289,15 @@ MUTATIONS = [
               "  echo '{}'\n"
               "  exit 0\n"
               "fi\n")),
+    # El `bad` del modo `report` de `check_post_hook` no lo disparaba ningún
+    # fault: el stand-down de arriba está detrás de `DDW_PLUGIN_ROOT`, y ese
+    # check corre el hook sin esa variable. Un check que nada puede hacer
+    # fallar informa verde por no saber decir otra cosa. Éste lo hace fallar.
+    ("Copilot's post net answers every write with a bare {} — the one tool whose post hook cannot "
+     "refuse stops speaking too, and a forged state reaches the model as nothing",
+         edit("adapters/copilot/scripts/post-write.sh",
+              'exec python3 "$GATE" --dialect copilot --mode post --state "$STATE" --graph "$GRAPH" --repo "$REPO"',
+              "echo '{}'")),
     ("Copilot's pre-write gate stands down for a repo hook again, and every headless write lands",
          edit("adapters/copilot/scripts/pre-tool-use.sh",
               "DDW=\"$REPO/.ddw\"\n",

@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=589
+EXPECT_CHECKS=595
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=662
+EXPECT_MUTATIONS=679
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -5925,11 +5925,141 @@ grep -q 'Commit the installation now?' "$SELF/install.sh" \
   && grep -q 'offers to commit the installation' "$SELF/docs/INSTALL.md" \
   && ok "the installer offers to commit exactly what it wrote, and warns when it cannot ask" \
   || bad "the installation is left uncommitted in silence again, and the first ticket's PR will carry the framework"
-grep -q 'Where should the installation land?' "$SELF/install.sh" \
+grep -Fq 'Where should the $DDW_LANDS land?' "$SELF/install.sh" \
   && grep -q 'ddw-setup-' "$SELF/install.sh" \
   && grep -q 'DDW_GIT_FLOW' "$SELF/install.sh" \
   && ok "a fresh install asks where it lands — setup branch, current branch, or files only — before writing" \
   || bad "the installer stopped asking where the installation lands, and it goes back to landing on whatever branch the user happened to be on"
+# And the same question RUN rather than grepped. `grep -q 'ddw-setup-'` proves
+# somebody typed the string; it does not reach the line that builds the name —
+# and no check in this file ever had. Every install here ran against a bare
+# `git init`, so `rev-parse --verify HEAD` failed and the whole git-flow block
+# was skipped. The line underneath was `tr -dc 'a-f0-9' < /dev/urandom | head`,
+# which hangs forever on macOS: the installer stopped dead in any repository
+# with a commit in it, on the platform this suite has run on since the
+# beginning, and the run said nothing because a hung job reports "cancelled".
+#
+# Driven through python for the timeout: `timeout(1)` is GNU, and this check
+# exists precisely for the platform that does not have it. A hang has to come
+# back as a sentence, not as a dead runner.
+python3 - "$SELF" <<'PYSETUPBRANCH' && ok "an install into a repository that has commits lands on a fresh ddw-setup-<hex> branch, finishes, and names a different branch every time" || bad "the installer hangs, fails, or cannot name the setup branch it stops to offer — on a repo with a commit, which is every repo anyone installs into"
+import os, re, subprocess, sys, tempfile
+src = sys.argv[1]
+seen = set()
+for _ in range(2):
+    d = tempfile.mkdtemp(dir=os.environ["WORK"])
+    repo, home = os.path.join(d, "repo"), os.path.join(d, "home")
+    os.makedirs(repo); os.makedirs(home)
+    git = lambda *a: subprocess.run(["git", "-C", repo, *a], capture_output=True, text=True)
+    git("init", "-q")
+    for k, v in (("user.email", "e@example.com"), ("user.name", "e"), ("commit.gpgsign", "false")):
+        git("config", k, v)
+    open(os.path.join(repo, "README.md"), "w", encoding="utf-8").write("# fixture\n")
+    git("add", "-A"); git("commit", "-qm", "init")
+    env = dict(os.environ, HOME=home, DDW_GIT_FLOW="setup")
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    try:
+        r = subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+                           capture_output=True, text=True, env=env, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(
+            "install.sh never finished on a git repository with a commit. The setup branch is "
+            "named BEFORE the question it is named for, so this hangs ahead of any prompt and "
+            "the user sees the installer stop with nothing said.")
+    assert r.returncode == 0, "the install failed: " + (r.stdout + r.stderr)[-400:]
+    branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    assert re.fullmatch(r"ddw-setup-[0-9a-f]{6}", branch), \
+        "the install did not land on a setup branch of the shape it offers: %r" % branch
+    seen.add(branch)
+# Random, not a constant with a hexadecimal look: two installs on the same day
+# must not collide on the branch they create.
+assert len(seen) == 2, "two installs produced the same setup branch name: %s" % sorted(seen)
+PYSETUPBRANCH
+
+# ── An UPDATE is asked the same question, and reported the same way ──────────
+#
+# Reported from real use, and true: the question above was gated on
+# `[ -z "$INSTALLED" ]`, so a refresh never asked it and committed onto whatever
+# branch you were standing on. Run mid-ticket, the whole framework landed on
+# that ticket's branch — the exact failure the question exists to prevent, and
+# one that already cost a pull request 66 framework files. The reasoning for
+# skipping it ("a new branch per refresh would be noise") holds while you are on
+# the branch DDW lives on and nowhere else.
+#
+# Both halves are driven, because the cure has its own failure: a refresh that
+# writes nothing must not leave you standing on a branch made for a commit that
+# never happened.
+python3 - "$SELF" <<'PYUPDATEFLOW' && ok "an update asks where it lands like a first install does, commits under its own name, and a refresh that changes nothing puts you back where you were with no empty branch left behind" || bad "an update commits onto the branch you were working on, calls itself an install in the log, or strands you on a setup branch it made for a commit it never wrote"
+import os, re, subprocess, sys, tempfile
+src = sys.argv[1]
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
+repo, home = os.path.join(d, "repo"), os.path.join(d, "home")
+os.makedirs(repo); os.makedirs(home)
+git = lambda *a: subprocess.run(["git", "-C", repo, *a], capture_output=True, text=True)
+git("init", "-q")
+for k, v in (("user.email", "e@example.com"), ("user.name", "e"), ("commit.gpgsign", "false")):
+    git("config", k, v)
+open(os.path.join(repo, "README.md"), "w", encoding="utf-8").write("# fixture\n")
+git("add", "-A"); git("commit", "-qm", "init")
+
+
+def install(flow):
+    env = dict(os.environ, HOME=home, DDW_GIT_FLOW=flow)
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    r = subprocess.run(["bash", os.path.join(src, "install.sh"), repo, "--target", "claude"],
+                       capture_output=True, text=True, env=env, timeout=240)
+    assert r.returncode == 0, "the install failed: " + (r.stdout + r.stderr)[-400:]
+    return r
+
+
+branch = lambda: git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+
+install("current")
+# Standing on a ticket's branch, which is where the defect bites.
+git("checkout", "-q", "-b", "feat/T-1")
+open(os.path.join(repo, "src.py"), "w", encoding="utf-8").write("x = 1\n")
+git("add", "-A"); git("commit", "-qm", "the ticket's own work")
+# Something for the update to actually rewrite.
+open(os.path.join(repo, ".ddw", "orchestrator.md"), "a", encoding="utf-8").write("\n<!-- drift -->\n")
+git("add", "-A"); git("commit", "-qm", "drift")
+
+install("setup")
+landed = branch()
+assert re.fullmatch(r"ddw-setup-[0-9a-f]{6}", landed), \
+    "the update landed on %r — the ticket's own branch — instead of a setup branch of its own" % landed
+message = git("log", "-1", "--format=%s").stdout.strip()
+assert message.startswith("\U0001F527 chore(ddw): update DDW to"), \
+    "the update's commit calls itself an install: %r" % message
+
+# And the same run again, with nothing left to write.
+here = branch()
+before = set(git("branch", "--format=%(refname:short)").stdout.split())
+out = install("setup").stdout
+assert branch() == here, \
+    "a refresh that wrote nothing moved you to %r and left you there" % branch()
+left = set(git("branch", "--format=%(refname:short)").stdout.split()) - before
+assert not left, "a refresh that wrote nothing left an empty setup branch behind: %s" % sorted(left)
+assert "Nothing changed" in out, \
+    "it went back silently, so the branch that appeared and vanished has no explanation:\n" + out[-400:]
+PYUPDATEFLOW
+
+# The one commit path this file cannot drive — the standing offer, which reads
+# the answer from /dev/tty and is reached only by a git repo with no commit in
+# it — read structurally rather than run. It was the only one of the three that
+# printed a bare sha: it never said WHICH branch took the commit and never said
+# the remote did not have it, while both others did.
+python3 - "$SELF" <<'PYSTANDINGOFFER' && ok "the standing commit offer names the branch it committed on and warns the commit is not on the remote, like the two paths beside it" || bad "the standing offer commits and says only a sha — no branch, no warning that the first ticket's PR will drag it along"
+import os, re, sys
+src = open(os.path.join(sys.argv[1], "install.sh"), encoding="utf-8").read()
+start = src.index("Commit the installation now?")
+# Its own `case`, and no further: the paths beside it must not be what answers.
+end = src.index("      esac", start)
+offer = src[start:end]
+assert "ddw_warn_unpushed" in offer, \
+    "the standing offer commits without warning that the commit is not on the remote"
+assert "--abbrev-ref HEAD" in offer, \
+    "the standing offer does not name the branch its commit landed on"
+PYSTANDINGOFFER
 # Round 5's expensive lesson: the commit landed — on the LOCAL default branch —
 # and nobody pushed it. The ticket branched off that base, and its PR showed 66
 # framework files to the feature's reviewer. Committing was never the whole

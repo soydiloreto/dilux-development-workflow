@@ -556,18 +556,44 @@ done
 #
 # Asked BEFORE a byte is written, because the answer decides where the bytes
 # go: a setup branch is created now, so even a half-failed install lands on it
-# and not on the user's branch. Fresh installs only — an update is a refresh of
-# what a branch already carries, and a new branch per refresh would be noise.
+# and not on the user's branch.
+#
+# Asked on an UPDATE too, which it was not. The reasoning for skipping it was
+# "an update is a refresh of what a branch already carries, and a new branch per
+# refresh would be noise" — true while you are standing on the branch DDW lives
+# on, false the moment you are not. Reported from real use: an update run in the
+# middle of a ticket committed the whole framework onto that ticket's branch,
+# which is the exact failure the question exists to prevent, and which already
+# cost one pull request 66 framework files. A refresh is dozens of files; there
+# is nothing smaller about it than a first install.
+#
 # `DDW_GIT_FLOW=setup|current|none` answers the question without a terminal
 # (tests, scripted installs); the prompt is the interactive spelling of it.
 DDW_GIT_CHOICE=""            # setup | current | none | "" (never asked)
 DDW_SETUP_BRANCH=""
 CURBRANCH=""
-if [ -z "$INSTALLED" ] && git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+# The same question, and the right noun for it: calling a refresh "the
+# installation" is half of why it read as a question that did not apply here.
+DDW_LANDS="installation"; [ -n "$INSTALLED" ] && DDW_LANDS="update"
+if git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
    && { [ -n "${DDW_GIT_FLOW:-}" ] || have_tty; }; then
   if git -C "$TARGET" rev-parse -q --verify HEAD >/dev/null 2>&1; then
     CURBRANCH="$(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-    DDW_SETUP_BRANCH="ddw-setup-$( (LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null || true) | head -c6)"
+    # Six hex characters, and asked of python — which this script has already
+    # depended on for four hundred lines. It was
+    # `tr -dc 'a-f0-9' < /dev/urandom | head -c6`, and on macOS that HANGS: BSD
+    # `tr` hands nothing down the pipe, `head` waits for six bytes that never
+    # come, and neither process ever exits. The installer stops dead here —
+    # before it prints the question it stopped to ask — in any git repository
+    # carrying at least one commit, which is every repository anybody installs
+    # into. It shipped that way from #20 and no check reached this line: every
+    # install in the suite ran against a `git init` with nothing committed, so
+    # `rev-parse --verify HEAD` failed and this whole block was skipped.
+    # The lesson is not about `tr`. A pipeline that only terminates because the
+    # reader closes the pipe is a pipeline betting on SIGPIPE arriving, and that
+    # bet is settled differently by two implementations of the same POSIX tool.
+    # There is no unbounded read here any more.
+    DDW_SETUP_BRANCH="ddw-setup-$(python3 -c 'import secrets; print(secrets.token_hex(3))' 2>/dev/null)"
     [ "$DDW_SETUP_BRANCH" = "ddw-setup-" ] && DDW_SETUP_BRANCH="ddw-setup-$$"
     case "${DDW_GIT_FLOW:-}" in
       setup)   GOPT=1 ;;
@@ -576,12 +602,12 @@ if [ -z "$INSTALLED" ] && git -C "$TARGET" rev-parse --is-inside-work-tree >/dev
       *)
         echo "  This is a git repository · current branch: $CURBRANCH"
         echo
-        echo "  Where should the installation land?"
+        echo "  Where should the $DDW_LANDS land?"
         echo "    1. On a new setup branch — $DDW_SETUP_BRANCH   (recommended)"
-        echo "       Installed and committed there; your branches stay untouched."
+        echo "       Written and committed there; your branches stay untouched."
         echo "       After the commit you choose: push it & open a PR, or keep it local."
         echo "    2. On the current branch ($CURBRANCH)"
-        echo "       Installed and committed right here."
+        echo "       Written and committed right here."
         echo "    3. Files only — no commit"
         echo "       Everything lands, nothing is committed; you handle git yourself."
         printf "  [1/2/3] (1): "
@@ -851,6 +877,10 @@ print("\n".join(sorted(p for p in paths
 PYPATHS
 )"
   DDW_DID_COMMIT=0
+  # An update committed "install DDW v0.34.0": the log said the wrong thing about
+  # every refresh this script has ever made.
+  DDW_COMMIT_MSG="🔧 chore(ddw): install DDW v${VERSION:-?} (drop-in)"
+  [ -n "$INSTALLED" ] && DDW_COMMIT_MSG="🔧 chore(ddw): update DDW to v${VERSION:-?} (drop-in)"
   if [ -n "$DDW_COMMIT_PATHS" ]; then
     N_PATHS="$(printf '%s\n' "$DDW_COMMIT_PATHS" | sed '/^$/d' | wc -l | tr -d ' ')"
     if [ -n "$PREDIRTY" ]; then
@@ -873,8 +903,8 @@ PYPATHS
 $DDW_COMMIT_PATHS
 EOF_DDW_PATHS
       if [ "$ADDED" = 1 ] \
-         && git -C "$TARGET" commit -q -m "🔧 chore(ddw): install DDW v${VERSION:-?} (drop-in)"; then
-        echo "  ✓ Installation committed on $(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?'): $N_PATHS path(s) ($(git -C "$TARGET" rev-parse --short HEAD))"
+         && git -C "$TARGET" commit -q -m "$DDW_COMMIT_MSG"; then
+        echo "  ✓ ${DDW_LANDS} committed on $(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?'): $N_PATHS path(s) ($(git -C "$TARGET" rev-parse --short HEAD))"
         DDW_DID_COMMIT=1
       else
         echo "  ⚠ The commit did not land (a signing prompt, a hook?). The paths are"
@@ -898,8 +928,15 @@ EOF_DDW_PATHS
 $DDW_COMMIT_PATHS
 EOF_DDW_PATHS2
           if [ "$ADDED" = 1 ] \
-             && git -C "$TARGET" commit -q -m "🔧 chore(ddw): install DDW v${VERSION:-?} (drop-in)"; then
-            echo "  ✓ Installation committed: $(git -C "$TARGET" rev-parse --short HEAD)"
+             && git -C "$TARGET" commit -q -m "$DDW_COMMIT_MSG"; then
+            # The branch, and the warning that goes with it. This path — the
+            # standing offer, taken when the question above was never asked —
+            # printed a bare sha: it never said WHERE the commit landed and
+            # never said it was not on the remote, while both other paths did.
+            # A commit the remote does not have drags every missing commit into
+            # the first ticket's pull request.
+            echo "  ✓ Committed on $(git -C "$TARGET" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?'): $N_PATHS path(s) ($(git -C "$TARGET" rev-parse --short HEAD))"
+            ddw_warn_unpushed
           else
             echo "  ⚠ The commit did not land (a signing prompt, a hook?). The paths are"
             echo "    staged; commit them yourself before the first ticket closes."
@@ -907,6 +944,18 @@ EOF_DDW_PATHS2
       esac
     fi
     echo
+  elif [ "$DDW_GIT_CHOICE" = "setup" ] && [ -n "$DDW_SETUP_BRANCH" ] && [ -n "$CURBRANCH" ]; then
+    # Nothing was written — a refresh onto the version already there. Without
+    # this you are left standing on a branch that was created for a commit that
+    # never happened, off the branch you were working on, and the reason is
+    # invisible. The branch is only cleaned up when it is EMPTY: `--delete`
+    # without `-D` refuses to throw away anything that is not merged, so a
+    # commit that did land can never be lost here.
+    if git -C "$TARGET" checkout -q "$CURBRANCH" 2>/dev/null; then
+      git -C "$TARGET" branch -q --delete "$DDW_SETUP_BRANCH" >/dev/null 2>&1
+      echo "  Nothing changed — you already had this version. Back on $CURBRANCH."
+      echo
+    fi
   fi
   if [ "$DDW_GIT_CHOICE" = "setup" ] && [ "$DDW_DID_COMMIT" = 1 ]; then
     PUSHOPT="${DDW_GIT_PUSH:-}"
