@@ -2,6 +2,7 @@
   "$schema": "../adapter.schema.md",
   "id": "claude",
   "label": "Claude Code",
+  "plugin_install": true,
   "docs": "https://docs.claude.com/en/docs/claude-code",
   "skills": {
     "dir": ".claude/skills",

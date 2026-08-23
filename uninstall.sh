@@ -57,7 +57,21 @@ if [ -z "$PLAN" ]; then
       *) echo "Nothing was changed."; exit 0 ;;
     esac
   fi
+  HAD_COPILOT=""
+  [ -d "$TARGET/.github/hooks/ddw" ] && HAD_COPILOT=1
   python3 "$SELF/scripts/uninstall_repo.py" --repo "$TARGET" --self "$SELF" $FORCE >/dev/null
+  # Copilot's hooks are wired once per MACHINE, not per repo, because a
+  # repo-level manifest is not read in `copilot -p`. So this uninstall does not
+  # remove them: the same file is what gates every other repo here. It is inert
+  # where DDW is gone — the wiring runs the repo's own hook only `if [ -f ]` —
+  # but the user is the one who knows whether this was the last repo.
+  [ -n "$HAD_COPILOT" ] && [ -f "$HOME/.copilot/hooks/ddw.json" ] && {
+    echo
+    echo "  Copilot's gates are wired at user level and were left in place:"
+    echo "    ~/.copilot/hooks/ddw.json"
+    echo "  They do nothing in a repo without DDW. If this was the last one,"
+    echo "  remove that file."
+  }
   echo
   echo "Done. To install again: bash $SELF/install.sh $TARGET"
 fi

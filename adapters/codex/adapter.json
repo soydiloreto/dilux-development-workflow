@@ -2,6 +2,7 @@
   "$schema": "../adapter.schema.md",
   "id": "codex",
   "label": "OpenAI Codex CLI",
+  "plugin_install": false,
   "docs": "https://developers.openai.com/codex/hooks",
   "skills": {
     "dir": ".agents/skills",

@@ -21,6 +21,7 @@ una familia entera de escenarios se podía escribir pero no juzgar.
 import importlib.util
 import json
 import os
+import pathlib
 import subprocess
 
 import pytest
@@ -353,3 +354,182 @@ def test_json_import_is_used_by_seed_files(repo):
     # archivo sin tener que escaparlo a mano en el YAML.
     runner.seed_files(repo, {"pkg.json": {"name": "x"}})
     assert json.loads((repo / "pkg.json").read_text())["name"] == "x"
+
+
+# ── Copilot: el nivel del cableado es lo que decide si algo gatea ────────────
+#
+# Copilot no se midió nunca de punta a punta porque no tenía perfil headless.
+# Estos casos fijan lo que el perfil tiene que hacer bien, y cada uno
+# corresponde a una forma de salir verde sin haber medido nada.
+
+
+def test_copilot_has_a_headless_profile():
+    """Sin entrada, `agent_profile` levanta y el escenario no corre. Con una mal
+    puesta, corre y mide otra cosa: por eso los flags también se afirman."""
+    name, prof = runner.agent_profile(["copilot"])
+    assert name == "copilot"
+    assert "--allow-all" in prof["flags"], "sin --allow-all el modo -p ni arranca"
+    assert prof["prompt"] == ["-p", "{turn}"], "-p es el punto de entrada headless"
+    assert prof["dir"] == ["-C", "{repo}"], "sin -C la corrida puede apuntar a otro árbol"
+
+
+def test_copilot_turn_refuses_to_run_without_its_own_home():
+    """El HOME es donde viven las compuertas de Copilot. Apuntado al del
+    operador, el fixture lo juzga el cableado de esa máquina y el escenario
+    reporta como producto lo que es del arnés."""
+    with pytest.raises(RuntimeError) as e:
+        runner.agent_turn_cmd(["copilot"], "gpt-5-mini", None, "hacé algo", repo="/tmp/x")
+    assert "HOME" in str(e.value)
+
+
+def test_copilot_turn_sets_home_and_repo(tmp_path):
+    name, cmd, env = runner.agent_turn_cmd(["copilot"], "gpt-5-mini", None, "hacé algo",
+                                           repo=tmp_path / "repo", home=tmp_path / "home")
+    assert env["HOME"] == str(tmp_path / "home")
+    assert "-C" in cmd and str(tmp_path / "repo") in cmd
+    assert cmd[-2:] == ["-p", "hacé algo"]
+
+
+def test_copilot_resumes_the_session_it_was_given(tmp_path):
+    _, cmd, _ = runner.agent_turn_cmd(["copilot"], "gpt-5-mini", "abc-123", "seguí",
+                                      repo=tmp_path / "repo", home=tmp_path / "home")
+    assert "--resume=abc-123" in cmd
+
+
+def test_copilot_reads_the_session_id_out_of_the_resume_footer():
+    out = "hecho\n\nResume     copilot --resume=48ac578f-15de-4b10-b255-c2d4518af86c\n"
+    payload, session, err = runner.agent_turn_read("copilot", out)
+    assert err is None
+    assert session == "48ac578f-15de-4b10-b255-c2d4518af86c"
+    assert payload == out
+
+
+def test_copilot_without_a_resume_id_is_an_error_not_a_pass():
+    """Un turno sin id no es un detalle: el turno siguiente abre otra sesión, el
+    modelo no ve lo que acaba de hacer, y el escenario mide primeros turnos
+    mientras dice que midió una conversación."""
+    payload, session, err = runner.agent_turn_read("copilot", "hecho, saludos")
+    assert session is None
+    assert err and "new session" in err
+
+
+def test_the_copilot_tap_wraps_the_repo_hooks(tmp_path):
+    """El cableado de nivel usuario corre el script DEL REPO por path relativo,
+    así que envolver la copia del repo es lo único que hay para envolver."""
+    hooks = tmp_path / ".github" / "hooks" / "ddw"
+    hooks.mkdir(parents=True)
+    for name in ("pre-tool-use.sh", "post-write.sh", "pre-compact.sh"):
+        (hooks / name).write_text("#!/usr/bin/env bash\nexit 0\n")
+    assert runner._tap_copilot(tmp_path) == 2
+    for name in ("pre-tool-use.sh", "post-write.sh"):
+        assert (hooks / (name[:-3] + ".real.sh")).exists()
+        assert "DDW_EVAL_PAYLOAD" in (hooks / name).read_text()
+    # pre-compact no es un veredicto: envolverlo pondría un "permitido" en el
+    # log por una escritura que nunca existió.
+    assert not (hooks / "pre-compact.real.sh").exists()
+
+
+def test_the_copilot_home_refuses_to_run_unauthenticated(tmp_path, monkeypatch):
+    """Un HOME en blanco no tiene credenciales, y Copilot falla de una forma que
+    se lee como veredicto del producto."""
+    fake = tmp_path / "fakehome"
+    (fake / ".copilot").mkdir(parents=True)
+    (fake / ".copilot" / "config.json").write_text("{}")
+    monkeypatch.setenv("HOME", str(fake))
+    monkeypatch.setattr(os.path, "expanduser",
+                        lambda p: p.replace("~", str(fake)) if p.startswith("~") else p)
+    with pytest.raises(RuntimeError) as e:
+        runner.copilot_home(tmp_path / "wd", tmp_path / "wd" / "repo")
+    assert "credentials" in str(e.value)
+
+
+def test_the_copilot_home_carries_credentials_and_trusts_the_fixture(tmp_path, monkeypatch):
+    fake = tmp_path / "fakehome"
+    (fake / ".copilot").mkdir(parents=True)
+    # JSONC: el archivo real abre con dos líneas `//`. Parseado como JSON
+    # estricto revienta, las credenciales se pierden en silencio, y la corrida
+    # falla autenticando.
+    (fake / ".copilot" / "config.json").write_text(
+        '// managed automatically\n{"copilotTokens": {"t": 1}, "trustedFolders": ["/otro"]}\n')
+    monkeypatch.setattr(os.path, "expanduser",
+                        lambda p: p.replace("~", str(fake)) if p.startswith("~") else p)
+    wd = tmp_path / "wd"
+    repo = wd / "repo"
+    home = runner.copilot_home(wd, repo)
+    cfg = json.loads((home / ".copilot" / "config.json").read_text())
+    assert cfg["copilotTokens"] == {"t": 1}
+    assert str(repo) in cfg["trustedFolders"] and "/otro" in cfg["trustedFolders"]
+    # Y NADA más cruza: la sesión, los settings y los hooks arrancan vacíos.
+    assert sorted(p.name for p in (home / ".copilot").iterdir()) == ["config.json"]
+
+
+# ── Lo que el arnés tiene que hacer bien para que una corrida signifique algo ──
+#
+# Las tres de abajo salieron de mutaciones que SOBREVIVIERON: el código estaba
+# bien y no había nada que lo sostuviera. Un fault que nadie mata es un fault
+# que vuelve.
+
+
+def _fake_install(runner_mod, monkeypatch, calls, wire_hooks=True):
+    """Reemplaza `sh` por algo que finge la instalación y anota cómo la llamaron."""
+    real_sh = runner_mod.sh
+
+    def fake(cmd, cwd=None, env=None, timeout=120, stdin=None):
+        calls.append({"cmd": cmd, "env": env})
+        if any("install.sh" in str(c) for c in cmd):
+            repo = pathlib.Path(cmd[2])
+            (repo / ".ddw" / "scripts").mkdir(parents=True, exist_ok=True)
+            (repo / ".ddw" / "scripts" / "hook-gate.py").write_text("x")
+            if wire_hooks and env and env.get("HOME"):
+                d = pathlib.Path(env["HOME"]) / ".copilot" / "hooks"
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "ddw.json").write_text("{}")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return real_sh(cmd, cwd=cwd, env=env, timeout=timeout, stdin=stdin)
+
+    monkeypatch.setattr(runner_mod, "sh", fake)
+
+
+def _fake_creds(runner_mod, monkeypatch, tmp_path):
+    fake = tmp_path / "fakehome"
+    (fake / ".copilot").mkdir(parents=True, exist_ok=True)
+    (fake / ".copilot" / "config.json").write_text('{"copilotTokens": {"t": 1}}')
+    monkeypatch.setattr(os.path, "expanduser",
+                        lambda p: p.replace("~", str(fake)) if p.startswith("~") else p)
+
+
+def test_a_copilot_install_never_touches_the_operators_own_home(tmp_path, monkeypatch):
+    """Instalar para Copilot escribe FUERA del fixture, en `$HOME`. Sin un HOME
+    propio, una sola corrida de evals recablea todas las sesiones de Copilot de
+    la máquina, y dos corridas en paralelo se recablean entre sí."""
+    _fake_creds(runner, monkeypatch, tmp_path)
+    calls = []
+    _fake_install(runner, monkeypatch, calls)
+    wd = tmp_path / "wd"
+    runner.make_repo(tmp_path / "src", "copilot", wd)
+    install = [c for c in calls if any("install.sh" in str(x) for x in c["cmd"])][0]
+    assert install["env"] is not None, "la instalación de Copilot corrió con el HOME del operador"
+    assert install["env"]["HOME"] == str(wd / "home")
+    assert install["env"]["HOME"] != os.environ.get("HOME")
+
+
+def test_a_copilot_install_that_wired_no_hooks_is_refused(tmp_path, monkeypatch):
+    """Salir 0 sin cablear nada es la forma exacta en que esto se veía sano: el
+    escenario corre, nada juzga, y el resultado se lee como un pase limpio."""
+    _fake_creds(runner, monkeypatch, tmp_path)
+    calls = []
+    _fake_install(runner, monkeypatch, calls, wire_hooks=False)
+    with pytest.raises(RuntimeError) as e:
+        runner.make_repo(tmp_path / "src", "copilot", tmp_path / "wd")
+    assert "user-level" in str(e.value)
+
+
+def test_the_verdict_tap_covers_copilot(tmp_path, monkeypatch):
+    """`_tap_copilot` puede estar perfecto y no ser llamado por nadie."""
+    monkeypatch.setattr(runner, "_tap_claude", lambda repo: 0)
+    monkeypatch.setattr(runner, "_tap_opencode", lambda repo: 0)
+    hooks = tmp_path / ".github" / "hooks" / "ddw"
+    hooks.mkdir(parents=True)
+    for name in ("pre-tool-use.sh", "post-write.sh"):
+        (hooks / name).write_text("#!/usr/bin/env bash\nexit 0\n")
+    assert runner.install_verdict_tap(tmp_path) == 2

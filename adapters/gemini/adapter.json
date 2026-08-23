@@ -2,6 +2,7 @@
   "$schema": "../adapter.schema.md",
   "id": "gemini",
   "label": "Google Gemini CLI",
+  "plugin_install": false,
   "docs": "https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md",
   "skills": {
     "dir": ".gemini/skills",

@@ -30,8 +30,13 @@ import sys
 import time
 
 STALE_SECONDS = 2 * 60 * 60          # a marker not refreshed in 2h is a dead session
+# The same list `install.sh` writes, and it has to BE the same list: under a
+# plugin install nothing here ever runs the installer, so this is the only
+# writer — and `.ddw-work/` was missing from it. That directory holds the commit
+# message, the merge proposal and the PR body the model drafts, so the runtime
+# that never saw an installer offered them all to the next `git add -A`.
 GITIGNORE_ENTRIES = (".ddw-state.json", ".ddw-paused/", ".ddw-sessions/",
-                     ".ddw-journal.jsonl", ".ddw/**/__pycache__/")
+                     ".ddw-work/", ".ddw-journal.jsonl", ".ddw/**/__pycache__/")
 
 IDLE_STATE = {
     "tier": None,

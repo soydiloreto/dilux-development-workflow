@@ -2,6 +2,7 @@
   "$schema": "../adapter.schema.md",
   "id": "opencode",
   "label": "OpenCode",
+  "plugin_install": true,
   "docs": "https://opencode.ai/docs/skills/",
   "skills": {
     "dir": ".opencode/skills",
