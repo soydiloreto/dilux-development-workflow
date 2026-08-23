@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=578
+EXPECT_CHECKS=581
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -3356,6 +3356,60 @@ grep -q -- "--to DEFINE --tier <TIER> --ticket <ID>" "$CLS" \
   && ! grep -q "filling in \`ticket\`, \`title\` and \`tracker\`" "$CLS" \
   && ok "the CLASSIFY rules hand the ticket to the helper, which is where the helper has a flag for it" \
   || bad "the CLASSIFY rules still say the helper cannot set the ticket, against transition.py --ticket"
+
+# And the same file judged by the gate it feeds, rather than by grep. Every
+# command the CLASSIFY rules teach is a command a model copies verbatim, so a
+# template the FSM refuses is a first ticket that cannot leave CLASSIFY — and
+# the only thing a `grep -q -- "--title"` proves is that somebody typed the
+# string into the document. `--title` went into the rules and into the gate in
+# the same change; the mutation that took it back out of the rules survived,
+# because nothing here had ever RUN what the rules say to run.
+python3 - "$SELF" <<'PYCLSCMD' && ok "every transition.py command the CLASSIFY rules teach is accepted by the FSM those rules feed — the template a model copies is one its own gate takes" || bad "the CLASSIFY rules teach a command their own gate refuses: the first ticket of a new install cannot leave CLASSIFY"
+import os, re, shlex, subprocess, sys, tempfile
+src = sys.argv[1]
+rules = open(os.path.join(src, "ddw/rules/classify.instructions.md"), encoding="utf-8").read()
+helper = os.path.join(src, "ddw/scripts/transition.py")
+graph = os.path.join(src, "ddw/rules/transition-graph.json")
+
+# Continuation lines joined first: the command is what a reader copies, not the
+# line it happens to be broken across.
+body = re.sub(r"\\\n\s*", " ", rules)
+cmds = [ln.strip() for ln in body.splitlines()
+        if ".ddw/scripts/transition.py" in ln and not ln.lstrip().startswith("#")]
+assert len(cmds) >= 3, "the CLASSIFY rules no longer show the commands they teach: %r" % cmds
+
+FILL = {"<TIER>": "FEATURE", "<ID>": "T-1"}
+
+
+def fill(tok):
+    for k, v in FILL.items():
+        tok = tok.replace(k, v)
+    # Every other placeholder answered with its own prose — which is what a
+    # reader does with `<the sentence in which they asked for it>`.
+    return re.sub(r"<[^<>]+>", lambda m: m.group(0)[1:-1], tok)
+
+
+for cmd in cmds:
+    argv = [fill(a) for a in shlex.split(cmd)[1:]]
+    d = tempfile.mkdtemp(dir=os.environ["WORK"])
+    state = os.path.join(d, ".ddw-state.json")
+    # A command that is not the entry into CLASSIFY needs the state to be
+    # standing where the command starts. The ticket is seeded only when the
+    # command itself names one — the arrows that carry no `--ticket` are the
+    # arrows for work that has none.
+    if argv[argv.index("--to") + 1] != "CLASSIFY":
+        seed = ["--to", "CLASSIFY", "--action", "clasificar"]
+        if "--ticket" in argv:
+            seed += ["--ticket", "T-1"]
+        r = subprocess.run([sys.executable, helper, *seed, "--state", state, "--graph", graph,
+                            "--write"], capture_output=True, text=True, cwd=d)
+        assert r.returncode == 0, "the fixture for %r could not be built: %s" % (cmd, r.stdout + r.stderr)
+    r = subprocess.run([sys.executable, helper, *argv, "--state", state, "--graph", graph,
+                        "--write"], capture_output=True, text=True, cwd=d)
+    assert r.returncode == 0, \
+        "the CLASSIFY rules teach a command the FSM refuses:\n  %s\n  %s" % (
+            cmd, (r.stdout + r.stderr).strip().replace("\n", " ")[:300])
+PYCLSCMD
 
 # The document the model actually copies, judged by the rule that reads it.
 # F-PRD-01 asks whether every FR is named inside some acceptance criterion, and
@@ -7559,6 +7613,101 @@ assert "SIN WORKFLOW" not in quiet, \
     "a session in CODE is told it has no workflow:\n" + quiet[-400:]
 PYFREEWARN
 
+# The arrow into FREE, judged by what it will and will not accept. The check
+# above proves the requirement exists; this one proves it DISCRIMINATES, which
+# is a different question and the one three surviving mutations asked. A rule
+# that refuses everything but a magic word is a rule that refuses nothing the
+# day the word is easy to type — and the word `free` is the easiest one here.
+python3 - "$SELF" <<'PYFREEWORDS' && ok "the arrow into FREE takes the user's words quoted and opening the action, and refuses a bare declaration, a buried one, and a quote too short to be a sentence — and a run already in FREE is not re-judged on replay" || bad "FREE is entered on a paraphrase, on a declaration hidden inside another sentence, or every ticket that entered FREE before the rule existed is refused on every tool call"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location(
+    "vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec); spec.loader.exec_module(vt)
+graph = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json"), encoding="utf-8"))
+
+INTO = {"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "clasificar"}
+OLD = {"phase": "CLASSIFY", "tier": None, "ticket": None, "title": None, "gates": {},
+       "history": [INTO]}
+
+
+def verdict(action, **kw):
+    """None if the arrow is allowed, the refusal otherwise."""
+    new = {"phase": "FREE", "tier": "FREE", "ticket": None, "title": None, "gates": {},
+           "history": [INTO, {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY",
+                              "to": "FREE", "action": action, "tier": "FREE"}]}
+    try:
+        vt.validate(OLD, new, graph, **kw)
+        return None
+    except vt.Block as exc:
+        return str(exc)
+
+
+# The shape the rules teach, and the only one that gets in.
+assert verdict('free: "no me armes workflow, quiero probar algo"') is None, \
+    "the action the CLASSIFY rules teach is refused by the gate those rules feed"
+
+# A declaration with nothing quoted. This is the paraphrase: the model saying
+# the user asked, instead of showing what they said.
+assert verdict("free: el usuario lo pidio"), \
+    "FREE was entered on a declaration carrying none of the user's words — a paraphrase counts " \
+    "as the user asking"
+
+# Quoted, well-formed, and riding along inside a sentence about something else.
+# The declaration is what the action OPENS with, or an action about anything at
+# all can carry FREE into the state.
+assert verdict('le expliqué el pipeline y me dijo free: "dale sin pipeline"'), \
+    "the FREE declaration was accepted from the middle of an action about something else"
+
+# Two characters between quotes is punctuation, not a sentence somebody said.
+assert verdict('free: "ok"'), "a two-character quote was accepted as the user's own words"
+
+# And the requirement governs the next arrow, never the ones already taken.
+# Post mode re-walks the whole run as one batch (`max_appended=None`); without
+# the replay guard, every ticket that entered FREE before this release is
+# refused on every tool call, with no way out short of editing the state by hand.
+assert verdict("free: el usuario lo pidio", max_appended=None) is None, \
+    "post mode's replay re-judges an arrow taken before the rule existed, stranding the run"
+PYFREEWORDS
+
+# The ticket's name, asked as a name rather than as a field that exists. `title`
+# defaults to `None` in the state schema, so a check that reads `is None` reads
+# the DEFAULT and not the requirement: `""` is a field somebody filled in with
+# nothing, and every status line, report header and PR title downstream is the
+# same reconstruction from context that the null was.
+python3 - "$SELF" <<'PYTITLESHAPE' && ok "the name a ticket leaves CLASSIFY with has to be a name: absent, blank and whitespace are all refused, and a non-string is not a name either" || bad "a ticket leaves CLASSIFY with an empty title — the same nothing the null was, now with a type"
+import importlib.util, json, os, sys
+src = sys.argv[1]
+spec = importlib.util.spec_from_file_location(
+    "vt", os.path.join(src, "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec); spec.loader.exec_module(vt)
+graph = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json"), encoding="utf-8"))
+
+INTO = {"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY", "action": "clasificar"}
+OLD = {"phase": "CLASSIFY", "tier": None, "ticket": None, "title": None, "gates": {},
+       "history": [INTO]}
+
+
+def verdict(title):
+    new = {"phase": "DEFINE", "tier": "FEATURE", "ticket": "T-1", "title": title, "gates": {},
+           "history": [INTO, {"timestamp": "2026-01-01T00:01:00Z", "from": "CLASSIFY",
+                              "to": "DEFINE", "action": "clasificado", "tier": "FEATURE",
+                              "ticket": "T-1"}]}
+    try:
+        vt.validate(OLD, new, graph, max_appended=1)
+        return None
+    except vt.Block as exc:
+        return str(exc)
+
+
+assert verdict("Tetris LatinoNet") is None, "a ticket with a name was refused"
+for empty, what in ((None, "absent"), ("", "empty"), ("   ", "whitespace"),
+                    ("\t\n", "a tab and a newline"), (7, "a number"), ([], "a list")):
+    why = verdict(empty)
+    assert why, "a title that is %s left CLASSIFY unrefused" % what
+    assert "title" in why, "the refusal for a title that is %s names something else: %s" % (what, why)
+PYTITLESHAPE
+
 # Under a plugin install, the method is sealed and the FILES THE TOOL EXECUTES
 # were not. `$PLUGIN/ddw` is the rules and the validators; the hook that runs the
 # gate is `$PLUGIN/adapters/<tool>/hooks/*.sh`, wired by `plugin-hooks.json` and
@@ -9346,15 +9495,22 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 g = json.load(open(os.path.join(src, "ddw/rules/transition-graph.json"), encoding="utf-8"))
 idle = {"tier": None, "phase": "IDLE", "ticket": None, "title": None, "tracker": None,
         "autonomy": None, "gates": {}, "block": None, "discovery": None, "history": []}
-jump = dict(idle, tier="FEATURE", phase="DEFINE", ticket="T-1", autonomy="minimal",
+# `title` filled, and the refusal read rather than merely counted. The fixture
+# left it null, and the edge it builds leaves CLASSIFY carrying a ticket — so
+# the Block that came back was the one about the ticket's NAME, and this block
+# went on passing with the leniency it exists to catch restored. Two defences
+# over one hole hide each other unless the check says which one answered.
+jump = dict(idle, tier="FEATURE", phase="DEFINE", ticket="T-1", title="the fixture ticket",
+            autonomy="minimal",
             history=[{"timestamp": "2026-01-01T00:00:00Z", "from": "CLASSIFY", "to": "DEFINE",
                       "action": "skipped the classification", "tier": "FEATURE",
                       "ticket": "T-1"}])
 try:
     m.validate(idle, jump, g, max_appended=1)
     raise AssertionError("a run beginning at CLASSIFY landed in DEFINE from IDLE, unclassified")
-except m.Block:
-    pass
+except m.Block as exc:
+    assert "starts at CLASSIFY" in str(exc), \
+        "the write was refused, but for something other than where the run begins: %s" % exc
 # …and the ordinary first step is untouched.
 first = dict(idle, tier="FEATURE", phase="CLASSIFY", ticket="T-1", autonomy="minimal",
              history=[{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY",
