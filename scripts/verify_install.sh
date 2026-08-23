@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=586
+EXPECT_CHECKS=589
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -4017,6 +4017,39 @@ for w in d.get("wiring") or []:
 assert "hooks_note" in d, "the recipe is silent about why it wires no manifest — the next person restores it"
 PYNOMANIFEST
 
+# The post net has to hold the same line. The check above exercises the pre
+# hook, and a stand-down restored in `post-write.sh` alone would pass it while
+# every shell-written state went unjudged — which is the one thing the post net
+# exists for.
+#
+# Two things this check had to be taught, and both are the difference between
+# measuring the stand-down and measuring something else:
+#
+#   Post mode reads the DISK, not the event, so the forged state has to be
+#   there — above, the pre hook refused the write and left no file behind.
+#
+#   And the verdict is not an exit code. GitHub documents Copilot's postToolUse
+#   as unable to refuse: a non-zero exit is "logged and skipped". DDW answers it
+#   in `additionalContext` instead, which the model heeds. So what separates a
+#   net that ran from one that stood down is whether the finding is IN that
+#   answer — a stand-down prints a bare `{}` and exits 0, and asking the exit
+#   code calls both of them the same thing.
+python3 - "$CPR" <<'PYCPPOST'
+import json, sys
+json.dump({"phase": "CLOSEOUT", "tier": "FEATURE", "ticket": "T-1", "gates": {},
+           "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE",
+                        "to": "CLOSEOUT", "action": "forged"}]},
+          open(sys.argv[1] + "/.ddw-state.json", "w"))
+PYCPPOST
+: > "$CPR/.github/hooks/ddw/post-write.sh"
+CPPOST="$( cd "$CPR" && echo '{}' | DDW_PLUGIN_ROOT="$CPP" bash "$SELF/adapters/copilot/scripts/post-write.sh" 2>/dev/null )"
+case "$CPPOST" in
+  *ILLEGAL*additionalContext*|*additionalContext*ILLEGAL*)
+    ok "and the post net does too — it is the half that catches a state written through the shell" ;;
+  *) bad "Copilot's post net stands down for a repo hook that never runs; a forged state through the shell is unjudged" ;;
+esac
+rm -f "$CPR/.ddw-state.json"
+
 CPHOME="$WORK/copilot-level-home"; mkdir -p "$CPHOME"
 HOME="$CPHOME" python3 "$SELF/adapters/copilot/wire-user-hooks.py" "" >/dev/null 2>&1
 python3 - "$CPHOME" <<'PYLEVEL' && ok "the drop-in wiring runs each repo's own hook, and a refusal stays a refusal" || bad "the user-level wrapper turns a Copilot deny into an allow — see above"
@@ -4033,6 +4066,25 @@ for event, hooks in d["hooks"].items():
         assert "||" not in cmd, f"{event}: the `||` wrapper converts every deny into an allow: {cmd}"
         assert "exec bash" in cmd, f"{event}: the hook's exit code is not the wrapper's: {cmd}"
 PYLEVEL
+
+# And the drop-in ACTUALLY wires it. Everything above judges the recipe, the
+# scripts and the wiring script; none of it notices `install.sh` never calling
+# the last one. That was the whole defect — for as long as it existed, the
+# drop-in shipped the scripts, printed a green install, and wired nothing that
+# an untrusted folder would ever read.
+DIH="$WORK/copilot-dropin-home"; DIR2="$WORK/copilot-dropin-repo"
+mkdir -p "$DIH" "$DIR2"; git -C "$DIR2" init -q .
+git -C "$DIR2" config user.email e@example.com; git -C "$DIR2" config user.name e
+git -C "$DIR2" config commit.gpgsign false
+echo "# fixture" > "$DIR2/README.md"
+git -C "$DIR2" add -A >/dev/null 2>&1; git -C "$DIR2" commit -qm init >/dev/null 2>&1
+HOME="$DIH" DDW_GIT_FLOW=none bash "$SELF/install.sh" "$DIR2" --target copilot >/dev/null 2>&1
+[ -f "$DIH/.copilot/hooks/ddw.json" ] \
+  && ok "a drop-in install for Copilot wires the gates at user level, where an untrusted folder still reads them" \
+  || bad "the drop-in installs Copilot and wires no user-level hooks — a fresh clone enforces nothing and says it is installed"
+[ -f "$DIR2/.github/hooks/ddw/pre-tool-use.sh" ] && [ ! -f "$DIR2/.github/hooks/ddw.json" ] \
+  && ok "and it leaves the scripts in the repo with no manifest beside them — one wiring, not two" \
+  || bad "the drop-in wrote a repo-level manifest, or no scripts at all"
 
 # The plugin's one channel to the model carries the two prohibitions learned
 # live on OpenCode: no self-install, no DDW content in the project's context
