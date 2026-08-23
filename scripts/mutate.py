@@ -634,10 +634,11 @@ MUTATIONS = [
      edit("ddw/scripts/validate-transition.py",
           "    _ensure_runtime_ignored(state_path)\n",
           "")),
-    ("the Copilot installer sends hooks back to config.json (the gateless window)",
+    ("the Copilot installer stops saying that repository hooks need a trusted folder, "
+     "and the next person wires the gates where an untrusted clone never runs them",
      edit(".github/INSTALL.md",
-          "into **`~/.copilot/settings.json`** (NOT",
-          "into **`~/.copilot/config.json`** (NOT")),
+          "**Repository hooks load only in a folder the",
+          "**Repository hooks load in any folder the")),
     ("the plugin boot stops saying classify-first (the M4 omission)",
      edit("ddw/scripts/session-boot.py",
           '            "Work that changes this repo starts by CLASSIFYING it into a ticket and walking the "\n'
@@ -2247,23 +2248,48 @@ MUTATIONS = [
     ("an adapter disappears from the tree and the pinned count says nothing",
      delete("adapters/cursor")),
     # ── Del mapa de kills, lista A ──────────────────────────────────────────
-    ("the user-level stand-down fires against the repo's own hook, so Copilot's post net never runs",
+    # El stand-down volvió a existir. Antes era un bug de condición; ahora el
+    # fault es el bloque entero, porque no hay manifiesto de repo que releve a
+    # nadie: pararse acá es no gatear en ningún lado.
+    ("Copilot's user-level hook stands down for a repo hook again, and `copilot -p` gates nothing",
          edit("adapters/copilot/scripts/post-write.sh",
-              "if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$REPO/.github/hooks/ddw/post-write.sh\" ]; then",
-              "if [ -f \"$REPO/.github/hooks/ddw/post-write.sh\" ]; then")),
+              "cat > /dev/null            # drain the event; post mode reads the disk, not stdin\n",
+              "cat > /dev/null            # drain the event; post mode reads the disk, not stdin\n"
+              "if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$REPO/.github/hooks/ddw/post-write.sh\" ]; then\n"
+              "  echo '{}'\n"
+              "  exit 0\n"
+              "fi\n")),
+    ("Copilot's pre-write gate stands down for a repo hook again, and every headless write lands",
+         edit("adapters/copilot/scripts/pre-tool-use.sh",
+              "DDW=\"$REPO/.ddw\"\n",
+              "if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$REPO/.github/hooks/ddw/pre-tool-use.sh\" ]; then\n"
+              "  echo '{}'\n"
+              "  exit 0\n"
+              "fi\n"
+              "DDW=\"$REPO/.ddw\"\n")),
+    ("the Copilot recipe wires its hooks manifest into the repo again, where `-p` never reads it",
+         json_edit("adapters/copilot/adapter.json",
+                   lambda d: d["wiring"].insert(0, {"from": "hooks", "to": ".github/hooks"}))),
+    ("the user-level wrapper goes back to `&&`/`||`, turning every Copilot refusal into permission",
+         edit("adapters/copilot/wire-user-hooks.py",
+              'bash = "if [ -f %s ]; then exec bash %s; fi; echo \'{}\'" % (target, target)',
+              'bash = "[ -f %s ] && bash %s || echo \'{}\'" % (target, target)')),
+    ("the drop-in stops wiring Copilot at user level, so headless sessions run with no gates",
+         edit("install.sh",
+              '  if [ "$t" = "copilot" ]; then\n    copilot_hooks\n',
+              '  if [ "$t" = "copilot" ]; then\n    :\n')),
+    ("the Copilot wiring drops preCompact, and the pipeline ends at the first summary",
+         edit("adapters/copilot/wire-user-hooks.py",
+              '        "preCompact": entry("pre-compact.sh", 10),\n',
+              "")),
     ("the uninstall reports the block removed and writes the file back unchanged",
          edit("scripts/uninstall_repo.py",
               "                open(path, \"w\", encoding=\"utf-8\").write(out)",
               "                open(path, \"w\", encoding=\"utf-8\").write(text)")),
     ("Copilot's hook grows a matcher, so the gate stops being the only filter",
-         edit("adapters/copilot/hooks/ddw.json",
-              "    \"preToolUse\": [\n"
-              "      {\n"
-              "        \"type\": \"command\",",
-              "    \"preToolUse\": [\n"
-              "      {\n"
-              "        \"matcher\": \"write\",\n"
-              "        \"type\": \"command\",")),
+         edit("adapters/copilot/wire-user-hooks.py",
+              'return [{"type": "command", "bash": bash, "timeoutSec": timeout}]',
+              'return [{"matcher": "write", "type": "command", "bash": bash, "timeoutSec": timeout}]')),
     ("DISCOVERY closes with no commit and no pull request",
          json_edit("ddw/rules/transition-graph.json",
                    lambda d: d["tiers"]["DISCOVERY"]["DISCOVERY->IDLE"].update(gates=[]))),
@@ -2348,10 +2374,16 @@ MUTATIONS = [
               "        # An error is not an answer. Offline, rate-limited, unauthenticated, a",
               "    if False:\n"
               "        # An error is not an answer. Offline, rate-limited, unauthenticated, a")),
-    ("the user-level Copilot hook stops standing down, so every write is judged twice",
+    # Era: «deja de pararse, y toda escritura se juzga dos veces». Ese fault
+    # murió con el stand-down, y su lugar lo toma el que sí existe — el hook
+    # resuelve el método desde el repo y, si no hay, desde el plugin. Sacarle la
+    # segunda mitad deja al plugin sin nada que ejecutar.
+    ("the Copilot hook stops falling back to the plugin's method, so a plugin-only install gates nothing",
          edit("adapters/copilot/scripts/pre-tool-use.sh",
-              "if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$REPO/.github/hooks/ddw/pre-tool-use.sh\" ]; then",
-              "if false; then")),
+              "  if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$DDW_PLUGIN_ROOT/ddw/scripts/hook-gate.py\" ]; then\n"
+              "    DDW=\"$DDW_PLUGIN_ROOT/ddw\"\n",
+              "  if false; then\n"
+              "    DDW=\"$DDW_PLUGIN_ROOT/ddw\"\n")),
     # ── Del mapa de kills, lista B ──────────────────────────────────────────
     ("el recipe de Claude coloca las skills dentro de .ddw/, y el método vuelve a llevar "
      "payload de una herramienta",
@@ -2436,11 +2468,16 @@ MUTATIONS = [
           "    if manifest.get(rel) == _fingerprint(dst_path):\n"
           "        return True                       # ours, untouched, superseded\n",
           "")),
-    ("el procedimiento de desinstalación de Copilot deja de decir que hay que sacar la "
-     "clave hooks del settings de usuario",
+    ("el procedimiento de desinstalación de Copilot deja de decir qué archivo de nivel "
+     "usuario hay que borrar",
      edit(".github/INSTALL.md",
-          "Then remove the `hooks` key from `~/.copilot/settings.json`.",
-          "Then delete `~/.copilot/ddw/`.")),
+          "Then delete `~/.copilot/hooks/ddw.json`",
+          "Then delete `~/.copilot/ddw/`")),
+    ("la doc del instalador de Copilot vuelve a dictar el JSON en vez de correr el script "
+     "que lo escribe, y el nivel se retipea mal",
+     edit(".github/INSTALL.md",
+          "python3 ROOT/adapters/copilot/wire-user-hooks.py ROOT",
+          "cat ~/.copilot/hooks/ddw.json")),
     ("el instalador avisa por un heading que su propia plantilla nunca escribe, así que "
      "el aviso sale en cada corrida",
      edit("install.sh",
@@ -3026,6 +3063,61 @@ MUTATIONS = [
      edit("install.sh",
           'have_tty() { { : < /dev/tty; } 2>/dev/null; }',
           'have_tty() { [ -t 0 ]; }')),
+
+    # ── The five the installer's own prose was hiding ───────────────────────
+    #
+    # Four of them were found by reading the code against what it printed, and
+    # one by running it: a plugin install at project scope leaves a file in the
+    # repo the banner swore was untouched.
+    ("the plugin banner goes back to naming nothing that a project-scope install leaves in the repo",
+     edit("install.sh",
+          '  echo "  (Claude Code records it in .claude/settings.json, which is how a"',
+          '  echo "  (nothing of it is recorded anywhere in your tree, which is how a"')),
+    ("the runtime's gitignore list drops the scratch directory again, so a plugin-only install leaks the drafted commit message",
+     edit("ddw/scripts/session-boot.py",
+          '                     ".ddw-work/", ".ddw-journal.jsonl", ".ddw/**/__pycache__/")',
+          '                     ".ddw-journal.jsonl", ".ddw/**/__pycache__/")')),
+    ("this repository stops ignoring one of the runtime paths it tells every other repo to ignore",
+     edit(".gitignore", "\n.ddw-journal.jsonl\n", "\n")),
+    ("plugin capability goes back to a list of tool names typed into the installer",
+     edit("install.sh",
+          'PLUGIN_CAPABLE=" "\nfor _a in "${AVAILABLE[@]}"; do\n'
+          '  [ "$(plugin_install_of "$_a")" = "true" ] && PLUGIN_CAPABLE="${PLUGIN_CAPABLE}${_a} "\ndone\nunset _a',
+          'PLUGIN_CAPABLE=" claude copilot opencode "')),
+    ("the installer offers a draft pull request again, and opens one nobody can merge",
+     edit("install.sh",
+          'printf "  Push %s and open a PR? [y/N] "',
+          'printf "  Push %s and open a draft PR? [y/N] "')),
+    # ── Copilot, medido de punta a punta por primera vez ────────────────────
+    ("the eval runner loses its Copilot profile, and the one adapter never measured stays unmeasured",
+     edit("evals/runner.py",
+          '    "copilot": {\n        # `-p` is the headless entry point',
+          '    "_copilot": {\n        # `-p` is the headless entry point')),
+    ("a Copilot eval runs against the operator's own hooks, so the fixture is judged by another machine's wiring",
+     edit("evals/runner.py",
+          '        missing = [k for k, v in prof["env"].items()\n'
+          '                   if any(f"{{{f}}}" in v and not fields[f] for f in fields)]',
+          '        missing = []')),
+    ("a Copilot turn with no resume id is accepted, and a conversation is measured as a run of first turns",
+     edit("evals/runner.py",
+          '        if not m:\n            return None, None, ("the run printed no resume id',
+          '        if False:\n            return None, None, ("the run printed no resume id')),
+    ("the verdict tap stops wrapping Copilot's hooks, so its evals judge blind",
+     edit("evals/runner.py",
+          "_tap_claude(repo) + _tap_opencode(repo) + _tap_copilot(repo)",
+          "_tap_claude(repo) + _tap_opencode(repo)")),
+    ("the Copilot eval HOME stops carrying credentials, and an authentication failure reads as a product verdict",
+     edit("evals/runner.py",
+          '    if not cfg.get("copilotTokens") and not cfg.get("loggedInUsers"):',
+          "    if False:")),
+    ("a Copilot install that wired no user-level hooks is accepted, and the run reports a clean pass over no gates",
+     edit("evals/runner.py",
+          '    if target == "copilot" and not (workdir / "home" / ".copilot" / "hooks" / "ddw.json").exists():',
+          "    if False:")),
+    ("the Copilot eval writes its wiring into the operator's real HOME, rewiring every session on the machine",
+     edit("evals/runner.py",
+          '        env = dict(os.environ, HOME=str(copilot_home(workdir, repo)))',
+          "        env = None")),
 ]
 
 

@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=581
+EXPECT_CHECKS=586
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=654
+EXPECT_MUTATIONS=662
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -3850,9 +3850,17 @@ PYREAD
 # Copilot's hook has no matcher, so the gate is the only filter. Recording that
 # here means the day Copilot gains one, this check says so rather than the
 # knowledge living in a commit message.
-python3 - "$SELF" <<'PYMATCH' && ok "and Copilot's matcher-less hook is a known reason that has to hold" || bad "Copilot's hook config changed shape — recheck what reaches the gate"
-import json, sys
-d = json.load(open(sys.argv[1] + "/adapters/copilot/hooks/ddw.json", encoding="utf-8"))
+python3 - "$SELF" "$WORK" <<'PYMATCH' && ok "and Copilot's matcher-less hook is a known reason that has to hold" || bad "Copilot's hook config changed shape — recheck what reaches the gate"
+import json, os, subprocess, sys
+# Read the wiring the INSTALLER writes, by running it — there is no longer a
+# manifest checked into the repo to read instead, and there must not be: a
+# repo-level Copilot manifest is not read in `copilot -p`.
+root, work = sys.argv[1], sys.argv[2]
+home = os.path.join(work, "copilot-matcher-home")
+os.makedirs(home, exist_ok=True)
+subprocess.run([sys.executable, os.path.join(root, "adapters/copilot/wire-user-hooks.py"), ""],
+               env=dict(os.environ, HOME=home), check=True, capture_output=True)
+d = json.load(open(os.path.join(home, ".copilot/hooks/ddw.json"), encoding="utf-8"))
 pre = d["hooks"]["preToolUse"]
 assert all("matcher" not in h for h in pre), \
     "Copilot's preToolUse now has a matcher — good, but the gate's read/write split was sized for its absence"
@@ -3943,15 +3951,28 @@ echo '{}' | python3 "$SELF/ddw/scripts/hook-gate.py" --dialect standard --mode p
   || bad "a replayed run may now mix tickets — a closeout can be credited to work that never ran"
 rm -f "$PS/.ddw-journal.jsonl"
 
-# ── Copilot as a plugin ───────────────────────────────────────────────────────
+# ── Copilot: the gates ride USER-LEVEL hooks, in both install modes ──────────
 #
 # Copilot installs Claude-format plugins (skills included) and ignores their
 # Claude-format hooks manifest — measured live: a forged state sailed through.
-# Its channel for plugin enforcement is user-level hooks in ~/.copilot/config.json
-# pointing at the installed plugin, so the hook scripts resolve the method
-# repo-first, plugin-root second, and the user-level copy stands down where the
-# repo wires its own hook — otherwise every write is judged twice.
-section "Copilot as a plugin: user-level hooks enforce, and yield to the drop-in"
+# Its channel is user-level hooks pointing at the method, so the hook scripts
+# resolve repo-first, plugin-root second.
+#
+# And user level rather than the repo, because Copilot loads REPOSITORY hooks
+# only in a folder the user has trusted — GitHub's reference says policy hooks
+# work "regardless of folder trust state", which is the only place it says the
+# others do not. Trust is answered in a dialog `-p` cannot show. Measured with
+# `trustedFolders` as the only variable: trusted, the hooks ran and the write
+# was refused; not trusted, zero ran and the file was written. The repo a
+# developer opens interactively is trusted and enforces; the same repo on CI is
+# not, and does not.
+#
+# There is no stand-down any more, and this section is where that is held. It
+# used to read: the user-level copy keeps quiet where the repo wires its own
+# hook. That was right only while a repo-level manifest existed to take over.
+# DDW writes none, so a copy that stepped aside for a repo hook would be
+# stepping aside for nothing. Standing down HERE means enforcing nowhere.
+section "Copilot: user-level hooks enforce, and never step aside for a repo hook"
 
 CPP="$WORK/cp-plugin"; mkdir -p "$CPP"
 cp -r "$SELF/ddw" "$CPP/ddw"
@@ -3970,11 +3991,48 @@ PY
   && ok "Copilot user-level hook enforces with no .ddw/ in the repo (method from the plugin root)" \
   || bad "Copilot as a plugin loads skills and enforces NOTHING — the drop-in-only resolution is back"
 
+# The drop-in repo, seen by a machine wired for the plugin. The repo carries the
+# scripts and NO manifest of its own, so this copy is the only thing that can
+# judge the write. The old stand-down fired exactly here.
 mkdir -p "$CPR/.github/hooks/ddw" && : > "$CPR/.github/hooks/ddw/pre-tool-use.sh"
 ( cd "$CPR" && printf '%s' "$CPEV" | DDW_PLUGIN_ROOT="$CPP" bash "$SELF/adapters/copilot/scripts/pre-tool-use.sh" >/dev/null 2>&1 )
-[ "$?" = "0" ] \
-  && ok "and stands down where the repo wires its own hook — one verdict per write, not two" \
-  || bad "the user-level hook double-judges a drop-in repo"
+[ "$?" = "2" ] \
+  && ok "and still enforces in a repo carrying its own hook scripts — no stand-down, because nothing would take over" \
+  || bad "the user-level hook stands down for a repo hook that `copilot -p` never runs — the gates are back to enforcing nothing"
+
+# And the repo-level manifest is not written by anything, on any path. It is the
+# file whose presence made the drop-in look gated while `copilot -p` wrote
+# whatever it liked.
+# Asked of the `wiring` list and not of the file's text: the recipe explains
+# this decision in a `hooks_note` that necessarily QUOTES the path, so a grep
+# over the file finds its own explanation and reports the defect it exists to
+# prevent. A check has to read the thing that acts, not the prose beside it.
+python3 - "$SELF" <<'PYNOMANIFEST' && ok "the Copilot recipe wires no repo-level manifest: the scripts land in the repo, the wiring does not" || bad "the Copilot recipe wires a repo-level hooks manifest again — unread in a folder nobody trusted"
+import json, sys
+d = json.load(open(sys.argv[1] + "/adapters/copilot/adapter.json", encoding="utf-8"))
+for w in d.get("wiring") or []:
+    assert w.get("from") != "hooks", \
+        "the recipe copies a hooks manifest into the repo; Copilot reads one only where the "\
+        "folder is trusted, and `-p` cannot ask for trust"
+assert "hooks_note" in d, "the recipe is silent about why it wires no manifest — the next person restores it"
+PYNOMANIFEST
+
+CPHOME="$WORK/copilot-level-home"; mkdir -p "$CPHOME"
+HOME="$CPHOME" python3 "$SELF/adapters/copilot/wire-user-hooks.py" "" >/dev/null 2>&1
+python3 - "$CPHOME" <<'PYLEVEL' && ok "the drop-in wiring runs each repo's own hook, and a refusal stays a refusal" || bad "the user-level wrapper turns a Copilot deny into an allow — see above"
+import json, os, sys
+d = json.load(open(os.path.join(sys.argv[1], ".copilot/hooks/ddw.json"), encoding="utf-8"))
+for event, hooks in d["hooks"].items():
+    for h in hooks:
+        cmd = h["bash"]
+        assert cmd.startswith("if [ -f "), f"{event}: not the guarded spelling: {cmd}"
+        # `[ -f x ] && bash x || echo '{}'` is the spelling that must never come
+        # back: the gate exits 2, `||` catches it, `echo` exits 0, and Copilot
+        # reads 0 as allow. Every refusal becomes permission while the install
+        # still reports the gates as wired.
+        assert "||" not in cmd, f"{event}: the `||` wrapper converts every deny into an allow: {cmd}"
+        assert "exec bash" in cmd, f"{event}: the hook's exit code is not the wrapper's: {cmd}"
+PYLEVEL
 
 # The plugin's one channel to the model carries the two prohibitions learned
 # live on OpenCode: no self-install, no DDW content in the project's context
@@ -3989,16 +4047,21 @@ case "$BOOTMSG" in
   *) bad "the plugin boot never says classify-first; on Copilot that omission implemented a whole PRD in IDLE" ;;
 esac
 
-# Hooks written to ~/.copilot/config.json are only migrated to settings.json on
-# a later start; every session until then runs with no gates and looks fine.
-# Measured live: a full DEFINE-phase source write landed that way.
-grep -q 'settings.json`\*\* (NOT' "$SELF/.github/INSTALL.md" \
-  && ok "the Copilot installer sends hooks to settings.json, where they load on the next start" \
-  || bad "the Copilot installer points hooks at config.json again — sessions run gateless until a migration nobody sees"
+# The agent-driven installer must RUN the adapter's wiring script, not retype
+# its JSON. Two things about that JSON look right and are wrong — the level and
+# the wrapper — and both were live defects. A document that shows the shape
+# invites a transcription; one that shows a command does not.
+grep -q "wire-user-hooks.py" "$SELF/.github/INSTALL.md" \
+  && ok "the Copilot installer runs the adapter's wiring script rather than dictating JSON to retype" \
+  || bad "the Copilot installer is back to hand-written hook JSON — the level and the wrapper are both retypeable wrong"
 
-grep -q "remove the \`hooks\` key" "$SELF/.github/INSTALL.md" \
-  && ok "and its uninstall removes the hooks — orphaned hooks fail closed and deny every tool everywhere" \
-  || bad "the Copilot uninstall leaves user-level hooks pointing at nothing; measured live, that denies ALL tools in ALL repos"
+grep -q "Repository hooks load only in a folder the" "$SELF/.github/INSTALL.md" \
+  && ok "and it says WHY user level: repository hooks need a trusted folder, and \`-p\` cannot ask for trust" \
+  || bad "the Copilot doc no longer names folder trust; the next person wires the gates where a fresh clone never runs them"
+
+grep -q "delete \`~/.copilot/hooks/ddw.json\`" "$SELF/.github/INSTALL.md" \
+  && ok "and its uninstall names the file to remove — orphaned hooks pointing at a deleted plugin gate nothing" \
+  || bad "the Copilot uninstall no longer says what to remove; the wiring outlives the plugin it points at"
 
 # Under a plugin the state is born mid-session, after the boot already ran —
 # the only other gitignore writer — so the first commit could take the runtime
@@ -6922,7 +6985,7 @@ PYEOF
 section "Compaction cannot quietly end the pipeline"
 
 python3 - "$SELF" "$ALL" <<'PYCOMPACT' && ok "every adapter answers its tool's compaction event, in the envelope that tool reads" || bad "a tool compacts and DDW says nothing — see above"
-import json, os, subprocess, sys
+import json, os, subprocess, sys, tempfile
 root, target = sys.argv[1], sys.argv[2]
 # tool -> (wiring file, event key). Sources, in order:
 #   claude   docs.claude.com/en/docs/claude-code/hooks
@@ -6935,10 +6998,18 @@ WIRING = {
     "codex":   ("adapters/codex/hooks.json", "PreCompact"),
     "cursor":  ("adapters/cursor/hooks.json", "preCompact"),
     "gemini":  ("adapters/gemini/settings.json", "PreCompress"),
-    "copilot": ("adapters/copilot/hooks/ddw.json", "preCompact"),
 }
+# Copilot is not in that table and cannot be: its manifest is not a file in this
+# repo. It is wired once per machine by the adapter's own script, so the way to
+# read it is to run that script — which is also the only way to notice the day
+# it stops wiring preCompact at all.
+_cph = os.path.join(tempfile.mkdtemp(dir=os.environ["WORK"], prefix="ddw-precompact-home-"), "home")
+os.makedirs(_cph, exist_ok=True)
+subprocess.run([sys.executable, os.path.join(root, "adapters/copilot/wire-user-hooks.py"), ""],
+               env=dict(os.environ, HOME=_cph), check=True, capture_output=True)
+WIRING["copilot"] = (os.path.join(_cph, ".copilot/hooks/ddw.json"), "preCompact")
 for tool, (rel, event) in sorted(WIRING.items()):
-    blob = json.load(open(os.path.join(root, rel), encoding="utf-8"))
+    blob = json.load(open(rel if os.path.isabs(rel) else os.path.join(root, rel), encoding="utf-8"))
     assert event in blob["hooks"], f"{tool}: {rel} does not wire {event}"
     assert "pre-compact.sh" in json.dumps(blob["hooks"][event]), \
         f"{tool}: {event} is wired to something other than the compaction hook"
@@ -11490,6 +11561,121 @@ assert all(e.get("autonomy") == "minimal" for e in d["history"][7:]), \
     "the edges walked after the resume do not record the mode they were walked under"
 PYE2E
 
+# ── What the installer promises about a plugin, against what it does ─────────
+# The banner said "Nothing of DDW is written into your repo" and thirty lines
+# below the same run printed "scope: project". Both cannot be true: a
+# project-scope install records the activation in the repo's own settings file.
+# This is not a check for a sentence — it compares two facts inside the file, so
+# rewording the promise keeps it honest and reverting the behaviour trips it.
+python3 - "$SELF" <<'PYCHK' && ok "the plugin banner names the file a project-scope install leaves behind" || bad "the installer claims a plugin writes nothing while installing at project scope"
+import sys
+src = open(f"{sys.argv[1]}/install.sh", encoding="utf-8").read()
+if "--scope project" not in src:
+    sys.exit(0)                      # nothing lands in the repo: nothing to disclose
+start = src.index('MODE" = "plugin"')
+banner = src[start:start + 2000]
+assert ".claude/settings.json" in banner, (
+    "install.sh installs at --scope project but its plugin banner never names "
+    ".claude/settings.json, so the user is told nothing lands in the repo")
+PYCHK
+
+# ── The two writers of .gitignore write the same list ──────────────────
+# `install.sh` writes the block on an install; `session-boot.py` writes it at
+# every boot, and under a plugin install it is the ONLY writer — nothing there
+# ever runs the installer. They drifted: `.ddw-work/` was in one and not the
+# other, so the runtime that never saw an installer offered the drafted commit
+# message and PR body to the next `git add -A`.
+python3 - "$SELF" <<'PYCHK' && ok "both writers of the .gitignore block agree on what is runtime" || bad "install.sh and session-boot.py disagree about which paths are runtime"
+import ast, re, sys
+root = sys.argv[1]
+sh = open(f"{root}/install.sh", encoding="utf-8").read()
+py = open(f"{root}/ddw/scripts/session-boot.py", encoding="utf-8").read()
+m = re.search(r"GITIGNORE_ENTRIES\s*=\s*(\([^)]*\))", py, re.S)
+assert m, "GITIGNORE_ENTRIES not found in session-boot.py"
+runtime = set(ast.literal_eval(m.group(1)))
+start = sh.index("'# BEGIN DDW")
+end = sh.index("'# END DDW", start)
+shipped = set(re.findall(r"^\s*'(\.[^']+)'\s*\\?$", sh[start:end], re.M))
+assert shipped, "the installer's .gitignore block has no entries to compare"
+assert shipped == runtime, (
+    "the installer ignores %s and the runtime ignores %s; the difference is %s"
+    % (sorted(shipped), sorted(runtime), sorted(shipped ^ runtime)))
+PYCHK
+
+# ── This repository obeys the block it writes into everybody else's ──────────
+# DDW is developed with DDW, so its own runtime lands here too. It ignored three
+# of the six paths, by hand, without the markers — and `.ddw-journal.jsonl` was
+# committed, seventeen transitions of one machine's local history.
+python3 - "$SELF" <<'PYCHK' && ok "this repo ignores its own runtime, and tracks none of it" || bad "DDW does not obey the .gitignore block it writes into other repos"
+import ast, re, subprocess, sys
+root = sys.argv[1]
+py = open(f"{root}/ddw/scripts/session-boot.py", encoding="utf-8").read()
+runtime = set(ast.literal_eval(re.search(r"GITIGNORE_ENTRIES\s*=\s*(\([^)]*\))", py, re.S).group(1)))
+own = open(f"{root}/.gitignore", encoding="utf-8").read()
+assert "# BEGIN DDW" in own and "# END DDW" in own, "no DDW block in this repo's own .gitignore"
+# RULES, not text. The block documents each path in a comment above the rules,
+# so a substring search found `.ddw-journal.jsonl` in its own explanation and
+# passed while the rule beneath it was gone — the file describing what it
+# ignores answering for the ignoring.
+rules = {l.strip() for l in own.splitlines() if l.strip() and not l.lstrip().startswith("#")}
+missing = [e for e in runtime if e not in rules]
+assert not missing, "this repo's .gitignore is missing %s" % missing
+tracked = subprocess.run(["git", "-C", root, "ls-files"], capture_output=True, text=True).stdout.split()
+leaked = [f for f in tracked
+          if any(f == e or f.startswith(e) for e in runtime if not e.startswith(".ddw/"))]
+assert not leaked, "runtime files are committed in this repository: %s" % leaked
+PYCHK
+
+# ── Plugin capability is the adapter's answer, not a list typed in the script ──
+# `PLUGIN_CAPABLE=" claude copilot opencode "` lived in install.sh while that
+# file's own header promises the target list is discovered from adapters/. A
+# name typed into a script is a second source of truth nothing compares against
+# the first — the shape this repository already paid for once, when a check
+# named one job by hand and left the other unmeasured for as long as it existed.
+python3 - "$SELF" <<'PYCHK' && ok "every adapter declares whether it has a plugin install, and the installer reads it" || bad "plugin capability is hardcoded, or an adapter does not declare it"
+import glob, json, os, re, sys
+root = sys.argv[1]
+recipes = sorted(glob.glob(f"{root}/adapters/*/adapter.json"))
+assert recipes, "no adapters found"
+for r in recipes:
+    d = json.load(open(r, encoding="utf-8"))
+    tid = os.path.basename(os.path.dirname(r))
+    assert isinstance(d.get("plugin_install"), bool), (
+        "adapters/%s/adapter.json does not declare plugin_install" % tid)
+src = open(f"{root}/install.sh", encoding="utf-8").read()
+m = re.search(r"^PLUGIN_CAPABLE=(.*)$", src, re.M)
+assert m, "PLUGIN_CAPABLE is not assigned in install.sh"
+assert not re.search(r"[A-Za-z]", m.group(1)), (
+    "PLUGIN_CAPABLE is assigned a literal list of tool names: %s" % m.group(1).strip())
+assert "plugin_install_of" in src, "install.sh never reads plugin_install out of a recipe"
+PYCHK
+
+# ── The pull request the installer offers is the one it opens ────────────
+# It asked "open a draft PR?" and `gh pr create` passes no --draft — correctly,
+# because the next line it prints is that you have to merge that PR before the
+# first ticket, and a draft is one nobody can approve or merge. The word was
+# also in docs/INSTALL.md, so a reader could learn the wrong thing twice.
+python3 - "$SELF" <<'PYCHK' && ok "the installer does not offer a draft PR it never opens" || bad "the installer says draft while opening a normal pull request"
+import re, sys
+root = sys.argv[1]
+# Comment lines are dropped BEFORE looking. The first version of this check
+# read the raw file, and the comment written next to the fix — the one saying
+# "passes no --draft" — was the first hit for both needles, so the check
+# answered about itself and reported the defect it had just fixed.
+src = open(f"{root}/install.sh", encoding="utf-8").read()
+code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+create = code.index("gh pr create")
+opens_draft = "--draft" in code[create:create + 400]
+prompt = re.search(r'printf "  Push %s and open a[^"]*"', src)
+assert prompt, "the push/PR prompt was not found"
+says_draft = "draft" in prompt.group(0).lower()
+assert opens_draft == says_draft, (
+    "the prompt says draft=%s but gh pr create passes --draft=%s" % (says_draft, opens_draft))
+doc = open(f"{root}/docs/INSTALL.md", encoding="utf-8").read()
+setup = doc.index("A new setup branch")
+assert opens_draft or "draft PR" not in doc[setup:setup + 700], (
+    "docs/INSTALL.md still promises a draft PR for the setup branch")
+PYCHK
 # ── Did the whole suite actually run? ─────────────────────────────────────────
 # The single highest-leverage line in this file. Everything above can be made to
 # pass by not running: an absent tool, an unsupported `find`, a loop over an

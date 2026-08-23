@@ -13,14 +13,13 @@
 set -uo pipefail
 
 REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-# Repo first, plugin second — the same order every adapter resolves in. As the
-# user-level copy (DDW_PLUGIN_ROOT set, wired in ~/.copilot/config.json) this
-# script stands down when the repo wires its own hook: otherwise every write
-# would be judged twice, once per level.
-if [ -n "${DDW_PLUGIN_ROOT:-}" ] && [ -f "$REPO/.github/hooks/ddw/pre-tool-use.sh" ]; then
-  echo '{}'
-  exit 0
-fi
+# Repo first, plugin second — the same order every adapter resolves in.
+# There is no stand-down here any more, and there must not be one. It read: if
+# this is the user-level copy and the repo wires its own hook, keep quiet —
+# which was right only while a repo-level manifest existed to take over. DDW
+# writes none: Copilot loads repository hooks only in a folder the user has
+# trusted, and `-p` cannot ask for trust, so the gates live at user level ONLY.
+# A copy that steps aside for a repo hook steps aside for nothing at all.
 DDW="$REPO/.ddw"
 if [ ! -f "$DDW/scripts/hook-gate.py" ]; then
   if [ -n "${DDW_PLUGIN_ROOT:-}" ] && [ -f "$DDW_PLUGIN_ROOT/ddw/scripts/hook-gate.py" ]; then

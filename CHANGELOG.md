@@ -19,6 +19,114 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.34.0] — Unreleased
+
+Six things the installer said that it did not do. Four were found by reading the
+code against its own output; the fifth by running it; and the sixth — the one
+that matters — by running Copilot four times and changing one variable at a time.
+
+### Fixed
+
+- **On Copilot, the gates were wired where an untrusted folder never runs them.**
+  DDW installed the hooks manifest into the repo, at `.github/hooks/ddw.json`.
+  GitHub's hooks reference says policy hooks are available *"regardless of folder
+  trust state"* — which is the only place it says the others are not.
+  **Repository hooks load only in a folder the user has trusted**, and a folder
+  becomes trusted by answering a dialog `copilot -p` has no way to show.
+
+  Measured 2026-08-22/23, same repo, same prompt, `trustedFolders` the only
+  variable: trusted, three hooks ran and the write was refused; not trusted,
+  **zero ran and the file was written**. User-level hooks refuse it either way.
+
+  The trap is that trust is invisible. The repo a developer has been opening
+  interactively for weeks IS trusted, so its gates hold — which is why this
+  survived every check that ever looked. The same repo cloned fresh on CI, or
+  driven by a script, is not trusted, and enforces nothing while looking
+  identical. DDW had exactly one wiring, at the level that disappears.
+
+  So Copilot's wiring moves to `~/.copilot/hooks/ddw.json`, in **both** install
+  modes, and DDW writes no repo-level manifest at all — where the folder IS
+  trusted the reference says every source is combined and all of them run, so
+  keeping both levels would judge every write twice. The scripts still land in
+  the repo, and the user-level wiring runs each repo's own copy by relative
+  path, resolving to nothing where DDW is not installed. Adding the repo to
+  `trustedFolders` was the other way out and is not DDW's decision to make:
+  trust is the user's answer about a folder, and an installer that answers it
+  for them has forged a permission.
+
+  Three things fell out of that:
+
+  - the drop-in wires the gates for the first time (before, only the plugin did);
+  - the **stand-down goes.** The hook scripts used to keep quiet where the repo
+    wired its own hook, to avoid judging each write twice. With no repo-level
+    manifest there is nothing to hand over to, so standing down meant enforcing
+    nowhere;
+  - an older DDW's hooks are cleaned out of `~/.copilot/settings.json`, where
+    they would otherwise judge every write a second time.
+
+  The wiring is a script in the adapter — `adapters/copilot/wire-user-hooks.py` —
+  and not a here-doc inside `install.sh`, so the checks can run the real thing
+  against a sandboxed `HOME`. A wiring nothing can execute is a wiring nothing
+  can verify. `.github/INSTALL.md` now tells the agent installing DDW to run that
+  script rather than retype its JSON: the level and the wrapper are both
+  retypeable wrong, and `[ -f hook ] && bash hook || echo '{}'` turns every
+  refusal into permission.
+
+  **Checked on the neighbours, so this is not filed as a headless problem it is
+  not.** Claude Code, in a project never opened and so never trusted, driven
+  `-p` with `bypassPermissions`: the repository hooks loaded, ran, and `exit 2`
+  refused the write. Copilot is the one of the six that gates repository hooks
+  on trust. Three others — Codex, Cursor and Gemini — have never been driven
+  headless by anything, and that is the next thing to measure, not to assume.
+
+- **Copilot had no headless profile in `evals/runner.py`,** which is the other
+  half of the same story: of the six adapters, it was the one nothing had ever
+  measured end to end, and the defects it produced arrived one at a time from
+  live use. It has one now — `-p`, `-C`, the session id read out of the resume
+  footer — plus a verdict tap on its hooks and a `HOME` of each run's own,
+  carrying the operator's credentials forward and nothing else. A run that
+  cannot get its own `HOME`, or that installs without wiring any user-level
+  hooks, is refused rather than reported as a clean pass over no gates.
+
+- **A plugin install said it wrote nothing into your repo, and wrote something.**
+  Thirty lines below that promise the same run printed `scope: project — your
+  teammates get it on clone`, which is only true because `claude plugin install
+  --scope project` records the activation in the repo's own
+  `.claude/settings.json`. The promise a plugin can keep is about the *method*,
+  and that is what it says now — naming the file, and where it does not write
+  one (Copilot and OpenCode register outside the repo entirely). `docs/INSTALL.md`
+  said it twice more and now matches.
+- **`.ddw-work/` was ignored by the installer and not by the runtime.** Two
+  writers keep the `.gitignore` block, and under a plugin install the runtime is
+  the *only* one — nothing there ever runs `install.sh`. The lists had drifted by
+  exactly one entry, so a plugin-only repo offered the drafted commit message,
+  merge proposal and PR body to the next `git add -A`. A check now compares the
+  two lists against each other rather than trusting either.
+- **This repository did not obey the block it writes into everybody else's.** Its
+  own `.gitignore` named three of the six paths, by hand, without the markers —
+  and `.ddw-journal.jsonl` was committed, seventeen transitions of one machine's
+  local history.
+- **Plugin capability was a list of tool names typed into `install.sh`**, while
+  that file's own header promises the target list is discovered from `adapters/`.
+  Each recipe now declares `plugin_install`, and the installer reads it. Shipping
+  a plugin manifest is not the same as having a procedure: Codex and Cursor carry
+  one and answer `false`, because nothing puts it in place.
+- **The setup branch was offered as a draft pull request and opened as a normal
+  one.** Correctly opened — the very next line printed says to merge it before
+  the first ticket, and a draft is one nobody can approve or merge. Only the
+  question was wrong, in the installer and in `docs/INSTALL.md`.
+
+### Notes
+
+Both new checks had to be rewritten once, for the same reason twice: the first
+version of each found its own words. The draft-PR check read the comment written
+beside the fix — the one saying "passes no `--draft`" — and answered about
+itself; the `.gitignore` check found `.ddw-journal.jsonl` in the block's own
+explanatory comment while the rule beneath it was gone. Both now read code and
+rules with the prose stripped out.
+
+---
+
 ## [0.33.0] — Unreleased
 
 ### Added
@@ -55,7 +163,6 @@ move at different speeds. So the promise is specific:
   write and the user's to approve; who it claims wrote the code is not.
 
 ---
-
 ## [0.32.2] — Unreleased
 
 ### Fixed

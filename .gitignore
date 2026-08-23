@@ -1,9 +1,23 @@
-# DDW state (per-repo — never committed when installed in a project)
+# Este repositorio se desarrolla con DDW, así que lleva el mismo bloque que el
+# instalador escribe en cualquier otro — con los mismos marcadores, para que un
+# `install.sh` corrido acá lo reconozca en vez de agregar una segunda copia.
 *.pyc
+__pycache__/
+
+# BEGIN DDW — pipeline runtime, NOT committed (managed by DDW)
+#   .ddw-state.json  = which phase you are in; yours, not the repo's
+#   .ddw-paused/     = paused tickets
+#   .ddw-sessions/   = live session markers
+#   .ddw-work/       = scratch the pipeline writes and re-reads (the commit message)
+#   .ddw-journal.jsonl = transitions that landed; outlives the state file
+#   .ddw/**/__pycache__/ = bytecode from running the method's own scripts
+.ddw-state.json
 .ddw-paused/
 .ddw-sessions/
-.ddw-state.json
-__pycache__/
+.ddw-work/
+.ddw-journal.jsonl
+.ddw/**/__pycache__/
+# END DDW
 
 # Salida cruda del mapa de kills. `kill_map_ledger.py` la escribe en el
 # directorio donde lo corras, así que corrido desde la raíz aterriza acá — y así

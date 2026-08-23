@@ -2,6 +2,7 @@
   "$schema": "../adapter.schema.md",
   "id": "copilot",
   "label": "GitHub Copilot CLI",
+  "plugin_install": true,
   "docs": "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills",
   "skills": {
     "dir": ".github/skills",
@@ -21,15 +22,12 @@
   },
   "wiring": [
     {
-      "from": "hooks",
-      "to": ".github/hooks"
-    },
-    {
       "from": "scripts",
       "to": ".github/hooks/ddw",
       "chmod": "+x"
     }
   ],
+  "hooks_note": "The scripts land in the repo; the manifest that points at them does NOT. GitHub's hooks reference says policy hooks are available 'regardless of folder trust state' — the others are not. Repository hooks load only in a folder the user has trusted, and trust is answered in a dialog `copilot -p` cannot show. Measured 2026-08-22/23 with trustedFolders as the only variable: trusted, 3 hooks ran and the write was refused; not trusted, 0 ran and the file was written; user-level, refused either way. The trap is that trust is invisible — the repo a developer has used interactively is trusted and enforces, the same repo on CI is not and does not. install.sh writes ~/.copilot/hooks/ddw.json instead, once per machine, pointing at each repo's scripts by relative path. Not both levels: where the folder is trusted the reference says every source is combined and all run, so two levels judge every write twice.",
   "context_file": "AGENTS.md",
   "choice_prompt": {
     "tool": "ask_user",

@@ -7,12 +7,14 @@
 set -uo pipefail
 
 REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-# Repo first, plugin second; the user-level copy stands down where the repo
-# wires its own hook. Same reasoning as pre-tool-use.sh.
-if [ -n "${DDW_PLUGIN_ROOT:-}" ] && [ -f "$REPO/.github/hooks/ddw/session-start.sh" ]; then
-  echo '{}'
-  exit 0
-fi
+# Repo first, plugin second. Same reasoning as pre-tool-use.sh, including why
+# there is no stand-down.
+# There is no stand-down here any more, and there must not be one. It read: if
+# this is the user-level copy and the repo wires its own hook, keep quiet —
+# which was right only while a repo-level manifest existed to take over. DDW
+# writes none: Copilot loads repository hooks only in a folder the user has
+# trusted, and `-p` cannot ask for trust, so the gates live at user level ONLY.
+# A copy that steps aside for a repo hook steps aside for nothing at all.
 DDW="$REPO/.ddw"
 if [ ! -d "$DDW" ] && [ -n "${DDW_PLUGIN_ROOT:-}" ] && [ -d "$DDW_PLUGIN_ROOT/ddw" ]; then
   DDW="$DDW_PLUGIN_ROOT/ddw"

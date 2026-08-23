@@ -235,6 +235,11 @@ label_of() {  # read the human label out of a recipe
     "$SELF/adapters/$1/adapter.json" 2>/dev/null || echo "$1"
 }
 
+plugin_install_of() {  # does this tool have a plugin install procedure? its recipe answers
+  python3 -c "import json,sys;print('true' if json.load(open(sys.argv[1])).get('plugin_install') is True else 'false')" \
+    "$SELF/adapters/$1/adapter.json" 2>/dev/null || echo "false"
+}
+
 # ── Is DDW already here, and for which tools? ────────────────────────────────
 #
 # The manifest keys are "<target>:<path>", so the repo already knows which tools
@@ -338,68 +343,29 @@ LABELS="${LABELS#, }"
 #
 # Nothing here needs administrator rights on any platform: every path written
 # is under $HOME or inside the repo you named.
-PLUGIN_CAPABLE=" claude copilot opencode "
+# Which tools have one is the adapter's answer, not a list kept by hand here.
+# It was a hand-kept list, and this file's own header promises the opposite —
+# "the target list below is discovered from the adapters directory". A name
+# typed into a script is a second source of truth that nothing compares against
+# the first, which is how the check that measured one job by name left the
+# other unmeasured for as long as it existed.
+PLUGIN_CAPABLE=" "
+for _a in "${AVAILABLE[@]}"; do
+  [ "$(plugin_install_of "$_a")" = "true" ] && PLUGIN_CAPABLE="${PLUGIN_CAPABLE}${_a} "
+done
+unset _a
 
-# Copilot's plugin manifest is read for its skills and its hooks are IGNORED, so
-# the gates have to ride user-level hooks. Written here rather than left to a
-# human following a document: an install that stops after the skills looks alive
-# and enforces nothing, which is the worst state of the three.
+# Copilot's hooks, and the one thing that decides where they go: FOLDER TRUST.
+#
+# The whole recipe is in the adapter — `adapters/copilot/wire-user-hooks.py`,
+# which says what was measured and why there is exactly one wiring location.
+# It is a script and not a here-doc inside this file so that the checks can run
+# the real thing against a sandboxed HOME: a wiring nothing can execute is a
+# wiring nothing can verify.
+#
+# $1 = an absolute plugin root (plugin mode) or nothing at all (drop-in).
 copilot_hooks() {
-  python3 - "$1" <<'PY'
-import glob, json, os, re, sys
-home = os.path.expanduser("~")
-cfg = os.path.join(home, ".copilot", "config.json")
-root = None
-try:
-    with open(cfg, encoding="utf-8") as fh:
-        # JSONC: the file opens with two `//` lines saying it is managed
-        # automatically. Parsed as strict JSON it raises, the lookup fell to the
-        # "not registered yet" branch, and the install stopped one step short of
-        # the gates while reporting the skills as in — the exact half-install
-        # that branch exists to warn about.
-        raw = re.sub(r"^\s*//.*$", "", fh.read(), flags=re.M)
-    for p in (json.loads(raw) or {}).get("installedPlugins") or []:
-        if isinstance(p, dict) and str(p.get("name", "")) == "ddw":
-            root = p.get("cache_path")
-except (OSError, ValueError, AttributeError):
-    pass
-if not root:
-    # What is on disk, when the manifest cannot say. The scripts are the thing
-    # being pointed at, so their presence is the test.
-    for cand in glob.glob(os.path.join(home, ".copilot", "installed-plugins", "*", "*")):
-        if os.path.isdir(os.path.join(cand, "adapters", "copilot", "scripts")):
-            root = cand
-            break
-if not root:
-    print("  ⚠ copilot: the plugin's install path is not in ~/.copilot/config.json yet.")
-    print("    The skills are in; the GATES are not. Re-run this once the plugin is")
-    print("    registered, or the install enforces nothing.")
-    sys.exit(0)
-# settings.json, never config.json: hooks written to config.json are migrated on
-# a LATER start, and every session until then runs with no gates at all.
-path = os.path.join(home, ".copilot", "settings.json")
-try:
-    with open(path, encoding="utf-8") as fh:
-        settings = json.load(fh) or {}
-except (OSError, ValueError):
-    settings = {}
-scripts = os.path.join(root, "adapters", "copilot", "scripts")
-def hook(script, timeout):
-    return [{"type": "command",
-             "bash": "DDW_PLUGIN_ROOT=%s bash %s" % (root, os.path.join(scripts, script)),
-             "timeoutSec": timeout}]
-# Merge: touch nothing but `hooks`, and inside it nothing but ours.
-hooks = settings.get("hooks") if isinstance(settings.get("hooks"), dict) else {}
-hooks["sessionStart"] = hook("session-start.sh", 10)
-hooks["preToolUse"] = hook("pre-tool-use.sh", 15)
-hooks["postToolUse"] = hook("post-write.sh", 15)
-settings["hooks"] = hooks
-os.makedirs(os.path.dirname(path), exist_ok=True)
-with open(path, "w", encoding="utf-8") as fh:
-    json.dump(settings, fh, indent=2)
-    fh.write("\n")
-print("  ✓ ~/.copilot/settings.json  the three gates wired to %s" % root)
-PY
+  python3 "$SELF/adapters/copilot/wire-user-hooks.py" "${1:-}"
 }
 
 opencode_register() {
@@ -449,8 +415,16 @@ if [ "$MODE" = "plugin" ]; then
   echo "  Into:        $TARGET"
   echo "$RULE"
   echo
-  echo "  Nothing of DDW is written into your repo. The pipeline appears when"
-  echo "  you open your agent; the first ticket is what creates .ddw-state.json."
+  # What this says used to be "nothing of DDW is written into your repo", and
+  # thirty lines below the same run printed "scope: project — your teammates get
+  # it on clone". Both cannot be true: a project-scope install records the
+  # activation in the repo's own settings file. The promise a plugin can keep is
+  # about the METHOD, not about every byte.
+  echo "  The method is not copied into your repo — it lives in the tool's own"
+  echo "  plugin store. What lands here is at most the activation your tool needs"
+  echo "  (Claude Code records it in .claude/settings.json, which is how a"
+  echo "  teammate gets the pipeline on clone), plus .ddw-state.json when the"
+  echo "  first ticket starts — and that one is gitignored."
   echo
   PLUGIN_FAILED=""
   for t in $TARGETS; do
@@ -479,7 +453,7 @@ if [ "$MODE" = "plugin" ]; then
           || "$t" plugin marketplace update dilux >/dev/null 2>&1 || true
         if [ "$t" = "claude" ]; then
           ( cd "$TARGET" && claude plugin install ddw@dilux --scope project ) \
-            && echo "  ✓ installed  ddw@dilux (scope: project — your teammates get it on clone)" \
+            && echo "  ✓ installed  ddw@dilux (scope: project — recorded in .claude/settings.json, your teammates get it on clone)" \
             || { echo "  ⚠ claude: the plugin install did not complete."; PLUGIN_FAILED="yes"; }
         else
           copilot plugin install ddw@dilux \
@@ -699,6 +673,21 @@ for t in $TARGETS; do
   echo "$OUT" | grep -v '^COLLISIONS:' || true
   C="$(echo "$OUT" | sed -n 's/^COLLISIONS://p')"
   [ -n "$C" ] && COLLISIONS="$COLLISIONS,$C"
+  # Copilot's gates do not live in the repo, because Copilot loads a repo-level
+  # hooks manifest only in a folder the user has trusted — and trust is answered
+  # in a dialog `-p` cannot show, so a fresh clone or a CI checkout enforces
+  # nothing. The recipe puts the SCRIPTS here; the thing that points at them is
+  # written once, at user level, and serves every drop-in repo on this machine.
+  if [ "$t" = "copilot" ]; then
+    copilot_hooks
+    # A manifest an older DDW left in the repo still runs wherever the folder is
+    # trusted, and there every source's hooks are combined and all of them run —
+    # so leaving it judges every write twice in exactly the repos that work.
+    if [ -f "$TARGET/.github/hooks/ddw.json" ]; then
+      rm -f "$TARGET/.github/hooks/ddw.json"
+      echo "  ✓ .github/hooks/ddw.json  removed — unread in an untrusted folder, doubled where trusted"
+    fi
+  fi
 done
 
 # ── 4. .gitignore ─────────────────────────────────────────────────────────────
@@ -922,7 +911,10 @@ EOF_DDW_PATHS2
   if [ "$DDW_GIT_CHOICE" = "setup" ] && [ "$DDW_DID_COMMIT" = 1 ]; then
     PUSHOPT="${DDW_GIT_PUSH:-}"
     if [ -z "$PUSHOPT" ]; then
-      printf "  Push %s and open a draft PR? [y/N] " "$DDW_SETUP_BRANCH"
+      # Not "a draft PR". `gh pr create` below passes no --draft, and it must
+      # not: a draft is one nobody can approve or merge, and the very next thing
+      # this prints is that you have to merge it before the first ticket.
+      printf "  Push %s and open a PR? [y/N] " "$DDW_SETUP_BRANCH"
       { read -r PUSHOPT < /dev/tty; } 2>/dev/null || PUSHOPT=n
     fi
     case "$PUSHOPT" in

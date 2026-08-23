@@ -79,6 +79,36 @@ def sh(cmd, cwd=None, env=None, timeout=120, stdin=None):
 # throwaway repo with DDW installed
 # --------------------------------------------------------------------------- #
 
+def copilot_home(workdir: Path, repo: Path) -> Path:
+    """A HOME of this run's own, still logged in.
+
+    `~/.copilot/config.json` is where Copilot keeps `copilotTokens` and
+    `loggedInUsers`, so it is the one file that has to come across; everything
+    else — settings, hooks, the session store — starts empty, which is the
+    point. `trustedFolders` gets the fixture appended so the run is never asked
+    a question it has no terminal to answer.
+    """
+    home = workdir / "home"
+    (home / ".copilot").mkdir(parents=True, exist_ok=True)
+    src = Path(os.path.expanduser("~/.copilot/config.json"))
+    cfg = {}
+    if src.exists():
+        # JSONC: the file opens with two `//` lines. Strict JSON raises on them,
+        # and the credentials would be silently dropped — a run that then fails
+        # on authentication and reports it as the product's behaviour.
+        try:
+            cfg = json.loads(re.sub(r"^\s*//.*$", "", src.read_text(encoding="utf-8"), flags=re.M))
+        except ValueError:
+            cfg = {}
+    if not cfg.get("copilotTokens") and not cfg.get("loggedInUsers"):
+        raise RuntimeError("no Copilot credentials in ~/.copilot/config.json — a run from here "
+                           "would fail on authentication and read as a product verdict")
+    trusted = cfg.get("trustedFolders")
+    cfg["trustedFolders"] = (trusted if isinstance(trusted, list) else []) + [str(repo)]
+    (home / ".copilot" / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    return home
+
+
 def make_repo(ddw_root: Path, target: str, workdir: Path) -> Path:
     repo = workdir / "repo"
     repo.mkdir(parents=True)
@@ -90,10 +120,28 @@ def make_repo(ddw_root: Path, target: str, workdir: Path) -> Path:
     sh(["git", "add", "-A"], cwd=repo)
     sh(["git", "commit", "-qm", "init"], cwd=repo)
 
+    env = None
+    if target == "copilot":
+        # Copilot's gates are wired at USER level — the only level `copilot -p`
+        # reads — so installing for Copilot writes outside the fixture, into
+        # `$HOME`. Two things follow, and both are the harness's problem:
+        #
+        #   the run must not touch the operator's own ~/.copilot — one eval
+        #   would rewire every Copilot session on the machine, and two evals in
+        #   parallel would rewire each other;
+        #   and it must not simply be blanked either, because a HOME with no
+        #   `.copilot/config.json` has no credentials, and an unauthenticated
+        #   Copilot fails in a way that reads as a product verdict.
+        #
+        # So: a HOME per run, carrying the credentials forward and nothing else.
+        env = dict(os.environ, HOME=str(copilot_home(workdir, repo)))
     r = sh(["bash", str(ddw_root / "install.sh"), str(repo), "--target", target],
-           cwd=repo, timeout=180)
+           cwd=repo, env=env, timeout=180)
     if r.returncode != 0:
         raise RuntimeError(f"install.sh failed ({r.returncode}): {r.stderr[-600:]}")
+    if target == "copilot" and not (workdir / "home" / ".copilot" / "hooks" / "ddw.json").exists():
+        raise RuntimeError("install.sh exited 0 and wired no user-level Copilot hooks — "
+                           "nothing would gate this run, and it would report as a clean pass")
     if not (repo / ".ddw" / "scripts" / "hook-gate.py").exists():
         raise RuntimeError("install.sh exited 0 but wrote no method")
     return repo
@@ -225,9 +273,45 @@ def _tap_opencode(repo: Path) -> int:
     return 1
 
 
+# --------------------------------------------------------------------------- #
+# the tap — Copilot CLI
+#
+# Same shell tap as Claude's, on the scripts the repo carries in
+# `.github/hooks/ddw/`. What differs is who calls them: Copilot's wiring lives
+# at USER level, and runs the repo's script by relative path. So wrapping the
+# repo's copy is enough — and it is also the only thing that works, because
+# there is no repo-level manifest to rewrite.
+#
+# `pre-compact.sh` is left alone: it is not a verdict, it is a nudge, and a tap
+# that recorded it as exit 0 would put an "allowed" in the log for a write that
+# never happened.
+# --------------------------------------------------------------------------- #
+
+
+def _tap_copilot(repo: Path) -> int:
+    hooks = repo / ".github" / "hooks" / "ddw"
+    if not hooks.is_dir():
+        return 0
+    tapped = 0
+    for name in ("pre-tool-use.sh", "post-write.sh"):
+        src = hooks / name
+        if not src.exists():
+            continue
+        real = hooks / (name[:-3] + ".real.sh")
+        src.rename(real)
+        body = TAP.replace("__REAL__", real.name).replace("__NAME__", name)
+        body = body.replace('printf \'%s\' "$PAYLOAD" | bash',
+                            'export DDW_EVAL_PAYLOAD="$PAYLOAD"; printf \'%s\' "$PAYLOAD" | bash')
+        src.write_text(body)
+        src.chmod(0o755)
+        reseal_manifest(repo, {f".github/hooks/ddw/{name}"})
+        tapped += 1
+    return tapped
+
+
 def install_verdict_tap(repo: Path) -> int:
     """Wrap whichever adapter this repo was installed with. Never judges."""
-    tapped = _tap_claude(repo) + _tap_opencode(repo)
+    tapped = _tap_claude(repo) + _tap_opencode(repo) + _tap_copilot(repo)
     if tapped == 0:
         raise RuntimeError("verdict tap installed nothing — refusing to judge blind")
     return tapped
@@ -272,6 +356,25 @@ AGENT_CLIS = {
         "env": {"PWD": "{repo}"},
         "prompt": ["{turn}"],
     },
+    "copilot": {
+        # `-p` is the headless entry point; `--allow-all` is required for it
+        # (GitHub's own words) and is Copilot's spelling of bypassPermissions.
+        # `--stream off` and `--no-color` are here so the footer this runner
+        # reads the session id out of arrives as plain text.
+        "argv": ["copilot"],
+        "flags": ["--allow-all", "--no-color", "--stream", "off"],
+        "model": ["--model", "{model}"],
+        "resume": ["--resume={session}"],
+        # `-C` is Copilot's change-directory flag. Named for the same reason
+        # OpenCode's `--dir` is: a run pointed at the wrong repo measures
+        # nothing and writes into the tree it was pointed at.
+        "dir": ["-C", "{repo}"],
+        # The HOME made by `copilot_home` — where this run's credentials and,
+        # crucially, its user-level hooks are. Without it the agent reads the
+        # operator's own wiring and the fixture is gated by whatever that says.
+        "env": {"HOME": "{home}"},
+        "prompt": ["-p", "{turn}"],
+    },
 }
 
 
@@ -282,7 +385,7 @@ def agent_profile(agent_cmd) -> tuple[str, dict]:
     return name, AGENT_CLIS[name]
 
 
-def agent_turn_cmd(agent_cmd, model, session, turn, repo=None):
+def agent_turn_cmd(agent_cmd, model, session, turn, repo=None, home=None):
     """-> (name, argv, env). `env` is None when the agent needs no override."""
     name, prof = agent_profile(agent_cmd)
     # `--agent opencode` names the binary; the headless entry point is the
@@ -302,9 +405,20 @@ def agent_turn_cmd(agent_cmd, model, session, turn, repo=None):
     cmd += [p.format(turn=turn) for p in prof["prompt"]]
 
     env = None
-    if repo and prof.get("env"):
+    if prof.get("env"):
+        fields = {"repo": str(repo or ""), "home": str(home or "")}
+        # A profile that asks for a value the caller did not supply is a run
+        # measuring something other than what it says. Copilot's HOME is where
+        # its gates live: pointed at the operator's own, the fixture is judged
+        # by whatever that machine happens to be wired for, and the scenario
+        # reports it as the product.
+        missing = [k for k, v in prof["env"].items()
+                   if any(f"{{{f}}}" in v and not fields[f] for f in fields)]
+        if missing:
+            raise RuntimeError(f"{name}: {', '.join(missing)} cannot be set — this run would "
+                               "read wiring that is not the fixture's")
         env = dict(os.environ)
-        env.update({k: v.format(repo=str(repo)) for k, v in prof["env"].items()})
+        env.update({k: v.format(**fields) for k, v in prof["env"].items()})
     return name, cmd, env
 
 
@@ -321,6 +435,22 @@ def agent_turn_read(name, stdout):
         if payload.get("is_error"):
             return payload, None, f"the agent reported an error: {str(payload.get('result'))[:150]}"
         return payload, payload.get("session_id"), None
+
+    if name == "copilot":
+        # Copilot has no JSON output mode. What it does print, at the end of a
+        # `-p` run, is the line that resumes the session:
+        #
+        #     Resume     copilot --resume=48ac578f-15de-4b10-b255-c2d4518af86c
+        #
+        # That id is REQUIRED, not best-effort. Without it every turn of a
+        # multi-turn scenario opens a fresh session, the model never sees what
+        # it just did, and the scenario measures a sequence of first turns while
+        # reporting a conversation.
+        m = re.search(r"--resume=([0-9a-fA-F-]{8,})", stdout)
+        if not m:
+            return None, None, ("the run printed no resume id, so a second turn would start a "
+                                "new session and the scenario would measure first turns only")
+        return stdout, m.group(1), None
 
     # OpenCode: newline-delimited JSON events. The session id appears on the
     # message events as `sessionID`; there is no single result object.
@@ -805,7 +935,11 @@ def run_behavioral(sc, ddw_root, repo, agent_cmd, model):
     transcript = []
     session = None
     for turn in sc["when"]["turns"]:
-        name, cmd, env = agent_turn_cmd(agent_cmd, model, session, turn, repo)
+        # `make_repo` puts the run's HOME beside the fixture. Derived rather
+        # than threaded through every signature: the two are made together and
+        # a Copilot run without it is refused above, not silently mismeasured.
+        name, cmd, env = agent_turn_cmd(agent_cmd, model, session, turn, repo,
+                                        home=(repo.parent / "home"))
         # El techo por turno. 300s alcanzaba para Opus; un modelo gratis se pasó
         # de 420 en un solo turno, y un timeout es ERROR — o sea que el
         # escenario no se puede juzgar y la corrida queda roja, que es correcto

@@ -88,15 +88,19 @@ section means by *verified at the boundary*.
 
 ### What a plugin install does not do
 
-**Nothing is written to your repo until a pipeline actually starts.** Clone something to read for
-five minutes and you get no state file and no edited `.gitignore`.
+**The method is never copied into your repo, and no pipeline artifact appears until one starts.**
+Clone something to read for five minutes and you get no state file and no edited `.gitignore`. The
+one thing a plugin install does write here is the activation itself: with `--scope project`, Claude
+Code records `ddw@dilux` in the repo's `.claude/settings.json` — that line is the whole point of
+project scope, and it arrives untracked, so commit it when you want your teammates to have it.
+Copilot and OpenCode register outside the repo and write nothing here at all.
 
 **The repo always wins.** Every hook looks for `.ddw/` in the project first and the plugin second, so
 a repo that wants its own version just has one.
 
 **No `AGENTS.md` is created either**, and that file is where DDW reads your stack. Under a drop-in
-install the installer copies a template when it finds none; under a plugin nothing is copied,
-because nothing is written to your repo at all. The first CLASSIFY offers to create it, from what it
+install the installer copies a template when it finds none; under a plugin no content of DDW's is
+copied anywhere in your tree. The first CLASSIFY offers to create it, from what it
 can detect in the repo and with none of DDW's own content in it — or you write it yourself first.
 Either way the file is yours: DDW never puts its blocks, phases or boilerplate in it under a plugin.
 
@@ -133,8 +137,9 @@ where the installation lands:**
 
 1. **A new setup branch** (`ddw-setup-` + 6 random hex, recommended): created
    on the spot, installed and committed there, your branches untouched. After
-   the commit it asks whether to push the branch and open a draft PR; say no
-   and the branch stays local, with the merge command printed.
+   the commit it asks whether to push the branch and open a pull request — not
+   a draft one, because it has to be merged before the first ticket; say no and
+   the branch stays local, with the merge command printed.
 2. **The current branch**, named out loud: installed and committed right there.
 3. **Files only**: everything lands, nothing is committed, git stays yours.
 

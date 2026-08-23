@@ -36,7 +36,9 @@ silently ignores half the framework:
 | `$schema` | no | Relative pointer to this document, so an editor can offer it while the recipe is written. |
 | `id` | yes | Must equal the directory name. This is what `--target` takes. |
 | `label` | yes | Human name, shown in the installer's menu. |
+| `plugin_install` | yes | `true` when a plugin install procedure exists and is driven by `install.sh`; `false` when the tool is drop-in only. Shipping a plugin manifest is not the same as having a procedure — Codex and Cursor carry one and answer `false`, because nothing puts it in place. The installer reads this instead of a list of tool names typed into it. |
 | `docs` | no | Link to the documentation the recipe was derived from. Put it in — it is what the next person checks when the tool changes. |
+| `hooks_note` | no | Why this tool's hook wiring is shaped the way it is, when the recipe alone would read as an omission. Copilot's is the only one: its scripts land in the repo and the manifest that points at them does not, because Copilot loads repository hooks only in a folder the user has trusted — and trust cannot be answered in `-p`. |
 | `skills.dir` | no | This tool's **own** skills directory, repo-relative. Omit the whole `skills` block if the tool has no skill mechanism. |
 | `skills.note` | no | Why that directory. Worth writing down. |
 | `skills_are_slash` | no | `true` when the tool already exposes every skill as `/name` by itself. It suppresses the generated commands below — without it Claude Code ships each skill twice, once as a skill and once as a command that only says to use the skill. |

@@ -2,6 +2,7 @@
   "$schema": "../adapter.schema.md",
   "id": "cursor",
   "label": "Cursor",
+  "plugin_install": false,
   "docs": "https://cursor.com/docs/hooks",
   "skills": {
     "dir": ".cursor/skills",
