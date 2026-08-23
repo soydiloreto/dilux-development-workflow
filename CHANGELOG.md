@@ -19,6 +19,43 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.33.0] — Unreleased
+
+### Added
+
+- **FREE is the user's word, and the arrow now costs one.** FREE is the only
+  tier the user has to ASK for, and the rule saying so — *never propose it,
+  never offer it as a way out of a refusal you just gave* — was a paragraph.
+  Measured live on 0.32.2: asked for a file at IDLE, the model read
+  `classify.instructions.md`, the very file that forbids proposing FREE, and
+  then proposed it with "(Recomendado)" beside it. It had learned the tier from
+  the rule against offering it. The edge into FREE now requires the user's own
+  words quoted in the action (`free: "…"`). It cannot tell a faithful quote from
+  a fabricated one — nothing here can — but it turns a slip into a sentence
+  somebody had to write down, and puts what was said on the record.
+
+- **The ticket leaves CLASSIFY with a name.** `title` and `tracker` were filled
+  by a hand-composed `Write`; when the helper's `--write` became the way the
+  state actually lands, the two fields had no way in. Measured live: a FEATURE
+  reached DEFINE with `"title": null`, and from there every status line, every
+  report header and the PR title were the model re-inventing the name from
+  context — while the state, the thing that outlives the session, named nothing.
+  The helper gains `--title` and `--tracker`, and the FSM refuses that edge
+  without a name.
+
+### Fixed
+
+- **The commit gate reads the trailers, and rejects the one the method
+  forbids.** `commits.instructions.md` says it in capitals — never
+  `Co-Authored-By`; DDW discloses with `AI-assisted: yes` — and no gate read the
+  file that rule was written about. Measured live on Copilot: the model composed
+  the message, the user approved it, and it carried
+  `Co-authored-by: Copilot <…>`, the tool's own default doing exactly what the
+  rule forbids. Only the trailer is judged: what the body says is the model's to
+  write and the user's to approve; who it claims wrote the code is not.
+
+---
+
 ## [0.32.2] — Unreleased
 
 ### Fixed
