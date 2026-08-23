@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=645
+EXPECT_MUTATIONS=654
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -690,7 +690,7 @@ python3 "$TR" --to DEFINE --action x --graph "$G" >/dev/null 2>&1 \
   && bad "IDLE->DEFINE should be rejected" || ok "rejects IDLE->DEFINE (not in graph)"
 python3 "$TR" --to CLASSIFY --action req --ticket T-1 --graph "$G" > "$R/.ddw-state.json" 2>/dev/null \
   && ok "accepts IDLE->CLASSIFY" || bad "IDLE->CLASSIFY failed"
-python3 "$TR" --to DEFINE --action c --tier FEATURE --graph "$G" > "$R/s" 2>/dev/null \
+python3 "$TR" --to DEFINE --action c --tier FEATURE --title "the fixture ticket" --graph "$G" > "$R/s" 2>/dev/null \
   && { cp "$R/s" "$R/.ddw-state.json"; ok "accepts CLASSIFY->DEFINE with a tier"; } || bad "CLASSIFY->DEFINE failed"
 python3 "$TR" --to CODE --action x --graph "$G" >/dev/null 2>&1 \
   && bad "DEFINE->CODE should need gates" || ok "rejects DEFINE->CODE (FEATURE needs PLAN)"
@@ -736,7 +736,14 @@ PYTIERS
 for PAIR in $TIER_DESTS; do
   TIER="${PAIR%%:*}"; DEST="${PAIR##*:}"
   python3 "$TR" --to CLASSIFY --action req --ticket T-1 --graph "$G" > "$R/.ddw-state.json" 2>/dev/null
-  if python3 "$TR" --to "$DEST" --action c --tier "$TIER" --graph "$G" >/dev/null 2>&1; then
+  # FREE is the one tier whose edge costs the user's own words, quoted. Every
+  # other tier takes any action at all, and that asymmetry is the point: the
+  # loop would pass just as well with `free: "…"` everywhere, and then nothing
+  # here would notice the day the requirement spread to tiers the user never
+  # has to ask for.
+  CACT=c
+  [ "$TIER" = "FREE" ] && CACT='free: "hacelo sin pipeline, me hago cargo"'
+  if python3 "$TR" --to "$DEST" --action "$CACT" --tier "$TIER" --title "the fixture ticket" --graph "$G" >/dev/null 2>&1; then
     ok "tier $TIER: CLASSIFY->$DEST accepted"
   else
     bad "tier $TIER: CLASSIFY->$DEST REJECTED"
@@ -744,7 +751,7 @@ for PAIR in $TIER_DESTS; do
 done
 # And the graph must actually enforce each tier's shape, not just accept the tier.
 python3 "$TR" --to CLASSIFY --action req --ticket T-1 --graph "$G" > "$R/.ddw-state.json" 2>/dev/null
-python3 "$TR" --to DEFINE --action c --tier QUICK-FIX --graph "$G" > "$R/s" 2>/dev/null && cp "$R/s" "$R/.ddw-state.json"
+python3 "$TR" --to DEFINE --action c --tier QUICK-FIX --title "the fixture ticket" --graph "$G" > "$R/s" 2>/dev/null && cp "$R/s" "$R/.ddw-state.json"
 python3 "$TR" --to PLAN --action x --graph "$G" >/dev/null 2>&1 \
   && bad "QUICK-FIX should have no PLAN phase" || ok "QUICK-FIX: PLAN correctly unreachable"
 python3 "$TR" --to CODE --action x --graph "$G" >/dev/null 2>&1 \
@@ -774,7 +781,7 @@ TRC="$CLOSE/.ddw/scripts/transition.py"
 for _g in define spec threat tests sast verify; do ddw_earn "$CLOSE" "$_g" T-1; done
 step() { python3 "$TRC" "$@" --graph "$G" > "$CLOSE/s" 2>/dev/null && cp "$CLOSE/s" "$CLOSE/.ddw-state.json"; }
 python3 "$TRC" --to CLASSIFY --action r --ticket T-1 --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
-step --to DEFINE --action c --tier FEATURE
+step --to DEFINE --action c --tier FEATURE --title "the fixture ticket"
 step --to PLAN   --action p --gate define
 step --to CODE   --action x --gate spec --gate threat
 step --to VERIFY --action x --gate tests --gate sast
@@ -799,7 +806,7 @@ python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
 # Abandoning mid-flight stays free — a wrong classification must not trap you —
 # but it has to be DECLARED, so it never gets confused with a closeout.
 python3 "$TRC" --to CLASSIFY --action r --ticket T-1 --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
-step --to DEFINE --action c --tier FEATURE
+step --to DEFINE --action c --tier FEATURE --title "the fixture ticket"
 step --to PLAN --action p --gate define
 python3 "$TRC" --to IDLE --action "abandon: wrong classification" --graph "$G" >/dev/null 2>&1 \
   && ok "abandoning from PLAN stays ungated" || bad "abandoning was blocked"
@@ -807,14 +814,14 @@ python3 "$TRC" --to IDLE --action "discarded" --graph "$G" >/dev/null 2>&1 \
   && bad "reached IDLE off-graph without declaring the abandon" || ok "an undeclared exit to IDLE is refused"
 # The tier built for exploring ideas has to let you drop one that did not hold up.
 python3 "$TRC" --to CLASSIFY --action r --ticket T-1 --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
-step --to DISCOVERY --action d --tier DISCOVERY
+step --to DISCOVERY --action d --tier DISCOVERY --title "the fixture ticket"
 python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
   && bad "DISCOVERY closed without commit+pr" || ok "DISCOVERY closeout still needs commit+pr"
 python3 "$TRC" --to IDLE --action "abandon: the idea does not hold up" --graph "$G" >/dev/null 2>&1 \
   && ok "DISCOVERY: a discarded idea can be abandoned" || bad "DISCOVERY traps you in the pipeline"
 # And the closeout fallback must not let a corrective loop reuse stale gates.
 python3 "$TRC" --to CLASSIFY --action r --ticket T-1 --graph "$G" > "$CLOSE/.ddw-state.json" 2>/dev/null
-step --to DEFINE --action c --tier FEATURE
+step --to DEFINE --action c --tier FEATURE --title "the fixture ticket"
 step --to PLAN   --action p --gate define
 step --to CODE   --action x --gate spec --gate threat
 step --to VERIFY --action x --gate tests --gate sast
@@ -1872,7 +1879,8 @@ graph = os.path.join(src, "ddw/rules/transition-graph.json")
 state = os.path.join(repo, ".ddw-state.json")
 helper = os.path.join(src, "ddw/scripts/transition.py")
 for args in (["--to", "CLASSIFY", "--action", "classify the request"],
-             ["--to", "DEFINE", "--tier", "FEATURE", "--ticket", "T-1", "--action", "a feature"]):
+             ["--to", "DEFINE", "--tier", "FEATURE", "--ticket", "T-1", "--action", "a feature",
+              "--title", "the fixture ticket"]):
     r = subprocess.run([sys.executable, helper, *args, "--state", state, "--graph", graph, "--write"],
                        capture_output=True, text=True)
     assert r.returncode == 0, "the helper could not build the fixture: " + (r.stdout + r.stderr)[:200]
@@ -4972,7 +4980,7 @@ def step(*args):
 
 
 step("--to", "CLASSIFY", "--action", "c", "--tier", "FEATURE", "--ticket", "T-1")
-step("--to", "DEFINE", "--action", "d")
+step("--to", "DEFINE", "--action", "d", "--title", "the fixture ticket")
 step("--to", "PLAN", "--action", "p", "--gate", "define")
 step("--to", "CODE", "--action", "co", "--gate", "spec", "--gate", "threat")
 step("--to", "VERIFY", "--action", "v", "--gate", "tests", "--gate", "sast")
@@ -5356,7 +5364,11 @@ def land(ts):
     nxt = {"timestamp": ts, "from": "CLASSIFY", "to": "DEFINE", "action": "b",
            "tier": "FEATURE", "ticket": "T-1"}
     old = {"phase": "CLASSIFY", "ticket": "T-1", "tier": "FEATURE", "gates": {}, "history": [FIRST]}
-    new = {"phase": "DEFINE", "ticket": "T-1", "tier": "FEATURE", "gates": {}, "history": [FIRST, nxt]}
+    # The title is the fixture's, not the subject: this edge leaves CLASSIFY, so
+    # without one the refusal that comes back is about the name and the check
+    # reads a verdict it did not ask for.
+    new = {"phase": "DEFINE", "ticket": "T-1", "tier": "FEATURE", "title": "the fixture ticket",
+           "gates": {}, "history": [FIRST, nxt]}
     try:
         vt.validate(old, new, graph)
         return None
@@ -8369,7 +8381,7 @@ def step(*args):
 
 assert step("--to", "CLASSIFY", "--action", "c", "--tier", "FEATURE",
             "--ticket", "T-1").returncode == 0
-assert step("--to", "DEFINE", "--action", "d").returncode == 0
+assert step("--to", "DEFINE", "--action", "d", "--title", "the fixture ticket").returncode == 0
 # No PRD anywhere. This walked straight through before.
 r = step("--to", "PLAN", "--action", "p", "--gate", "define")
 assert r.returncode != 0, "the define gate opened with no PRD on disk"
@@ -8449,7 +8461,7 @@ def step(*args):
 
 assert step("--to", "CLASSIFY", "--action", "c", "--tier", "FEATURE",
             "--ticket", "T-1").returncode == 0
-assert step("--to", "DEFINE", "--action", "d").returncode == 0
+assert step("--to", "DEFINE", "--action", "d", "--title", "the fixture ticket").returncode == 0
 subprocess.run([sys.executable, vt, "--mode", "post", "--state", state, "--graph", graph],
                capture_output=True, text=True)
 journal = os.path.join(repo, ".ddw-journal.jsonl")
@@ -8706,7 +8718,7 @@ for _ in range(TRIALS):
                    capture_output=True)
     post().wait()
     subprocess.run([sys.executable, tr, "--state", state, "--graph", graph, "--write",
-                    "--to", "DEFINE", "--action", "d"], capture_output=True)
+                    "--to", "DEFINE", "--action", "d", "--title", "the fixture ticket"], capture_output=True)
     a, b = post(), post()
     a.wait(); b.wait()
     if post().wait() != 0:
@@ -8850,7 +8862,7 @@ for tier, (subdir, stem, receipt) in WRITES.items():
 
     assert step("--to", "CLASSIFY", "--action", "c", "--tier", tier,
                 "--ticket", "T-1").returncode == 0, tier
-    assert step("--to", "DEFINE", "--action", "d").returncode == 0, tier
+    assert step("--to", "DEFINE", "--action", "d", "--title", "the fixture ticket").returncode == 0, tier
     nxt = "CODE" if tier == "QUICK-FIX" else "PLAN"
     r = step("--to", nxt, "--action", "next", "--gate", "define")
     assert r.returncode == 0, \
@@ -9000,7 +9012,7 @@ for trial in range(TRIALS):
             "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE", "to": "CLASSIFY",
                          "action": "start"}]}
     json.dump(seed, open(state, "w", encoding="utf-8"))
-    procs = [subprocess.Popen([sys.executable, helper, "--to", "DEFINE", "--tier", "FEATURE",
+    procs = [subprocess.Popen([sys.executable, helper, "--to", "DEFINE", "--tier", "FEATURE", "--title", "the fixture ticket",
                                "--ticket", "T-%d" % n, "--action", "racer %d" % n,
                                "--state", state, "--graph", graph, "--write"],
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=repo)
@@ -9381,7 +9393,7 @@ def step(*args):
 
 assert step("--to", "CLASSIFY", "--action", "c", "--tier", "FEATURE",
             "--ticket", "T-1").returncode == 0
-assert step("--to", "DEFINE", "--action", "d").returncode == 0
+assert step("--to", "DEFINE", "--action", "d", "--title", "the fixture ticket").returncode == 0
 # The graph moves under the open ticket, exactly as an upgrade does.
 g = json.load(open(graph, encoding="utf-8"))
 g["tiers"]["FEATURE"].pop("CLASSIFY->DEFINE", None)
@@ -10184,7 +10196,7 @@ receipt("spec", "docs/ddw/specs/spec-T-9.md")
 receipt("threat", "docs/ddw/security/threat-T-9.md")
 for args in (("--to", "CLASSIFY", "--action", "classify: a feature",
               "--tier", "FEATURE", "--ticket", "T-9"),
-             ("--to", "DEFINE", "--action", "write the PRD"),
+             ("--to", "DEFINE", "--action", "write the PRD", "--title", "the fixture ticket"),
              ("--to", "PLAN", "--action", "plan it", "--gate", "define"),
              ("--to", "CODE", "--action", "implement", "--gate", "spec", "--gate", "threat")):
     rc, why = step(*args)
@@ -11171,7 +11183,7 @@ python3 "$TRL" --to CLASSIFY --action r --ticket T-1 --state "$LOOP/.ddw-state.j
 # las ganaba.
 # Reclamar y MOVERSE son dos llamadas: `--claim` marca compuertas en la fase
 # actual y no toma arista. En una sola, el helper rechaza las dos cosas.
-lstep --to DEFINE --action c --tier FEATURE
+lstep --to DEFINE --action c --tier FEATURE --title "the fixture ticket"
 ddw_earn "$LOOP" define T-1;  lstep --claim define
 lstep --to PLAN   --action p
 ddw_earn "$LOOP" spec T-1; ddw_earn "$LOOP" threat T-1;  lstep --claim spec --claim threat
@@ -11278,7 +11290,7 @@ receipt("spec", "docs/ddw/specs/spec-T-1.md")
 receipt("threat", "docs/ddw/security/threat-T-1.md")
 step("classify", "--to", "CLASSIFY", "--action", "classify: a feature",
      "--tier", "FEATURE", "--ticket", "T-1", "--autonomy", "minimal")
-step("define", "--to", "DEFINE", "--action", "write the PRD")
+step("define", "--to", "DEFINE", "--action", "write the PRD", "--title", "the fixture ticket")
 step("plan", "--to", "PLAN", "--action", "plan it", "--gate", "define")
 step("code", "--to", "CODE", "--action", "implement", "--gate", "spec", "--gate", "threat")
 # Set aside, run something else start to finish, come back.

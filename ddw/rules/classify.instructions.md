@@ -380,11 +380,28 @@ anyone to watch it.
 2. **Build that write with the helper**, do not hand-assemble it:
 
    ```bash
-   .ddw/scripts/transition.py --to DEFINE --tier <TIER> --ticket <ID> --action "<why this tier>"
+   .ddw/scripts/transition.py --to DEFINE --tier <TIER> --ticket <ID> \
+       --title "<the ticket's name, one line>" --action "<why this tier>"
    ```
 
    It prints the complete next state and self-validates against the graph first, so an illegal
    transition fails here rather than being refused by the hook afterwards. Paste its output in a
-   single write, filling in `title` and `tracker` in that same write — the helper takes the
-   ticket as `--ticket` because an ID is not free text, and leaves those two to the write
-   because free text through shell arguments is how quoting bugs get in.
+   single write.
+
+   `--title` is not optional here and the FSM refuses this edge without it: the name is decided
+   in CLASSIFY and nowhere else, and a state that names no work makes every status line, report
+   header and PR title afterwards a reconstruction from context. It used to be left to the write
+   — "fill in `title` and `tracker` in that same write" — from a time when the write was
+   hand-assembled; once the helper became the way the state lands, that instruction had nowhere
+   to land, and a FEATURE reached DEFINE with `"title": null`. `--tracker` joins it for the same
+   reason, and stays optional because plenty of tickets have no tracker.
+
+   For FREE, and only for FREE, the action carries the user's own words:
+
+   ```bash
+   .ddw/scripts/transition.py --to FREE --tier FREE --ticket <ID> \
+       --title "<the ticket's name, one line>" --action 'free: "<what the user actually said>"'
+   ```
+
+   You do not get to paraphrase that into existence. FREE is the tier the user has to ask for,
+   and quoting them is what the edge costs.

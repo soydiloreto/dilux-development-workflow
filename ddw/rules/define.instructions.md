@@ -395,6 +395,7 @@ promise the enforcement could never let the model keep.
 
    ```bash
    .ddw/scripts/transition.py --to DEFINE --tier <TIER> --ticket {TICKET}a \
+       --title "<the child's name, one line>" \
        --autonomy <the mode this child runs under> \
        --action "split: abrir {TICKET}a — <title>"
    ```

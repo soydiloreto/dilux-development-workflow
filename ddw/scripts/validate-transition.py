@@ -581,10 +581,12 @@ def _check_autonomy(old_state, new_state, appended):
 # write down, and it puts what was said on the record where a person can read it
 # back. Every other tier stays free of this: FREE is the one that buys the
 # absence of every other guarantee.
-_FREE_ACTION = re.compile(r"""^\s*free\s*:\s*.*["“'«][^"”'»]{4,}["”'»]""", re.IGNORECASE | re.DOTALL)
+# The action is stripped before it is matched, so this pattern needs no
+# leading `\s*` — the shape one file over bans for hanging on long input.
+_FREE_ACTION = re.compile(r"""free\s*:\s*.*["“'«][^"”'»]{4,}["”'»]""", re.IGNORECASE | re.DOTALL)
 
 
-def _check_the_ticket_has_a_name(new_state, appended):
+def _check_the_ticket_has_a_name(new_state, appended, replaying=False):
     """Leaving CLASSIFY, the ticket carries a title. Measured live: it did not.
 
     The rules say `title` and `tracker` are filled in the SAME write as the
@@ -599,6 +601,16 @@ def _check_the_ticket_has_a_name(new_state, appended):
     decided. A resume cannot restore what no history entry carries, and refusing
     there would strand a paused ticket.
     """
+    # NOT on a replay. Post mode re-walks the whole run as one batch, so without
+    # this the requirement reaches backwards: every ticket already open with
+    # `"title": null` — which is every ticket opened before this release, the
+    # defect being fixed — would be refused on every tool call from here on,
+    # with nothing the user could do about it short of hand-editing the state.
+    # A new rule governs the next edge, never the ones already taken. Post mode
+    # is the only caller that passes no cap, and the hook path always passes 1,
+    # so this cannot be reached for by a write.
+    if replaying:
+        return
     classifying = [e for e in appended if e.get("from") == CLASSIFY and e.get("to") != IDLE]
     if not classifying or not new_state.get("ticket"):
         return
@@ -612,7 +624,11 @@ def _check_the_ticket_has_a_name(new_state, appended):
         )
 
 
-def _check_free_is_the_users_word(old_state, new_state, appended):
+def _check_free_is_the_users_word(old_state, new_state, appended, replaying=False):
+    # Same reason as the check above: a run that entered FREE before this
+    # release recorded no quote, and re-judging it on replay would strand it.
+    if replaying:
+        return
     entering = [e for e in appended if e.get("to") == "FREE"]
     turning_free = (new_state.get("tier") == "FREE" and old_state.get("tier") != "FREE")
     if not entering and not turning_free:
@@ -624,7 +640,10 @@ def _check_free_is_the_users_word(old_state, new_state, appended):
             "who asked for it. FREE is the one tier the user has to ask for: the arrow that "
             "enters it carries their words."
         )
-    if not any(_FREE_ACTION.search(a) for a in actions):
+    # `match` on the stripped action, not `search`: the declaration is what the
+    # action OPENS with. Searching anywhere in it would let `free: "…"` ride along
+    # inside a sentence about something else entirely.
+    if not any(_FREE_ACTION.match(a.strip()) for a in actions):
         raise Block(
             'FREE needs the user\'s own words on the record. Write the action as '
             '`free: "<what they said>"` — quoting the sentence in which they asked to work '
@@ -886,8 +905,12 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     # Before any early return: a write that appends nothing can still change the
     # tier, and that was enough to walk another tier's shortcut.
     _check_tier(old_state, new_state, appended)
-    _check_free_is_the_users_word(old_state, new_state, appended)
-    _check_the_ticket_has_a_name(new_state, appended)
+    # `max_appended is None` is post mode's replay and nothing else: the hook
+    # path and the helper both pass a cap. The two newest rules read it so they
+    # judge the edge being taken now, not the run already taken.
+    _replaying = max_appended is None
+    _check_free_is_the_users_word(old_state, new_state, appended, replaying=_replaying)
+    _check_the_ticket_has_a_name(new_state, appended, replaying=_replaying)
     _check_autonomy(old_state, new_state, appended)
     _check_ticket_continuity(old_state, new_state)
     _check_entry_ticket(old_state, new_state, appended)
