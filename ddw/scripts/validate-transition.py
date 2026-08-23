@@ -567,6 +567,74 @@ def _check_autonomy(old_state, new_state, appended):
     )
 
 
+# FREE is the only tier the user has to ASK for, and the rule saying so was
+# prose. Measured live, on 0.32.2: asked to create a file at IDLE, the model read
+# `classify.instructions.md` — the file that says *never propose it, never offer
+# it as a way out of a refusal you just gave* — and then offered exactly that,
+# with "(Recomendado)" next to it. The refusal text had already been cleaned of
+# the recipe; the model learned FREE from the rule that forbids proposing it.
+#
+# A rule the model reads and steps over is a rule the pipeline does not have. So
+# the arrow into FREE now costs something only the user can supply: their own
+# words, quoted, in the action. It cannot tell a faithful quote from a fabricated
+# one — nothing here can — but it turns a slip into a sentence somebody had to
+# write down, and it puts what was said on the record where a person can read it
+# back. Every other tier stays free of this: FREE is the one that buys the
+# absence of every other guarantee.
+_FREE_ACTION = re.compile(r"""^\s*free\s*:\s*.*["“'«][^"”'»]{4,}["”'»]""", re.IGNORECASE | re.DOTALL)
+
+
+def _check_the_ticket_has_a_name(new_state, appended):
+    """Leaving CLASSIFY, the ticket carries a title. Measured live: it did not.
+
+    The rules say `title` and `tracker` are filled in the SAME write as the
+    classifying edge — and that write was a hand-composed `Write`, so when the
+    helper grew `--write` and became the way the state actually lands, the two
+    fields had no way in. A FEATURE reached DEFINE with `"title": null`, and from
+    there every status line, every report header and the PR title were the model
+    re-inventing the name from context, turn after turn, while the state — the
+    thing that survives the session — named nothing.
+
+    Only on the edge out of CLASSIFY, which is the one moment the name is
+    decided. A resume cannot restore what no history entry carries, and refusing
+    there would strand a paused ticket.
+    """
+    classifying = [e for e in appended if e.get("from") == CLASSIFY and e.get("to") != IDLE]
+    if not classifying or not new_state.get("ticket"):
+        return
+    title = new_state.get("title")
+    if not (isinstance(title, str) and title.strip()):
+        raise Block(
+            "this edge leaves CLASSIFY with a ticket and no `title`. The name is decided here "
+            "and nowhere else: pass `--title \"<one line>\"` on the same run that sets "
+            "`--ticket`, or put both in the same Write. A state that names no work makes every "
+            "line the user reads afterwards a reconstruction from context."
+        )
+
+
+def _check_free_is_the_users_word(old_state, new_state, appended):
+    entering = [e for e in appended if e.get("to") == "FREE"]
+    turning_free = (new_state.get("tier") == "FREE" and old_state.get("tier") != "FREE")
+    if not entering and not turning_free:
+        return
+    actions = [e.get("action") or "" for e in (entering or appended)]
+    if not actions:
+        raise Block(
+            "this write turns the tier to FREE and appends no history entry, so nothing says "
+            "who asked for it. FREE is the one tier the user has to ask for: the arrow that "
+            "enters it carries their words."
+        )
+    if not any(_FREE_ACTION.search(a) for a in actions):
+        raise Block(
+            'FREE needs the user\'s own words on the record. Write the action as '
+            '`free: "<what they said>"` — quoting the sentence in which they asked to work '
+            "without the pipeline. This tier buys the absence of every guarantee DDW makes, "
+            "and it is not yours to choose: never propose it, and never offer it as a way out "
+            "of a refusal you just gave. If they have not asked for it, the answer is to "
+            "classify the work — the tier decides what it owes, not whether there is a record."
+        )
+
+
 def _check_tier(old_state, new_state, appended):
     """The tier is chosen in CLASSIFY and holds for the whole ticket.
 
@@ -818,6 +886,8 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
     # Before any early return: a write that appends nothing can still change the
     # tier, and that was enough to walk another tier's shortcut.
     _check_tier(old_state, new_state, appended)
+    _check_free_is_the_users_word(old_state, new_state, appended)
+    _check_the_ticket_has_a_name(new_state, appended)
     _check_autonomy(old_state, new_state, appended)
     _check_ticket_continuity(old_state, new_state)
     _check_entry_ticket(old_state, new_state, appended)

@@ -50,8 +50,14 @@ def repo(tmp_path):
     return str(tmp_path)
 
 
-def state(phase="IDLE", tier=None, ticket=None, gates=None, history=None):
+def state(phase="IDLE", tier=None, ticket=None, gates=None, history=None, title=None):
+    # Un ticket lleva nombre desde el arco que lo clasifica, y el validador lo
+    # exige ahí. Las fixtures no lo ponían —el campo no existía en este helper—
+    # así que doce tests construían el estado que el producto ya no acepta y
+    # medían la regla equivocada. Se completa solo, salvo que el test diga otra
+    # cosa a propósito.
     return {"phase": phase, "tier": tier, "ticket": ticket,
+            "title": title if title is not None else (f"ticket {ticket}" if ticket else None),
             "gates": gates or {}, "history": history or []}
 
 
@@ -134,6 +140,66 @@ def test_a_dropin_install_does_not_seal_the_project(tmp_path):
     repo = tmp_path / "repo"
     (repo / ".ddw").mkdir(parents=True)
     assert vt._method_write_denied(str(repo / "src/app.py"), str(repo / ".ddw"), str(repo)) is None
+
+
+# ── FREE is the one tier the user has to ask for ─────────────────────────────
+#
+# Medido en vivo sobre 0.32.2: pedido de crear un archivo en IDLE, el modelo leyó
+# `classify.instructions.md` —el archivo que dice *nunca lo propongas, nunca lo
+# ofrezcas como salida de un rechazo que acabás de dar*— y ofreció exactamente
+# eso, con "(Recomendado)" al lado. El rechazo de escritura ya no entrega la
+# receta; la aprendió de la regla que se la prohíbe. Una regla que el modelo lee
+# y pisa es una regla que el pipeline no tiene.
+
+_INTO_CLASSIFY = entry("IDLE", "CLASSIFY", tier=None, ticket=None)
+
+
+def _free_arrow(action):
+    return state("FREE", "FREE", None, {},
+                 [_INTO_CLASSIFY,
+                  dict(entry("CLASSIFY", "FREE", tier="FREE", ticket=None), action=action)])
+
+
+def test_free_needs_the_users_own_words():
+    old = state("CLASSIFY", None, None, {}, [_INTO_CLASSIFY])
+    with pytest.raises(vt.Block) as exc:
+        vt.validate(old, _free_arrow("sin workflow para esta prueba"), GRAPH)
+    assert "own words" in str(exc.value), str(exc.value)
+
+    # Con la frase del usuario citada, pasa.
+    vt.validate(old, _free_arrow('free: "no me armes workflow, quiero probar algo"'), GRAPH)
+
+
+def test_el_ticket_sale_de_classify_con_nombre():
+    """Medido en vivo: un FEATURE llegó a DEFINE con `"title": null`.
+
+    Las reglas dicen que `title` y `tracker` se llenan en el MISMO write que la
+    flecha que clasifica — y ese write era un `Write` a mano. Cuando el helper
+    ganó `--write` y pasó a ser la puerta por la que el estado aterriza de
+    verdad, los dos campos se quedaron sin manera de entrar. De ahí en adelante
+    cada línea de estado, cada encabezado de reporte y el título del PR fueron
+    el modelo reconstruyendo el nombre de contexto, mientras el estado —lo que
+    sobrevive a la sesión— no nombraba nada.
+    """
+    old = state("CLASSIFY", None, None, {}, [entry("IDLE", "CLASSIFY")])
+    sin_nombre = {**state("DEFINE", "FEATURE", "F-1", {},
+                          [entry("IDLE", "CLASSIFY"),
+                           entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="F-1")]),
+                  "title": None}
+    with pytest.raises(vt.Block) as exc:
+        vt.validate(old, sin_nombre, GRAPH)
+    assert "title" in str(exc.value)
+
+    con_nombre = dict(sin_nombre, title="Tetris LatinoNet")
+    vt.validate(old, con_nombre, GRAPH)
+
+
+def test_the_tier_cannot_turn_free_in_a_silent_write():
+    """Sin entrada nueva no hay dónde poner las palabras — y sin ellas, no hay FREE."""
+    old = state("CLASSIFY", None, None, {}, [_INTO_CLASSIFY])
+    silent = state("CLASSIFY", "FREE", None, {}, [_INTO_CLASSIFY])
+    with pytest.raises(vt.Block):
+        vt.validate(old, silent, GRAPH)
 
 
 # ── The graph is the authority ───────────────────────────────────────────────
@@ -761,6 +827,13 @@ def test_el_helper_sin_write_dice_que_no_escribio(tmp_path):
 
 
 def _step(state_path, *args):
+    # `--title` se completa solo cuando el paso nombra un ticket y el test no
+    # dijo otra cosa: el arco que clasifica lo exige, y ninguno de estos pasos
+    # mide eso — miden el tier, el reloj, el turno o la pausa. Un test que se
+    # cae por un campo que no está midiendo deja de medir lo suyo.
+    args = list(args)
+    if "--ticket" in args and "--title" not in args:
+        args += ["--title", "un ticket de prueba"]
     return subprocess.run([sys.executable, _TRANSITION_PY, "--state", state_path,
                            "--graph", _GRAPH_PATH, *args, "--write"],
                           capture_output=True, text=True,
@@ -832,6 +905,9 @@ def _turn_passes(repo_dir):
 def _arrow(repo_dir, *args):
     """La flecha por el camino sancionado, con el guard de pre-write mirando."""
     p = os.path.join(repo_dir, ".ddw-state.json")
+    args = list(args)
+    if "--ticket" in args and "--title" not in args:
+        args += ["--title", "un ticket de prueba"]   # ver `_step`
     emitted = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p,
                               "--graph", _GRAPH_PATH, *args],
                              capture_output=True, text=True, cwd=repo_dir)
@@ -906,6 +982,9 @@ def test_el_guard_de_pre_write_es_el_que_refusa_la_segunda_flecha(tmp_path):
     p = os.path.join(d, ".ddw-state.json")
 
     def write(*args):
+        args = list(args)
+        if "--ticket" in args and "--title" not in args:
+            args += ["--title", "un ticket de prueba"]   # ver `_step`
         emitted = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p,
                                   "--graph", _GRAPH_PATH, *args],
                                  capture_output=True, text=True, cwd=d)

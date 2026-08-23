@@ -137,7 +137,7 @@ def _resumed_from(old_state, field):
 
 
 def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
-                     autonomy=None, edge_clears=(), ticket=None):
+                     autonomy=None, edge_clears=(), ticket=None, title=None, tracker=None):
     """The complete state for the next step. Read-only over old_state (deep copy)."""
     new_state = json.loads(json.dumps(old_state))  # deep copy
     from_phase = old_state.get("phase", "IDLE")
@@ -164,6 +164,17 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
         # sanctioned helper satisfies it.
         if ticket is not None:
             new_state["ticket"] = ticket
+        # …and the two fields that travelled with it. The comment above says the
+        # ticket needed a flag because `--write` lands the state with nothing
+        # after it; `title` and `tracker` were left out of that same fix and had
+        # the same fate. Measured live: a FEATURE reached DEFINE with
+        # `"title": null`, and every status line, report and PR title after it
+        # was the model re-inventing the name from context — while the state,
+        # which is what survives the session, did not have one.
+        if title is not None:
+            new_state["title"] = title
+        if tracker is not None:
+            new_state["tracker"] = tracker
         merged = dict(new_state.get("gates") or {})
         # What the graph says this edge gives up. Going back a phase takes away
         # what that phase granted: the work from here on has to be earned again
@@ -373,6 +384,12 @@ def main():
                     help="The ticket this run belongs to. Set it on the edge that classifies the "
                          "request; a gate cannot be claimed without one, because the ticket is "
                          "how every receipt finds its document.")
+    ap.add_argument("--title", default=None,
+                    help="The ticket's one-line name, set on the same edge as --ticket. Without "
+                         "it the state names no work and every line the user reads afterwards is "
+                         "the model remembering it.")
+    ap.add_argument("--tracker", default=None,
+                    help="The tracker ticket this run belongs to, when there is one.")
     ap.add_argument("--autonomy", choices=("assisted", "minimal"), default=None,
                     help="How much of the run waits for the user. Set in CLASSIFY, with the user "
                          "looking at the box; the hook refuses a change anywhere else. Absent "
@@ -491,7 +508,8 @@ def main():
     _clears = _cfg.get("clears", []) if isinstance(_cfg, dict) else []
     new_state = build_next_state(old_state, args.to, args.action, args.gate, args.tier,
                                  args.clear_gates, autonomy=args.autonomy, edge_clears=_clears,
-                                 ticket=args.ticket)
+                                 ticket=args.ticket, title=args.title,
+                                 tracker=args.tracker)
 
     # A gate that rests on evidence is asked for it here too — the same function
     # the hook calls, never a second copy. This helper used to hold the only

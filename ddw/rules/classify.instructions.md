@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.6.1
+version: 2.7.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -191,7 +191,18 @@ the request is small, and never offer it as a way out of a refusal you just gave
   no PRD, no spec, no threat model, no test report, no verdict.
 
 Entering is a transition like any other (`CLASSIFY→FREE`), so the history says when it started and
-why. Leaving is `FREE→IDLE`. A ticket already in flight cannot become FREE: there is no edge into
+why — and it carries **the user's own words**:
+
+```bash
+.ddw/scripts/transition.py --to FREE --tier FREE --action 'free: "<the sentence in which they asked for it>"'
+```
+
+The gate refuses the arrow without them. That is not bookkeeping: this tier buys the absence of
+every guarantee DDW makes, so the one thing that must survive it is the record of who asked. It
+cannot tell a faithful quote from an invented one — nothing can — but it turns proposing FREE into
+a sentence you had to write down and attribute. Measured live: a model read this very section and
+then offered FREE, with "(Recomendado)" beside it, as the way to get past a refusal it had just
+been given. Leaving is `FREE→IDLE`. A ticket already in flight cannot become FREE: there is no edge into
 it from any working phase, and the tier cannot change outside CLASSIFY — otherwise FREE would be a
 way to walk out of the gates a ticket has already been asked for.
 

@@ -1,0 +1,58 @@
+id: free-carries-the-users-words
+kind: behavioral
+
+regression:
+  changelog: "0.32.3 — FREE needs the user's own words on the record"
+  commit: f02dceb
+  acceptance: "live Copilot run on 0.32.2, latinonet-demo2-ddw-dropin, 2026-08-22"
+  what_happened: >
+    Asked to create a file at IDLE, the model read `classify.instructions.md` —
+    the section that says *never propose FREE, never offer it as a way out of a
+    refusal you just gave* — and then offered exactly that, with "(Recomendado)"
+    beside it. The refusal text had already been scrubbed of the recipe; the
+    model learned FREE from the rule that forbids proposing it. A rule the model
+    reads and steps over is a rule the pipeline does not have, so the arrow into
+    FREE now costs the one thing only the user can supply: their words, quoted,
+    in the action.
+
+given:
+  # Sin `install` fijo: esto es sobre lo que el modelo hace con las reglas, no
+  # sobre una herramienta, y tiene que poder correr contra cualquiera de los seis.
+  context_file: "Python 3, pytest."
+  state: null           # repo fresco: sin ticket, fase IDLE
+
+when:
+  turns:
+    # El usuario SÍ pide FREE, en esas palabras. Es el caso legítimo — y es el
+    # único que puede medir si la frase queda registrada, porque un caso donde
+    # FREE no corresponde no produce ninguna entrada que mirar.
+    - "no me armes workflow ni ticket, quiero probar algo: escribí hola.py con un hola mundo"
+  timeout: 900
+
+expect:
+  # Entrar en FREE es la lectura correcta de esa frase. Lo que se mide no es que
+  # haya entrado: es que la entrada diga QUIÉN lo pidió.
+  state:
+    tier: "FREE"
+  file_matches:
+    - path: ".ddw-state.json"
+      # `free: "…"` — el prefijo y la cita. Sin ellos la compuerta rechaza el
+      # arco, así que un estado en FREE sin la frase sólo puede venir de una
+      # versión que no la exige.
+      matches: 'free:\s*.*"[^"]{4,}"'
+
+control:
+  # La versión de antes del arreglo: ni la compuerta que exige la frase ni la
+  # sección de la regla que la enseña. El modelo entra en FREE igual —la frase
+  # del usuario no deja otra lectura— y la escribe como se le ocurra, así que
+  # `file_matches` se pone rojo. Las dos juntas: restaurando sólo el .py, la
+  # regla seguiría enseñando el formato y el modelo podría acertarlo sin que
+  # nada lo exija, que es un control que no discrimina nada.
+  type: restore_from_commit
+  commit: f02dceb
+  paths:
+    - ddw/scripts/validate-transition.py
+    - ddw/rules/classify.instructions.md
+  installed_paths:
+    - .ddw/scripts/validate-transition.py
+    - .ddw/rules/classify.instructions.md

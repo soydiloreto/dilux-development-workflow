@@ -806,6 +806,32 @@ def test_un_commit_visto_y_contestado_pasa_al_primer_intento(tmp_path):
     assert _commit(tmp_path).returncode == 0, "el commit aprobado fue rechazado igual"
 
 
+def test_el_trailer_que_el_metodo_prohibe_no_pasa(tmp_path):
+    """`commits.instructions.md` lo dice en mayúsculas — NUNCA `Co-Authored-By`,
+    la divulgación es `AI-assisted: yes` — y ningún gate leía el archivo del que
+    esa regla habla.
+
+    Medido en vivo sobre Copilot: el modelo redactó el mensaje, el usuario lo
+    aprobó, y llevaba `Co-authored-by: Copilot <…@users.noreply.github.com>` —
+    el default de la herramienta haciendo exactamente lo que la regla prohíbe.
+    Aprobado y todo, ese commit atribuye una autoría que el proyecto no acordó.
+    """
+    _repo_en_define(tmp_path)
+    malo = MENSAJE.rstrip("\n") + "\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\n"
+    _propone(tmp_path, malo)
+    _habla_el_usuario(tmp_path)
+    r = _commit(tmp_path)
+    assert r.returncode == 2, "el commit se llevó un Co-Authored-By que el método prohíbe"
+    assert "AI-assisted" in (r.stdout + r.stderr), \
+        "el rechazo no dice cuál es el trailer que SÍ va: " + (r.stdout + r.stderr)[-200:]
+
+    # …y el mensaje correcto sigue pasando: lo que se juzga es el trailer, no el
+    # cuerpo. Lo que el mensaje DICE es del modelo y del usuario que lo aprueba.
+    _propone(tmp_path)
+    _habla_el_usuario(tmp_path)
+    assert _commit(tmp_path).returncode == 0, "un mensaje legítimo quedó rechazado"
+
+
 def test_mostrar_un_mensaje_y_commitear_otro_es_rechazado(tmp_path):
     """El agujero que no cerraba nadie: los bytes se comparan."""
     _repo_en_define(tmp_path)
