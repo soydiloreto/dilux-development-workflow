@@ -4,8 +4,10 @@
 # una instrucción y preguntándole al gate de verdad, sin llamar a nadie. Los
 # conductuales son la otra mitad — se instala DDW en un repo real, se le mandan
 # los turnos de un usuario, y después se le pregunta AL REPO qué pasó — y ésos
-# cuestan dinero y minutos. Por eso viven acá: a pedido, y semanal para que no
-# se enteren de que se rompieron el día que hacen falta.
+# cuestan dinero y minutos. Por eso viven acá: SOLO a pedido. Hubo un cron
+# semanal y se quitó: cada corrida cobra créditos del gateway, y un lunes sin
+# saldo pinta rojo el repo sin decir nada del código. El precio es conocido:
+# un escenario roto no avisa hasta la próxima corrida manual.
 #
 # Lo que no puede pasar, y este archivo está escrito para eso: que la corrida
 # reporte verde sin haber medido. `runner.py` ya trata un escenario que no se
@@ -24,10 +26,6 @@ on:
         description: "Un escenario por id, o vacío para todos los conductuales"
         required: false
         default: ""
-  schedule:
-    # Lunes a la mañana (UTC). Un escenario conductual se rompe callado: el
-    # modelo cambia, el CLI cambia, y nadie se entera hasta que se necesita.
-    - cron: "0 7 * * 1"
 
 jobs:
   behavioral:
