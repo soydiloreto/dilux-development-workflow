@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.7.0
+version: 2.8.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -252,20 +252,21 @@ what they asked. This is a proposal, not a redirection.
 
 ### Then, for new work
 
-If the tier is stateful (QUICK-FIX, FIX, FEATURE, DISCOVERY or FREE):
+If the tier is stateful (QUICK-FIX, FIX, FEATURE, DISCOVERY or FREE), the ticket is resolved in
+ONE stop — inside the Step 4 box — never in a chain of questions before it. Measured on a live
+run: "is there a ticket?", then "do you want me to propose one?", then "shall we use FEAT-001?"
+were three separate interruptions before the box asked a fourth, and every answer after the first
+was derivable from it.
 
-1. Ask: "Is there an associated tracker ticket? If so, which one?"
-2. **If the user provides a tracker ticket** (e.g. `PROJ-123`):
-   - `ticket` = the tracker ID (e.g. `"PROJ-123"`)
-   - `title` = the tracker ticket's title
-   - `tracker` = the tracker ID (same value as `ticket`)
-   - Every artifact, path and status line will use this ID.
-3. **If there is no tracker ticket:**
-   - Ask: "Do you want me to propose a tracker ticket for this?"
-     - If yes → propose one per `.ddw/rules/tracker.instructions.md`. If it gets created, apply
-       rule 2.
-     - If no → generate a sequential internal ID (`FIX-NNN`, `FEAT-NNN` or `DISC-NNN`).
-       `tracker` = `null`.
+1. Generate the next sequential internal ID (`FIX-NNN`, `FEAT-NNN` or `DISC-NNN`) and a title
+   yourself, and put them in the Step 4 box as the proposal.
+2. The box carries the alternative in the same stop: **if the user answers with a tracker ID**
+   (e.g. `PROJ-123`), then `ticket` = that ID, `title` = the tracker ticket's title, `tracker` =
+   the same value, and every artifact, path and status line uses it.
+3. If they confirm the proposal as it stands → `tracker` = `null` and the internal ID is the
+   ticket. A ticket text they can file in their own tracker is
+   `.ddw/rules/tracker.instructions.md`'s format — hand it over at CLOSEOUT's tracker update or
+   whenever they ask; it is never a second question here.
 
 ---
 
@@ -284,7 +285,9 @@ If the tier is stateful (QUICK-FIX, FIX, FEATURE, DISCOVERY or FREE):
 │  Title: [tracker ticket title, or generated]             │
 │  Stack: [reference to AGENTS.md ("Stack" section)]       │
 │                                                          │
-│  Do you confirm this classification?                     │
+│  Do you confirm this classification? If this work has a  │
+│  ticket in your tracker, answer with its ID and I will   │
+│  use that instead of [internal ID].                      │
 └─────────────────────────────────────────────────────────┘
 ```
 

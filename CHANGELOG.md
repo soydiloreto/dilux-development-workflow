@@ -19,6 +19,60 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.35.0] — Unreleased
+
+Four defects, all measured on the first live FEATURE run of a fresh install
+(Copilot, drop-in): the pipeline reached PLAN correctly and every one of these
+was friction or a silent self-approval on the way there.
+
+### Fixed
+
+- **The ticket intake was a chain of questions.** "Is there a ticket?", "do you
+  want me to propose one?", "shall we use the internal one?" — three separate
+  interruptions before the CLASSIFY box asked a fourth, and every answer after
+  the first was derivable from it. The protocol — in the CLASSIFY rules and the
+  tracker convention, which duplicated the chain — is now ONE stop: the box
+  proposes the generated ID and title, and the same answer that confirms the
+  classification can replace them with a tracker ID. The text to file a ticket
+  manually moves to CLOSEOUT's tracker update, or on demand. (`classify` 2.8.0,
+  `tracker` 3.1.0)
+
+- **A backward edge under `assisted` was taken first and explained after.** The
+  doctrine said "taking one is not a question", and the same document promised
+  "every arrow waits for the user" twenty lines later. Measured live: the
+  helper took `PLAN→DEFINE` and then asked which stack should prevail — into a
+  phase already re-entered and a gate already spent, when the answer could have
+  been "neither, drop the ticket". Now: where a decision motivates the loop, it
+  is put to the user BEFORE the edge, and the edge is taken with their answer
+  in hand; where nothing is theirs to decide (CODE finding a spec defect),
+  announce with the flag up and go — inventing a question there is the rubber
+  stamp again. Under `minimal` the pause goes away like every other arrow's.
+  (`state` 2.4.0, `plan` 1.11.0)
+
+- **W-PRD-06 was a warning the model waved through on the user's behalf.** Its
+  own text says "legitimate if it was decided" — and the live run watched the
+  model decide instead: 17 acceptance criteria, the warning shown verbatim,
+  self-judged "does not block" in the next sentence, and approval requested as
+  if the report were clean. The DEFINE steps now bind the warning to the Scope
+  Check box: a ⚠️ W-PRD-06 IS the scope step's trigger, the one who decides is
+  the user, and their decision is recorded in the PRD so the next reader finds
+  it decided rather than pending. (`define` 2.5.0)
+
+- **The FEATURE spec template taught less than its validator demands.** The
+  live run wrote a spec from the skeleton alone and was refused by F-SPEC-07,
+  F-SPEC-09 and F-SPEC-16 — and the model's way out was reading the validator's
+  source to learn the shape, knowledge that belongs in the template. The
+  `ddw-create-spec` skill now carries a worked FEATURE spec ("in the shape the
+  validator reads", the shape the fix-plan already had) plus the three
+  load-bearing couplings spelled out — the five contract items, input
+  validation wherever input arrives, and the sad-path-tests-per-error COUNT.
+  The suite extracts that worked spec and runs it against
+  `validate_spec.py --tier FEATURE`, exactly as it already did for the
+  fix-plan.
+
+Six new checks pin all of this (601 total), and six new mutations reinject each
+defect to prove its check discriminates.
+
 ## [0.34.0] — Unreleased
 
 Six things the installer said that it did not do. Four were found by reading the
