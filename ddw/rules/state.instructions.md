@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.3.0
+version: 2.4.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`
@@ -118,13 +118,22 @@ rejected — this paragraph named one gate for `CLOSEOUT→VERIFY` where the gra
 model that believed it had its write bounced with no idea why. Read `clears` from
 `transition-graph.json` rather than from here if the two ever disagree again.
 
-**And taking one is not a question.** A backward edge exists because something already approved
-turned out to be wrong, and asking permission to correct a known defect is a rubber stamp — the
-corrective loop is mandatory everywhere the catalog describes one
-(`validation-rules.instructions.md` §2). So the move is ANNOUNCED, with the reason, and what waits
-at the far end is the real approval: the corrected artifact re-earning the gate the edge just
-cleared. The banner that asks for it says where it came back from, because an approval that does
-not know it is a re-approval is the same rubber stamp one document later.
+**Under `assisted`, the question comes BEFORE the edge.** A backward edge exists because something
+already approved turned out to be wrong — and what there is to ask is never permission to correct
+a known defect (that is a rubber stamp; the corrective loop is mandatory everywhere the catalog
+describes one, `validation-rules.instructions.md` §2) but the decision that MOTIVATES the
+correction: which of two contradicting stacks stands, whether the too-big scope splits, the answer
+nobody wrote down. Measured on a live run: the helper took `PLAN→DEFINE` first and asked which
+stack should prevail after, so a user answering "neither — drop the ticket" would have answered
+into a phase already re-entered and a gate already spent. Where such a decision exists, announce
+the reason, put the question to the user, and take the edge WITH their answer in hand. Where
+nothing is theirs to decide before the fix — CODE finding a block that names the wrong file has no
+question in it, only a correction (`code.instructions.md` § When the spec is the thing that is
+wrong) — announce with the flag up and go; inventing a question there is the rubber stamp again.
+Under `minimal` the pause goes away like every other arrow's, and the move is announced with its
+reason. In both modes what waits at the far end is unchanged: the corrected artifact re-earning
+the gate the edge just cleared, from a banner that says where it came back from — an approval
+that does not know it is a re-approval is the same rubber stamp one document later.
 
 Stepping out of CODE backwards also clears `block` — you are not implementing one any more.
 

@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 3.0.0
+version: 3.1.0
 ---
 
 # Ticket Tracker Conventions
@@ -31,16 +31,20 @@ tracker.
 
 ### Protocol
 
-1. Ask the user: "Is there an associated ticket in your tracker (Jira, Linear, GitHub Issues…)? If
-   so, which one?"
-2. If the user provides a ticket:
-   - `ticket` = the tracker ID (e.g. `"PROJ-123"`, `"ENG-456"`, `"#789"`)
-   - `title` = the ticket's title
-   - `tracker` = the same value as `ticket`
-3. If there is no ticket → ask: "Do you want me to propose one so you can file it later?"
-   - If yes → propose one following this convention's format. If it gets created, apply rule 2.
-   - If no → generate an internal ID (`FEAT-NNN`, `FIX-NNN`, `DISC-NNN`). `tracker` =
-     `null`.
+**One stop, not a chain.** The ticket is resolved inside CLASSIFY's confirmation box
+(`classify.instructions.md`, Step 4): the box proposes a generated internal ID with a title, and
+the same answer that confirms the classification can replace them with a tracker ID. Measured on
+a live run, the previous protocol — "is there a ticket?", "do you want me to propose one?",
+"shall we use the internal one?" — was three interruptions whose answers the box's single
+question already carries.
+
+1. Propose in the box: the next internal ID (`FEAT-NNN`, `FIX-NNN`, `DISC-NNN`) and a title.
+2. If the user answers with a tracker ID (e.g. `"PROJ-123"`, `"ENG-456"`, `"#789"`):
+   - `ticket` = the tracker ID, `title` = the ticket's title, `tracker` = the same value.
+   - No internal ID is generated.
+3. If the user confirms the proposal → `tracker` = `null` and the internal ID stands. When they
+   want a ticket to file in their tracker, this convention's format below is what to hand them —
+   at CLOSEOUT's tracker update, or whenever they ask. It is never a second question in CLASSIFY.
 
 **Do not insist.** If the user does not use a tracker or does not want to, carry on with internal IDs
 and do not ask again for the rest of the flow.

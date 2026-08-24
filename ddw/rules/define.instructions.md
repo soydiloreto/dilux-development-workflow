@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.4.1
+version: 2.5.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -138,7 +138,12 @@ encapsulates the template, naming, file location, `PRD loops` handling and outpu
      answers into the PRD (do NOT write inline; the skill increments `PRD loops`, resets `Loops
      since last human decision` to 0 — the user just decided — and re-runs `ddw-validate-prd`).
    - Repeat until PASSED.
-8. **Scope control** (see the section below).
+8. **Scope control** (the section below). A ⚠️ W-PRD-06 in the report you just showed IS this
+   step's trigger, not a line to gloss: its own text says "legitimate if it was decided", and the
+   one who decides is the USER, at the Scope Check box. Measured on a live run: 17 ACs, the
+   warning shown verbatim, and the model answered it itself — "does not block" — asking for
+   approval as if the report were clean. A warning that names a human decision is not the model's
+   to wave through.
 9. Present the PRD **and its validation report** (name the report file and
    quote its `Result:` line) to the user for explicit approval. An approval
    request that shows no validation result is asking for a blind signature.
@@ -268,7 +273,8 @@ and it is the principle at the top of this section: a part that cannot reach pro
 is not a part, it is a layer. Splitting a feature into "the models", "the routes" and "the
 templates" satisfies both counts and delivers nothing at any point.
 
-**If the scope is too large:**
+**If the scope is too large — and a ⚠️ W-PRD-06 in the validation report means it is, until the
+user says otherwise:**
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -301,7 +307,8 @@ templates" satisfies both counts and delivers nothing at any point.
 └─────────────────────────────────────────────────────────┘
 ```
 
-- If the user decides to keep it → continue (document the decision).
+- If the user decides to keep it → continue, and document the decision IN THE PRD — so the next
+  reader of its W-PRD-06 finds it decided, not pending.
 - If the user accepts the split → apply the **Split Protocol** (below).
 
 ### Split Protocol

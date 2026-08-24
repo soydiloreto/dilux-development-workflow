@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.10.0
+version: 1.11.0
 ---
 
 # Phase 2: PLAN (Technical Planning)
@@ -37,11 +37,15 @@ because:
 
 **Protocol:**
 
-1. **Announce it — this is not a question.** A corrective loop is mandatory everywhere else in this
-   method (`validation-rules.instructions.md` §2: "the loop is mandatory"), and going back for a
-   PRD that turned out wrong is the same event: asking permission to correct something known to be
-   wrong is a rubber stamp, and the answer that matters comes later, when the corrected PRD is
-   approved. Same shape as CODE's return to PLAN (`code.instructions.md`).
+1. **Announce it, and put the motivating question FIRST.** A corrective loop is mandatory
+   everywhere else in this method (`validation-rules.instructions.md` §2: "the loop is
+   mandatory"), so permission to correct a known defect is never what gets asked — that is a
+   rubber stamp. What IS asked is the decision that motivates the loop (the box below, plus the
+   question under it), and under `assisted` it is asked BEFORE the edge is taken
+   (`state.instructions.md` § Going back). Measured on a live run: the loop was taken first and
+   the user was asked which stack should prevail after — into a phase already re-entered and a
+   gate already spent, when their answer could have been "neither, drop the ticket". Same shape
+   as CODE's return to PLAN (`code.instructions.md`).
 
    ```
    ┌─────────────────────────────────────────────────────────┐
@@ -59,9 +63,9 @@ because:
    └─────────────────────────────────────────────────────────┘
    ```
 
-   **What is still the user's, and is asked:** WHAT the requirement becomes. A loop back does not
-   authorise inventing the new wording — that is a decision nobody wrote down, and it stops the run
-   in either autonomy mode.
+   **What is still the user's, and is asked — before step 2 takes the loop:** WHAT the
+   requirement becomes. A loop back does not authorise inventing the new wording — that is a
+   decision nobody wrote down, and it stops the run in either autonomy mode.
 
 2. **Taking the loop:**
    - Update `.ddw-state.json`:

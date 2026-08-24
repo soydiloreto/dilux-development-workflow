@@ -134,6 +134,90 @@ changes too small to deserve one, and it has no PLAN phase at all.
 [What has to hold once every block is done.]
 ```
 
+### The spec, in the shape the validator reads
+
+The template above is a skeleton, and a skeleton cannot be validated: every bracketed row is a
+placeholder the validator drops on purpose, so an unfilled document fails and should. This is the
+same document filled in — one block, complete — and it is what `validate_spec.py --tier FEATURE`
+is run against. It exists because the first live FEATURE run wrote a spec from the skeleton alone
+and was refused by F-SPEC-07, F-SPEC-09 and F-SPEC-16, and the model's way out was reading the
+validator's source to learn the shape — knowledge that belongs here. Three couplings are
+load-bearing:
+
+- **F-SPEC-07** looks inside `API contract` for all five items — method+path, request, response,
+  error codes, auth. An endpoint block missing any one of them is refused by name.
+- **F-SPEC-09**: a block whose surface takes input (a form, a payload, params) MUST carry
+  `Input validation` — and may not declare "no error conditions of its own", because data that
+  arrives can arrive wrong.
+- **F-SPEC-16** COUNTS, per block: at least as many sad-path tests as `Error handling` bullets. A
+  test counts as sad-path when its line names the failure — invalid/inválido, missing/faltante,
+  rejected/rechazado, duplicate/duplicado, unauthorized/no autorizado, forbidden, timeout,
+  conflict, error — in either language. Two error bullets with one sad-path test is a refusal,
+  however good that test is.
+
+```markdown
+# Spec {ticket}: Alta pública de tickets
+
+| Field | Value |
+|-------|-------|
+| Ticket | {ticket} |
+| PRD | docs/ddw/prd/prd-{ticket}.md |
+| Tier | FEATURE |
+| Date | 2026-08-24 |
+| Spec loops | 0 |
+| Loops since last human decision | 0 |
+
+## Summary
+Un endpoint público recibe el alta de un ticket, la valida y la persiste. Un solo bloque: el
+formulario y su ruta.
+
+## Coverage: PRD → blocks
+| Requirement | Covered by |
+|---|---|
+| FR-01 | Block 1 |
+| NFR-01 | Strategy: render server-side sin bundle JS, p95 medido bajo 3 s |
+
+## Dependencies between blocks
+None — Block 1 stands alone.
+
+## Block 1 — Formulario público de alta
+
+**Files**
+- `app/routes/public.py` (new) — las rutas del formulario
+
+**Logic**
+Implements FR-01: the anonymous form posts a ticket and receives its id.
+
+**API contract**
+- Method + path: `POST /tickets`
+- Request: titulo (str), email (str)
+- Response: id (int), estado (str)
+- Error codes: 400, 422
+- Auth: public, no authentication
+
+**Data model**
+- Entity ticket: id (PK), titulo (not null), estado (default "Pendiente"), index on estado.
+
+**Input validation**
+- titulo: str, max 200, required.
+- email: valid address format, max 254, required.
+
+**Error handling**
+- titulo ausente — 400 naming the field; nothing persisted.
+- email malformado — 422; nothing persisted.
+
+**Required tests**
+- [ ] test_alta_devuelve_id — validates AC-01
+- [ ] test_titulo_faltante_400 — the missing field is refused (sad path)
+- [ ] test_email_invalido_422 — the malformed email is refused (sad path)
+
+**Completion criterion**
+The three tests pass and `POST /tickets` returns 201 with the created id.
+
+## Final verification
+`validate_spec.py --tier FEATURE` passes on this document and the endpoint answers as contracted.
+```
+
 ## Fix-Plan Template (FIX) — canonical
 
 ```markdown

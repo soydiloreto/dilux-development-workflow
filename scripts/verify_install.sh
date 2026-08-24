@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=595
+EXPECT_CHECKS=601
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=679
+EXPECT_MUTATIONS=685
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -3598,6 +3598,85 @@ assert r.returncode == 0 and not refused, (
     "validate_spec refuses the fix-plan ddw-create-spec tells the model to write:\n"
     + ("\n".join(refused[:4]) or r.stderr[-200:]))
 PYFIXPLAN
+
+# The FEATURE spec had the same defect one document over, and it was the last
+# worked shape missing: the first live FEATURE run wrote a spec from the
+# skeleton alone and was refused by F-SPEC-07, F-SPEC-09 and F-SPEC-16 — and
+# the model's way out was READING THE VALIDATOR'S SOURCE to learn what shape
+# the parser wanted. Knowledge that lives in the parser is knowledge the
+# template failed to teach. The skill now carries a worked FEATURE spec, and
+# this runs it against the validator that reads it, with the minimal PRD its
+# coverage table names.
+python3 - "$SELF" <<'PYFEATSPEC' && ok "a FEATURE spec written the way ddw-create-spec teaches passes validate_spec --tier FEATURE" || bad "the FEATURE spec template and the validator that reads it disagree — the model's way out is reading the parser again"
+import os, re, subprocess, sys, tempfile
+src = sys.argv[1]
+skill = os.path.join(src, "skills/ddw-create-spec/SKILL.md")
+text = open(skill, encoding="utf-8").read()
+at = text.index("### The spec, in the shape the validator reads")
+m = re.search(r"```markdown\n(.*?)```", text[at:], re.S)
+assert m, "ddw-create-spec no longer carries a worked FEATURE spec"
+d = tempfile.mkdtemp(dir=os.environ["WORK"])
+os.makedirs(os.path.join(d, "docs/ddw/specs"))
+os.makedirs(os.path.join(d, "docs/ddw/prd"))
+open(os.path.join(d, "docs/ddw/prd/prd-T-9.md"), "w", encoding="utf-8").write(
+    "# PRD T-9\n\n- **FR-01**: el formulario publico da de alta un ticket.\n"
+    "- **NFR-01**: p95 bajo 3 s.\n"
+    "- **AC-01**: WHEN se envia el formulario THEN se devuelve el id.\n")
+path = os.path.join(d, "docs/ddw/specs/spec-T-9.md")
+open(path, "w", encoding="utf-8").write(m.group(1).replace("{ticket}", "T-9"))
+r = subprocess.run([sys.executable, os.path.join(src, "ddw/scripts/validate_spec.py"), path,
+                    "--tier", "FEATURE"], capture_output=True, text=True, cwd=d)
+refused = [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
+assert r.returncode == 0 and not refused, (
+    "validate_spec refuses the FEATURE spec ddw-create-spec tells the model to write:\n"
+    + ("\n".join(refused[:4]) or r.stderr[-200:]))
+PYFEATSPEC
+
+# CLASSIFY's ticket intake was a chain of questions — "is there a ticket?",
+# "do you want me to propose one?", "shall we use the internal one?" — three
+# interruptions before the confirmation box asked a fourth, measured on a live
+# run. The consolidated protocol lives in TWO files (the phase's steps and the
+# tracker convention), so each is held to it separately: the one that drifts
+# back to the chain is the one a model reads that day.
+CLS2="$SELF/ddw/rules/classify.instructions.md"
+TRK2="$SELF/ddw/rules/tracker.instructions.md"
+grep -q "never in a chain of questions before it" "$CLS2" \
+  && ! grep -q "Do you want me to propose a tracker ticket for this?" "$CLS2" \
+  && grep -q "answer with its ID and I will" "$CLS2" \
+  && ok "the CLASSIFY rules resolve the ticket in one stop, inside the box that confirms the classification" \
+  || bad "the CLASSIFY rules ask about the ticket in a chain of questions again — four interruptions to start one ticket"
+grep -q "One stop, not a chain." "$TRK2" \
+  && ! grep -q "Do you want me to propose one so you can file it later?" "$TRK2" \
+  && ok "the tracker convention agrees: the ticket is one stop, and filing text is CLOSEOUT's offer" \
+  || bad "the tracker convention re-grew its question chain, contradicting the CLASSIFY rules it feeds"
+
+# A backward edge under `assisted` used to be taken first and explained after:
+# measured live, the helper took PLAN→DEFINE and then asked which stack should
+# prevail — into a phase already re-entered and a gate already spent, when the
+# answer could have been "neither". The doctrine lives in state (the FSM's
+# reference) and in plan (the phase that loops most); both have to say
+# question-first or the one a model reads is the one that transitions first.
+ST2="$SELF/ddw/rules/state.instructions.md"
+PLN2="$SELF/ddw/rules/plan.instructions.md"
+grep -q "the question comes BEFORE the edge" "$ST2" \
+  && ! grep -q "And taking one is not a question" "$ST2" \
+  && ok "the state rules take a backward edge WITH the user's answer in hand, not before it" \
+  || bad "the state rules take the backward edge first and ask after — the user answers into a gate already spent"
+grep -q "put the motivating question FIRST" "$PLN2" \
+  && grep -q "before step 2 takes the loop" "$PLN2" \
+  && ok "the PLAN corrective loop asks the motivating question before taking the edge" \
+  || bad "the PLAN corrective loop transitions before the user has answered the question that motivates it"
+
+# W-PRD-06 says "legitimate if it was decided" and names the user as the one
+# who decides — and a live run watched the model decide instead: 17 ACs, the
+# warning shown verbatim, self-judged "does not block" in the next sentence,
+# and approval requested as if the report were clean. The DEFINE steps now bind
+# the warning to the Scope Check box.
+DEF2="$SELF/ddw/rules/define.instructions.md"
+grep -q "A ⚠️ W-PRD-06 in the report you just showed IS this" "$DEF2" \
+  && grep -q "W-PRD-06 in the validation report means it is" "$DEF2" \
+  && ok "a W-PRD-06 warning routes to the Scope Check box: the scope decision is the user's, not the model's" \
+  || bad "W-PRD-06 is a warning the model may wave through again — the scope decision nobody made"
 
 # The threat gate was decorative for anyone who did what the skill says. The
 # canonical threat model — every field a bracketed placeholder — passed all
