@@ -19,6 +19,16 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.37.0] — Unreleased
+
+### Fixed
+
+- **The PR labels follow the trailers.** The two label rows restated the old
+  trailer ambiguity in their own words ("with AI assistance" / "100% by AI") —
+  two criteria for one question, one document apart. The label now follows the
+  commits' trailers, and a PR mixing both takes `AI-full`: the label is the
+  floor of human review a reader trusts, not its ceiling. (`commits` 2.2.0)
+
 ## [0.36.0] — Unreleased
 
 Everything here was measured on one day: the first two end-to-end FEATURE runs
@@ -103,7 +113,7 @@ follows is what they found still open.
   trivially true under `assisted` and literally false under `minimal` — and a
   live ticket switched trailers mid-history when the model re-read the table.
   What decides is whether a human reviewed THIS change; `minimal` defaults to
-  `AI-full: yes`, and `AI-full` has its first worked example. (`commits` 2.1.0)
+  `AI-full: yes`, and `AI-full` has its first worked example. (`commits` 2.2.0)
 
 - **A sub-ticket's dependencies are read where the user decides.** The check
   lived only at branch creation — three steps after the classification box was
