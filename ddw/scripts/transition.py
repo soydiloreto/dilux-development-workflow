@@ -29,6 +29,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -394,6 +395,13 @@ def main():
                     help="How much of the run waits for the user. Set in CLASSIFY, with the user "
                          "looking at the box; the hook refuses a change anywhere else. Absent "
                          "leaves whatever the state carries, and absent there means assisted.")
+    ap.add_argument("--block", default=None,
+                    help='CODE progress: "N/M" after finishing block N of M, or "none" once the '
+                         "last block is done. An in-phase update: no history entry, no phase "
+                         "change. The flag exists because the phase rules order this field "
+                         "updated once per block and the helper had no operation for it — the "
+                         "paths left were a hand Edit the reconstruction guard fails closed on, "
+                         "or the shell the method forbids. Measured live, both, same day.")
     # --set was removed (free text through shell args broke the quoting). It is
     # kept registered and hidden only so we can return an actionable message.
     ap.add_argument("--set", dest="sets", action="append", default=[], help=argparse.SUPPRESS)
@@ -407,6 +415,24 @@ def main():
     args = ap.parse_args()
     if args.state is None:
         args.state = _default_state()
+
+    block_given = args.block is not None
+    block_val = None
+    if block_given:
+        raw = args.block.strip().lower()
+        if raw in ("none", "null", "-"):
+            block_val = None
+        elif re.fullmatch(r"[1-9]\d*/[1-9]\d*", args.block.strip()):
+            block_val = args.block.strip()
+        else:
+            print('ddw-transition: --block takes "N/M" (e.g. 2/5) or "none".', file=sys.stderr)
+            sys.exit(2)
+    if block_given and args.to:
+        print("ddw-transition: --block is an in-phase update and does not go with --to — the "
+              "edges that move phase manage the field themselves (leaving CODE backwards "
+              "clears it; reaching IDLE parks it). Update it on its own, or with --claim.",
+              file=sys.stderr)
+        sys.exit(2)
 
     if args.sets:
         print(
@@ -445,6 +471,8 @@ def main():
                   % (", ".join(bad), ", ".join(sorted(vt.GATE_EVIDENCE))), file=sys.stderr)
             sys.exit(2)
         claimed = json.loads(json.dumps(old_state))
+        if block_given:
+            claimed["block"] = block_val
         gates = dict(claimed.get("gates") or {})
         gates.update({g: True for g in args.claim})
         claimed["gates"] = gates
@@ -461,9 +489,26 @@ def main():
         _emit(args, claimed, seen=old_text)
         return
 
+    if block_given and not args.to:
+        updated = json.loads(json.dumps(old_state))
+        if block_val is not None and updated.get("phase") != "CODE":
+            print("ddw-transition: --block names implementation progress, and %s is not CODE. "
+                  "Clearing it (--block none) is fine anywhere; setting it only means "
+                  "something while the blocks are being implemented."
+                  % updated.get("phase", "IDLE"), file=sys.stderr)
+            sys.exit(2)
+        updated["block"] = block_val
+        try:
+            vt.validate(old_state, updated, graph, state_path=args.state)
+        except vt.Block as exc:
+            print("ddw-transition: %s" % exc, file=sys.stderr)
+            sys.exit(2)
+        _emit(args, updated, seen=old_text)
+        return
+
     if not args.to or not args.action:
-        print("ddw-transition: --to and --action are required (or use --claim to mark a gate "
-              "without moving phase).", file=sys.stderr)
+        print("ddw-transition: --to and --action are required (or use --claim / --block for an "
+              "in-phase update).", file=sys.stderr)
         sys.exit(2)
 
     if args.to == "IDLE" and args.gate:
@@ -535,6 +580,16 @@ def main():
     if reason:
         print("ddw-transition: " + reason, file=sys.stderr)
         sys.exit(2)
+
+    if args.write:
+        # The go-back gate, at the sanctioned entry too: the hook judges Write
+        # and Edit, and every measured run takes its edges through THIS command
+        # — a gate only the unused path enforces is decoration.
+        _root = os.path.dirname(os.path.abspath(args.state))
+        _reason = vt.goback_gate(_root, old_state, new_state, graph)
+        if _reason:
+            print("ddw-transition: " + _reason, file=sys.stderr)
+            sys.exit(2)
 
     try:
         vt.validate(old_state, new_state, graph, state_path=args.state)

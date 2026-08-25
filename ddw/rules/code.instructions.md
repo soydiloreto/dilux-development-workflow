@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.2.0
+version: 2.3.0
 ---
 
 # Phase 3: CODE (Implementation)
@@ -122,8 +122,18 @@ start):
    - If it fails → go back to the implementer (max 3 attempts).
    - **Do NOT move to the next block while the tests fail.**
 
-6. **Record the assumptions.** If the implementer declared assumptions, **show them to the user**
-   before moving to the next block. An unreviewed assumption is a decision nobody made.
+6. **Record the assumptions — on disk, not only in the conversation.** If the implementer
+   declared assumptions, **show them to the user** before moving to the next block: an unreviewed
+   assumption is a decision nobody made. And once reviewed, **append each one to
+   `docs/ddw/specs/decisions-{ticket}.md`** (`decision — who approved it — date — which block`),
+   committed with the block. Not to the spec: while the `spec` gate stands, the spec is sealed
+   against every write — the seal is what stops a pipeline editing an approved design — so a rule
+   saying "add it to the spec" would be ordering a write the guard refuses. An approved assumption
+   that lives only in the chat is a decision the record denies: measured on a live run, no
+   document ever learned the rate limit was 60/min or why bcrypt was pinned — the user approved
+   both, and a reader of the artifacts finds thresholds nobody chose. (A decision big enough to
+   change the design is not an assumption — that is the corrective loop to PLAN, and it costs the
+   re-approval.)
 
    And if implementing the block forced a decision the spec did not already make — a different data
    structure, a renamed module, one valid approach chosen over another — write it as an ADR through
@@ -144,7 +154,12 @@ start):
    The `commit` gate stays untouched here: only the closeout edge's commit sets it (see the note in
    `.ddw/rules/commits.instructions.md`).
 
-8. **Update `.ddw-state.json`:** `block` → `"N/M"` (e.g. `"3/5"`, or `null` if it was the last).
+8. **Update the block marker through the helper** — `python3 .ddw/scripts/transition.py --block N/M --write`
+   (e.g. `--block 3/5`, or `--block none` if it was the last). This is an in-phase update: no
+   history entry, no phase change, and the journal records the new value. The flag exists because
+   this step used to say "update the state" with no sanctioned way to do it — the paths left were
+   a hand Edit the reconstruction guard fails closed on, or the shell the method forbids, and a
+   live run took each once.
 
 9. **Report progress:** "Block N completed (N/M)."
 
@@ -172,10 +187,15 @@ So, on finding it:
    and a deviation promised to a phase that has nowhere to put it is a deviation lost. Round 6
    measured exactly that: CODE found a real spec error, announced it would be recorded in VERIFY,
    and it never was.
-2. **Say it out loud, with the flag up.** Name the discrepancy, what the spec says, what the code
-   needs, and that you are going back to PLAN because of it. This is the signpost — the user is
-   about to approve a spec for the second time, and an approval that does not know it is a
-   re-approval is a rubber stamp.
+2. **Say it out loud, with the flag up — and on disk.** Name the discrepancy, what the spec says,
+   what the code needs, and that you are going back to PLAN because of it. Write that reason to
+   `.ddw-work/goback-proposal.txt` as `correction: <the discrepancy> — CODE -> PLAN`: the hook
+   reads it before letting the edge through under `assisted`, and it is the move's durable record.
+   (If what you found is a DECISION rather than a defect — two valid designs, an answer nobody
+   wrote — that is the `ask:` lane, and the edge waits for the user's turn:
+   `state.instructions.md` § Going back.) This is the signpost — the user is about to approve a
+   spec for the second time, and an approval that does not know it is a re-approval is a rubber
+   stamp.
 3. **Take `CODE → PLAN`.** It is in the graph and it `clears` the `spec` and `threat` gates. Update
    the state through the helper like any other transition. **`block` stays where it is** — you are
    coming back to the same block, not restarting the phase.

@@ -45,7 +45,7 @@ import re
 import shutil
 import sys
 
-NEUTRAL_FIELDS = ("name", "description", "tools")
+NEUTRAL_FIELDS = ("name", "description", "tools", "model")
 WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 
 
@@ -188,9 +188,17 @@ def command_description(description, limit=140):
 
 
 def render(template, fields):
-    """Substitute {name}/{description}/{tools} in a recipe template value."""
+    """Substitute {name}/{description}/{tools}/{model} in a recipe template value.
+
+    `model` joined the neutral fields the day a live run showed why it was not
+    one: the source agents said `model: inherit`, three recipes repeated the
+    literal, one recipe omitted the key, and the omitted one ran its subagents
+    on whatever model the tool's own defaults picked — silently, while the
+    user's session ran another. Four copies of a value with no source of truth
+    is how one goes missing; the source file is the source now.
+    """
     out = template
-    for k in ("name", "description", "tools"):
+    for k in NEUTRAL_FIELDS:
         out = out.replace("{" + k + "}", fields.get(k, ""))
     return out
 

@@ -16,7 +16,7 @@
     "frontmatter": {
       "name": "{name}",
       "description": "{description}",
-      "model": "inherit",
+      "model": "{model}",
       "tools": "{tools}"
     }
   },

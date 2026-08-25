@@ -18,7 +18,8 @@
     },
     "when_readonly": {
       "sandbox_mode": "read-only"
-    }
+    },
+    "_model_note": "Deliberately NOT emitted: the codex agent manifest is TOML with name/description only in the driven shape, and no model field has been verified against the live tool. A key invented here would be a guess that parses wrong or silently does nothing — say the gap instead."
   },
   "wiring": [
     {

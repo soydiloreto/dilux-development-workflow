@@ -1038,6 +1038,32 @@ def judge_repo_state(sc, repo, transcript):
                 elif key == "absent" and hit:
                     problems.append(f"{rel} contains {pat!r} and must not")
 
+    # Lo que el modelo DIJO, no lo que dejó en el repo. La status line y el
+    # banner 🙋 son las dos exigencias de formato más frecuentes del método —
+    # una por respuesta — y hasta acá nada las medía: verify_install grepea que
+    # el texto exista en el MÉTODO, no que el agente lo emita, y una corrida en
+    # vivo las omitió enteras con un modelo y las cumplió siempre con otro. El
+    # transcript serializado es la única superficie donde eso se ve.
+    for spec in exp.get("transcript_matches", []):
+        clauses = [(k, spec[k]) for k in ("matches", "absent") if k in spec]
+        if not clauses:
+            raise RuntimeError(
+                "transcript_matches declares neither `matches` nor `absent` — "
+                "a clause that asserts nothing passes for the wrong reason")
+        body = json.dumps(transcript, ensure_ascii=False)
+        for key, pats in clauses:
+            for pat in (pats if isinstance(pats, list) else [pats]):
+                try:
+                    hit = re.search(pat, body, re.S) is not None
+                except re.error as exc:
+                    raise RuntimeError(
+                        f"transcript_matches carries a regex that does not compile "
+                        f"({pat!r}): {exc}") from None
+                if key == "matches" and not hit:
+                    problems.append(f"the transcript never says anything matching {pat!r}")
+                elif key == "absent" and hit:
+                    problems.append(f"the transcript says {pat!r} and must not")
+
     state = {}
     sp = repo / ".ddw-state.json"
     if sp.exists() and sp.read_text().strip():

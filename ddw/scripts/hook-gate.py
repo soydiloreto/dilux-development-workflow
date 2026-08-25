@@ -317,6 +317,31 @@ def report_post(dialect, reason):
     sys.exit(0)
 
 
+def notice_post(dialect, reason):
+    """A finding that is not a refusal, said where the tool actually listens.
+
+    This used to be a bare print to stderr next to an exit 0 — and stderr on
+    an allowed call reaches no model in any harness. Measured live (Copilot
+    CLI 1.0.80, 2026-08-25): source written through a shell in IDLE, the note
+    composed and printed, and the session's own probe read "no hook output".
+    The suite missed it for the same reason it existed: its check captured
+    `2>&1`, so it proved the note was computed, never that it arrived.
+
+    Where a tool documents a context channel for a non-blocking hook, the note
+    rides it. Where none is documented (codex, cursor, gemini), stderr is all
+    there is, and this comment says so rather than inventing a schema — a
+    guess that parses wrong can turn a note into a discarded hook.
+    """
+    if dialect == "copilot":
+        print(json.dumps({"additionalContext": reason}))
+    elif dialect == "standard":
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": reason}}))
+    print(reason, file=sys.stderr)
+    sys.exit(0)
+
+
 def deny(dialect, reason):
     """Refuse the write in the dialect this tool understands."""
     if dialect == "copilot":
@@ -370,6 +395,17 @@ def _paths(repo):
             os.path.join(base, ".ddw-sessions", "commit-seen"))
 
 
+def _goback_paths(repo):
+    """The go-back reason the model writes, and the seal only a hook writes.
+
+    Same split as the commit pair, for the same measured reason: the proposal
+    lives in the runtime that is writable in every phase, the seal where no
+    model can write."""
+    base = repo or "."
+    return (os.path.join(base, ".ddw-work", "goback-proposal.txt"),
+            os.path.join(base, ".ddw-sessions", "goback-seen"))
+
+
 def _digest(path):
     try:
         with open(path, "rb") as fh:
@@ -384,7 +420,7 @@ def seal_proposal(repo):
     Both proposals — the commit message and the merge. Each seal binds the
     exact bytes that were on screen when the user answered.
     """
-    for proposal, seal in (_paths(repo), _merge_paths(repo)):
+    for proposal, seal in (_paths(repo), _merge_paths(repo), _goback_paths(repo)):
         digest = _digest(proposal)
         if digest is None:
             continue
@@ -396,8 +432,17 @@ def seal_proposal(repo):
             pass                     # never fail a turn over bookkeeping
 
 
-def commit_verdict(repo, command):
-    """None to allow, or the reason to refuse."""
+def commit_verdict(repo, command, require_seal=True):
+    """None to allow, or the reason to refuse.
+
+    `require_seal=False` is Copilot's lane: that tool has no UserPromptSubmit
+    equivalent, so the seal — proof the user's turn happened — cannot exist
+    there, and demanding it would refuse every commit forever. What CAN be held
+    everywhere is the rest: the message comes from the file the skill shows
+    (`-F`, never `-m` through shell quoting), the file exists, and its trailers
+    are the method's. A partial gate that says it is partial beats a gap that
+    reads as coverage — same sentence as POST_CANNOT_BLOCK.
+    """
     proposal, seal = _paths(repo)
     rel = os.path.join(".ddw-work", "commit-message.txt")
     howto = (
@@ -421,7 +466,7 @@ def commit_verdict(repo, command):
             sealed = fh.read().strip()
     except OSError:
         sealed = ""
-    if sealed != digest:
+    if require_seal and sealed != digest:
         return (
             "DDW (assisted): this message has not been in front of the user yet — it was written "
             "during the turn you are still in.\n"
@@ -479,7 +524,7 @@ def _merge_paths(repo):
             os.path.join(base, ".ddw-sessions", "merge-seen"))
 
 
-def merge_verdict(repo, command):
+def merge_verdict(repo, command, require_seal=True):
     """None to allow a `gh pr merge`, or the reason to refuse.
 
     Unlike the commit gate, this one applies under BOTH autonomy modes — the
@@ -507,7 +552,7 @@ def merge_verdict(repo, command):
             sealed = fh.read().strip()
     except OSError:
         sealed = ""
-    if sealed != digest:
+    if require_seal and sealed != digest:
         return (
             "DDW: this merge proposal has not been in front of the user yet — it was written "
             "during the turn you are still in. Show it, end your turn, and run the same "
@@ -546,6 +591,37 @@ def consume_spent_merge(repo):
     except (ValueError, AttributeError):
         return
     if str(state).upper() != "MERGED":
+        return
+    for path in (proposal, seal):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def consume_spent_goback(repo):
+    """Unlink the go-back proposal and seal once the edge it names has landed.
+
+    Read from the state on disk — post mode fires right after the write — and
+    only when the LAST history entry is the named edge: an unconsumed proposal
+    for an edge still pending keeps its approval, and the same transition can
+    be retried without costing another turn."""
+    proposal, seal = _goback_paths(repo)
+    try:
+        with open(proposal, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return
+    try:
+        with open(os.path.join(repo or ".", ".ddw-state.json"), encoding="utf-8") as fh:
+            history = (json.load(fh) or {}).get("history") or []
+    except (OSError, ValueError, AttributeError):
+        return
+    last = history[-1] if history and isinstance(history[-1], dict) else {}
+    frm, to = last.get("from"), last.get("to")
+    if not (frm and to):
+        return
+    if ("%s -> %s" % (frm, to)) not in text and ("%s->%s" % (frm, to)) not in text:
         return
     for path in (proposal, seal):
         try:
@@ -651,6 +727,7 @@ def main():
         # and never fails the hook.
         consume_spent_proposal(args.repo)
         consume_spent_merge(args.repo)
+        consume_spent_goback(args.repo)
         # Not every tool's post hook can refuse. On the ones that cannot, saying
         # it is all there is — and saying it is still worth doing.
         _refuse = report_post if args.dialect in POST_CANNOT_BLOCK else deny
@@ -683,7 +760,7 @@ def main():
             if phase:
                 note = vt.source_changed_in_no_source_phase(args.repo, phase)
                 if note:
-                    print(f"DDW notices: {note}", file=sys.stderr)
+                    notice_post(args.dialect, f"DDW notices: {note}")
         allow(args.dialect)
 
     raw = sys.stdin.read()
@@ -738,6 +815,33 @@ def main():
         if reason:
             deny(args.dialect, reason)
         allow(args.dialect)
+
+    # Copilot's partial commit/merge gate. That tool wires no UserPromptSubmit
+    # equivalent, so the full gate — whose seal is proof the user's turn
+    # happened — cannot run there, and for a long time NOTHING ran: a `git
+    # commit -m` in a Copilot session was gated by nobody (measured live: the
+    # probe committed straight from IDLE, exit 0). What its preToolUse CAN
+    # hold, it now holds: the message comes from the shown file, its trailers
+    # are the method's, and a merge does not run before its proposal exists on
+    # disk. Partial, and said to be partial — the seal's guarantee is Claude's,
+    # and the difference is recorded rather than smoothed over.
+    if args.mode == "pre" and args.dialect == "copilot":
+        _cmd = tool_input.get("command")
+        if isinstance(_cmd, str) and _cmd.strip():
+            if _IS_PR_MERGE.search(_cmd):
+                reason = merge_verdict(args.repo, _cmd, require_seal=False)
+                if reason:
+                    deny(args.dialect, reason)
+            elif _IS_COMMIT.search(_cmd):
+                try:
+                    with open(args.state, encoding="utf-8") as fh:
+                        _autonomy = (json.load(fh) or {}).get("autonomy")
+                except (OSError, ValueError, AttributeError):
+                    _autonomy = None
+                if _autonomy != "minimal":
+                    reason = commit_verdict(args.repo, _cmd, require_seal=False)
+                    if reason:
+                        deny(args.dialect, reason)
 
     if typed_but_wrong:
         deny(args.dialect,

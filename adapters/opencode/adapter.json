@@ -29,7 +29,8 @@
         "edit": "deny"
       }
     },
-    "_when_readonly_note": "OpenCode's permission keys are read/edit/bash/… — there is no `write`. `edit: deny` already covers write, edit and apply_patch."
+    "_when_readonly_note": "OpenCode's permission keys are read/edit/bash/… — there is no `write`. `edit: deny` already covers write, edit and apply_patch.",
+    "_model_note": "Deliberately NOT emitted: OpenCode resolves a subagent's model through its own config (opencode.json), not the agent file, and no per-agent model key has been driven against the live tool. Same rule as codex: no invented keys."
   },
   "wiring": [
     {

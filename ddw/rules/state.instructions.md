@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.4.0
+version: 2.5.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`
@@ -131,8 +131,19 @@ nothing is theirs to decide before the fix — CODE finding a block that names t
 question in it, only a correction (`code.instructions.md` § When the spec is the thing that is
 wrong) — announce with the flag up and go; inventing a question there is the rubber stamp again.
 Under `minimal` the pause goes away like every other arrow's, and the move is announced with its
-reason. In both modes what waits at the far end is unchanged: the corrected artifact re-earning
-the gate the edge just cleared, from a banner that says where it came back from — an approval
+reason.
+
+**The lane is enforced, not promised — through a file.** Before taking a backward edge under
+`assisted`, write its reason to `.ddw-work/goback-proposal.txt`, naming the edge and opening with
+the lane: `correction: <the defect a validator or review named>`, or `ask: <the question>`. A
+`correction:` announces and goes, with the file as its durable record. An `ask:` is held by the
+hook until the sealed copy of that exact question matches — which can only be true if it was on
+screen before the user answered — so executing the loop first and asking after now bounces instead
+of landing (this paragraph alone did not stop it; the fix that introduced it touched only prose,
+and a later run took the edge first anyway). Where no turn hook is wired, the gate stands down and
+says so here rather than reading as coverage. In both modes what waits at the far end is unchanged:
+the corrected artifact re-earning the gate the edge just cleared, from a banner that says where it
+came back from — an approval
 that does not know it is a re-approval is the same rubber stamp one document later.
 
 Stepping out of CODE backwards also clears `block` — you are not implementing one any more.

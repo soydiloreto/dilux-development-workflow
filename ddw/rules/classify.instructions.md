@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.8.0
+version: 2.9.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -243,6 +243,17 @@ On confirmation: `ticket` = the sub-ticket ID, `title` from its PRD, `tracker` i
 parent, and **the tier is the parent's** — a split does not reclassify the work, it divides it.
 Then carry on with step 4.
 
+**Before the box, look up its dependencies — the answer is already on file.** The sub-PRD names
+the siblings it depends on, and the parent index's status column carries what CLOSEOUT recorded
+for each one that closed ("done — PR #N pending review", "merged"). Read that, verify it against
+git and the forge (`gh pr view`), and put the result in the box's `Depends on` line. This check
+used to live only at branch creation (`branches.instructions.md` § Sub-tickets with dependencies),
+three steps after the user had already confirmed — measured live: the classification box proposed
+starting a sub-ticket whose dependency sat in an unmerged PR, the user had to interrupt to ask,
+and the answer had been written in the index by the previous closeout all along. Where a
+dependency is not merged, the box is where the user decides to wait or to branch from the
+dependency's branch — not a surprise at step 5.
+
 Two things not to do. Do not invent a fresh `FEAT-NNN` for work that already has a PRD: you end up
 with two tickets for one deliverable and the parent index pointing at neither. And do not skip
 DEFINE — the PRD gets re-validated there, always, for the reasons that phase gives.
@@ -284,6 +295,9 @@ was derivable from it.
 │  Source: [tracker / internal]                            │
 │  Title: [tracker ticket title, or generated]             │
 │  Stack: [reference to AGENTS.md ("Stack" section)]       │
+│  Depends on: [sub-tickets only — each dependency and its │
+│    verified state, e.g. "FEAT-001a — merged"; omit the   │
+│    line when there are none]                             │
 │                                                          │
 │  Do you confirm this classification? If this work has a  │
 │  ticket in your tracker, answer with its ID and I will   │

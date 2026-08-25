@@ -80,7 +80,14 @@ Runs the project's tests. Generates missing tests where needed. A blocking gate.
 Everything above was prose, and a report has to be parsed. Three plausible renderings of the same
 run were refused for their layout rather than their content — a coverage table whose rows are
 labelled `Line`, a lint result under its own heading, a hyphenated `sad-path`. The parser accepts
-all three now, and this is the shape it was written for:
+all three now, and this is the shape it was written for.
+
+The **Coverage floor** row names a source the validator reads back. If `AGENTS.md` §Testing
+declares a floor, quote that — the number has to actually be there, because an attribution to a
+file that never states it is a floor the report chose for itself (measured live: `docs/ddw`
+prefixed onto a method path, built to satisfy the old pattern-match). If the project declares
+none, write it as the example below does — `80% (method default — .ddw/rules/testing.instructions.md)` —
+which is the one floor the method itself supplies:
 
 ```markdown
 # Test run {ticket}
@@ -96,7 +103,7 @@ all three now, and this is the shape it was written for:
 | Line coverage | 91% |
 | Branch coverage | 84% |
 | Function coverage | 88% |
-| Coverage floor | 80% (AGENTS.md, "Testing") |
+| Coverage floor | 80% (method default — .ddw/rules/testing.instructions.md) |
 | Lint | `ruff check .` — clean, 0 findings |
 
 ## Failures

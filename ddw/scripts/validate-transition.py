@@ -1782,7 +1782,7 @@ def _receipt_unwitnessed(root, marker_name):
             "either — re-running the validator is the whole fix.)" % marker_name)
 
 
-def _receipt_spent(root, gate, marker_name):
+def _receipt_spent(root, gate, marker_name, ticket=None):
     """Was this receipt earned BEFORE the corrective loop took the gate back?
 
     The journal is ordered, so the question is a comparison of positions: the
@@ -1801,7 +1801,14 @@ def _receipt_spent(root, gate, marker_name):
         if not isinstance(entry, dict):
             continue
         if entry.get("record") == "spent" and gate in (entry.get("gates") or []):
-            spent_at = i
+            # The spending names its ticket, and the comparison has to too: the
+            # last `spent` used to be read globally, so a CLOSED ticket's receipts
+            # started reading as spent the moment a LATER ticket's corrective
+            # loop touched the same gate (measured: FEAT-001a's spec receipt,
+            # under FEAT-001b's loop). A record without a ticket stays binding —
+            # unknown is never an exemption.
+            if ticket is None or entry.get("ticket") in (None, ticket):
+                spent_at = i
         elif entry.get("record") == "receipt" and entry.get("name") == marker_name:
             written_at = i
     if spent_at is None:
@@ -1932,7 +1939,8 @@ def _receipt_missing(root, state, gate, receipt, subdir, stems, script, artifact
             unwitnessed = _receipt_unwitnessed(root, os.path.basename(marker))
             if unwitnessed:
                 return unwitnessed
-            return _receipt_spent(root, gate, os.path.basename(marker))
+            return _receipt_spent(root, gate, os.path.basename(marker),
+                                  ticket=state.get("ticket"))
     rel = os.path.relpath(path, root)
     # No "DDW: " here. Every caller prefixes this reason with its own wording —
     # `DDW blocked this write:`, `ddw-transition:`, `DDW:` — and a prefix baked
@@ -2516,6 +2524,20 @@ def record_journal(state_path):
                      if isinstance(e, dict) and e.get("record") == "gates"]
             last = next((g for g in reversed(snaps) if isinstance(g, dict)), None)
             lines = list(history[known:])
+            phase_now = state.get("phase", IDLE)
+            # `block` used to leave no trace at all: an in-phase update the
+            # graph rightly allows, recorded nowhere — so the journal could not
+            # tell "advanced by the sanctioned helper" from "never touched",
+            # and an audit of a finished ticket found zero occurrences of the
+            # field the phase rules order updated once per block. One snapshot
+            # per change, same shape as the gates record.
+            bsnaps = [e for e in recorded
+                      if isinstance(e, dict) and e.get("record") == "block"]
+            last_block = bsnaps[-1].get("block") if bsnaps else None
+            block_now = state.get("block")
+            if block_now != last_block:
+                lines.append({"record": "block", "block": block_now,
+                              "ticket": state.get("ticket"), "phase": phase_now})
             if last != held:
                 # A gate that WAS held and is not any more was spent: the
                 # corrective loop took it back. Recorded by name, because a
@@ -2533,7 +2555,6 @@ def record_journal(state_path):
                 # of parking or closing the ticket, and a paused ticket restores
                 # them on resume without re-validating anything. Recording that
                 # as spending would refuse every resumed ticket.
-                phase_now = state.get("phase", IDLE)
                 dropped = sorted(g for g in (last or {}) if g not in held)
                 if dropped and phase_now != IDLE:
                     lines.append({"record": "spent", "gates": dropped,
@@ -2866,6 +2887,9 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
             reason = second_arrow_in_one_turn(root, old_state, new_state)
             if reason:
                 return reason
+            reason = goback_gate(root, old_state, new_state, graph)
+            if reason:
+                return reason
             _record_arrow(root)
     return None
 
@@ -2940,6 +2964,96 @@ def second_arrow_in_one_turn(root, old_state, new_state):
         "If the user wants the arrows to stop waiting, that is `autonomy: minimal`, decided in "
         "CLASSIFY with the cost stated." % (old_state.get("phase", IDLE),
                                             new_state.get("phase", IDLE)))
+
+
+def goback_gate(root, old_state, new_state, graph):
+    """A backward edge under `assisted` carries its reason on disk — and, when
+    that reason is a question, the user's turn.
+
+    § Going back (state.instructions.md) has two lanes: a CORRECTION — a
+    validator or review named a defect, nothing is the user's to decide —
+    announces the move and takes it; a QUESTION is asked BEFORE the edge and
+    taken with the answer in hand. Both lanes lived only in prose, and the fix
+    that introduced the second one touched only `.md` files — so a live run
+    took PLAN's return edge first and asked after, exactly the shape the prose
+    forbids, and nothing could refuse it: the one-arrow-per-turn counter only
+    ever compares a SECOND arrow, and the first arrow of any turn lands free.
+
+    So the reason gets the commit gate's treatment. The model writes it to
+    `.ddw-work/goback-proposal.txt` (the runtime that IS writable), naming the
+    edge and opening with its lane — `correction:` or `ask:`. A correction
+    passes with the file as its record. A question passes only when the seal
+    the turn hook stamps (`.ddw-sessions/goback-seen`, where the model cannot
+    write) matches the proposal's bytes — which can only be true if that exact
+    question was on screen before the user answered.
+
+    Where no turn hook is wired (`.ddw-sessions/turn` absent — a tool with no
+    UserPromptSubmit equivalent), this returns None: a guard that fires because
+    a counter is missing refuses every backward edge on every harness that does
+    not write one. That gap is declared, not smoothed over — the same sentence
+    POST_CANNOT_BLOCK gets.
+    """
+    old_h = old_state.get("history") or []
+    new_h = new_state.get("history") or []
+    if len(new_h) != len(old_h) + 1:
+        return None                     # not a single fresh edge; validate() owns the rest
+    entry = new_h[-1] if isinstance(new_h[-1], dict) else {}
+    frm, to = entry.get("from"), entry.get("to")
+    tier = new_state.get("tier") or old_state.get("tier")
+    if not (frm and to and tier):
+        return None
+    try:
+        edges = _effective_edges(graph, tier)
+    except Block:
+        return None                     # a malformed graph is validate()'s finding
+    cfg = edges.get("%s->%s" % (frm, to))
+    if not (isinstance(cfg, dict) and cfg.get("clears")):
+        return None                     # forward edges have their own approvals
+    autonomy = new_state.get("autonomy") or old_state.get("autonomy") or "assisted"
+    if autonomy == "minimal":
+        return None                     # opted into with the cost stated out loud
+    if _turn_now(root) is None:
+        return None                     # no turn signal from this tool: declared above
+    proposal = os.path.join(root, ".ddw-work", "goback-proposal.txt")
+    try:
+        with open(proposal, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return (
+            "%s->%s goes back a phase under `assisted`, and nothing on disk shows the user was "
+            "told. Write the reason to .ddw-work/goback-proposal.txt first, naming the edge "
+            "('%s -> %s') and opening with its lane: 'correction: <the defect a validator or "
+            "review named>' when nothing is the user's to decide — announce it and go — or "
+            "'ask: <the question>' when something is, which ends your turn and takes the edge "
+            "WITH their answer in hand (state.instructions § Going back)." % (frm, to, frm, to))
+    if ("%s -> %s" % (frm, to)) not in text and ("%s->%s" % (frm, to)) not in text:
+        return (
+            "the go-back proposal on disk does not name this edge (%s -> %s), so it is not this "
+            "move's reason. Rewrite .ddw-work/goback-proposal.txt for the edge being taken — a "
+            "reason that fits any edge explains none." % (frm, to))
+    lane = text.strip().split(":", 1)[0].strip().lower()
+    if lane == "correction":
+        return None
+    if lane == "ask":
+        seen = os.path.join(root, ".ddw-sessions", "goback-seen")
+        try:
+            with open(seen, encoding="utf-8") as fh:
+                sealed = fh.read().strip()
+        except OSError:
+            sealed = None
+        if sealed == hashlib.sha256(text.strip().encode("utf-8")).hexdigest():
+            return None
+        return (
+            "this go-back proposal is a question ('ask:'), and the question has not been in "
+            "front of the user yet — or changed after it was. Show it, END YOUR TURN, and take "
+            "%s -> %s with their answer in hand; the seal is written when they speak. Executing "
+            "the loop first and asking after is the exact shape this gate exists to stop "
+            "(measured live)." % (frm, to))
+    return (
+        "the go-back proposal's first word decides its lane, and %r is neither 'correction' nor "
+        "'ask'. A correction is a defect a validator or review named (announce and go); a "
+        "question is the user's (show it and wait). Pick the one that is true — a mislabelled "
+        "question stays on disk, in a file the audit reads." % lane)
 
 
 # DDW's own footprint, which is not product source and is not the agent going

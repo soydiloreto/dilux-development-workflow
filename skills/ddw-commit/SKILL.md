@@ -57,10 +57,16 @@ AI-assisted: yes
    - Include the tracker ticket in parentheses at the end of the first line if
      `.ddw-state.json.tracker` is not null.
 
-7. Write that exact message to `.ddw-work/commit-message.txt`, present it to the user, and
-   **end your turn.** The file is the message: it is what will be committed, so what they read and
-   what lands are the same bytes.
-8. Only after they answer → `git commit -F .ddw-work/commit-message.txt`.
+7. Write that exact message to `.ddw-work/commit-message.txt` and **present it — in full.**
+   Under `assisted`, **end your turn**: the file is the message, it is what will be committed, so
+   what they read and what lands are the same bytes, and the gate holds the commit until that
+   exact text was on screen before their answer. Under `minimal`, the showing still happens and
+   the asking does not (`.ddw/orchestrator.md` § Autonomy — a commit is local and reversible, not
+   one of the acts that keep their confirmation in both modes): present the message and continue
+   to step 8 in the same response. This step used to read as unconditional, and a live `minimal`
+   run stopped at every one of its commits waiting for an "ok" the mode had already given —
+   `assisted` with different words, in the exact place the orchestrator's exemption was not.
+8. `git commit -F .ddw-work/commit-message.txt` — under `assisted`, only after they answer.
 9. **NEVER push automatically.** Ask the user.
 
 ## Rules

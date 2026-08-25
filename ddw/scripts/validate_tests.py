@@ -65,6 +65,7 @@ def _repo_relative(path):
     return p[idx + 1:].replace(os.sep, "/") if idx > 0 else p
 
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
@@ -210,15 +211,57 @@ def main():
                           "this pipeline treats as the minimum (F-VER-03). A report that chooses a "
                           "floor it can clear has not been measured against anything")
         floor = args.floor
-    source = re.search(r"AGENTS\.md|spec-|fix-|docs/ddw", floor_raw)
+    # The SOURCE is verified, not pattern-matched. The old check accepted any
+    # line containing `AGENTS.md`, `spec-` or `docs/ddw` as "sourced" — a
+    # substring, not a source. Measured live (Copilot CLI, 2026-08-25): the
+    # project's AGENTS.md declared no floor, and the report wrote
+    # "80% (docs/ddw — .ddw/rules/testing.instructions.md)" — an attribution
+    # built to contain the substring. It passed. That is the case this rule
+    # names ("a report that chooses its own floor passes itself"), arriving
+    # through the check's own front door.
+    #
+    # Now: a floor attributed to AGENTS.md is read back against AGENTS.md when
+    # one can be found near the report — the number has to actually be there.
+    # A floor of 80 attributed to the method (`testing.instructions.md`) is the
+    # documented default and passes as itself; any OTHER number attributed to
+    # the method is a floor the method never set. A repo where no AGENTS.md is
+    # reachable keeps the old benefit of the doubt — every real install has
+    # one, so that door is open only to synthetic fixtures, and saying so here
+    # beats a guard that looks total and is not.
     if floor is None:
         fail("F-TEST-05", "the report states no coverage floor, so nothing decides whether these "
                           "numbers are good enough. Quote the project's, from AGENTS.md or the spec")
-    elif not source:
-        warn("F-TEST-05", f"the floor ({floor:.0f}%) is stated but not sourced — say where it comes "
-                          "from, or it is a number this report chose for itself")
+    elif re.search(r"testing\.instructions\.md|method default|default del m[eé]todo", floor_raw):
+        if floor == 80.0:
+            ok("F-TEST-05", "floor 80%, the method default (testing.instructions.md) — "
+                            "the project declares none of its own")
+        else:
+            fail("F-TEST-05", f"the report attributes a floor of {floor:.0f}% to the method, whose "
+                              "default is 80%. A floor above it belongs to the project: declare it "
+                              "in AGENTS.md §Testing or the spec, then quote that")
+    elif "AGENTS.md" in floor_raw:
+        agents = ddw_receipt.find_upward(args.report, "AGENTS.md")
+        if agents is None:
+            ok("F-TEST-05", f"floor {floor:.0f}%, quoted from AGENTS.md (no AGENTS.md reachable "
+                            "from the report to read it back against)")
+        elif re.search(r"\b%d\b" % round(floor), open(agents, encoding="utf-8",
+                                                      errors="replace").read()):
+            ok("F-TEST-05", f"floor {floor:.0f}%, quoted from AGENTS.md and read back: "
+                            "the number is there")
+        else:
+            fail("F-TEST-05", f"the report attributes its {floor:.0f}% floor to AGENTS.md, and "
+                              f"AGENTS.md does not state that number ({agents}). A source that "
+                              "does not say what it is quoted for is a floor the report chose "
+                              "for itself")
+    elif re.search(r"\b(?:spec|fix)-[\w.-]+\.md\b", floor_raw):
+        # No backslash lives inside an f-string expression: that is a 3.12
+        # feature, and the suite's own 3.11 leg caught this file not compiling.
+        named = re.search(r"(?:spec|fix)-[\w.-]+\.md", floor_raw).group(0)
+        ok("F-TEST-05", f"floor {floor:.0f}%, quoted from {named}")
     else:
-        ok("F-TEST-05", f"floor {floor:.0f}%, quoted from {source.group(0)}")
+        warn("F-TEST-05", f"the floor ({floor:.0f}%) is stated but not sourced — say where it comes "
+                          "from (AGENTS.md, the spec, or the method default), or it is a number "
+                          "this report chose for itself")
 
     if floor is not None and not absent:
         under = [f"{n} {v:.0f}%" for n, v in have if v < floor]

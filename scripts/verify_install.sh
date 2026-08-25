@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=601
+EXPECT_CHECKS=622
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=685
+EXPECT_MUTATIONS=704
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -2786,6 +2786,232 @@ s3 = tr.build_next_state(s2, "IDLE", "closeout", [], None)
 assert s3["autonomy"] is None, "the closeout leaves the mode behind for the next ticket"
 PYAUTOH
 
+# `block` — the field the phase rules order updated once per block, for which
+# the helper had NO operation: the paths left were a hand Edit the
+# reconstruction guard fails closed on, or the shell the method forbids.
+# Measured live (2026-08-25): a run took each once. Four checks: the sanctioned
+# update works, the edge combination is refused, the journal records it, and
+# the record does not repeat for an unchanged value.
+BLK="$WORK/block"; mkdir -p "$BLK"; git -C "$BLK" init -q .
+python3 - "$BLK" <<'PYBST'
+import json, sys
+h = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t,
+      "action": "x", "tier": "FEATURE", "ticket": "FEAT-001"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"),
+                                 ("DEFINE", "PLAN"), ("PLAN", "CODE")])]
+json.dump({"tier": "FEATURE", "phase": "CODE", "ticket": "FEAT-001", "title": "x",
+           "tracker": None, "autonomy": None, "gates": {"define": True, "spec": True,
+           "threat": True}, "block": None, "discovery": None, "history": h},
+          open(sys.argv[1] + "/.ddw-state.json", "w"), indent=2)
+PYBST
+python3 "$SELF/ddw/scripts/transition.py" --block 2/5 --state "$BLK/.ddw-state.json" \
+    --graph "$SELF/ddw/rules/transition-graph.json" --write >/dev/null 2>&1 \
+  && python3 -c "import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s['block']=='2/5' and len(s['history'])==4 else 1)" "$BLK/.ddw-state.json" \
+  && ok "--block updates the marker in-phase through the helper: no entry, no phase change" \
+  || bad "the sanctioned path for the block marker does not exist or does not land — hand Edits and shell writes are all that is left"
+
+# Against an edge that would otherwise LAND (CODE->PLAN clears its own gates),
+# and asserting the reason, not the exit code: the first version aimed at an
+# edge whose gates fail anyway, so gutting the guard changed nothing the check
+# could see — the fault survived, and the ledger asked for this sentence.
+BLKOUT="$(python3 "$SELF/ddw/scripts/transition.py" --block 2/5 --to PLAN --action "loop" --write \
+    --state "$BLK/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" 2>&1 || true)"
+case "$BLKOUT" in
+  *"does not go with --to"*) ok "and --block on an edge is refused with the reason" ;;
+  *) bad "--block rode an edge — the edges manage the field themselves and this hides a state change inside a transition" ;;
+esac
+
+python3 - "$SELF" "$BLK" <<'PYBJR'
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location(
+    "vt", os.path.join(sys.argv[1], "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec); spec.loader.exec_module(vt)
+state = os.path.join(sys.argv[2], ".ddw-state.json")
+vt.record_journal(state)
+vt.record_journal(state)   # unchanged: must not repeat
+lines = open(os.path.join(sys.argv[2], ".ddw-journal.jsonl")).read().splitlines()
+blocks = [ln for ln in lines if '"record": "block"' in ln]
+assert len(blocks) == 1, "expected one block record, got %d" % len(blocks)
+assert '"block": "2/5"' in blocks[0], blocks[0]
+PYBJR
+[ $? -eq 0 ] \
+  && ok "the journal records the block change once — 'advanced by the helper' and 'never touched' stopped being indistinguishable" \
+  || bad "a block change leaves no journal trace, or an unchanged one repeats — the audit cannot see the field"
+
+# The model field is covered or its absence is a decision on file — never a
+# hole. Measured live: three recipes carried `model`, one omitted the key, and
+# the omitted tool ran every DDW subagent on a model the user never chose. The
+# old frontmatter check validated the output against the same recipe, so this
+# omission could not go red by construction.
+python3 - "$SELF" <<'PYMODEL'
+import json, os, re, sys
+root = sys.argv[1]
+bad = []
+for tool in sorted(os.listdir(os.path.join(root, "adapters"))):
+    aj = os.path.join(root, "adapters", tool, "adapter.json")
+    if not os.path.isfile(aj):
+        continue
+    spec = json.load(open(aj, encoding="utf-8"))
+    agents = spec.get("agents")
+    if not isinstance(agents, dict) or not agents.get("dir"):
+        continue
+    fm = agents.get("frontmatter") or {}
+    if "model" in fm:
+        if "{model}" not in str(fm.get("model")):
+            bad.append("%s: model is a literal, not the {model} template — a copy the source "
+                       "cannot correct" % tool)
+        continue
+    if not (agents.get("_model_note") or "").strip():
+        bad.append("%s: agents.frontmatter has no model and no _model_note" % tool)
+for f in sorted(os.listdir(os.path.join(root, "agents"))):
+    if not f.endswith(".md"):
+        continue
+    head = open(os.path.join(root, "agents", f), encoding="utf-8").read(400)
+    if not re.search(r"^model:\s*\S", head, re.M):
+        bad.append("agents/%s: no model field — {model} renders empty everywhere" % f)
+assert not bad, "; ".join(bad)
+PYMODEL
+[ $? -eq 0 ] \
+  && ok "every adapter either emits the agents' model from the one source or says on file why it cannot" \
+  || bad "an agent recipe lost the model with no note — that tool's subagents run on whatever its defaults pick, silently"
+
+# Copilot's partial commit/merge gate. No UserPromptSubmit equivalent means no
+# seal — and for a long time it meant NOTHING: a `git commit -m` in a Copilot
+# session was gated by nobody (measured live: the probe committed straight from
+# IDLE, exit 0). What its preToolUse can hold, it holds now, and says the rest
+# is Claude's guarantee.
+CPG="$WORK/cp-gate"; mkdir -p "$CPG/.ddw-work"; git -C "$CPG" init -q .
+printf '{"tier": "FEATURE", "phase": "CODE", "ticket": "F-1", "autonomy": null, "gates": {}, "history": []}' > "$CPG/.ddw-state.json"
+cpg() {  # $1 = shell command inside a copilot pre envelope
+  python3 -c "import json,sys;print(json.dumps({'toolName':'bash','toolArgs':json.dumps({'command':sys.argv[1]})}))" "$1" \
+    | python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect copilot \
+        --state "$CPG/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+        --repo "$CPG" >/dev/null 2>&1
+}
+cpg 'git add x && git commit -m "test: probe"' \
+  && bad "a Copilot commit with -m sailed through — the message never had to come from the shown file" \
+  || ok "Copilot's preToolUse holds a commit to the shown file (-F), the part of the gate that needs no seal"
+
+printf 'x feat: y\n\nRefs: F-1\nAI-assisted: yes\n' > "$CPG/.ddw-work/commit-message.txt"
+cpg 'git commit -F .ddw-work/commit-message.txt' \
+  && ok "and allows the sanctioned form with a clean proposal — partial is not closed" \
+  || bad "the partial gate refuses the exact flow the skill teaches, which pushes models around it"
+
+printf '{"tier": "FEATURE", "phase": "CODE", "ticket": "F-1", "autonomy": "minimal", "gates": {}, "history": []}' > "$CPG/.ddw-state.json"
+cpg 'gh pr merge 2 --squash' \
+  && bad "a merge ran in Copilot with no proposal on disk — the one irreversible act, ungated again" \
+  || ok "and a merge without its proposal on disk is refused there too, minimal included"
+
+# The go-back gate. "Under `assisted`, the question comes BEFORE the edge" was
+# prose, the fix that introduced it touched only prose, and a live run took the
+# edge first and asked after — the one-arrow counter only ever refuses a SECOND
+# arrow, so the first arrow of any turn landed free. Now the reason rides a
+# file: `correction:` announces and goes, `ask:` waits for the user's sealed
+# turn, and both leave a record.
+GBK="$WORK/goback"; mkdir -p "$GBK/.ddw-sessions" "$GBK/.ddw-work"; git -C "$GBK" init -q .
+echo 3 > "$GBK/.ddw-sessions/turn"
+gbk_state() {  # reset to CODE with spec+threat held
+python3 - "$GBK" <<'PYGBS'
+import json, sys
+h = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t,
+      "action": "x", "tier": "FEATURE", "ticket": "FEAT-001"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"),
+                                 ("DEFINE", "PLAN"), ("PLAN", "CODE")])]
+json.dump({"tier": "FEATURE", "phase": "CODE", "ticket": "FEAT-001", "title": "x",
+           "tracker": None, "autonomy": "assisted", "gates": {"define": True,
+           "spec": True, "threat": True}, "block": None, "discovery": None,
+           "history": h}, open(sys.argv[1] + "/.ddw-state.json", "w"), indent=2)
+PYGBS
+}
+gbk_edge() {
+  python3 "$SELF/ddw/scripts/transition.py" --to PLAN --action "loop" --write \
+    --state "$GBK/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" 2>&1
+}
+gbk_state
+GBOUT="$(gbk_edge || true)"
+case "$GBOUT" in
+  *"goes back a phase under"*)
+    ok "a backward edge under assisted with no reason on disk is refused, first arrow of the turn included" ;;
+  *) bad "the go-back edge landed with nothing on disk showing the user was told — execute-then-ask is back" ;;
+esac
+
+printf 'correction: the block names the wrong file — CODE -> PLAN\n' > "$GBK/.ddw-work/goback-proposal.txt"
+gbk_edge >/dev/null 2>&1 \
+  && python3 -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))['phase']=='PLAN' else 1)" "$GBK/.ddw-state.json" \
+  && ok "and a correction: on file announces and goes — the mandatory loop still never asks permission" \
+  || bad "the correction lane is blocked, which turns the mandatory corrective loop into a question again"
+
+gbk_state
+printf 'ask: which of the two stacks stands? CODE -> PLAN\n' > "$GBK/.ddw-work/goback-proposal.txt"
+GBOUT="$(gbk_edge || true)"
+case "$GBOUT" in
+  *"has not been in front of the user"*)
+    ok "an ask: without the user's turn is held at the edge" ;;
+  *) bad "a question executed the loop before anyone answered it — the measured defect, still open" ;;
+esac
+
+python3 "$SELF/ddw/scripts/hook-gate.py" --mode turn --state "$GBK/.ddw-state.json" \
+  --graph "$SELF/ddw/rules/transition-graph.json" --repo "$GBK" < /dev/null >/dev/null 2>&1 || true
+gbk_edge >/dev/null 2>&1 \
+  && python3 -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))['phase']=='PLAN' else 1)" "$GBK/.ddw-state.json" \
+  && ok "and the sealed answer arms the same edge — asked before, taken with the answer in hand" \
+  || bad "the user answered and the edge still refuses — the seal is not being read"
+
+# The hook path judges the same thing for a state written with the Write tool.
+gbk_state
+rm -f "$GBK/.ddw-work/goback-proposal.txt"
+python3 - "$GBK" <<'PYGBE'
+import json, sys
+root = sys.argv[1]
+s = json.load(open(root + "/.ddw-state.json"))
+s["phase"] = "PLAN"; s["gates"] = {"define": True}
+s["history"].append({"timestamp": "2026-01-01T00:09:00Z", "from": "CODE", "to": "PLAN",
+                     "action": "loop", "tier": "FEATURE", "ticket": "FEAT-001"})
+open(root + "/event.json", "w").write(json.dumps(
+    {"tool_name": "Write", "tool_input": {"file_path": ".ddw-state.json",
+                                          "content": json.dumps(s)}}))
+PYGBE
+python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$GBK/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$GBK" < "$GBK/event.json" >/dev/null 2>&1 \
+  && bad "a Write-tool backward edge sailed past the hook with no reason on disk" \
+  || ok "and the Write-tool path is held to the same gate as the helper"
+
+# A receipt re-validated with identical bytes is one event, not two journal
+# lines (measured: identical consecutive records, one validator run). And a
+# `spent` record belongs to ITS ticket: a closed ticket's receipts used to read
+# as spent the moment a later ticket's loop touched the same gate.
+python3 - "$SELF" "$WORK" <<'PYRDUP'
+import importlib.util, json, os, sys
+spec = importlib.util.spec_from_file_location(
+    "dr", os.path.join(sys.argv[1], "ddw/scripts/ddw_receipt.py"))
+dr = importlib.util.module_from_spec(spec); spec.loader.exec_module(dr)
+root = os.path.join(sys.argv[2], "receipt-dup"); os.makedirs(os.path.join(root, "docs"), exist_ok=True)
+open(os.path.join(root, ".ddw-state.json"), "w").write("{}")
+art = os.path.join(root, "docs", "prd-X.md"); open(art, "w").write("# X\n")
+dr.write(art, "prd", "# X\n", tier="FEATURE")
+dr.write(art, "prd", "# X\n", tier="FEATURE")
+lines = [ln for ln in open(os.path.join(root, ".ddw-journal.jsonl")).read().splitlines() if ln]
+assert len(lines) == 1, "expected one receipt record, got %d" % len(lines)
+
+spec2 = importlib.util.spec_from_file_location(
+    "vt", os.path.join(sys.argv[1], "ddw/scripts/validate-transition.py"))
+vt = importlib.util.module_from_spec(spec2); spec2.loader.exec_module(vt)
+with open(os.path.join(root, ".ddw-journal.jsonl"), "a") as fh:
+    fh.write(json.dumps({"record": "spent", "gates": ["spec"], "ticket": "FEAT-002",
+                         "phase": "PLAN"}) + "\n")
+    fh.write(json.dumps({"record": "receipt", "name": "spec-validated-aaa", "file": "s.md"}) + "\n")
+    fh.write(json.dumps({"record": "spent", "gates": ["spec"], "ticket": "FEAT-003",
+                         "phase": "PLAN"}) + "\n")
+assert vt._receipt_spent(root, "spec", "spec-validated-aaa", ticket="FEAT-002") is None, \
+    "another ticket's spending spent this one's receipt"
+assert vt._receipt_spent(root, "spec", "spec-validated-aaa", ticket="FEAT-003") is not None, \
+    "the ticket's own spending stopped counting"
+PYRDUP
+[ $? -eq 0 ] \
+  && ok "identical re-validation writes one journal line, and a spent gate binds only its own ticket" \
+  || bad "the journal duplicates unchanged receipts, or a closed ticket's receipts are spent by a later ticket's loop"
+
 # The test run report. `tests: true` used to be a sentence — no runner, no
 # command, no numbers, no names, nothing anyone could reproduce. DDW still does
 # not run your suite; what it refuses now is the account being absent, vague or
@@ -2883,6 +3109,124 @@ VTFOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$VP/docs/ddw/reports/te
 case "$VTFOUT" in
   *"❌ F-TEST-04"*"under the floor"*61*) ok "and coverage under the quoted floor is named with its number" ;;
   *) bad "61% line coverage passed a report quoting an 80% floor" ;;
+esac
+
+# The floor's SOURCE is read back, not pattern-matched. Measured live
+# (2026-08-25): the project's AGENTS.md declared no floor, and the report wrote
+# "80% (docs/ddw — .ddw/rules/testing.instructions.md)" — an attribution built
+# to contain the substring the old check accepted. Four doors, one check each.
+FLR="$WORK/floor"; mkdir -p "$FLR/docs/ddw/reports"
+printf '# Proj\n\n## Testing\n- Runner: pytest\n' > "$FLR/AGENTS.md"
+floor_report() {  # $1 = floor row value, $2 = output name
+  sed "s#| Coverage floor | 80% (AGENTS.md) |#| Coverage floor | $1 |#" \
+    "$VP/docs/ddw/reports/tests-FEAT-001.md" > "$FLR/docs/ddw/reports/$2"
+}
+floor_report "80% (AGENTS.md)" tests-fabricated.md
+FLAOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$FLR/docs/ddw/reports/tests-fabricated.md" 2>/dev/null || true)"
+case "$FLAOUT" in
+  *"❌ F-TEST-05"*"does not state that number"*) ok "a floor attributed to an AGENTS.md that never states it is refused" ;;
+  *) bad "the report attributes its floor to AGENTS.md, AGENTS.md is silent, and the attribution passes" ;;
+esac
+
+printf '# Proj\n\n## Testing\n- Runner: pytest\n- Coverage floor: 85%%\n' > "$FLR/AGENTS.md"
+floor_report "85% (AGENTS.md)" tests-honest.md
+FLBOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$FLR/docs/ddw/reports/tests-honest.md" 2>/dev/null || true)"
+case "$FLBOUT" in
+  *"✅ F-TEST-05"*"read back"*) ok "and one AGENTS.md actually states is verified against the file" ;;
+  *) bad "a floor AGENTS.md really declares is not read back as verified" ;;
+esac
+
+floor_report "80% (method default — .ddw/rules/testing.instructions.md)" tests-default.md
+FLCOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$FLR/docs/ddw/reports/tests-default.md" 2>/dev/null || true)"
+case "$FLCOUT" in
+  *"✅ F-TEST-05"*"method default"*) ok "the method's own 80 passes named as what it is — the default" ;;
+  *) bad "the honest wording for the method default is refused, which pushes reports back to fabricating" ;;
+esac
+
+floor_report "90% (.ddw/rules/testing.instructions.md)" tests-inflated.md
+FLDOUT="$(python3 "$SELF/ddw/scripts/validate_tests.py" "$FLR/docs/ddw/reports/tests-inflated.md" 2>/dev/null || true)"
+case "$FLDOUT" in
+  *"❌ F-TEST-05"*"whose default is 80"*) ok "and a floor the method never set cannot be attributed to it" ;;
+  *) bad "90% attributed to a method whose default is 80 passed as sourced" ;;
+esac
+
+# F-VER-03 reads the PROJECT's floor too — the catalog said so and the code
+# said 80, always. AGENTS.md raises it to 90; 85% has to fail.
+printf '# Proj\n\n## Testing\n- Coverage floor: 90%%\n' > "$FLR/AGENTS.md"
+cat > "$FLR/docs/ddw/reports/verify-floor.md" <<'VFLEOF'
+# Verification — FEAT-009
+- Line coverage: 85%
+- Branch coverage: 85%
+- Function coverage: 85%
+Sad-path testing: invalid inputs covered.
+Lint: clean.
+VFLEOF
+FLVOUT="$(python3 "$SELF/ddw/scripts/validate_verify.py" "$FLR/docs/ddw/reports/verify-floor.md" --tier FEATURE 2>/dev/null || true)"
+case "$FLVOUT" in
+  *"❌ F-VER-03"*"below the 90% minimum"*) ok "the verify floor is the project's: 85% fails a repo whose AGENTS.md says 90" ;;
+  *) bad "AGENTS.md raised the floor to 90 and validate_verify still measured against 80" ;;
+esac
+
+# The spec skill's schema-reuse sentence, validated by the spec validator — the
+# phrase is EXTRACTED from the skill, so if either side drifts this goes red.
+# Two different models failed F-SPEC-08 three times on exactly this block shape
+# ("same table as above" names no constraint); the skill now teaches the shape
+# that passes, and this is the check that the taught shape and the accepted
+# shape are the same bytes.
+TPL="$WORK/spec-teaches"; mkdir -p "$TPL/docs/ddw/specs"
+REUSE="$(sed -n '/^- Reuses /,+1p' "$SELF/skills/ddw-create-spec/SKILL.md" | head -2)"
+[ -n "$REUSE" ] || REUSE="(the skill no longer contains the reuse sentence)"
+cat > "$TPL/docs/ddw/specs/spec-FEAT-001.md" <<TPLEOF
+# Spec FEAT-001: harness
+
+| Field | Value |
+|-------|-------|
+| Ticket | FEAT-001 |
+| Spec loops | 0 |
+| Loops since last human decision | 0 |
+
+## Block 1 — schema
+**Files**
+- \`app/db.py\` (new)
+
+**Logic**
+Creates the table.
+
+**Data model**
+- Entity ticket: id (PK), titulo (not null), estado (default "Pendiente"), index on estado.
+
+**Error handling**
+- None — this block takes no input of its own.
+
+**Required tests**
+- [ ] test_schema — validates AC-01
+
+**Completion criterion**
+test_schema passes.
+
+## Block 2 — listing
+**Files**
+- \`app/listing.py\` (new)
+
+**Logic**
+Reads the table Block 1 declares.
+
+**Data model**
+$REUSE
+
+**Error handling**
+- None — this block takes no input of its own.
+
+**Required tests**
+- [ ] test_listado — validates AC-02
+
+**Completion criterion**
+test_listado passes.
+TPLEOF
+TPLOUT="$(python3 "$SELF/ddw/scripts/validate_spec.py" "$TPL/docs/ddw/specs/spec-FEAT-001.md" --tier FEATURE 2>/dev/null || true)"
+case "$TPLOUT" in
+  *"✅ F-SPEC-08"*) ok "the reuse sentence the spec skill teaches is one its own validator accepts" ;;
+  *) bad "the spec skill teaches a schema-reuse phrasing that validate_spec rejects — the template its own gate refuses, again" ;;
 esac
 
 # The two layouts a real report arrives in, both of which used to be read as an
@@ -4876,9 +5220,41 @@ post_note() {
        post_note | sed 's/^/      /' | head -3; }
 
 mkdir -p "$SH/app" && printf 'x = 1\n' > "$SH/app/health.py"
-post_note | grep -q "product source has changed while the pipeline is in PLAN" \
-  && ok "and reports product source that appeared in a phase that does not write source" \
-  || bad "source written through a shell in PLAN goes entirely unnoticed"
+# Captured, not piped: post mode never reads stdin, so the `echo` feeding it can
+# lose the race and die of SIGPIPE — and under `pipefail` that 141 was the
+# pipeline's verdict on macOS while the note sat right there in the output.
+PNOUT="$(post_note || true)"
+case "$PNOUT" in
+  *"product source has changed while the pipeline is in PLAN"*)
+    ok "and reports product source that appeared in a phase that does not write source" ;;
+  *) bad "source written through a shell in PLAN goes entirely unnoticed" ;;
+esac
+
+# The note must ride each tool's documented context channel, ON STDOUT. stderr
+# next to an exit 0 reaches no model in any harness — measured live (Copilot
+# CLI 1.0.80, 2026-08-25): the note was computed, printed, and dropped, and the
+# session's own probe read "no hook output". This suite missed it for the same
+# reason it existed: `post_note` captures 2>&1, so the check above proves the
+# note is COMPUTED. These two prove it ARRIVES — they read stdout alone.
+python3 "$SH/.ddw/scripts/hook-gate.py" --dialect standard --mode post \
+  --state "$SH/.ddw-state.json" --graph "$SH/.ddw/rules/transition-graph.json" \
+  --repo "$SH" < /dev/null 2>/dev/null | python3 -c '
+import json, sys
+d = json.loads(sys.stdin.read().strip())
+hso = d["hookSpecificOutput"]
+assert hso["hookEventName"] == "PostToolUse", hso
+assert "product source has changed" in hso["additionalContext"], hso
+' && ok "the note reaches Claude Code on stdout, as PostToolUse additionalContext" \
+  || bad "the note dies on stderr for Claude Code — computed, printed, and never shown to the model"
+
+python3 "$SH/.ddw/scripts/hook-gate.py" --dialect copilot --mode post \
+  --state "$SH/.ddw-state.json" --graph "$SH/.ddw/rules/transition-graph.json" \
+  --repo "$SH" < /dev/null 2>/dev/null | python3 -c '
+import json, sys
+d = json.loads(sys.stdin.read().strip())
+assert "product source has changed" in d["additionalContext"], d
+' && ok "and reaches Copilot as additionalContext — the one channel its non-blocking hooks have" \
+  || bad "the note dies on stderr for Copilot — logged and skipped, never shown to the model"
 
 echo '{}' | python3 "$SH/.ddw/scripts/hook-gate.py" --dialect standard --mode post \
   --state "$SH/.ddw-state.json" --graph "$SH/.ddw/rules/transition-graph.json" \

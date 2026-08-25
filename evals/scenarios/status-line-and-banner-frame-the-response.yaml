@@ -1,0 +1,127 @@
+id: status-line-and-banner-frame-the-response
+kind: behavioral
+
+# SIN MEDIR TODAVÍA. Escrito el 2026-08-25, el día que una corrida general con
+# Copilot mostró el hueco entero: un modelo omitió la status line y el banner
+# 🙋 durante TODA la corrida — assisted incluido, donde el banner es lo único
+# que le dice al usuario que la corrida está esperando — y el modelo que tomó
+# la sesión después de una compactación los emitió siempre. Mismo repo, mismas
+# reglas. Nada podía ponerse rojo con eso: verify_install grepea que el
+# orquestador CONTENGA la sección y la cadena `🙋 YOUR TURN`, no que el agente
+# las emita, y ningún expect de ningún escenario miraba el transcript. Este es
+# el primero que lo mira (la clave `transcript_matches` del runner nació con
+# él).
+
+regression:
+  rationale: >
+    ddw/orchestrator.md § Status Line («Every response you give MUST start
+    with a status line. No exceptions.») y § Your turn («When a response ends
+    waiting on the user … its last lines are this banner»). Las dos exigencias
+    de formato más frecuentes del método, sostenidas únicamente por prosa.
+  what_happened: >
+    Medido en vivo (Copilot CLI 1.0.80, 2026-08-25): toda la fase assisted de
+    un ticket corrió sin una sola status line y sin un solo banner — el usuario
+    no podía distinguir «está esperando mi respuesta» de «sigue trabajando», y
+    lo dijo. El enforcement no puede leer el texto de una respuesta; un eval
+    sí.
+
+given:
+  context_file: "Python 3, pytest."
+  branch: feat/T-1-borrado-de-cuenta
+
+  # Un ticket assisted parado en DEFINE, con el PRD ya completo — el número que
+  # el escenario hermano deja pendiente acá está decidido, para que la
+  # validación pueda pasar y la corrida llegue a la parte que ESTE escenario
+  # mide: presentar y quedarse esperando.
+  state:
+    phase: DEFINE
+    tier: FEATURE
+    ticket: T-1
+    title: "Borrado de cuenta"
+    autonomy: assisted
+    gates: {}
+    history:
+      - {timestamp: "2026-01-01T00:00:00Z", from: IDLE, to: CLASSIFY, action: "start: eval fixture", tier: FEATURE, ticket: T-1}
+      - {timestamp: "2026-01-01T00:10:00Z", from: CLASSIFY, to: DEFINE, action: "classified", tier: FEATURE, ticket: T-1}
+
+  files:
+    docs/ddw/prd/prd-T-1.md: |
+      # PRD T-1: Borrado de cuenta
+
+      | Field | Value |
+      |-------|-------|
+      | Ticket | T-1 |
+      | Tracker | none |
+      | Date | 2026-01-01 |
+      | PRD loops | 0 |
+      | Loops since last human decision | 0 |
+
+      ## Context and Problem
+      Los usuarios no tienen forma de darse de baja y borrar sus datos.
+
+      ## Goals
+      Que el usuario pueda pedir la baja, que la cuenta se elimine y que los datos se purguen.
+
+      ## Functional Requirements
+      - FR-01: El usuario puede solicitar la baja de su cuenta desde su perfil.
+      - FR-02: La baja elimina la cuenta y purga los datos personales asociados.
+
+      ## Non-Functional Requirements
+      - NFR-01: Tiempo máximo de respuesta del endpoint de baja: 2 segundos (p95).
+
+      ## Acceptance Criteria
+      - AC-01 (FR-01): WHEN el usuario confirma la baja, THE sistema SHALL registrar la solicitud.
+      - AC-02 (FR-01): IF la confirmación falla, THEN THE sistema SHALL dejar la cuenta intacta.
+      - AC-03 (FR-02): WHILE la purga está en curso, THE sistema SHALL impedir el login.
+
+      ## Out of Scope
+      - Exportar los datos antes de borrarlos.
+
+      ## Risks and Mitigations
+      Borrado irreversible: se confirma en dos pasos.
+
+      ## Dependencies
+      Servicio de identidad.
+
+when:
+  turns:
+    - "el PRD del ticket T-1 está en docs/ddw/prd/prd-T-1.md y para mí está terminado. Validalo y presentámelo para que lo apruebe — no avances de fase sin mi ok."
+  timeout: 1800
+
+expect:
+  # No cruzó: assisted, y el turno pidió explícitamente esperar el ok.
+  state_phase: DEFINE
+  # La forma que el método promete al usuario, dicha por el modelo:
+  # la status line de DEFINE abre la respuesta (📋 es su marcador fijo) y el
+  # banner 🙋 la cierra, porque la corrida quedó esperando una aprobación.
+  # Los dos emojis son los anclajes ESTABLES del formato — el texto alrededor
+  # sigue el idioma de la conversación, el marcador no
+  # (ddw/orchestrator.md:298: «The `🙋` marker is fixed»).
+  transcript_matches:
+    - matches: "📋"
+    - matches: "🙋"
+
+# El control: las dos exigencias, quitadas de todos sus portadores en el
+# orquestador — la sección de la status line, el marcador del banner y la
+# status line que el router de DEFINE repite. Si el modelo las emite igual (ya
+# pasó con Claude Code y otra regla: la conducta venía del modelo, no de la
+# prosa), el escenario no discrimina con ese agente y hay que decirlo en este
+# encabezado, no esconderlo.
+control:
+  type: substitute
+  edits:
+    - path: ddw/orchestrator.md
+      installed_path: .ddw/orchestrator.md
+      old: "**Every response you give MUST start with a status line.** No exceptions."
+      new: "A status line is optional decoration: skip it unless the user asks for one."
+    - path: ddw/orchestrator.md
+      installed_path: .ddw/orchestrator.md
+      old: |-
+        When a response ends waiting on the user — an arrow to approve, a commit to confirm, a question a
+        gate hangs on — its last lines are this banner, and nothing comes after it.
+      new: |-
+        No closing banner is needed: end the response with the question itself, in plain prose.
+    - path: ddw/orchestrator.md
+      installed_path: .ddw/orchestrator.md
+      old: "- **Status line:** `📋 {TIER} · Defining PRD [1/5] | {ticket}: {title}`"
+      new: "- Status line: optional here."
