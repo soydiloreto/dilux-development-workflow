@@ -86,7 +86,31 @@ def _required_tests_parts(spec_text):
     return parts
 
 
-MINIMUM = 80        # line, branch and function coverage — testing.instructions.md
+def _project_floor(report_path):
+    """The project's coverage floor from AGENTS.md §Testing; 80 when it states none.
+
+    The catalog (F-VER-03) reads: at or above THE PROJECT'S floor, from
+    AGENTS.md §Testing, with testing.instructions.md supplying 80/80/80 only
+    where the project states none. This used to be a constant — 80, always —
+    so a project that raised its floor to 90 was verified against a number it
+    never chose, and the prose and the code said different things about whose
+    floor this is. Measured on a live run (2026-08-25).
+    """
+    agents = ddw_receipt.find_upward(report_path, "AGENTS.md")
+    if not agents:
+        return 80.0
+    try:
+        text = open(agents, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return 80.0
+    sec = re.search(r"^#{1,3}[ \t]*Testing\b(.*?)(?=^#{1,3}[ \t]|\Z)", text,
+                    re.MULTILINE | re.DOTALL | re.IGNORECASE)
+    if not sec:
+        return 80.0
+    m = re.search(r"(\d+(?:\.\d+)?)[ \t]*%", sec.group(1))
+    return float(m.group(1)) if m else 80.0
+
+
 # `❌` is not a word character, so inside a `\b(...)\b` group it demanded a word
 # character on BOTH sides of it — and every shape the verify skill tells the
 # model to write (`- AC-01 ❌`, `| AC-01 | ❌ |`) has a space or a pipe there.
@@ -282,22 +306,27 @@ def main():
             else:
                 ok("F-VER-06", f"all {len(set(promised))} test(s) the spec promised are reported")
 
-    # F-VER-03: the three numbers, and the floor they have to clear.
+    # F-VER-03: the three numbers, and the floor they have to clear — the
+    # PROJECT's floor, read from AGENTS.md §Testing, 80 when it states none.
+    minimum = _project_floor(args.report)
     cov = _coverage(text)
     absent = [k for k in ("line", "branch", "function") if k not in cov]
     if absent:
         fail("F-VER-03", f"coverage not stated for: {', '.join(absent)} "
                          f"(the report has to carry all three)")
     else:
-        below = [f"{k} {v:.0f}%" for k, v in cov.items() if v < MINIMUM]
+        below = [f"{k} {v:.0f}%" for k, v in cov.items() if v < minimum]
         if below:
-            fail("F-VER-03", f"coverage below the {MINIMUM}% minimum: {', '.join(below)}")
+            src = "AGENTS.md §Testing" if minimum != 80.0 else "the method default"
+            fail("F-VER-03", f"coverage below the {minimum:.0f}% minimum ({src}): "
+                             + ", ".join(below))
         else:
-            ok("F-VER-03", "line, branch and function coverage all stated and ≥ %d%%" % MINIMUM)
-        business = [f"{k} {v:.0f}%" for k, v in cov.items() if MINIMUM <= v < 90]
+            ok("F-VER-03", "line, branch and function coverage all stated and ≥ %.0f%%"
+                           % minimum)
+        business = [f"{k} {v:.0f}%" for k, v in cov.items() if minimum <= v < 90]
         if business:
-            warn("W-VER-02", f"between 80% and 90% — business logic should be higher: "
-                             f"{', '.join(business)}")
+            warn("W-VER-02", f"between {minimum:.0f}% and 90% — business logic should be "
+                             "higher: " + ", ".join(business))
 
     # F-VER-04 / F-VER-05: an answer, not a silence.
     if SAD_PATH.search(text):

@@ -56,6 +56,25 @@ def _tiers():
 TIERS = _tiers()
 
 
+
+def find_upward(start, name, limit=6):
+    """The nearest `name` walking up from `start`'s directory; None past `limit` levels.
+
+    Reports live under docs/ddw/reports/, so the project root is a few levels
+    up. Bounded, because an unbounded walk from /tmp finds someone else's file.
+    """
+    d = os.path.dirname(os.path.abspath(start))
+    for _ in range(limit):
+        cand = os.path.join(d, name)
+        if os.path.isfile(cand):
+            return cand
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+    return None
+
+
 def repo_root(artifact_path):
     """The repository the artifact belongs to, from its own path.
 
@@ -122,8 +141,20 @@ def write(artifact_path, prefix, text, tier=None, asof=None):
             record["tier"] = tier
         if asof:
             record["asof"] = asof
-        with open(os.path.join(root, JOURNAL), "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, sort_keys=True) + "\n")
+        line = json.dumps(record, sort_keys=True)
+        with open(os.path.join(root, JOURNAL), "a+", encoding="utf-8") as fh:
+            # Re-validating unchanged bytes is legitimate and common — the same
+            # digest, the same record. Twice in a row is noise the audit then
+            # has to explain (measured: lines 48/49 of a live journal, identical
+            # and consecutive, one validator run). Skip only the exact repeat of
+            # the LAST line: a later re-validation after other records is a real
+            # event and stays.
+            fh.seek(0)
+            tail = ""
+            for tail in fh:
+                pass
+            if tail.strip() != line:
+                fh.write(line + "\n")
     except OSError:
         pass
     return name

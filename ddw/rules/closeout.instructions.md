@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.2.0
+version: 2.3.0
 ---
 
 # Phase 5: CLOSEOUT (Commit, PR and Closeout)
@@ -198,9 +198,14 @@ Only after the user confirms:
 
 1. **If this was a sub-ticket of a split PRD** (`docs/ddw/prd/prd-{PARENT}.md` exists and indexes
    it): update that index — this sub-ticket's row to `done`, with the integration answer from step 4
-   beside it, and the next one in the order to `active`. Commit it with the CHANGELOG. The index is
-   the human-readable half of "what is left"; the machine derives the same thing from the history,
-   and the two should not be allowed to disagree.
+   beside it, and the next one in the order to `active`. **Then re-validate it**
+   (`python3 .ddw/scripts/validate_prd.py docs/ddw/prd/prd-{PARENT}.md --tier <parent tier>`): the
+   edit just changed the index's bytes, and its receipt is a digest of them — skipped, the parent
+   PRD is left as the one validated artifact whose receipt no longer matches the disk, and the next
+   sub-ticket opens on evidence a forensic pass flags as stale (measured on a live run's audit).
+   Commit index and re-validation with the CHANGELOG. The index is the human-readable half of
+   "what is left"; the machine derives the same thing from the history, and the two should not be
+   allowed to disagree.
    **Then push the branch.** Any commit made here was born AFTER the PR: without a push the PR
    never shows it, and the ticket closes with work its reviewer cannot see — measured live, a
    closeout left its own index commit stranded on the machine and the branch a commit ahead of the

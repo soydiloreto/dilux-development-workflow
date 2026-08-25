@@ -19,6 +19,130 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.36.0] — Unreleased
+
+Everything here was measured on one day: the first two end-to-end FEATURE runs
+of a fresh install (Copilot CLI, drop-in) — one ticket under `assisted`, one
+under `minimal` — plus a forensic audit of the receipts and journal they left,
+and a root-cause pass over every finding, each verified against the code before
+it was fixed. The runs also confirmed several 0.35.0 fixes working live; what
+follows is what they found still open.
+
+### Fixed — enforcement
+
+- **The shell-bypass notice reached no model, in any tool.** The post net
+  computed "product source has changed while the pipeline is in IDLE", printed
+  it to stderr next to an exit 0 — and stderr on an allowed call is read by
+  nobody. Measured live: the probe wrote source and committed from IDLE, and
+  the session's own report was "no hook output". The suite missed it for the
+  same reason it existed: its check captured `2>&1`, proving the note was
+  computed, never that it arrived. The note now rides each tool's documented
+  context channel (Claude: PostToolUse `additionalContext`; Copilot:
+  `additionalContext`), the remaining dialects keep stderr with the gap
+  declared, and two new checks read stdout alone.
+
+- **A backward edge under `assisted` could always execute first and ask after.**
+  The 0.35.0 fix for "the loop was taken first and the user asked after"
+  touched only prose, and the one-arrow counter only ever refuses a SECOND
+  arrow in a turn — the first lands free. The reason now rides a file
+  (`.ddw-work/goback-proposal.txt`), with the two lanes § Going back always
+  described: `correction:` announces and goes, `ask:` is held — by the helper
+  and by the hook — until the turn-hook's seal matches the exact question the
+  user saw. Where no turn hook is wired the gate stands down and says so.
+
+- **Copilot's commit and merge had no gate at all.** No UserPromptSubmit
+  equivalent means no seal, and for a long time it meant nothing ran: a
+  `git commit -m` in a Copilot session was gated by nobody (measured: the
+  probe committed straight from IDLE, exit 0). Its preToolUse now holds what
+  needs no seal — the message comes from the shown file (`-F`), its trailers
+  are the method's, a merge does not run before its proposal exists on disk,
+  `minimal` exempts the commit and never the merge — and the seal's guarantee
+  is declared as Claude's, not smoothed over.
+
+- **The coverage floor's source is read back, not pattern-matched.** F-TEST-05
+  accepted any line containing `AGENTS.md` or `docs/ddw` as "sourced";
+  measured live, AGENTS.md declared no floor and the report wrote
+  "80% (docs/ddw — .ddw/rules/testing.instructions.md)" — an attribution built
+  to contain the substring. A floor attributed to AGENTS.md must now actually
+  be there; the method's own 80 passes named as what it is, the default; and
+  F-VER-03 reads the project's floor from AGENTS.md §Testing instead of a
+  constant that contradicted its own catalog entry.
+
+- **`block` has a sanctioned path and a journal trace.** The phase rules
+  ordered the field updated once per block and the helper had no operation for
+  it — the paths left were a hand Edit the reconstruction guard fails closed
+  on, or the shell the method forbids, and a live run took each once.
+  `transition.py --block N/M` (and `--block none`) is an in-phase update, the
+  journal records each change, and CODE step 8 names the command.
+
+- **Journal hygiene, measured by the audit.** An identical re-validation no
+  longer writes a duplicate consecutive receipt record, and a `spent` gate
+  binds only its own ticket — a closed ticket's receipts used to read as spent
+  the moment a later ticket's corrective loop touched the same gate.
+
+- **The agents' `model` is one value with one source.** The source agents said
+  `model: inherit`, three recipes repeated the literal, Copilot's omitted the
+  key — and the omitted tool ran every DDW subagent on a model the user never
+  chose, silently. `{model}` is a neutral-field template now; the three
+  adapters that cannot emit it carry a `_model_note` saying exactly why; and
+  the new coverage check accepts the note where it would demand the field, so
+  the omission is a decision on file instead of a hole no check could redden.
+
+### Fixed — prose that a run disproved
+
+- **`minimal` stopped at every commit.** The commit skill's steps 7-8 read
+  "present it to the user, and end your turn" with no mode named, and a live
+  `minimal` run obeyed them at each of its commits — `assisted` with different
+  words, in the exact place the orchestrator's exemption was not. The step now
+  carries both modes, and the lint that walks the exemption to the phase files
+  walks it into the commit skill too. (`ddw-commit` — the hook always allowed
+  it; the prose was the stop.)
+
+- **The attribution trailer knows about `autonomy`.** The two table rows
+  contradicted each other for a `minimal` run — "a human reviewed" was
+  trivially true under `assisted` and literally false under `minimal` — and a
+  live ticket switched trailers mid-history when the model re-read the table.
+  What decides is whether a human reviewed THIS change; `minimal` defaults to
+  `AI-full: yes`, and `AI-full` has its first worked example. (`commits` 2.1.0)
+
+- **A sub-ticket's dependencies are read where the user decides.** The check
+  lived only at branch creation — three steps after the classification box was
+  confirmed — while the answer sat in the parent index the previous closeout
+  had written. Measured live: the box proposed starting a sub-ticket whose
+  dependency was an unmerged PR, and the user had to interrupt to ask. The box
+  now carries a verified `Depends on` line. (`classify` 2.9.0)
+
+- **The spec skill teaches the reuse shape its validator accepts.** Two
+  different models failed F-SPEC-08 three times on the same block shape — a
+  block that reuses an earlier block's schema — and read the validator's
+  source to learn the accepted words. The worked example now has that block,
+  the sad-path naming words are stated, and a new check extracts the taught
+  sentence from the skill and runs the validator over it: if either side
+  drifts, the suite goes red. (`ddw-create-spec`)
+
+- **Approved assumptions land on disk.** The rate limit was 60/min and bcrypt
+  was pinned because the user approved both in conversation — and no artifact
+  ever learned it. Reviewed assumptions now append to
+  `docs/ddw/specs/decisions-{ticket}.md` (not the spec: the spec is sealed
+  while its gate stands, and a rule ordering a write the guard refuses is a
+  painted door). (`code` 2.3.0)
+
+- **Closing a sub-ticket re-validates the parent index.** The closeout edit
+  changed the index's bytes and left its receipt stale — the one validated
+  artifact whose digest no longer matched the disk, flagged by the forensic
+  audit. (`closeout` 2.3.0)
+
+### Added
+
+- **The transcript is now a measurable surface.** `transcript_matches` in the
+  eval runner, and a behavioral scenario asserting the two most frequent
+  format promises the method makes — the status line that opens every response
+  and the `🙋` banner that closes a waiting one. Measured live: one model
+  omitted both for an entire run (the user could not tell "waiting" from
+  "working"), the next model emitted both always; nothing could go red on
+  that, because verify_install greps the METHOD's text and no eval read what
+  the agent said.
+
 ## [0.35.0] — Unreleased
 
 Four defects, all measured on the first live FEATURE run of a fresh install

@@ -14,7 +14,7 @@
     "frontmatter": {
       "name": "{name}",
       "description": "{description}",
-      "model": "inherit"
+      "model": "{model}"
     },
     "when_readonly": {
       "tools": "[read_file, read_many_files, glob, search_file_content]"

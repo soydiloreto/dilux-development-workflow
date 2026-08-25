@@ -14,7 +14,7 @@
     "frontmatter": {
       "name": "{name}",
       "description": "{description}",
-      "model": "inherit"
+      "model": "{model}"
     },
     "when_readonly": {
       "readonly": true

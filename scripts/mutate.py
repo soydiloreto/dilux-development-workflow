@@ -209,7 +209,7 @@ MUTATIONS = [
           "    for path in ():                 # spent: the next commit is proposed afresh")),
     ("the commit gate stops comparing what was shown with what is being committed",
      edit("ddw/scripts/hook-gate.py",
-          "    if sealed != digest:",
+          "    if require_seal and sealed != digest:",
           "    if False:")),
     ("the spent proposal is consumed on the gate's word again, not the commit's",
      # El defecto medido: git falla después del allow y la aprobación ya no
@@ -313,7 +313,7 @@ MUTATIONS = [
           "        if False:")),
     ("a merge proposal written in the same turn passes as seen",
      edit("ddw/scripts/hook-gate.py",
-          '    if sealed != digest:\n'
+          '    if require_seal and sealed != digest:\n'
           '        return (\n'
           '            "DDW: this merge proposal has not been in front of the user yet — it was written "',
           '    if False:\n'
@@ -556,7 +556,7 @@ MUTATIONS = [
           "                if False:\n                    missing.append(cat)\n")),
     ("the verify validator stops holding coverage to the floor",
      edit("ddw/scripts/validate_verify.py",
-          "        below = [f\"{k} {v:.0f}%\" for k, v in cov.items() if v < MINIMUM]\n",
+          "        below = [f\"{k} {v:.0f}%\" for k, v in cov.items() if v < minimum]\n",
           "        below = []\n")),
     ("an Add File patch loses its content again and legal state writes bounce to the shell",
      edit("ddw/scripts/hook-gate.py",
@@ -1078,8 +1078,101 @@ MUTATIONS = [
           "                note = None")),
     ("the report becomes a refusal, blocking your own editing in another terminal",
      edit("ddw/scripts/hook-gate.py",
-          '                    print(f"DDW notices: {note}", file=sys.stderr)',
+          '                    notice_post(args.dialect, f"DDW notices: {note}")',
           "                    deny(args.dialect, note)")),
+    ("--block starts riding edges, hiding a state change inside a transition",
+     edit("ddw/scripts/transition.py",
+          "    if block_given and args.to:",
+          "    if block_given and args.to and False:")),
+    ("any floor passes as the method default, 90 included",
+     edit("ddw/scripts/validate_tests.py",
+          "        if floor == 80.0:",
+          "        if True:")),
+    ("the method default's honest wording starts being refused",
+     edit("ddw/scripts/validate_tests.py",
+          "        if floor == 80.0:",
+          "        if floor == 81.0:")),
+    ("copilot's partial commit gate disappears and -m commits sail through again",
+     edit("ddw/scripts/hook-gate.py",
+          '    if args.mode == "pre" and args.dialect == "copilot":',
+          '    if False and args.dialect == "copilot":')),
+    ("a copilot merge stops waiting for its proposal on disk",
+     edit("ddw/scripts/hook-gate.py",
+          "                reason = merge_verdict(args.repo, _cmd, require_seal=False)",
+          "                reason = None")),
+    ("copilot's model omission stops being a decision on file",
+     json_edit("adapters/copilot/adapter.json", lambda d: d["agents"].pop("_model_note"))),
+    ("claude's agent model becomes a literal the source cannot correct",
+     edit("adapters/claude/adapter.json",
+          '"model": "{model}"',
+          '"model": "inherit"')),
+    ("the go-back gate disappears from the sanctioned helper",
+     edit("ddw/scripts/transition.py",
+          "        _reason = vt.goback_gate(_root, old_state, new_state, graph)",
+          "        _reason = None")),
+    ("the go-back gate disappears from the hook's pre path",
+     edit("ddw/scripts/validate-transition.py",
+          "            reason = goback_gate(root, old_state, new_state, graph)",
+          "            reason = None")),
+    ("a question goes back without the user's turn again",
+     edit("ddw/scripts/validate-transition.py",
+          '        if sealed == hashlib.sha256(text.strip().encode("utf-8")).hexdigest():\n'
+          "            return None",
+          "        if True:\n"
+          "            return None")),
+    ("the spec skill teaches a schema-reuse phrasing its own validator rejects",
+     edit("skills/ddw-create-spec/SKILL.md",
+          '- Reuses `ticket` from Block 2 — no schema change; constraints as declared there: NOT NULL,\n'
+          '  default "Pendiente", index on estado.',
+          "- Same table as Block 2.")),
+    ("the commit skill's minimal carve-out disappears and every commit waits again",
+     edit("skills/ddw-commit/SKILL.md",
+          "   Under `assisted`, **end your turn**: the file is the message, it is what will be committed, so\n"
+          "   what they read and what lands are the same bytes, and the gate holds the commit until that\n"
+          "   exact text was on screen before their answer. Under `minimal`, the showing still happens and\n"
+          "   the asking does not (`.ddw/orchestrator.md` § Autonomy — a commit is local and reversible, not\n"
+          "   one of the acts that keep their confirmation in both modes): present the message and continue\n"
+          "   to step 8 in the same response. This step used to read as unconditional, and a live `minimal`\n"
+          "   run stopped at every one of its commits waiting for an \"ok\" the mode had already given —\n"
+          "   `assisted` with different words, in the exact place the orchestrator's exemption was not.",
+          "   **end your turn.** The file is the message: it is what will be committed, so what they\n"
+          "   read and what lands are the same bytes.")),
+    ("--block stops reaching the state and the marker silently stays stale",
+     edit("ddw/scripts/transition.py",
+          '        updated["block"] = block_val',
+          '        updated["block"] = old_state.get("block")')),
+    ("a block change leaves no journal trace again",
+     edit("ddw/scripts/validate-transition.py",
+          "            if block_now != last_block:",
+          "            if False and block_now != last_block:")),
+    ("an identical re-validation duplicates its journal line again",
+     edit("ddw/scripts/ddw_receipt.py",
+          "            if tail.strip() != line:",
+          "            if True:")),
+    ("a spent gate stops naming its ticket and spends every ticket's receipts",
+     edit("ddw/scripts/validate-transition.py",
+          "            if ticket is None or entry.get(\"ticket\") in (None, ticket):",
+          "            if True:")),
+    ("a floor attributed to AGENTS.md stops being read back against it",
+     edit("ddw/scripts/validate_tests.py",
+          '        agents = ddw_receipt.find_upward(args.report, "AGENTS.md")',
+          "        agents = None")),
+    ("the verify floor stops being the project's and goes back to a constant",
+     edit("ddw/scripts/validate_verify.py",
+          '    agents = ddw_receipt.find_upward(report_path, "AGENTS.md")',
+          "    return 80.0")),
+    ("the notice falls back to stderr, where no tool listens",
+     edit("ddw/scripts/hook-gate.py",
+          '    if dialect == "copilot":\n'
+          '        print(json.dumps({"additionalContext": reason}))\n'
+          '    elif dialect == "standard":\n'
+          '        print(json.dumps({"hookSpecificOutput": {\n'
+          '            "hookEventName": "PostToolUse",\n'
+          '            "additionalContext": reason}}))\n'
+          "    print(reason, file=sys.stderr)\n"
+          "    sys.exit(0)",
+          "    print(reason, file=sys.stderr)\n"
+          "    sys.exit(0)")),
     ("DDW's own untracked files are reported as product source on every fresh install",
      edit("ddw/scripts/validate-transition.py",
           '_NOT_PRODUCT = frozenset({".ddw", ".ddw-installed.json", ".git",',
@@ -1187,7 +1280,7 @@ MUTATIONS = [
           "        pass")),
     ("a receipt is written and nothing records that a validator wrote it",
      edit("ddw/scripts/ddw_receipt.py",
-          '            fh.write(json.dumps(record, sort_keys=True) + "\\n")',
+          '            if tail.strip() != line:\n                fh.write(line + "\\n")',
           "            pass")),
     ("a receipt nobody's validator wrote opens its gate again",
      edit("ddw/scripts/validate-transition.py",
@@ -1196,7 +1289,8 @@ MUTATIONS = [
           "            unwitnessed = None\n            if unwitnessed:\n                return unwitnessed")),
     ("a receipt from before the corrective loop opens the gate it cleared",
      edit("ddw/scripts/validate-transition.py",
-          "            return _receipt_spent(root, gate, os.path.basename(marker))",
+          "            return _receipt_spent(root, gate, os.path.basename(marker),\n"
+          "                                  ticket=state.get(\"ticket\"))",
           "            return None")),
     ("a category nobody judged stops being noticed",
      edit("ddw/scripts/validate_sast.py",
@@ -3094,7 +3188,7 @@ MUTATIONS = [
           "   │  Do we proceed with the corrective loop?                 │")),
     ("going back a phase stops being described as the mandatory move it is",
      edit("ddw/rules/state.instructions.md",
-          '**Under `assisted`, the question comes BEFORE the edge.** A backward edge exists because something\nalready approved turned out to be wrong — and what there is to ask is never permission to correct\na known defect (that is a rubber stamp; the corrective loop is mandatory everywhere the catalog\ndescribes one, `validation-rules.instructions.md` §2) but the decision that MOTIVATES the\ncorrection: which of two contradicting stacks stands, whether the too-big scope splits, the answer\nnobody wrote down. Measured on a live run: the helper took `PLAN→DEFINE` first and asked which\nstack should prevail after, so a user answering "neither — drop the ticket" would have answered\ninto a phase already re-entered and a gate already spent. Where such a decision exists, announce\nthe reason, put the question to the user, and take the edge WITH their answer in hand. Where\nnothing is theirs to decide before the fix — CODE finding a block that names the wrong file has no\nquestion in it, only a correction (`code.instructions.md` § When the spec is the thing that is\nwrong) — announce with the flag up and go; inventing a question there is the rubber stamp again.\nUnder `minimal` the pause goes away like every other arrow\'s, and the move is announced with its\nreason. In both modes what waits at the far end is unchanged: the corrected artifact re-earning\nthe gate the edge just cleared, from a banner that says where it came back from — an approval\nthat does not know it is a re-approval is the same rubber stamp one document later.\n\n',
+          '**Under `assisted`, the question comes BEFORE the edge.** A backward edge exists because something\nalready approved turned out to be wrong — and what there is to ask is never permission to correct\na known defect (that is a rubber stamp; the corrective loop is mandatory everywhere the catalog\ndescribes one, `validation-rules.instructions.md` §2) but the decision that MOTIVATES the\ncorrection: which of two contradicting stacks stands, whether the too-big scope splits, the answer\nnobody wrote down. Measured on a live run: the helper took `PLAN→DEFINE` first and asked which\nstack should prevail after, so a user answering "neither — drop the ticket" would have answered\ninto a phase already re-entered and a gate already spent. Where such a decision exists, announce\nthe reason, put the question to the user, and take the edge WITH their answer in hand. Where\nnothing is theirs to decide before the fix — CODE finding a block that names the wrong file has no\nquestion in it, only a correction (`code.instructions.md` § When the spec is the thing that is\nwrong) — announce with the flag up and go; inventing a question there is the rubber stamp again.\nUnder `minimal` the pause goes away like every other arrow\'s, and the move is announced with its\nreason.\n\n**The lane is enforced, not promised — through a file.** Before taking a backward edge under\n`assisted`, write its reason to `.ddw-work/goback-proposal.txt`, naming the edge and opening with\nthe lane: `correction: <the defect a validator or review named>`, or `ask: <the question>`. A\n`correction:` announces and goes, with the file as its durable record. An `ask:` is held by the\nhook until the sealed copy of that exact question matches — which can only be true if it was on\nscreen before the user answered — so executing the loop first and asking after now bounces instead\nof landing (this paragraph alone did not stop it; the fix that introduced it touched only prose,\nand a later run took the edge first anyway). Where no turn hook is wired, the gate stands down and\nsays so here rather than reading as coverage. In both modes what waits at the far end is unchanged:\nthe corrected artifact re-earning the gate the edge just cleared, from a banner that says where it\ncame back from — an approval\nthat does not know it is a re-approval is the same rubber stamp one document later.\n\n',
           "")),
     # El gemelo del fault de más arriba, que sólo tocaba el mensaje de la
     # actualización: el `case` de la suite tiene tres brazos y el tercero —el

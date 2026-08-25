@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.11.0
+version: 1.12.0
 ---
 
 # Phase 2: PLAN (Technical Planning)
@@ -42,10 +42,13 @@ because:
    mandatory"), so permission to correct a known defect is never what gets asked — that is a
    rubber stamp. What IS asked is the decision that motivates the loop (the box below, plus the
    question under it), and under `assisted` it is asked BEFORE the edge is taken
-   (`state.instructions.md` § Going back). Measured on a live run: the loop was taken first and
-   the user was asked which stack should prevail after — into a phase already re-entered and a
-   gate already spent, when their answer could have been "neither, drop the ticket". Same shape
-   as CODE's return to PLAN (`code.instructions.md`).
+   (`state.instructions.md` § Going back) — **and the hook holds the edge to it**: write the
+   question to `.ddw-work/goback-proposal.txt` as `ask: <the question> — PLAN -> DEFINE`, show
+   it, end your turn, and the edge passes only once the user's turn sealed that exact text.
+   Measured on a live run: the loop was taken first and the user was asked which stack should
+   prevail after — into a phase already re-entered and a gate already spent, when their answer
+   could have been "neither, drop the ticket". Same shape as CODE's return to PLAN
+   (`code.instructions.md`).
 
    ```
    ┌─────────────────────────────────────────────────────────┐

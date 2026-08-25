@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Commit and PR Conventions
@@ -124,8 +124,19 @@ Every commit produced with AI assistance MUST include a trailer:
 
 | Level | Meaning | When to use |
 |-------|---------|-------------|
-| `AI-assisted: yes` | AI helped, a human reviewed and approved | The human gave instructions and reviewed the result |
-| `AI-full: yes` | AI generated the whole change with no intervention | Automatic gate fixes, automatic generation |
+| `AI-assisted: yes` | AI helped, a human reviewed and approved **this change** | The human read the diff or the presented message before it landed |
+| `AI-full: yes` | AI generated the whole change with no human review of it | No human saw this change before it was committed |
+
+**What decides between them is whether a human reviewed THIS change — and the state already
+records that.** Under `assisted`, every commit message waits for the user's answer, so
+`AI-assisted: yes` is the honest trailer. Under `minimal`, the arrows stop waiting and nobody
+reads the diff before it lands: the honest trailer is `AI-full: yes`, unless the user actually
+reviewed this particular change (they interrupted, read it, said so). "The human gave the
+instructions at CLASSIFY" does not make a commit reviewed — an instruction is not a review, and
+a trailer that stretches it that far says nothing at all. The two rows used to contradict each
+other for exactly this case, and a live run switched trailers mid-ticket when the model re-read
+the table and resolved the tie the other way. Read `autonomy` from `.ddw-state.json` and be
+consistent for as long as the mode is.
 
 **The trailer goes as the last line of the commit message**, separated from the body by a blank
 line.
@@ -157,6 +168,20 @@ calculateTotal().
 
 Refs: FIX-003
 AI-assisted: yes
+```
+
+A `minimal` run's commit — same shape, the other trailer, because nobody read this diff before it
+landed (`AI-full` had no worked example, and the trailer without one was the one nobody picked):
+
+```
+✨ feat(tickets): process triage in the background
+
+Configures the AI service per application and schedules one task per
+valid ticket without leaking category, group or draft in the public
+response.
+
+Refs: FEAT-001b
+AI-full: yes
 ```
 
 ## PR Format

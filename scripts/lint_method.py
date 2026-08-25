@@ -938,6 +938,21 @@ def check_minimal_exemption_reaches_the_phase_rules(root):
                  "not — and this file, not the orchestrator, is what is open when the model "
                  "decides whether to stop")
 
+    # The skills are the other place a wait is written, and the commit skill is
+    # the one every phase invokes. Its step 7 read "present it to the user, and
+    # end your turn" with no mode named, and a live `minimal` run obeyed it at
+    # every commit — the exemption existed in the orchestrator and the hook, and
+    # the file the model actually had open said to stop. Same defect as CLASSIFY
+    # above, one layer over: the exemption has to be readable where the wait is.
+    commit_skill = os.path.join(root, "skills/ddw-commit/SKILL.md")
+    if os.path.exists(commit_skill):
+        body = read(commit_skill)
+        m = re.search(r"^7\.\s.*$", body, re.M)
+        if m and "minimal" not in body[m.start():m.start() + 1200]:
+            fail(f"{rel(root, commit_skill)}:{body[:m.start()].count(chr(10)) + 1}",
+                 "the commit skill's present-and-wait step never names `minimal`, so a minimal "
+                 "run reads an unconditional stop in the one file it has open at commit time")
+
 
 def check_corrective_loops_are_not_asked(root):
     """Going back is announced, and every place that describes it says so.

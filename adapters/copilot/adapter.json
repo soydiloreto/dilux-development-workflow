@@ -18,7 +18,8 @@
     },
     "when_readonly": {
       "tools": "read, search"
-    }
+    },
+    "_model_note": "Deliberately NOT emitted, and this note is the check's evidence that the omission is a decision. Copilot's .agent.md does take `model`, but its values are concrete ids and family aliases — there is no `inherit` — and an unset field falls to per-agent-type defaults plus server-side experiments (measured live, 2026-08-25: the session on one model, every DDW subagent on another, no signal in the UI; their issue #3824 documents the routing and #2758 the silent cost downgrade). Pinning a concrete model here would override the user's session choice on every install, which is worse than the nondeterminism it removes. If GitHub ships an inherit value, emit `{model}` like the other adapters and delete this note."
   },
   "wiring": [
     {

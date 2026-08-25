@@ -107,8 +107,13 @@ changes too small to deserve one, and it has no PLAN phase at all.
 - Error codes: [list]
 - Auth: [which authentication/authorization applies]
 
-**Data model** *(only if it creates/modifies a schema)*
+**Data model** *(only if it creates/modifies a schema — or reuses one)*
 - Entity, fields with types, constraints (nullable, unique, FK, default), indexes.
+- A block that only REUSES a schema an earlier block declared still fills this section, restating
+  the constraints by name: *"Reuses `ticket` from Block 2 — no schema change; constraints as
+  declared there: NOT NULL, default, index on estado."* The validator reads each block alone, so
+  "same table as above" names no constraint and fails F-SPEC-08. Measured three times, by two
+  different models, in the same place: this sentence is the shape that passes.
 
 **Input validation** *(only if it accepts input)*
 - Type, maximum length, format, allowed values.
@@ -214,9 +219,39 @@ Implements FR-01: the anonymous form posts a ticket and receives its id.
 **Completion criterion**
 The three tests pass and `POST /tickets` returns 201 with the created id.
 
+## Block 3 — [a block that reuses Block 2's schema]
+**Files**
+- `app/routes/listing.py` (new) — el listado protegido
+
+**Logic**
+Implements FR-02: the listing reads the tickets Block 2 persists.
+
+**Data model**
+- Reuses `ticket` from Block 2 — no schema change; constraints as declared there: NOT NULL,
+  default "Pendiente", index on estado.
+
+**Input validation**
+- estado (query): one of the fixed states, optional.
+
+**Error handling**
+- estado desconocido — 422; the list is not computed.
+
+**Required tests**
+- [ ] test_listado_por_estado — validates AC-02
+- [ ] test_estado_invalido_422 — the unknown state is refused (sad path)
+
+**Completion criterion**
+Both tests pass and the listing filters by estado.
+
 ## Final verification
 `validate_spec.py --tier FEATURE` passes on this document and the endpoint answers as contracted.
 ```
+
+Name every sad-path test with the failure word its error bullet uses — `faltante`, `inválido`,
+`rechazado` (or `missing`, `invalid`, `rejected`) — because F-SPEC-16 pairs errors to tests by
+those words, and a test called `test_post_sin_email` names none of them. Block 3 above is not
+decoration: the block that reuses an earlier schema is where two different models failed
+F-SPEC-08 three times, and its Data model sentence is the accepted shape, verbatim.
 
 ## Fix-Plan Template (FIX) — canonical
 

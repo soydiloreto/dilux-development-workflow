@@ -45,7 +45,8 @@ silently ignores half the framework:
 | `commands` | no | `{dir, filename, frontmatter, body, note}` — for a tool that discovers skills but does not surface them as `/name`. The installer writes one thin command per skill whose body points at the skill. OpenCode needs it: the installer's own closing line told the user to type `/ddw-status` and the TUI answered that no such command exists. |
 | `agents.dir` | no | Repo-relative directory for subagents. Omit the block if the tool has no subagents. |
 | `agents.filename` | no | Filename template, default `{name}.md`. E.g. Copilot uses `{name}.agent.md`. |
-| `agents.frontmatter` | yes, if `agents` | The tool's dialect. Keys are emitted as YAML; values may be literals or templates over the neutral fields. |
+| `agents.frontmatter` | yes, if `agents` | The tool's dialect. Keys are emitted as YAML; values may be literals or templates over the neutral fields. **Either it carries `model` or the `agents` block carries `_model_note` saying why not** — an omission with no note is how one tool's subagents silently ran on a model the user never chose while three other recipes carried the field (measured live). |
+| `agents._model_note` | no | The written reason a recipe does not emit `model` (no inherit value in that tool, or no verified key). For the reader AND for the suite: the model-coverage check accepts a note where it would otherwise demand the field, so the omission is a decision on file, not a hole. |
 | `agents.format` | no | `yaml` (default) or `toml`. Codex declares subagents as TOML files, prompt and all — not markdown with frontmatter. |
 | `agents.when_readonly` | no | Extra frontmatter merged in for agents declaring `writes: false`. For tools that deny by permission instead of by tool list. |
 | `wiring[]` | no | `{from, to, chmod}` — copy `adapters/<id>/<from>` to `<repo>/<to>`. `chmod: "+x"` makes `.sh` files executable. |
@@ -66,6 +67,7 @@ Available inside `agents.frontmatter` values, taken from the neutral frontmatter
 | `{name}` | the agent's id, e.g. `ddw-implementer` |
 | `{description}` | when the orchestrator should spawn it |
 | `{tools}` | the tool list, e.g. `Read, Grep, Glob, Bash` |
+| `{model}` | the model policy, `inherit` in every source agent — one source of truth, where three recipes used to repeat the literal and a fourth lost the field |
 
 `writes: true|false` is not a placeholder and is not declared by hand: the installer derives it from
 the agent's tool list (anything holding `Write`/`Edit`/`NotebookEdit` writes). It selects whether
@@ -88,7 +90,7 @@ Claude's recipe asks for a tool allowlist:
 "agents": {
   "dir": ".claude/agents",
   "frontmatter": { "name": "{name}", "description": "{description}",
-                   "model": "inherit", "tools": "{tools}" }
+                   "model": "{model}", "tools": "{tools}" }
 }
 ```
 
