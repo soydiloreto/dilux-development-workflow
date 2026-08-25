@@ -50,10 +50,10 @@ jobs:
           node-version: "20"
       - name: Install what the suite asserts it needs
         run: |
-          # pytest junto a pyyaml, y por la misma razón que la nota de abajo:
-          # sin él, la capa rápida sobre el núcleo de enforcement SE SALTEA en
-          # CI, y un skip se suma a "N/N pasaron". O sea que los 54 tests que
-          # corren en la máquina de quien escribe no habían corrido nunca acá.
+          # pytest alongside pyyaml, and for the same reason as the note below:
+          # without it, the fast layer over the enforcement core gets SKIPPED
+          # in CI, and a skip is summed into "N/N passed". Which means the 54
+          # tests that run on the author's machine had never once run here.
           python3 -m pip install --quiet pyyaml pytest
           # The Claude CLI validates the plugin manifests against the real
           # schema. Without it those two checks used to SKIP, and a skip was
@@ -65,11 +65,11 @@ jobs:
         if: runner.os == 'macOS'
         run: command -v rsync >/dev/null || brew install rsync
 
-      # Los controles de los evals reinyectan la regresión de la que sale cada
-      # escenario, y algunos commits viven en ramas que no son ancestro de ésta.
-      # `fetch-depth: 0` trae la historia de la rama del PR y nada más, así que
-      # ahí `git show <commit>^:<archivo>` no encuentra nada — y un control que
-      # no se puede aplicar falla, con razón.
+      # The eval controls re-inject the regression each scenario came from, and
+      # some of those commits live on branches that are not ancestors of this
+      # one. `fetch-depth: 0` brings the PR branch's history and nothing else,
+      # so there `git show <commit>^:<file>` finds nothing — and a control that
+      # cannot be applied fails, rightly.
       - name: The history the eval controls reach back into
         run: git fetch --quiet --no-tags origin "+refs/heads/*:refs/remotes/origin/*" || true
 
@@ -105,18 +105,18 @@ jobs:
           git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
           python3 scripts/check_commits.py --since "origin/${{ github.base_ref }}"
 
-      # La suite corre los evals además de esto. El paso aparte es para que la
-      # falla se lea: adentro de 554 comprobaciones, "un escenario no puede
-      # ponerse rojo" queda como una línea entre muchas.
+      # The suite runs the evals on top of this. The separate step is so the
+      # failure can be read: inside 554 checks, "a scenario cannot go red" is
+      # one line among many.
       - name: The instructions lead where the enforcement allows
         run: |
           python3 evals/runner.py --repo . --offline
           python3 evals/runner.py --repo . --offline --control
 
-      # El mapa de kills del linter de la prosa. No corre la suite ni una vez:
-      # aplica cada fault que toca un archivo que el linter LEE y anota qué
-      # check suyo se encendió. Vive acá y no en `mutations` porque no depende
-      # de esa corrida y tarda menos de un minuto.
+      # The prose linter's kill map. It never runs the suite once: it applies
+      # each fault that touches a file the linter READS and records which of
+      # its checks lit up. It lives here and not in `mutations` because it does
+      # not depend on that run and takes under a minute.
       - name: Every check of the prose linter can still go red, or says why not
         run: python3 scripts/lint_kill_map.py --repo .
 

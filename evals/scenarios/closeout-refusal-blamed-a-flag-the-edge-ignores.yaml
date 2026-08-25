@@ -1,27 +1,27 @@
 id: closeout-refusal-blamed-a-flag-the-edge-ignores
 kind: router-reachability
 
-# La regresión real de la que sale.
+# The real regression this comes from.
 regression:
   changelog: "0.18.0 — The sanctioned helper could not close a ticket in any tier"
   commit: 5eec088
   what_happened: >
-    `CLOSEOUT→IDLE` pide `commit` y `pr`. Llegar a IDLE limpia las compuertas,
-    así que el `--gate` que se pasaba en esa misma corrida se descartaba en
-    silencio y el estado nuevo salía con `tier: null` por construcción — con lo
-    cual el rechazo caía en la rama del tier y decía «falta el tier: pasá
-    --tier <…>», un flag que esa arista ignora. El lector obediente lo pasaba,
-    el rechazo salía idéntico, y el camino que el método manda tomar —el helper
-    sancionado— no podía cerrar un ticket en NINGÚN tier. Un punto fijo, y el
-    consejo apuntaba al único lugar donde no había nada que arreglar. Ahora las
-    compuertas se ganan en la fase que las posee: `--claim commit --claim pr`
-    en una corrida que no toma arista, y después la arista.
+    `CLOSEOUT→IDLE` asks for `commit` and `pr`. Reaching IDLE clears the gates,
+    so the `--gate` passed in that same run was silently discarded and the new
+    state came out with `tier: null` by construction — which dropped the
+    refusal into the tier branch, saying "The tier is missing: pass
+    --tier <…>", a flag that edge ignores. The obedient reader passed it, the
+    refusal came out identical, and the path the method orders you to take —
+    the sanctioned helper — could not close a ticket in ANY tier. A fixed
+    point, and the advice pointed at the one place where there was nothing to
+    fix. Gates are now earned in the phase that owns them: `--claim commit
+    --claim pr` in a run that takes no edge, and then the edge.
 
 given:
   install: claude
-  # Un FEATURE al final del pipeline: todo ganado menos lo que la arista de
-  # cierre cobra. Es el estado exacto sobre el que se midió — el ticket que
-  # terminó y no se puede cerrar.
+  # A FEATURE at the end of the pipeline: everything earned except what the
+  # closing edge charges. It is the exact state this was measured on — the
+  # ticket that finished and cannot be closed.
   state:
     phase: CLOSEOUT
     tier: FEATURE
@@ -34,27 +34,28 @@ given:
       - {timestamp: "2026-01-01T00:10:00Z", from: CLASSIFY, to: DEFINE, action: "classified", tier: FEATURE, ticket: T-1}
 
 when:
-  # El rechazo lo dice el HELPER: este hint vive sólo en el `main()` de
-  # `transition.py` y el hook no lo imprime nunca. El disparador es lo que hace
-  # cualquiera al terminar: pedir el cierre.
+  # The refusal is said by the HELPER: this hint lives only in the `main()` of
+  # `transition.py` and the hook never prints it. The trigger is what anyone
+  # does when they finish: ask for the closeout.
   triggered_by:
     transition: ["--to", "IDLE", "--action", "close: the work is done"]
 
-  # Las dos mitades, y la negativa es la que discrimina.
+  # The two halves, and the negative is the one that discriminates.
   #
-  # `(?!.*--tier)` sobre el mensaje entero: la versión rota mandaba a `--tier`,
-  # y ésa es la frase que hay que no volver a ver. Sin la negativa el escenario
-  # pasaría el control, porque el rechazo del tier también es un rechazo.
+  # `(?!.*--tier)` over the whole message: the broken version sent you to
+  # `--tier`, and that is the sentence that must never be seen again. Without
+  # the negative the scenario would pass the control, because the tier refusal
+  # is also a refusal.
   #
-  # Y la positiva ancla el paso que se replica abajo: si el rechazo dejara de
-  # nombrar `--claim commit --claim pr`, lo que se prueba después no sería lo
-  # que el rechazo prescribe.
+  # And the positive anchors the step replicated below: if the refusal stopped
+  # naming `--claim commit --claim pr`, what gets tested afterwards would not
+  # be what the refusal prescribes.
   refusal_matches: '^(?!.*--tier).*Gates are earned in the phase that owns them.*Run `--claim commit --claim pr` first'
 
-  # El movimiento que el rechazo prescribe, al pie de la letra: primero la
-  # corrida que marca las compuertas sin tomar arista, después la arista. Los
-  # dos tienen que salir 0 y el estado tiene que terminar en IDLE — si el
-  # segundo volviera a rechazar, sería el punto fijo otra vez.
+  # The move the refusal prescribes, to the letter: first the run that marks
+  # the gates without taking an edge, then the edge. Both have to exit 0 and
+  # the state has to end in IDLE — if the second one refused again, it would be
+  # the fixed point all over again.
   prescribed_steps:
     - ["--claim", "commit", "--claim", "pr"]
     - ["--to", "IDLE", "--action", "close: the work is done"]
@@ -62,23 +63,24 @@ when:
 expect:
   every_step_succeeds: true
 
-# El control: `substitute`. El commit del fix (5eec088) NO es ancestro de esta
-# rama —`git merge-base --is-ancestor 5eec088 HEAD` sale distinto de cero— así
-# que un checkout de CI no puede restaurar nada de él y el control fallaría por
-# una razón que no es la del escenario.
+# The control: `substitute`. The fix's commit (5eec088) is NOT an ancestor of
+# this branch — `git merge-base --is-ancestor 5eec088 HEAD` exits non-zero — so
+# a CI checkout cannot restore anything from it and the control would fail for
+# a reason that is not the scenario's.
 #
-# Se reinyecta el mensaje histórico exacto: el hint del tier, sobre una arista
-# que ignora el tier. Con él puesto, el rechazo sigue saliendo (la compuerta
-# sigue faltando) pero ya no prescribe el movimiento que este escenario replica,
-# y el escenario no puede juzgar nada — que es lo que le pasaba al lector.
+# The exact historical message is reinjected: the tier hint, on an edge that
+# ignores the tier. With it in place, the refusal still comes out (the gate is
+# still missing) but it no longer prescribes the move this scenario replicates,
+# and the scenario cannot judge anything — which is what was happening to the
+# reader.
 control:
   type: substitute
   path: ddw/scripts/transition.py
   installed_path: .ddw/scripts/transition.py
 #
-# Escrito como escalar entrecomillado y no como bloque `|-`: un bloque YAML se
-# come la sangría de su primera línea, y estas cuatro viven a veinte espacios
-# dentro de un `elif`. El indicador de sangría de YAML llega hasta 9. Es el
-# mismo idioma que usa `painted-door-corrupt-state-scratch`.
+# Written as a quoted scalar and not as a `|-` block: a YAML block swallows the
+# indentation of its first line, and these four lines live twenty spaces deep
+# inside an `elif`. YAML's indentation indicator only goes up to 9. It is the
+# same idiom `painted-door-corrupt-state-scratch` uses.
   old: "                    \"Gates are earned in the phase that owns them, not on the edge out of it: \"\n                    \"`--gate` is not read on --to IDLE, because reaching IDLE clears the gates. \"\n                    \"Run `--claim %s` first (one run, no phase change), then take this edge.\"\n                    % \" --claim \".join(owed)"
   new: "                    \"The tier is missing: pass --tier <\" + \"|\".join(_tiers(graph)) + \"> \"\n                    \"(it is set on the CLASSIFY->DEFINE/DISCOVERY transition).\""

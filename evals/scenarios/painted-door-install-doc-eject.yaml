@@ -46,17 +46,17 @@ when:
 expect:
   no_ordered_write_is_refused: true
 
-# La frase como shippeó antes de 4c41f3e, reinyectada sobre HEAD.
+# The sentence as it shipped before 4c41f3e, reinjected onto HEAD.
 #
-# Era `restore_from_commit`, y el squash-merge del PR #7 se llevó puesta esa
-# historia: `4c41f3e` vivía sólo en `feat/docs-audit`, así que desde `main` el
-# control ya no se podía aplicar y el escenario salía rojo por no poder
-# preguntarse nada — que es lo que el propio error recomienda arreglar así. Un
-# control atado a un commit de una rama es un control con fecha de vencimiento:
-# el día que la rama se borra, deja de probar.
+# It was `restore_from_commit`, and PR #7's squash-merge ran that history
+# over: `4c41f3e` lived only on `feat/docs-audit`, so from `main` the control
+# could no longer be applied and the scenario came out red for being unable to
+# ask itself anything — which is what the error itself recommends fixing this
+# way. A control tied to a branch's commit is a control with an expiry date:
+# the day the branch is deleted, it stops proving.
 #
-# El documento no se instala en el repo —el probe le pregunta al gate del
-# fixture igual— así que no hay `installed_path`.
+# The document is not installed into the repo — the probe asks the fixture's
+# gate all the same — so there is no `installed_path`.
 control:
   type: substitute
   path: docs/INSTALL.md

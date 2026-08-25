@@ -1,17 +1,17 @@
-"""Los validadores y el arranque de sesión, preguntados directamente.
+"""The validators and the session boot, asked directly.
 
-Hermano de `test_validate_transition.py` y con el mismo alcance limitado: esto
-NO reemplaza a `scripts/verify_install.sh`, que instala en un repo de verdad,
-manda un evento de verdad a un hook de verdad y lee el veredicto que leería la
-herramienta. Lo que prueba es que las reglas dicen lo que quieren decir, que es
-la mitad que no cuesta nada preguntar seguido.
+Sibling of `test_validate_transition.py` and with the same limited scope: this
+does NOT replace `scripts/verify_install.sh`, which installs into a real repo,
+sends a real event to a real hook and reads the verdict the tool would read.
+What it proves is that the rules say what they mean, which is the half that
+costs nothing to ask often.
 
-Todo lo de este archivo salió del mismo lugar: correr la suite bajo `coverage`
-con `COVERAGE_PROCESS_START` —que mide también los subprocesos, y los
-validadores y los hooks SON subprocesos— y mirar qué líneas no se ejecutan ni
-una vez. Son reglas de enforcement, no ramas de error: un aviso de que el
-enforcement instalado ya no es el que se instaló, y la caducidad del reporte de
-seguridad que abre una compuerta.
+Everything in this file came out of the same place: running the suite under
+`coverage` with `COVERAGE_PROCESS_START` — which also measures subprocesses,
+and the validators and the hooks ARE subprocesses — and looking at which lines
+never execute once. They are enforcement rules, not error branches: a warning
+that the installed enforcement is no longer what was installed, and the expiry
+of the security report that opens a gate.
 """
 import datetime
 import importlib.util
@@ -37,11 +37,11 @@ def _load(name, rel):
 boot = _load("boot", "ddw/scripts/session-boot.py")
 
 
-# ── El enforcement instalado dejó de ser el instalado ────────────────────────
+# ── The installed enforcement stopped being what was installed ───────────────
 
 @pytest.fixture()
 def installed(tmp_path):
-    """Un repo con manifiesto y con los archivos que el manifiesto nombra."""
+    """A repo with a manifest and with the files the manifest names."""
     repo = tmp_path / "r"
     (repo / ".claude" / "hooks").mkdir(parents=True)
     hook = repo / ".claude" / "hooks" / "enforce.sh"
@@ -55,75 +55,76 @@ def installed(tmp_path):
 
 def test_a_repo_whose_installed_files_match_says_nothing(installed):
     assert boot.enforcement_drift(str(installed)) == [], \
-        "un repo intacto avisa de una deriva que no tiene, y un aviso que sale siempre no se lee"
+        "an intact repo warns of a drift it does not have, and a warning that always fires is never read"
 
 
 def test_a_hook_deleted_from_a_shell_is_reported_as_missing(installed):
-    """Los hooks se niegan a escribir estos archivos, así que un cambio acá vino
-    de afuera de la sesión. Es el único aviso que hay de que el pipeline dejó de
-    estar impuesto — sin él, el repo parece gobernado y no lo está."""
+    """The hooks refuse to write these files, so a change here came from
+    outside the session. It is the only warning there is that the pipeline
+    stopped being imposed — without it, the repo looks governed and is not."""
     os.remove(installed / ".claude" / "hooks" / "enforce.sh")
     lines = boot.enforcement_drift(str(installed))
-    assert lines, "un hook borrado del repo no produjo ningún aviso"
+    assert lines, "a hook deleted from the repo produced no warning"
     blob = "\n".join(lines)
     assert "MISSING" in blob and "enforce.sh" in blob, \
-        f"el aviso no dice qué falta: {blob[:200]}"
-    assert "install.sh" in blob, f"el aviso no dice cómo repararlo: {blob[:200]}"
+        f"the warning does not say what is missing: {blob[:200]}"
+    assert "install.sh" in blob, f"the warning does not say how to repair it: {blob[:200]}"
 
 
 def test_a_hook_edited_from_a_shell_is_reported_as_changed(installed):
     (installed / ".claude" / "hooks" / "enforce.sh").write_text("#!/usr/bin/env bash\nexit 0  # :)\n")
     blob = "\n".join(boot.enforcement_drift(str(installed)))
     assert "CHANGED" in blob and "enforce.sh" in blob, \
-        f"un hook reescrito por fuera de la sesión pasó desapercibido: {blob[:200]}"
+        f"a hook rewritten from outside the session went unnoticed: {blob[:200]}"
 
 
-# ── Un reporte de seguridad caduco no abre la compuerta ──────────────────────
+# ── A stale security report does not open the gate ───────────────────────────
 
 def _template():
-    """El reporte que el skill le dice al modelo que escriba, tal cual.
+    """The report the skill tells the model to write, verbatim.
 
-    Escrito a mano acá, este archivo sería una segunda copia de la forma del
-    documento, y la segunda copia siempre se queda atrás: el defecto que más
-    veces mordió en este repo es una plantilla y una compuerta que dejaron de
-    coincidir. Se lee del skill para que no puedan.
+    Written by hand here, this file would be a second copy of the document's
+    shape, and the second copy always falls behind: the defect that has
+    bitten this repo the most times is a template and a gate that stopped
+    agreeing. It is read from the skill so they cannot.
     """
     skill = open(os.path.join(ROOT, "skills/ddw-security-sast/SKILL.md"),
                  encoding="utf-8").read()
     at = skill.index("### The report, in the shape the validator reads")
     m = re.search(r"```markdown\n(.*?)```", skill[at:], re.S)
-    assert m, "el skill de SAST ya no trae el reporte de ejemplo bajo ese título"
+    assert m, "the SAST skill no longer carries the example report under that heading"
     return m.group(1).replace("{ticket}", "T-1")
 
 
 def _with(body, suppression):
-    """El reporte con UNA supresión donde el template dice `None.`
+    """The report with ONE suppression where the template says `None.`
 
-    Cortar en `## Suppressions` y quedarse con lo de arriba se lleva también las
-    líneas `Total:` y `Result:` que van después, y el validador sin ellas no
-    rechaza NADA — con lo cual el test de la supresión fresca pasaba sin que
-    hubiera ninguna supresión que juzgar. Un test que pasa porque no midió nada
-    es la misma familia que un check que no puede fallar.
+    Cutting at `## Suppressions` and keeping what is above also takes the
+    `Total:` and `Result:` lines that come after, and without them the
+    validator refuses NOTHING — so the fresh-suppression test passed without
+    there being any suppression to judge. A test that passes for measuring
+    nothing is the same family as a check that cannot fail.
     """
     out = body.replace("## Suppressions\nNone.\n", "## Suppressions\n" + suppression, 1)
-    assert out != body, "el template ya no dice `## Suppressions` seguido de `None.`"
+    assert out != body, "the template no longer says `## Suppressions` followed by `None.`"
     return out
 
 
 def _suppression(written, review):
-    """El bloque de supresión en la forma que documenta la regla, leída de la
-    regla — no escrita acá.
+    """The suppression block in the shape the rule documents, read from the
+    rule — not written here.
 
-    §4.4 de `validation-rules.instructions.md` trae el único ejemplo trabajado
-    que existe: el skill de SAST enseña "el formato de 7 campos" por referencia
-    y nunca lo muestra. Copiar la forma a mano en este archivo sería la tercera
-    versión de la misma cosa, y la que se quede atrás decide en silencio.
+    §4.4 of `validation-rules.instructions.md` carries the only worked
+    example there is: the SAST skill teaches "the 7-field format" by
+    reference and never shows it. Copying the shape by hand into this file
+    would be a third version of the same thing, and whichever falls behind
+    decides in silence.
     """
     rules = open(os.path.join(ROOT, "ddw/rules/validation-rules.instructions.md"),
                  encoding="utf-8").read()
     at = rules.index("### 4.4 Finding Suppression Protocol")
     m = re.search(r"```markdown\n(.*?)```", rules[at:], re.S)
-    assert m, "§4.4 ya no trae el bloque de supresión de ejemplo"
+    assert m, "§4.4 no longer carries the example suppression block"
     block = m.group(1)
     filled = {
         "[finding ID]": "S-01", "[path:line]": "tests/fixtures/key.pem:1",
@@ -139,7 +140,7 @@ def _suppression(written, review):
     for hole, value in filled.items():
         block = block.replace(hole, value)
     assert "[" not in block.replace("[path:line]", ""), \
-        "quedó un placeholder sin llenar en el bloque: " + block
+        "an unfilled placeholder was left in the block: " + block
     return block
 
 
@@ -149,15 +150,16 @@ def _sast(tmp_path, body, ticket="T-1", expect_suppression=False):
     r = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts/validate_sast.py"),
                         str(path), "--tier", "FEATURE"],
                        capture_output=True, text=True, cwd=str(tmp_path))
-    # Que el bloque haya sido PARSEADO, antes de leer nada sobre él. El
-    # validador tiene una forma de decir "no había ninguna supresión que
-    # envejecer", y contra esa salida cualquier aserción sobre supresiones pasa
-    # sin haber juzgado una sola. Ya me pasó con este mismo archivo: el bloque
-    # entraba con viñetas donde la regla pide filas de tabla, el validador no
-    # veía nada, y el test de la supresión fresca daba verde.
+    # That the block was PARSED, before reading anything about it. The
+    # validator has a way of saying "there was no suppression to age", and
+    # against that output any assertion about suppressions passes without
+    # having judged a single one. It already happened to me with this very
+    # file: the block came in with bullets where the rule asks for table
+    # rows, the validator saw nothing, and the fresh-suppression test went
+    # green.
     if expect_suppression:
         assert "no suppressions to age" not in r.stdout, \
-            "el validador no vio ninguna supresión, así que nada de lo que sigue juzgó una"
+            "the validator saw no suppression, so nothing that follows judged one"
     return r, [ln for ln in r.stdout.splitlines() if ln.strip().startswith("❌")]
 
 
@@ -167,51 +169,53 @@ def test_a_suppression_written_within_six_months_passes(tmp_path):
     _, refused = _sast(tmp_path, _with(_template(), _suppression(fresh.isoformat(), ahead.isoformat())),
                         expect_suppression=True)
     assert not any("F-SAST-19" in ln for ln in refused), \
-        "una supresión de hace un mes fue rechazada por vieja: " + "\n".join(refused)
+        "a month-old suppression was refused as stale: " + "\n".join(refused)
 
 
 def test_a_suppression_older_than_six_months_is_refused_however_its_review_date_reads(tmp_path):
-    """La regla es sobre la EDAD, y `Date` se leía sólo para ver si estaba vacío.
-    Una supresión escrita hace dos años con una fecha de revisión en el futuro
-    pasaba las dos reglas siendo vieja — y una supresión es exactamente el lugar
-    donde alguien decidió que un hallazgo de seguridad no importa."""
+    """The rule is about AGE, and `Date` was read only to see if it was empty.
+    A suppression written two years ago with a review date in the future
+    passed both rules while being old — and a suppression is exactly the
+    place where someone decided a security finding does not matter."""
     old = datetime.date.today() - datetime.timedelta(days=400)
     ahead = datetime.date.today() + datetime.timedelta(days=365)
     _, refused = _sast(tmp_path, _with(_template(), _suppression(old.isoformat(), ahead.isoformat())),
                         expect_suppression=True)
     assert any("F-SAST-19" in ln for ln in refused), \
-        ("una supresión de hace más de un año pasó porque su fecha de revisión está en el "
-         "futuro: " + ("\n".join(refused) or "no refusals at all"))
+        ("a suppression over a year old passed because its review date is in the "
+         "future: " + ("\n".join(refused) or "no refusals at all"))
     assert any("six months" in ln or "over six" in ln for ln in refused), \
-        "el rechazo no dice por qué: " + "\n".join(refused)
+        "the refusal does not say why: " + "\n".join(refused)
 
 
 def test_the_report_the_skill_teaches_passes_as_written(tmp_path):
-    """Sin esto, todo lo de arriba mide contra un documento que ya era inválido
-    por otra razón, y "no salió F-SAST-19" no querría decir nada."""
+    """Without this, everything above measures against a document that was
+    already invalid for another reason, and "F-SAST-19 did not fire" would
+    mean nothing."""
     r, refused = _sast(tmp_path, _template())
     assert r.returncode == 0 and not refused, \
-        "el reporte que ddw-security-sast le dice al modelo que escriba es rechazado: " + \
+        "the report ddw-security-sast tells the model to write is refused: " + \
         ("\n".join(refused) or r.stderr[-200:])
 
 
-# ── Las reglas que deciden si un documento vacío gana una compuerta ──────────
+# ── The rules that decide whether an empty document earns a gate ─────────────
 #
-# Ocho de éstas sobrevivían a las 554 comprobaciones de la suite. Ninguna de las
-# reglas que nombran (F-TM-05, F-TM-06, F-TEST-05, F-TEST-06, F-SPEC-10,
-# F-SPEC-11) aparecía una sola vez en `verify_install.sh`: existen en el
-# catálogo, están implementadas, y nada probaba que se pudieran disparar.
+# Eight of these survived the suite's 554 checks. None of the rules they name
+# (F-TM-05, F-TM-06, F-TEST-05, F-TEST-06, F-SPEC-10, F-SPEC-11) appeared a
+# single time in `verify_install.sh`: they exist in the catalog, they are
+# implemented, and nothing proved they could fire.
 #
-# Cada test hace lo mismo, en este orden: comprueba que el documento SANO pasa,
-# planta UNA violación, y exige el ❌ con su ID. El primer paso no es ceremonia
-# — sin él, un documento que ya era inválido por otra razón haría pasar el test
-# sin que la regla en cuestión hubiera opinado nada.
+# Every test does the same thing, in this order: checks that the HEALTHY
+# document passes, plants ONE violation, and demands the ❌ with its ID. The
+# first step is not ceremony — without it, a document already invalid for
+# another reason would pass the test without the rule in question having said
+# anything.
 
 def _worked(skill, heading, ticket="T-1"):
     text = open(os.path.join(ROOT, "skills", skill, "SKILL.md"), encoding="utf-8").read()
     at = text.index(heading)
     m = re.search(r"```markdown\n(.*?)```", text[at:], re.S)
-    assert m, f"{skill} ya no trae un documento trabajado bajo {heading!r}"
+    assert m, f"{skill} no longer carries a worked document under {heading!r}"
     return m.group(1).replace("{ticket}", ticket)
 
 
@@ -228,12 +232,12 @@ def _refuses(refused, rule):
     return any(rule in ln for ln in refused)
 
 
-# ── El ledger que registra por qué un check no puede fallar ──────────────────
+# ── The ledger that records why a check cannot fail ──────────────────────────
 
 def test_regenerar_el_ledger_conserva_la_razon_entera(tmp_path):
-    """`--write` guardaba UNA línea de cada explicación, y las razones son de
-    cinco o seis. Regenerar dejaba cuarenta y cuatro excusas cortadas a media
-    frase, cada una todavía excusando su sitio: verde, y sin decir por qué."""
+    """`--write` kept ONE line of each explanation, and the reasons run five
+    or six. Regenerating left forty-four excuses cut off mid-sentence, each
+    one still excusing its site: green, and without saying why."""
     lkm = _load("lkm", "scripts/lint_kill_map.py")
     ledger = ("# Lint checks that cannot fail\n\n"
               "- [ ] `check_uno[0]`\n"
@@ -244,29 +248,30 @@ def test_regenerar_el_ledger_conserva_la_razon_entera(tmp_path):
               "      Otra razón, de un solo renglón.\n")
     entera = lkm.existing_reason(ledger, "check_uno[0]")
     assert len(entera.splitlines()) == 3, \
-        "la razón se regeneraría truncada: %r" % entera
-    assert "todas sus filas" in entera, "se perdió el final de la explicación"
-    assert "check_dos" not in entera, "la razón se comió el ítem siguiente"
+        "the reason would be regenerated truncated: %r" % entera
+    assert "todas sus filas" in entera, "the end of the explanation got lost"
+    assert "check_dos" not in entera, "the reason swallowed the next item"
     assert lkm.existing_reason(ledger, "check_dos[1]").strip() == "Otra razón, de un solo renglón."
     assert lkm.existing_reason(ledger, "check_tres[0]") == "", \
-        "un sitio sin razón escrita no puede inventarse una"
+        "a site with no written reason cannot invent one"
 
 
-# ── El modelo de amenazas ────────────────────────────────────────────────────
+# ── The threat model ─────────────────────────────────────────────────────────
 
 THREAT = "### The threat model, in the shape the validator reads"
 
 
 def _spec_arg(tmp_path):
-    """El modelo de amenazas se comprueba CONTRA el diseño real; sin la spec,
-    F-TM-06 refusa por no poder leerla y el documento sano nunca pasa."""
+    """The threat model is checked AGAINST the real design; without the spec,
+    F-TM-06 refuses for not being able to read it and the healthy document
+    never passes."""
     path = tmp_path / "spec-T-1.md"
-    # Los componentes salen del propio modelo trabajado: una spec escrita a mano
-    # acá nombraría otros archivos, y F-TM-06 —que es justo la regla que se está
-    # midiendo— rechazaría el documento sano por no coincidir con ella.
+    # The components come out of the worked model itself: a spec written by
+    # hand here would name other files, and F-TM-06 — precisely the rule
+    # being measured — would refuse the healthy document for not matching it.
     worked = _worked("ddw-threat-modeling", THREAT)
     files = re.findall(r"`([\w./-]+\.\w+)`", worked)
-    assert files, "el modelo trabajado no nombra ningún archivo"
+    assert files, "the worked model names no files at all"
     blocks = "".join("## Block %d — %s\n- `%s` — the component\n- POST /api/%d\nCovers FR-0%d.\n\n"
                      % (i, os.path.basename(f), f, i, i)
                      for i, f in enumerate(dict.fromkeys(files), 1))
@@ -276,93 +281,93 @@ def _spec_arg(tmp_path):
 
 
 def test_a_threat_model_that_names_nothing_from_its_design_is_refused(tmp_path):
-    """F-TM-06. Un modelo que no cita ni un archivo, ni un endpoint, ni un FR de
-    su spec es una redacción sobre un sistema imaginario: puede ser impecable y
-    no decir nada sobre este código."""
+    """F-TM-06. A model that cites not one file, not one endpoint, not one FR
+    of its spec is an essay about an imaginary system: it can be impeccable
+    and say nothing about this code."""
     base = _worked("ddw-threat-modeling", THREAT)
     r, refused = _validate(tmp_path, "validate_threat.py", "threat-T-1.md", base, *_spec_arg(tmp_path))
     assert r.returncode == 0 and not refused, \
-        "el modelo que el skill enseña ya no pasa, así que lo de abajo no mide nada: " + \
+        "the model the skill teaches no longer passes, so the check below measures nothing: " + \
         ("\n".join(refused) or r.stderr[-200:])
     generic = re.sub(r"`[\w./-]+\.(py|ts|js|go|rb)`", "the public API", base)
-    assert generic != base, "la sonda no cambió nada"
+    assert generic != base, "the probe changed nothing"
     _, refused = _validate(tmp_path, "validate_threat.py", "threat-T-2.md", generic, *_spec_arg(tmp_path))
     assert _refuses(refused, "F-TM-06"), \
-        "un modelo que no nombra nada del diseño ganó la compuerta: " + "\n".join(refused)
+        "a model that names nothing from the design earned the gate: " + "\n".join(refused)
 
 
 def test_a_design_handling_sensitive_data_classifies_it(tmp_path):
-    """F-TM-05. Sin la tabla, F-TM-07 dice «no PII to encrypt» y el documento
-    sale limpio: la ausencia de la clasificación se lee como ausencia de datos
-    sensibles, que es lo contrario de lo que pasó."""
+    """F-TM-05. Without the table, F-TM-07 says «no PII to encrypt» and the
+    document comes out clean: the absence of the classification reads as the
+    absence of sensitive data, which is the opposite of what happened."""
     base = _worked("ddw-threat-modeling", THREAT)
-    assert "## Data classification" in base, "el modelo trabajado ya no trae la tabla"
+    assert "## Data classification" in base, "the worked model no longer carries the table"
     cut = re.split(r"^## Data classification\s*$", base, flags=re.M)[0]
     tail = re.split(r"^## Risks and mitigations\s*$", base, flags=re.M)
     body = cut + "\n## Risks and mitigations\n" + tail[1] if len(tail) > 1 else cut
     assert "email" in body or "password" in body or "token" in body, \
-        "sin una palabra sensible en el resto del documento la regla no tiene qué mirar"
+        "without a sensitive word in the rest of the document the rule has nothing to look at"
     _, refused = _validate(tmp_path, "validate_threat.py", "threat-T-3.md", body, *_spec_arg(tmp_path))
     assert _refuses(refused, "F-TM-05"), \
-        "un diseño con datos sensibles pasó sin clasificar ninguno: " + "\n".join(refused)
+        "a design handling sensitive data passed without classifying any: " + "\n".join(refused)
 
 
 def test_a_threat_model_written_in_spanish_is_not_told_it_skipped_a_category(tmp_path):
-    """El método manda escribir los artefactos en el idioma del usuario, así que
-    los alias existen para documentos reales. Sin ellos, un modelo completo en
-    castellano es rechazado por una categoría que analizó."""
+    """The method orders the artifacts written in the user's language, so the
+    aliases exist for real documents. Without them, a complete model in
+    Spanish is refused over a category it did analyze."""
     base = _worked("ddw-threat-modeling", THREAT)
     es = (base.replace("**Elevation of Privilege:**", "**Elevación de privilegios:**")
               .replace("**Spoofing:**", "**Suplantación:**")
               .replace("**Repudiation:**", "**Repudio:**"))
-    assert es != base, "la sonda no tradujo ninguna etiqueta"
+    assert es != base, "the probe translated no labels"
     r, refused = _validate(tmp_path, "validate_threat.py", "threat-T-4.md", es, *_spec_arg(tmp_path))
     assert not _refuses(refused, "F-TM-01"), \
-        "un modelo completo escrito en castellano fue reportado como incompleto: " + \
+        "a complete model written in Spanish was reported as incomplete: " + \
         "\n".join(refused)
 
 
-# ── El reporte de tests ──────────────────────────────────────────────────────
+# ── The test report ──────────────────────────────────────────────────────────
 
 TESTS_DOC = "### The report, in the shape the validator reads"
 
 
 def test_a_report_cannot_pick_a_floor_it_can_clear(tmp_path):
-    """F-TEST-05 + F-TEST-04. El piso lo fija el proyecto; un reporte que cita
-    uno más bajo que el mínimo del pipeline y se compara contra ÉSE se aprueba
-    solo. El ⚠️ queda, y un warning no detiene nada."""
+    """F-TEST-05 + F-TEST-04. The floor is the project's to set; a report that
+    cites one lower than the pipeline's minimum and compares itself against
+    THAT approves itself. The ⚠️ stays, and a warning stops nothing."""
     base = _worked("ddw-test", TESTS_DOC)
     r, refused = _validate(tmp_path, "validate_tests.py", "tests-T-1.md", base)
     assert r.returncode == 0 and not refused, \
-        "el reporte que el skill enseña ya no pasa: " + ("\n".join(refused) or r.stderr[-200:])
+        "the report the skill teaches no longer passes: " + ("\n".join(refused) or r.stderr[-200:])
     low = re.sub(r"^\| Coverage floor \|.*$", "| Coverage floor | 20% (AGENTS.md) |",
                  base, flags=re.M)
     low = re.sub(r"^\| (Line|Branch|Function) coverage \|.*$",
                  lambda m: "| %s coverage | 31%% |" % m.group(1), low, flags=re.M)
-    assert low != base, "la sonda no bajó ni el piso ni la cobertura"
+    assert low != base, "the probe lowered neither the floor nor the coverage"
     _, refused = _validate(tmp_path, "validate_tests.py", "tests-T-2.md", low)
     assert _refuses(refused, "F-TEST-04"), \
-        ("un reporte con 31% de cobertura se aprobó eligiendo un piso de 20%: "
+        ("a report with 31% coverage approved itself by choosing a 20% floor: "
          + ("\n".join(refused) or "no refusals at all"))
 
 
 def test_a_report_that_states_no_floor_is_refused_not_given_one(tmp_path):
-    """F-TEST-05. Heredar el default del flag en silencio hace que el documento
-    quede graduado contra un número que nadie escribió en él."""
+    """F-TEST-05. Silently inheriting the flag's default leaves the document
+    graded against a number nobody wrote in it."""
     base = _worked("ddw-test", TESTS_DOC)
     nofloor = re.sub(r"^\| Coverage floor \|.*\n", "", base, flags=re.M)
-    assert nofloor != base, "el reporte trabajado ya no declara un piso"
+    assert nofloor != base, "the worked report no longer declares a floor"
     _, refused = _validate(tmp_path, "validate_tests.py", "tests-T-3.md", nofloor)
     assert _refuses(refused, "F-TEST-05"), \
-        "un reporte sin piso pasó contra uno que DDW le inventó: " + "\n".join(refused)
+        "a report with no floor passed against one DDW invented for it: " + "\n".join(refused)
 
 
 def test_a_skipped_test_owes_a_reason(tmp_path):
-    """F-TEST-06. Saltear es la forma más barata de poner una suite en verde, y
-    un skip sin motivo es indistinguible de uno que tapa una falla."""
+    """F-TEST-06. Skipping is the cheapest way to put a suite in green, and a
+    skip without a reason is indistinguishable from one covering a failure."""
     base = _worked("ddw-test", TESTS_DOC)
-    # El reporte trabajado no saltea nada, así que el caso hay que PLANTARLO:
-    # dos tests omitidos y ni una línea que diga por qué.
+    # The worked report skips nothing, so the case has to be PLANTED: two
+    # tests skipped and not one line saying why.
     mute = re.sub(r"^\| Skipped \|.*$", "| Skipped | 2 |", base, flags=re.M)
     mute = re.sub(r"^\| Passed \| (\d+) \|$",
                   lambda m: "| Passed | %d |" % (int(m.group(1)) - 2), mute, flags=re.M)
@@ -370,36 +375,37 @@ def test_a_skipped_test_owes_a_reason(tmp_path):
                   "## Skips\n- `tests/test_auth.py::test_expiry`\n- `tests/test_auth.py::test_refresh`",
                   mute, flags=re.M)
     assert "## Skips\n- " in mute and "| Skipped | 2 |" in mute, \
-        "la sonda no plantó los dos skips mudos"
+        "the probe did not plant the two mute skips"
     _, refused = _validate(tmp_path, "validate_tests.py", "tests-T-4.md", mute)
     assert _refuses(refused, "F-TEST-06"), \
-        "dos tests omitidos sin una línea de motivo pasaron: " + \
+        "two skipped tests without one line of reason passed: " + \
         ("\n".join(refused) or "no refusals at all")
 
 
 def test_a_real_run_of_a_thousand_tests_is_not_refused_for_its_punctuation(tmp_path):
-    """La dirección inversa, que es la que cuesta más caro: todo runner imprime
-    el separador de miles, y sin quitarlo `1,204` se lee como `1`. La compuerta
-    rechaza el documento VERDADERO, y el autor no tiene nada que corregir."""
+    """The reverse direction, which is the one that costs the most: every
+    runner prints the thousands separator, and without stripping it `1,204`
+    reads as `1`. The gate refuses the TRUE document, and its author has
+    nothing to correct."""
     base = _worked("ddw-test", TESTS_DOC)
     big = base
     for field, value in (("Total", "1,204"), ("Passed", "1,202"),
                          ("Failed", "0"), ("Skipped", "2")):
         big = re.sub(r"^\| %s \|.*$" % field, "| %s | %s |" % (field, value), big, flags=re.M)
-    assert big != base, "la sonda no cambió los conteos"
+    assert big != base, "the probe did not change the counts"
     r, refused = _validate(tmp_path, "validate_tests.py", "tests-T-5.md", big)
     assert not _refuses(refused, "F-TEST-02"), \
-        ("una corrida real de 1.204 tests fue rechazada por su propia puntuación: "
+        ("a real run of 1,204 tests was refused for its own punctuation: "
          + "\n".join(refused))
 
 
-# ── La spec ──────────────────────────────────────────────────────────────────
+# ── The spec ─────────────────────────────────────────────────────────────────
 
 def _fixture(marker, tag):
-    """Un documento sano de la suite. El skill de spec trae una PLANTILLA con
-    placeholders, no un documento trabajado, así que el único ejemplo completo
-    que existe está ahí. Leído, no copiado: copiarlo sería una tercera versión
-    de la misma forma."""
+    """A healthy document from the suite. The spec skill carries a TEMPLATE
+    with placeholders, not a worked document, so the only complete example
+    there is lives there. Read, not copied: copying it would be a third
+    version of the same shape."""
     suite = open(os.path.join(ROOT, "scripts/verify_install.sh"), encoding="utf-8").read()
     at = suite.index(marker)
     end = suite.index("\n" + tag, at)
@@ -411,8 +417,9 @@ def _spec():
 
 
 def _prd(tmp_path):
-    """La spec se valida CONTRA su PRD; sin él no se comprueba la cobertura y el
-    documento sano es rechazado por una razón que no es la que se está midiendo."""
+    """The spec is validated AGAINST its PRD; without it the coverage is not
+    checked and the healthy document is refused for a reason that is not the
+    one being measured."""
     body = _fixture('cat > "$VP/docs/ddw/prd/prd-FEAT-001.md" <<\'PRDEOF\'', "PRDEOF")
     path = tmp_path / "prd-FEAT-001.md"
     path.write_text(body, encoding="utf-8")
@@ -420,24 +427,24 @@ def _prd(tmp_path):
 
 
 def test_a_spec_block_owes_what_can_go_wrong_with_it(tmp_path):
-    """F-SPEC-10. Con cero errores documentados, F-SPEC-16 tampoco tapa el
-    agujero: comparar los caminos tristes contra una lista vacía no compara
-    nada."""
+    """F-SPEC-10. With zero documented errors, F-SPEC-16 does not cover the
+    hole either: comparing the sad paths against an empty list compares
+    nothing."""
     base = _spec()
     r, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md", base, *_prd(tmp_path))
     assert r.returncode == 0 and not refused, \
-        "la spec sana ya no pasa: " + ("\n".join(refused) or r.stderr[-200:])
+        "the healthy spec no longer passes: " + ("\n".join(refused) or r.stderr[-200:])
     noerr = re.sub(r"^\*\*Error handling\*\*.*?(?=^\*\*|^## )", "", base, flags=re.M | re.S)
-    assert noerr != base, "la spec sana ya no trae `**Error handling**`"
+    assert noerr != base, "the healthy spec no longer carries `**Error handling**`"
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-002.md", noerr, *_prd(tmp_path))
     assert _refuses(refused, "F-SPEC-10"), \
-        "un bloque sin manejo de errores pasó: " + ("\n".join(refused) or "no refusals at all")
+        "a block without error handling passed: " + ("\n".join(refused) or "no refusals at all")
 
 
-# Un bloque que no tiene errores propios. Medido en la ronda 6: la verdad no
-# entraba en ningún lado —en prosa la rechaza F-SPEC-10, en bullet la cobra
-# F-SPEC-16 pidiéndole un test— así que un bloque de render estático se inventó
-# un 404 de otro bloque, con su test, para poner la compuerta en verde.
+# A block that has no errors of its own. Measured in round 6: the truth fit
+# nowhere — in prose F-SPEC-10 refuses it, in a bullet F-SPEC-16 charges it a
+# test — so a static-render block invented another block's 404, with its test,
+# to put the gate in green.
 
 QUIETO = """
 ## Block 2 — Pagina de ayuda estatica
@@ -460,90 +467,92 @@ Pasa test_ayuda_devuelve_200.
 
 
 def test_un_bloque_sin_errores_propios_puede_decirlo(tmp_path):
-    """F-SPEC-10/16. La declaración satisface la regla y cuenta como CERO
-    errores: si contara como uno, F-SPEC-16 le pediría un camino triste que el
-    bloque no tiene, que es el callejón que obligó a inventar el error."""
+    """F-SPEC-10/16. The declaration satisfies the rule and counts as ZERO
+    errors: if it counted as one, F-SPEC-16 would ask it for a sad path the
+    block does not have, which is the dead end that forced inventing the
+    error."""
     base = _spec()
     cuerpo = base.replace("\n## Rollback", QUIETO + "\n## Rollback")
-    assert cuerpo != base, "la spec sana ya no trae `## Rollback` donde colgar el bloque"
+    assert cuerpo != base, "the healthy spec no longer has `## Rollback` to hang the block on"
     r, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-030.md", cuerpo,
                            *_prd(tmp_path))
     assert r.returncode == 0 and not refused, \
-        "un bloque que declara no tener errores fue rechazado: " + (
+        "a block declaring it has no errors was refused: " + (
             "\n".join(refused) or r.stderr[-200:])
 
 
 def test_la_declaracion_se_refusa_donde_no_puede_ser_cierta(tmp_path):
-    """La otra mitad, y la que impide que sea una palabra mágica: el bloque sano
-    recibe un formulario, y lo que llega puede llegar mal."""
+    """The other half, and the one that keeps it from being a magic word: the
+    healthy block receives a form, and what arrives can arrive wrong."""
     base = _spec()
     miente = re.sub(r"^\*\*Error handling\*\*\n(?:- .*\n)+",
                     "**Error handling**\n- Sin condiciones de error propias.\n",
                     base, flags=re.M)
-    assert miente != base, "la spec sana ya no trae bullets de `**Error handling**`"
+    assert miente != base, "the healthy spec no longer carries `**Error handling**` bullets"
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-031.md", miente,
                            *_prd(tmp_path))
     assert _refuses(refused, "F-SPEC-10"), \
-        "un bloque con entrada declaró no tener errores y pasó: " + (
-            "\n".join(refused) or "sin rechazos")
+        "a block with input declared it has no errors and passed: " + (
+            "\n".join(refused) or "no refusals at all")
 
 
 def test_a_spec_owes_the_order_its_blocks_run_in(tmp_path):
-    """F-SPEC-11. Una sola vez para todo el documento, y sin ella el orden de
-    ejecución queda sin declarar."""
+    """F-SPEC-11. Once for the whole document, and without it the execution
+    order goes undeclared."""
     base = _spec()
     nodeps = re.sub(r"^## Dependencies between blocks.*?(?=^## )", "", base, flags=re.M | re.S)
-    assert nodeps != base, "la spec sana ya no trae la sección de dependencias"
+    assert nodeps != base, "the healthy spec no longer carries the dependencies section"
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-003.md", nodeps, *_prd(tmp_path))
     assert _refuses(refused, "F-SPEC-11"), \
-        "una spec sin orden de ejecución declarado pasó: " + "\n".join(refused)
+        "a spec with no declared execution order passed: " + "\n".join(refused)
 
 
-# ── Tres reglas de la spec que la suite tampoco ejecuta ──────────────────────
+# ── Three spec rules the suite also never executes ───────────────────────────
 #
-# Del mismo mapa de cobertura: `no_criterion`, `bad_api` y `bad_model` son ramas
-# que la suite no toca ni una vez. Son las reglas que deciden si un bloque dice
-# cuándo está terminado, si un endpoint trae su contrato y si un esquema declara
-# sus restricciones — lo que separa una spec de una lista de intenciones.
+# From the same coverage map: `no_criterion`, `bad_api` and `bad_model` are
+# branches the suite never touches once. They are the rules that decide
+# whether a block says when it is done, whether an endpoint carries its
+# contract and whether a schema declares its constraints — what separates a
+# spec from a list of intentions.
 
 def test_a_block_owes_a_verifiable_completion_criterion(tmp_path):
-    """F-SPEC-05. Sin criterio, «terminado» es una opinión, y la fase que
-    implementa el bloque no tiene contra qué medirse."""
+    """F-SPEC-05. Without a criterion, «done» is an opinion, and the phase
+    that implements the block has nothing to measure against."""
     base = _spec()
     r, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md", base, *_prd(tmp_path))
     assert r.returncode == 0 and not refused, \
-        "la spec sana ya no pasa: " + ("\n".join(refused) or r.stderr[-200:])
+        "the healthy spec no longer passes: " + ("\n".join(refused) or r.stderr[-200:])
     cut = re.sub(r"^\*\*Completion criterion\*\*.*?(?=^\*\*|^## )", "", base, flags=re.M | re.S)
-    assert cut != base, "la spec sana ya no trae `**Completion criterion**`"
+    assert cut != base, "the healthy spec no longer carries `**Completion criterion**`"
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-010.md", cut, *_prd(tmp_path))
     assert _refuses(refused, "F-SPEC-05"), \
-        "un bloque sin criterio de finalización pasó: " + ("\n".join(refused) or "sin rechazos")
+        "a block without a completion criterion passed: " + ("\n".join(refused) or "no refusals at all")
 
 
 def test_an_endpoint_owes_a_complete_contract(tmp_path):
-    """F-SPEC-07. Un contrato al que le falta el código de error o la
-    autenticación es el que se descubre en producción."""
+    """F-SPEC-07. A contract missing its error code or its authentication is
+    the one that gets discovered in production."""
     base = _spec()
     if "API contract" not in base:
-        pytest.skip("la spec sana no declara un contrato de API que recortar")
-    # La etiqueta va sola en su línea y el contenido debajo, hasta la siguiente
-    # etiqueta en negrita: reemplazar sólo la línea del rótulo no recorta nada.
+        pytest.skip("the healthy spec declares no API contract to trim")
+    # The label sits alone on its line and the content below it, up to the
+    # next bold label: replacing only the label's line trims nothing.
     partial = re.sub(r"(?ms)^\*\*API contract\*\*.*?(?=^\*\*|^## )",
                      "**API contract**\n- POST /api/x — request body, response 200\n\n",
                      base, count=1)
-    assert partial != base, "la sonda no recortó la sección de contrato"
+    assert partial != base, "the probe did not trim the contract section"
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-011.md", partial,
                            *_prd(tmp_path))
     assert _refuses(refused, "F-SPEC-07"), \
-        ("un contrato sin códigos de error ni autenticación pasó: "
-         + ("\n".join(refused) or "sin rechazos"))
+        ("a contract without error codes or authentication passed: "
+         + ("\n".join(refused) or "no refusals at all"))
 
 
-# ── El ADR ──────────────────────────────────────────────────────────────────
+# ── The ADR ─────────────────────────────────────────────────────────────────
 #
-# El único artefacto que no tenía comprobación, y por eso el único cuyo género
-# dependía de que el modelo ya lo supiera. La regla que importa es F-ADR-03: un
-# ADR explica una decisión ya tomada y no obliga a nada.
+# The one artifact that had no check, and therefore the one whose genre
+# depended on the model already knowing it. The rule that matters is F-ADR-03:
+# an ADR explains a decision already taken and obliges nothing.
 
 ADR_SANO = """# ADR-001: Límite en proceso en lugar de CAPTCHA
 
@@ -586,54 +595,54 @@ def _adr(tmp_path, body, name="adr-001-limite.md"):
 
 def test_un_adr_que_explica_pasa(tmp_path):
     r, refused = _adr(tmp_path, ADR_SANO)
-    assert r.returncode == 0, "el ADR sano fue rechazado: " + "\n".join(refused)
+    assert r.returncode == 0, "the healthy ADR was refused: " + "\n".join(refused)
 
 
 def test_un_adr_que_manda_es_rechazado(tmp_path):
-    """F-ADR-03, la regla por la que existe este validador. Una obligación acá
-    es un requerimiento que ningún criterio de aceptación cubre y ninguna
-    compuerta lee, compitiendo con la spec por la autoridad sobre el código."""
+    """F-ADR-03, the rule this validator exists for. An obligation here is a
+    requirement no acceptance criterion covers and no gate reads, competing
+    with the spec for authority over the code."""
     manda = ADR_SANO.replace("Se eligió el límite en proceso: 5 altas por IP cada 10 minutos.",
                              "El sistema debe limitar a 5 altas por IP cada 10 minutos.")
     _, refused = _adr(tmp_path, manda)
     assert _refuses(refused, "F-ADR-03"), \
-        "un ADR que impone pasó: " + ("\n".join(refused) or "sin rechazos")
+        "an ADR that commands passed: " + ("\n".join(refused) or "no refusals at all")
 
 
 def test_una_obligacion_citada_no_es_del_adr(tmp_path):
-    """El mismo verbo, dicho por otro documento. Leer una cita como voz propia
-    convertía la regla más filosa del catálogo en la más ruidosa."""
+    """The same verb, said by another document. Reading a quote as the ADR's
+    own voice turned the sharpest rule in the catalog into the noisiest."""
     citando = ADR_SANO.replace("## Consequences",
                                "## Consequences\n\n> El PRD dice: el sistema debe responder en 3 s.\n")
     r, refused = _adr(tmp_path, citando)
     assert not _refuses(refused, "F-ADR-03"), \
-        "una obligación citada se leyó como propia: " + "\n".join(refused)
+        "a quoted obligation was read as the ADR's own: " + "\n".join(refused)
     assert r.returncode == 0
 
 
 def test_una_sola_opcion_no_es_una_decision(tmp_path):
-    """F-ADR-02. Una opción es una preferencia; registrarla como decisión es
-    cómo una preferencia adquiere la autoridad de una."""
+    """F-ADR-02. One option is a preference; recording it as a decision is
+    how a preference acquires the authority of one."""
     sola = re.sub(r"(?s)### Option 2.*?(?=## Decision)", "", ADR_SANO)
     _, refused = _adr(tmp_path, sola)
     assert _refuses(refused, "F-ADR-02"), \
-        "un ADR con una sola opción pasó: " + ("\n".join(refused) or "sin rechazos")
+        "an ADR with a single option passed: " + ("\n".join(refused) or "no refusals at all")
 
 
 def test_dos_decisiones_no_comparten_numero(tmp_path):
-    """F-ADR-05. El número es la identidad del documento: es como un sucesor
-    nombra lo que reemplaza."""
+    """F-ADR-05. The number is the document's identity: it is how a successor
+    names what it replaces."""
     _adr(tmp_path, ADR_SANO, "adr-001-limite.md")
     _, refused = _adr(tmp_path, ADR_SANO, "adr-001-otra.md")
     assert _refuses(refused, "F-ADR-05"), \
-        "dos ADR con el mismo número pasaron: " + ("\n".join(refused) or "sin rechazos")
+        "two ADRs with the same number passed: " + ("\n".join(refused) or "no refusals at all")
 
 
-# ── El split ────────────────────────────────────────────────────────────────
+# ── The split ───────────────────────────────────────────────────────────────
 #
-# El protocolo REEMPLAZA al padre por un índice, así que la lista de criterios
-# del original desaparece en el momento en que el split aterriza. F-PRD-10 es el
-# único lugar donde se puede preguntar si las partes cubren el todo.
+# The protocol REPLACES the parent with an index, so the original's list of
+# criteria disappears the moment the split lands. F-PRD-10 is the only place
+# where it can be asked whether the parts cover the whole.
 
 INDICE = """# Parent PRD: Triage IA
 
@@ -664,78 +673,78 @@ def _indice(tmp_path, body, name="prd-FEAT-001.md"):
 
 def test_un_indice_que_particiona_pasa(tmp_path):
     r, refused = _indice(tmp_path, INDICE)
-    assert r.returncode == 0, "el índice sano fue rechazado: " + "\n".join(refused)
+    assert r.returncode == 0, "the healthy index was refused: " + "\n".join(refused)
 
 
 def test_un_criterio_que_no_se_lleva_nadie_es_rechazado(tmp_path):
-    """F-PRD-10. Es la única pérdida que el split puede causar y que después
-    no se puede detectar desde ningún lado: el original ya no existe."""
+    """F-PRD-10. It is the one loss the split can cause that afterwards
+    cannot be detected from anywhere: the original no longer exists."""
     _, refused = _indice(tmp_path, INDICE.replace("| AC-06 | depends on b", "|  | depends on b"))
     assert _refuses(refused, "F-PRD-10"), \
-        "un split que dejó un AC afuera pasó: " + ("\n".join(refused) or "sin rechazos")
+        "a split that left an AC out passed: " + ("\n".join(refused) or "no refusals at all")
 
 
 def test_un_criterio_en_dos_sub_tickets_es_rechazado(tmp_path):
-    """El mismo AC reclamado dos veces: dos tickets creen que les toca, y en
-    VERIFY cada uno espera que lo cubra el otro."""
+    """The same AC claimed twice: two tickets believe it is theirs, and in
+    VERIFY each one expects the other to cover it."""
     _, refused = _indice(tmp_path, INDICE.replace("AC-04, AC-05", "AC-03, AC-04, AC-05"))
     assert _refuses(refused, "F-PRD-10"), \
-        "un AC duplicado entre hijos pasó: " + ("\n".join(refused) or "sin rechazos")
+        "an AC duplicated across children passed: " + ("\n".join(refused) or "no refusals at all")
 
 
 def test_un_indice_que_reparte_mas_de_lo_que_declara_es_rechazado(tmp_path):
-    """F-PRD-10. El número lo escribe el modelo y no se comparaba con NADA, ni
-    con las filas de abajo. Medido: un índice declaró 22 donde el documento de
-    origen tenía 17 —cinco decididos con el usuario en DEFINE— y el recibo salió
-    certificando «los 22 del original»."""
+    """F-PRD-10. The number is written by the model and used to be compared
+    against NOTHING, not even the rows below. Measured: an index declared 22
+    where the source document had 17 — five decided with the user in DEFINE —
+    and the receipt came out certifying «all 22 of the original»."""
     de_mas = INDICE.replace("| AC-06 | depends on b", "| AC-06, AC-07 | depends on b")
-    assert de_mas != INDICE, "el índice sano ya no reparte AC-06 en la fila de c"
+    assert de_mas != INDICE, "the healthy index no longer hands out AC-06 in c's row"
     _, refused = _indice(tmp_path, de_mas)
     assert _refuses(refused, "F-PRD-10"), \
-        "un índice que declara 6 y reparte 7 pasó: " + ("\n".join(refused) or "sin rechazos")
+        "an index that declares 6 and hands out 7 passed: " + ("\n".join(refused) or "no refusals at all")
 
 
 def test_el_recibo_del_split_no_habla_del_original(tmp_path):
-    """Lo que la regla mide es que las partes se reparten lo que el índice pone
-    sobre la mesa. Decir «del original» sobre criterios que nacieron en DEFINE
-    es certificar algo que no se comprobó."""
+    """What the rule measures is that the parts divide up what the index puts
+    on the table. Saying «of the original» about criteria born in DEFINE is
+    certifying something that was not checked."""
     r, _ = _indice(tmp_path, INDICE)
     fila = [ln for ln in r.stdout.splitlines() if "F-PRD-10" in ln]
     assert fila and "of the original" not in fila[0], \
-        "el recibo sigue afirmando el origen de los criterios: %r" % fila
+        "the receipt still asserts where the criteria came from: %r" % fila
 
 
 def test_un_indice_sin_el_total_a_cubrir_es_rechazado(tmp_path):
-    """Sin ese número la pregunta no se puede contestar, y el documento contra
-    el que se contestaría ya fue sobrescrito."""
+    """Without that number the question cannot be answered, and the document
+    it would be answered against has already been overwritten."""
     sin = "\n".join(l for l in INDICE.splitlines() if "criteria to cover" not in l)
     _, refused = _indice(tmp_path, sin)
     assert _refuses(refused, "F-PRD-10"), \
-        "un índice sin el total pasó: " + ("\n".join(refused) or "sin rechazos")
+        "an index without the total passed: " + ("\n".join(refused) or "no refusals at all")
 
 
 def test_un_indice_que_no_declara_ni_reparte_nada_es_rechazado(tmp_path):
-    """El mismo F-PRD-10 en el único caso que las filas no alcanzan a cubrir.
+    """The same F-PRD-10 in the one case the rows cannot reach.
 
-    Sin el total, el reparto de abajo se compara contra el conjunto vacío: nada
-    falta, nada sobra, y un índice a medio escribir sale con recibo verde
-    diciendo que sus «0 criterios» los toma exactamente un sub-ticket cada uno.
-    El índice ya reemplazó al padre, así que ese verde se da sobre una lista de
-    criterios que en ese momento no existe en ningún lado.
+    Without the total, the division below is compared against the empty set:
+    nothing missing, nothing extra, and a half-written index comes out with a
+    green receipt saying its «0 criteria» are each taken by exactly one
+    sub-ticket. The index has already replaced the parent, so that green is
+    granted over a list of criteria that at that moment exists nowhere.
     """
     vacio = "\n".join(l for l in INDICE.splitlines()
                        if "criteria to cover" not in l and not l.startswith("| FEAT-001"))
     assert "AC-01" not in vacio and "criteria to cover" not in vacio, \
-        "el índice de prueba todavía declara o reparte algo, que es lo contrario del caso"
+        "the probe index still declares or hands out something, which is the opposite of the case"
     r, refused = _indice(tmp_path, vacio)
     assert _refuses(refused, "F-PRD-10"), \
-        ("un índice que no declara ni reparte nada pasó con recibo verde:\n" + r.stdout)
+        ("an index that declares nothing and hands out nothing passed with a green receipt:\n" + r.stdout)
 
 
 def test_un_sub_prd_mas_grande_que_el_umbral_avisa(tmp_path):
-    """W-PRD-06. El split que no achicó nada: aviso, nunca bloqueo — quedarse
-    con el ticket entero es decisión del usuario, pero el número no es suyo
-    para perderlo."""
+    """W-PRD-06. The split that shrank nothing: a warning, never a block —
+    keeping the whole ticket is the user's decision, but the number is not
+    theirs to lose."""
     base = _worked("ddw-create-prd", "## PRD Template")
     extra = "\n".join("- AC-%02d (FR-01): WHEN algo pasa, THE sistema SHALL responder." % n
                       for n in range(4, 13))
@@ -743,15 +752,14 @@ def test_un_sub_prd_mas_grande_que_el_umbral_avisa(tmp_path):
                           "- AC-03 (FR-02): WHILE [state], THE [system] SHALL [response].\n" + extra)
     r, _ = _validate(tmp_path, "validate_prd.py", "prd-FEAT-099.md", grande)
     assert "W-PRD-06" in r.stdout, \
-        "un PRD de 12 ACs no dijo nada sobre el umbral:\n" + r.stdout[-400:]
+        "a 12-AC PRD said nothing about the threshold:\n" + r.stdout[-400:]
 
 
-# ── El gate del commit ──────────────────────────────────────────────────────
+# ── The commit gate ─────────────────────────────────────────────────────────
 #
-# `git commit` era el único acto del pipeline que ningún hook juzgaba: el
-# matcher del PreToolUse era Edit|Write|NotebookEdit y un commit es una llamada
-# a Bash. Medido: cinco documentos commiteados y el usuario leyendo el hash
-# después.
+# `git commit` was the one act of the pipeline no hook judged: the
+# PreToolUse matcher was Edit|Write|NotebookEdit and a commit is a Bash call.
+# Measured: five documents committed and the user reading the hash afterwards.
 
 GATE = os.path.join(ROOT, "ddw/scripts/hook-gate.py")
 GRAPH_PATH = os.path.join(ROOT, "ddw/rules/transition-graph.json")
@@ -794,55 +802,57 @@ def test_un_commit_que_el_usuario_no_vio_es_rechazado(tmp_path):
     _repo_en_define(tmp_path)
     _propone(tmp_path)
     assert _commit(tmp_path).returncode == 2, \
-        "mostrar el mensaje y commitear pudieron pasar en la misma respuesta"
+        "showing the message and committing could happen in the same response"
 
 
 def test_un_commit_visto_y_contestado_pasa_al_primer_intento(tmp_path):
-    """La primera versión rechazaba el PRIMER intento y cobraba un ida y vuelta
-    incluso al modelo que había hecho todo bien."""
+    """The first version refused the FIRST attempt and charged a round trip
+    even to the model that had done everything right."""
     _repo_en_define(tmp_path)
     _propone(tmp_path)
     _habla_el_usuario(tmp_path)
-    assert _commit(tmp_path).returncode == 0, "el commit aprobado fue rechazado igual"
+    assert _commit(tmp_path).returncode == 0, "the approved commit was refused anyway"
 
 
 def test_el_trailer_que_el_metodo_prohibe_no_pasa(tmp_path):
-    """`commits.instructions.md` lo dice en mayúsculas — NUNCA `Co-Authored-By`,
-    la divulgación es `AI-assisted: yes` — y ningún gate leía el archivo del que
-    esa regla habla.
+    """`commits.instructions.md` says it in capitals — NEVER `Co-Authored-By`,
+    the disclosure is `AI-assisted: yes` — and no gate read the file that
+    rule talks about.
 
-    Medido en vivo sobre Copilot: el modelo redactó el mensaje, el usuario lo
-    aprobó, y llevaba `Co-authored-by: Copilot <…@users.noreply.github.com>` —
-    el default de la herramienta haciendo exactamente lo que la regla prohíbe.
-    Aprobado y todo, ese commit atribuye una autoría que el proyecto no acordó.
+    Measured live on Copilot: the model drafted the message, the user
+    approved it, and it carried `Co-authored-by: Copilot
+    <…@users.noreply.github.com>` — the tool's default doing exactly what the
+    rule forbids. Approved and all, that commit attributes an authorship the
+    project never agreed to.
     """
     _repo_en_define(tmp_path)
     malo = MENSAJE.rstrip("\n") + "\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\n"
     _propone(tmp_path, malo)
     _habla_el_usuario(tmp_path)
     r = _commit(tmp_path)
-    assert r.returncode == 2, "el commit se llevó un Co-Authored-By que el método prohíbe"
+    assert r.returncode == 2, "the commit carried a Co-Authored-By the method forbids"
     assert "AI-assisted" in (r.stdout + r.stderr), \
-        "el rechazo no dice cuál es el trailer que SÍ va: " + (r.stdout + r.stderr)[-200:]
+        "the refusal does not say which trailer DOES go: " + (r.stdout + r.stderr)[-200:]
 
-    # …y el mensaje correcto sigue pasando: lo que se juzga es el trailer, no el
-    # cuerpo. Lo que el mensaje DICE es del modelo y del usuario que lo aprueba.
+    # …and the correct message still passes: what gets judged is the trailer,
+    # not the body. What the message SAYS belongs to the model and to the
+    # user who approves it.
     _propone(tmp_path)
     _habla_el_usuario(tmp_path)
-    assert _commit(tmp_path).returncode == 0, "un mensaje legítimo quedó rechazado"
+    assert _commit(tmp_path).returncode == 0, "a legitimate message ended up refused"
 
 
 def test_mostrar_un_mensaje_y_commitear_otro_es_rechazado(tmp_path):
-    """El agujero que no cerraba nadie: los bytes se comparan."""
+    """The hole nobody was closing: the bytes get compared."""
     _repo_en_define(tmp_path)
     _propone(tmp_path)
     _habla_el_usuario(tmp_path)
     _propone(tmp_path, "\U0001F4DD docs: otra cosa completamente distinta\n")
-    assert _commit(tmp_path).returncode == 2, "commiteó un mensaje que el usuario nunca vio"
+    assert _commit(tmp_path).returncode == 2, "it committed a message the user never saw"
 
 
 def _post(tmp_path):
-    """El PostToolUse que corre después de cada Bash — consumidor del permiso."""
+    """The PostToolUse that runs after every Bash — consumer of the permission."""
     return subprocess.run([sys.executable, GATE, "--mode", "post",
                            "--state", str(tmp_path / ".ddw-state.json"),
                            "--graph", GRAPH_PATH, "--repo", str(tmp_path)],
@@ -850,7 +860,7 @@ def _post(tmp_path):
 
 
 def _git_commitea(tmp_path, mensaje=MENSAJE):
-    """Un commit real con los bytes aprobados, como lo dejaría `git commit -F`."""
+    """A real commit with the approved bytes, as `git commit -F` would leave it."""
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
     subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], env=env, check=True)
@@ -863,31 +873,31 @@ def _git_commitea(tmp_path, mensaje=MENSAJE):
 
 
 def test_el_permiso_se_gasta_cuando_el_commit_existe(tmp_path):
-    """Gastarlo al PERMITIR era el defecto: el permiso lo gasta el commit en HEAD."""
+    """Spending it on ALLOWING was the defect: the permission is spent by the commit at HEAD."""
     _repo_en_define(tmp_path)
     _propone(tmp_path)
     _habla_el_usuario(tmp_path)
     assert _commit(tmp_path).returncode == 0
-    _git_commitea(tmp_path)          # el commit aprobado landeó de verdad
-    _post(tmp_path)                  # exit code ajeno: acá solo importa el consumo
-    assert _commit(tmp_path).returncode == 2, "un mensaje ya commiteado abrió el commit siguiente"
+    _git_commitea(tmp_path)          # the approved commit actually landed
+    _post(tmp_path)                  # exit code irrelevant: only the consumption matters here
+    assert _commit(tmp_path).returncode == 2, "an already-committed message opened the next commit"
 
 
 def test_un_commit_que_fallo_no_gasta_el_permiso(tmp_path):
-    """El gate permitió, git falló (GPG sin TTY, pre-commit, índice vacío): la
-    aprobación tiene que seguir en pie y el reintento pasar sin otro turno.
-    La primera versión borraba proposal y sello al permitir, el modelo
-    encontraba `.ddw-work/` vacío, reescribía los mismos bytes y era rechazado
-    como nunca-visto. Medido, en la primera corrida manual que llegó acá."""
+    """The gate allowed, git failed (GPG without a TTY, pre-commit, empty
+    index): the approval has to stay standing and the retry pass without
+    another turn. The first version deleted proposal and stamp on allowing,
+    the model found `.ddw-work/` empty, rewrote the same bytes and was
+    refused as never-seen. Measured, on the first manual run that got here."""
     _repo_en_define(tmp_path)
     _propone(tmp_path)
     _habla_el_usuario(tmp_path)
     assert _commit(tmp_path).returncode == 0
     _git_commitea(tmp_path, "otro mensaje: el aprobado nunca llegó a HEAD")
-    _post(tmp_path)                  # corre igual tras el Bash fallido
-    assert (tmp_path / PROPOSAL).exists(), "el post consumió un permiso que ningún commit gastó"
+    _post(tmp_path)                  # runs the same after the failed Bash
+    assert (tmp_path / PROPOSAL).exists(), "the post consumed a permission no commit spent"
     assert _commit(tmp_path).returncode == 0, \
-        "el reintento del commit aprobado fue rechazado: el gate se comió la aprobación"
+        "the retry of the approved commit was refused: the gate ate the approval"
 
 
 def test_un_commit_por_fuera_del_archivo_es_rechazado(tmp_path):
@@ -909,19 +919,20 @@ def test_minimal_no_espera(tmp_path):
     assert _commit(tmp_path, 'git commit -m "x"').returncode == 0
 
 
-# ── Las reglas que pasaban en vacío ──────────────────────────────────────────
+# ── The rules that passed on emptiness ───────────────────────────────────────
 #
-# El patrón medido en la ronda 4: una regla cuyo parser extrae cero elementos
-# reportaba "all 0 ... " y daba verde. Un check que midió nada no avala nada.
+# The pattern measured in round 4: a rule whose parser extracts zero elements
+# reported "all 0 ... " and went green. A check that measured nothing vouches
+# for nothing.
 
 def test_un_prd_cuyos_ids_no_parsean_no_pasa_la_bateria(tmp_path):
-    """F-PRD-05: "0 FR, 0 NFR, 0 AC — unique, gapless" era PASS, y con las
-    listas vacías F-PRD-01/03/06/09 pasaban también."""
+    """F-PRD-05: "0 FR, 0 NFR, 0 AC — unique, gapless" was a PASS, and with
+    the lists empty F-PRD-01/03/06/09 passed too."""
     body = _fixture('cat > "$VP/docs/ddw/prd/prd-FEAT-001.md" <<\'PRDEOF\'', "PRDEOF")
     sin_ids = body.replace("FR-", "Req ").replace("NFR-", "NReq ").replace("AC-", "Crit ")
     r, refused = _validate(tmp_path, "validate_prd.py", "prd-FEAT-002.md", sin_ids)
     assert _refuses(refused, "F-PRD-05"), \
-        "un PRD sin un solo ID parseable pasó la batería entera: " + "\n".join(refused)
+        "a PRD without a single parseable ID passed the whole battery: " + "\n".join(refused)
 
 
 def test_una_spec_contra_un_prd_que_parsea_vacio_no_reporta_cobertura(tmp_path):
@@ -934,7 +945,7 @@ def test_una_spec_contra_un_prd_que_parsea_vacio_no_reporta_cobertura(tmp_path):
     r, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-020.md", base,
                            "--prd", str(vacio))
     assert _refuses(refused, "F-SPEC-01/02/03"), \
-        "una spec validó cobertura contra un PRD que parsea vacío: " + "\n".join(refused)
+        "a spec validated coverage against a PRD that parses empty: " + "\n".join(refused)
 
 
 def _f_ver_06(tmp_path, report, spec):
@@ -953,19 +964,19 @@ SPEC_BACKTICKS = ("# Spec\n\n## Block 1 — x\n**Required tests**\n"
 
 
 def test_los_tests_prometidos_con_backticks_se_leen(tmp_path):
-    """F-VER-06: la skill de spec emite `test_x` con backticks y la regex leía
-    cero — "all 0 test(s) the spec promised" fue verde en una corrida real que
-    tenía 13 prometidos y 3 ausentes del reporte."""
+    """F-VER-06: the spec skill emits `test_x` with backticks and the regex
+    read zero — "all 0 test(s) the spec promised" went green on a real run
+    that had 13 promised and 3 missing from the report."""
     rows = _f_ver_06(tmp_path, "# V\nblock 1: test_uno y test_dos verificados\n",
                      SPEC_BACKTICKS)
     assert rows and "✅" in rows[0] and "2 test(s)" in rows[0], \
         "los nombres con backticks siguen invisibles: %r" % rows
 
 
-# Las dos mitades del fix se tapan entre sí si se las mide con el mismo
-# documento: acotar a `Required tests` esconde que la ruta se filtra, y filtrar
-# la ruta esconde que se lee de más. Un fixture por mitad, o la mutación que
-# reinyecta cada una sobrevive sobre la defensa de la otra.
+# The fix's two halves cover for each other if measured with the same
+# document: scoping to `Required tests` hides that the path leaks in, and
+# filtering the path hides the over-reading. One fixture per half, or the
+# mutation that re-injects each one survives on the other's defense.
 
 SPEC_RUTA_PROMETIDA = ("# Spec\n\n## Block 1 — x\n"
                        "**Required tests**\n"
@@ -975,15 +986,16 @@ SPEC_RUTA_PROMETIDA = ("# Spec\n\n## Block 1 — x\n"
 
 
 def test_una_ruta_de_archivo_no_es_un_test_prometido(tmp_path):
-    """F-VER-06. `tests/fakes.py` no tiene un solo test, y contarlo infló la
-    cuenta: la ronda 6 midió "all 19 test(s) the spec promised" sobre una spec
-    que prometía 16. El ❌ previo se cerró agregando los NOMBRES DE ARCHIVO al
-    reporte — justo lo que la regla malleía. Escrito DENTRO de `Required tests`
-    a propósito: acotar la búsqueda no alcanza para esto."""
+    """F-VER-06. `tests/fakes.py` holds not a single test, and counting it
+    inflated the tally: round 6 measured "all 19 test(s) the spec promised"
+    over a spec that promised 16. The previous ❌ was closed by adding the
+    FILE NAMES to the report — exactly what the rule was misreading. Written
+    INSIDE `Required tests` on purpose: narrowing the search is not enough
+    for this."""
     rows = _f_ver_06(tmp_path, "# V\nblock 1: test_uno y test_dos verificados\n",
                      SPEC_RUTA_PROMETIDA)
     assert rows and "✅" in rows[0] and "2 test(s)" in rows[0], \
-        "una ruta de archivo sigue contando como test prometido: %r" % rows
+        "a file path still counts as a promised test: %r" % rows
 
 
 SPEC_NOMBRE_FUERA = ("# Spec\n\n## Block 1 — x\n"
@@ -992,37 +1004,37 @@ SPEC_NOMBRE_FUERA = ("# Spec\n\n## Block 1 — x\n"
 
 
 def test_un_test_nombrado_fuera_de_required_tests_no_es_una_promesa(tmp_path):
-    """La otra mitad: la promesa vive en `Required tests` y en ningún otro lado.
-    Leído el documento entero, un test que la spec MENCIONA —el de humo que
-    queda igual tras el rollback— se vuelve una promesa que el reporte de
-    verificación tiene que nombrar, y VERIFY refusa por algo que nadie
-    prometió."""
+    """The other half: the promise lives in `Required tests` and nowhere
+    else. Reading the whole document, a test the spec MENTIONS — the smoke
+    test that stays as-is after the rollback — becomes a promise the
+    verification report has to name, and VERIFY refuses over something
+    nobody promised."""
     rows = _f_ver_06(tmp_path, "# V\nblock 1: test_uno verificado\n", SPEC_NOMBRE_FUERA)
     assert rows and "✅" in rows[0] and "1 test(s)" in rows[0], \
-        "un test nombrado fuera de Required tests se cobró como promesa: %r" % rows
+        "a test named outside Required tests was charged as a promise: %r" % rows
 
 
 def test_un_test_prometido_ausente_del_reporte_refusa(tmp_path):
     rows = _f_ver_06(tmp_path, "# V\nblock 1: solo test_uno\n", SPEC_BACKTICKS)
     assert rows and "❌" in rows[0] and "test_dos" in rows[0], \
-        "un test prometido y ausente pasó: %r" % rows
+        "a promised and absent test passed: %r" % rows
 
 
 def test_required_tests_ilegibles_no_es_un_pass(tmp_path):
-    """La mitad honesta del fix: si hay secciones Required tests y el parser
-    extrae cero nombres, eso es un NO — no un "all 0" en verde."""
+    """The honest half of the fix: if there are Required tests sections and
+    the parser extracts zero names, that is a NO — not an "all 0" in green."""
     spec = "# Spec\n**Required tests**\n- [ ] «prueba_uno» — nombre sin formato\n"
     rows = _f_ver_06(tmp_path, "# V\n", spec)
     assert rows and "❌" in rows[0], \
-        "una spec con promesas ilegibles avaló el reporte: %r" % rows
+        "a spec with unreadable promises vouched for the report: %r" % rows
 
 
 # ── El gate del merge ────────────────────────────────────────────────────────
 #
-# El único acto del pipeline que sale del repo y que nadie acá puede revertir
-# corría sin que ningún hook lo viera; la elección llegaba por picker, que
-# ningún hook recibe. Mismo diseño que el gate del commit — proposal + sello —
-# con la diferencia que el acto exige: rige en AMBOS modos de autonomía.
+# The one act of the pipeline that leaves the repo and that nobody here can
+# revert ran with no hook seeing it; the choice arrived via picker, which no
+# hook receives. Same design as the commit gate — proposal + stamp — with the
+# difference the act demands: it governs in BOTH autonomy modes.
 
 MERGE_PROP = os.path.join(".ddw-work", "merge-proposal.txt")
 PROPUESTA_MERGE = "merge PR #7 into main — Recepción de tickets\n"
@@ -1061,29 +1073,29 @@ def _gh_estado(tmp_path, estado):
 
 def test_un_merge_que_el_usuario_no_vio_es_rechazado(tmp_path):
     _repo_en_define(tmp_path)
-    assert _merge(tmp_path).returncode == 2, "un merge corrió sin que nadie lo viera"
+    assert _merge(tmp_path).returncode == 2, "a merge ran with nobody having seen it"
 
 
 def test_un_merge_visto_y_contestado_pasa(tmp_path):
     _repo_en_define(tmp_path)
     _propone_merge(tmp_path)
     _habla_el_usuario(tmp_path)
-    assert _merge(tmp_path).returncode == 0, "el merge aprobado fue rechazado igual"
+    assert _merge(tmp_path).returncode == 0, "the approved merge was refused anyway"
 
 
 def test_minimal_no_exime_al_merge(tmp_path):
-    """La frase que la prosa dijo siempre y nada sostenía: el merge conserva su
-    confirmación en ambos modos."""
+    """The sentence the prose always said and nothing upheld: the merge keeps
+    its confirmation in both modes."""
     _repo_en_define(tmp_path, autonomy="minimal")
     assert _merge(tmp_path).returncode == 2, \
-        "minimal eximió al acto que la prosa dice que nunca exime"
+        "minimal exempted the act the prose says is never exempt"
 
 
 def test_un_merge_propuesto_en_el_mismo_turno_es_rechazado(tmp_path):
     _repo_en_define(tmp_path)
     _propone_merge(tmp_path)
     assert _merge(tmp_path).returncode == 2, \
-        "mostrar la propuesta y mergear pudieron pasar en la misma respuesta"
+        "showing the proposal and merging could happen in the same response"
 
 
 def test_un_merge_fallido_no_gasta_la_aprobacion(tmp_path):
@@ -1091,9 +1103,9 @@ def test_un_merge_fallido_no_gasta_la_aprobacion(tmp_path):
     _propone_merge(tmp_path)
     _habla_el_usuario(tmp_path)
     assert _merge(tmp_path).returncode == 0
-    _post_hook(tmp_path, env=_gh_estado(tmp_path, "OPEN"))   # el merge NO landeó
-    assert (tmp_path / MERGE_PROP).exists(), "el post consumió un merge que no existe"
-    assert _merge(tmp_path).returncode == 0, "el reintento del merge aprobado fue rechazado"
+    _post_hook(tmp_path, env=_gh_estado(tmp_path, "OPEN"))   # the merge did NOT land
+    assert (tmp_path / MERGE_PROP).exists(), "the post consumed a merge that does not exist"
+    assert _merge(tmp_path).returncode == 0, "the retry of the approved merge was refused"
 
 
 def test_el_permiso_del_merge_se_gasta_cuando_el_forge_dice_merged(tmp_path):
@@ -1102,16 +1114,16 @@ def test_el_permiso_del_merge_se_gasta_cuando_el_forge_dice_merged(tmp_path):
     _habla_el_usuario(tmp_path)
     assert _merge(tmp_path).returncode == 0
     _post_hook(tmp_path, env=_gh_estado(tmp_path, "MERGED"))
-    assert not (tmp_path / MERGE_PROP).exists(), "el post no consumió un merge landeado"
-    assert _merge(tmp_path).returncode == 2, "una aprobación gastada abrió el merge siguiente"
+    assert not (tmp_path / MERGE_PROP).exists(), "the post did not consume a landed merge"
+    assert _merge(tmp_path).returncode == 2, "a spent approval opened the next merge"
 
 
-# ── El instalador y la instalación sin commitear ─────────────────────────────
+# ── The installer and the uncommitted install ────────────────────────────────
 
 def test_sin_tty_el_instalador_avisa_que_la_instalacion_no_esta_commiteada(tmp_path):
-    """La bomba de la ronda 4: instalación nunca commiteada → el primer closeout
-    la barre adentro del PR de la feature (68 archivos). Sin terminal no puede
-    preguntar, pero callarse era el defecto."""
+    """Round 4's bomb: an install never committed → the first closeout sweeps
+    it into the feature's PR (68 files). Without a terminal it cannot ask,
+    but staying silent was the defect."""
     repo = tmp_path / "r"
     repo.mkdir()
     subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
@@ -1123,28 +1135,28 @@ def test_sin_tty_el_instalador_avisa_que_la_instalacion_no_esta_commiteada(tmp_p
                        stdin=subprocess.DEVNULL, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-300:]
     assert "not committed" in r.stdout, \
-        "el instalador dejó la instalación sin commitear y no dijo nada"
+        "the installer left the install uncommitted and said nothing"
 
 
 def test_instalar_en_un_directorio_sin_git_instala_y_avisa(tmp_path):
-    """Regresión medida el mismo día del fix del installer: `set -euo pipefail`
-    + una captura de git sin guardar = el instalador moría en rc 128 SIN
-    IMPRIMIR UNA LÍNEA sobre un destino no-git. Instalar debe funcionar, y el
-    aviso debe existir: el pipeline branchea/commitea/abre PRs y el primer
-    ticket muere en CLASSIFY si no hay git."""
+    """A regression measured the same day as the installer fix: `set -euo
+    pipefail` + an unsaved git capture = the installer died at rc 128 WITHOUT
+    PRINTING A LINE about a non-git destination. Installing must work, and
+    the notice must exist: the pipeline branches/commits/opens PRs and the
+    first ticket dies in CLASSIFY if there is no git."""
     target = tmp_path / "nogit"
     target.mkdir()
     r = subprocess.run(["bash", os.path.join(ROOT, "install.sh"), str(target),
                         "--target", "claude", "--mode", "dropin"],
                        stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    assert r.returncode == 0, "el instalador murió en un destino sin git: rc=%s %s" % (
+    assert r.returncode == 0, "the installer died on a git-less destination: rc=%s %s" % (
         r.returncode, r.stderr[-200:])
-    assert (target / ".ddw" / "orchestrator.md").exists(), "no instaló nada"
+    assert (target / ".ddw" / "orchestrator.md").exists(), "it installed nothing"
     assert "not a git repository" in r.stdout, \
-        "instaló en silencio donde el primer ticket va a morir en CLASSIFY"
+        "it installed in silence where the first ticket will die in CLASSIFY"
 
 
-# ── El flujo git del instalador (DDW_GIT_FLOW es la ortografía sin terminal) ─
+# ── The installer's git flow (DDW_GIT_FLOW is the no-terminal spelling) ──────
 
 def _repo_para_instalar(tmp_path, con_commit=True):
     r = tmp_path / "repo"
@@ -1184,33 +1196,33 @@ def test_flow_setup_instala_commitea_en_su_rama_y_deja_limpio(tmp_path):
     res = _instala(r, "setup", push="n")
     assert res.returncode == 0, res.stderr[-300:]
     assert _rama(r).startswith("ddw-setup-"), \
-        "eligió rama setup y quedó en %r" % _rama(r)
-    assert _sucios(r) == 0, "la instalación no quedó commiteada en la rama setup"
-    assert "stays local" in res.stdout, "no dijo qué pasa con la rama sin push"
+        "it chose the setup branch and ended up on %r" % _rama(r)
+    assert _sucios(r) == 0, "the install did not end up committed on the setup branch"
+    assert "stays local" in res.stdout, "it did not say what happens to the branch without a push"
 
 
 def test_flow_current_commitea_en_la_rama_actual(tmp_path):
     r = _repo_para_instalar(tmp_path)
     res = _instala(r, "current")
     assert res.returncode == 0, res.stderr[-300:]
-    assert _rama(r) in ("main", "master"), "se movió de rama sin que nadie lo pida"
-    assert _sucios(r) == 0, "eligió commit en la rama actual y quedó sin commitear"
+    assert _rama(r) in ("main", "master"), "it moved branches with nobody asking"
+    assert _sucios(r) == 0, "it chose commit on the current branch and ended up uncommitted"
 
 
 def test_flow_none_deja_los_archivos_sin_commitear(tmp_path):
     r = _repo_para_instalar(tmp_path)
     res = _instala(r, "none")
     assert res.returncode == 0, res.stderr[-300:]
-    assert _sucios(r) > 0, "eligió no commitear y algo commiteó igual"
-    assert "nothing committed" in res.stdout, "no dijo que quedó sin commitear"
+    assert _sucios(r) > 0, "it chose not to commit and something committed anyway"
+    assert "nothing committed" in res.stdout, "it did not say the install was left uncommitted"
 
 
 def test_un_git_init_sin_commits_ofrece_el_primer_commit(tmp_path):
     r = _repo_para_instalar(tmp_path, con_commit=False)
-    res = _instala(r, "setup")   # pide setup, pero sin base no hay rama posible
+    res = _instala(r, "setup")   # asks for setup, but with no base no branch is possible
     assert res.returncode == 0, res.stderr[-300:]
-    assert "no commits yet" in res.stdout, "no explicó por qué no hay pregunta de rama"
-    assert _sucios(r) == 0, "el primer commit del repo no se hizo"
+    assert "no commits yet" in res.stdout, "it did not explain why there is no branch question"
+    assert _sucios(r) == 0, "the repo's first commit was not made"
 
 
 # ── El vocabulario de caminos tristes lee palabras reales (F-SPEC-16) ────────
@@ -1219,51 +1231,52 @@ _BULLET_VIVO = "- [ ] test_email_invalido_devuelve_422 — email con formato inv
 
 
 def test_un_test_que_dice_rechazado_cuenta_como_camino_triste(tmp_path):
-    """Regresión de la ronda 5: `rechaz` seguido de `\\b` no matchea ninguna
-    forma escrita ("rechazado", "rechaza"), y la spec real terminó cambiando su
-    vocabulario para complacer al validador. El gate no legisla palabras."""
+    """A round-5 regression: `rechaz` followed by `\\b` matches no written
+    form ("rechazado", "rechaza"), and the real spec ended up changing its
+    vocabulary to please the validator. The gate does not legislate words."""
     base = _spec()
     probe = base.replace(
         _BULLET_VIVO,
         "- [ ] test_email_mal_formado_es_devuelto — el email mal formado es rechazado")
-    assert probe != base, "la sonda no cambió el bullet"
+    assert probe != base, "the probe did not change the bullet"
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md",
                            probe, *_prd(tmp_path))
     assert not _refuses(refused, "F-SPEC-16"), \
-        '"rechazado" no cuenta como camino triste: ' + "\n".join(refused)
+        '"rechazado" does not count as a sad path: ' + "\n".join(refused)
 
 
 def test_la_palabra_triste_en_la_segunda_linea_del_bullet_cuenta(tmp_path):
-    """La otra mitad de la misma regresión: un checkbox envuelto a dos líneas
-    dejaba la palabra clave fuera del conteo — el ítem se lee entero."""
+    """The other half of the same regression: a checkbox wrapped over two
+    lines left the keyword out of the count — the item is read whole."""
     base = _spec()
     probe = base.replace(
         _BULLET_VIVO,
         "- [ ] test_email_mal_formado_es_devuelto — el email mal formado\n"
         "      es rechazado con un aviso por campo")
-    assert probe != base, "la sonda no cambió el bullet"
+    assert probe != base, "the probe did not change the bullet"
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md",
                            probe, *_prd(tmp_path))
     assert not _refuses(refused, "F-SPEC-16"), \
-        "la palabra triste en la continuación del bullet no contó: " + "\n".join(refused)
+        "the sad word in the bullet's continuation did not count: " + "\n".join(refused)
 
 
 def test_dos_errores_con_un_solo_test_triste_siguen_refusados(tmp_path):
-    """La dirección que impide aflojar el matcher hasta que matchee todo: un
-    test de camino feliz no paga la deuda de un error documentado."""
+    """The direction that keeps the matcher from being loosened until it
+    matches everything: a happy-path test does not pay a documented error's
+    debt."""
     base = _spec()
     probe = base.replace(
         _BULLET_VIVO,
         "- [ ] test_email_guardado — el email se persiste normalizado")
-    assert probe != base, "la sonda no cambió el bullet"
+    assert probe != base, "the probe did not change the bullet"
     _, refused = _validate(tmp_path, "validate_spec.py", "spec-FEAT-001.md",
                            probe, *_prd(tmp_path))
     assert _refuses(refused, "F-SPEC-16"), \
-        "dos errores documentados con un solo test triste pasaron: " + \
-        ("\n".join(refused) or "sin refusals")
+        "two documented errors with a single sad test passed: " + \
+        ("\n".join(refused) or "no refusals at all")
 
 
-# ── El commit de instalación tiene que llegar al remoto ──────────────────────
+# ── The install commit has to reach the remote ───────────────────────────────
 
 def _con_remoto(r, tmp_path):
     bare = tmp_path / "origin.git"
@@ -1276,15 +1289,15 @@ def _con_remoto(r, tmp_path):
 
 
 def test_flow_current_con_remoto_avisa_que_el_commit_debe_llegar_al_remoto(tmp_path):
-    """Ronda 5: la instalación commiteada en el main LOCAL y nunca pusheada
-    terminó como 66 archivos de framework en el PR de la feature. Si el user
-    no pushea acá, el aviso tiene que ser imposible de no ver."""
+    """Round 5: the install committed on LOCAL main and never pushed ended up
+    as 66 framework files in the feature's PR. If the user does not push
+    here, the notice has to be impossible to miss."""
     r = _repo_para_instalar(tmp_path)
     _con_remoto(r, tmp_path)
     res = _instala(r, "current", push="n")
     assert res.returncode == 0, res.stderr[-300:]
     assert "YOU MUST GET IT ONTO YOUR DEFAULT" in res.stdout, \
-        "el commit quedó solo local y el instalador no gritó nada"
+        "the commit stayed local-only and the installer shouted nothing"
 
 
 def test_flow_current_con_remoto_ofrece_push_y_pushea(tmp_path):
@@ -1297,16 +1310,17 @@ def test_flow_current_con_remoto_ofrece_push_y_pushea(tmp_path):
     remote = subprocess.run(["git", "-C", str(bare), "rev-parse", _rama(r)],
                             capture_output=True, text=True).stdout.strip()
     assert local and local == remote, \
-        "dijo que pusheaba y el remoto no tiene el commit de instalación"
+        "it said it was pushing and the remote does not have the install commit"
 
 
-# ── Un shard sin mutaciones del diff es una respuesta, no una falla ──────────
+# ── A shard with no mutations from the diff is an answer, not a failure ──────
 
 def test_un_shard_sin_mutaciones_del_diff_contesta_vacio_y_no_muere(tmp_path):
-    """Medido en los PRs de dependabot: un diff que tocaba 3 mutaciones dejó a
-    los otros 21 shards con selección vacía, y la guardia anti-"medí nada" los
-    mató en rojo. Un shard sin trabajo en un run shardeado con --changed es una
-    respuesta ordinaria — los shards que sí las tienen contestan la pregunta."""
+    """Measured on the dependabot PRs: a diff touching 3 mutations left the
+    other 21 shards with an empty selection, and the anti-"I measured
+    nothing" guard killed them in red. A shard with no work in a sharded
+    --changed run is an ordinary answer — the shards that do have them answer
+    the question."""
     spec_ = importlib.util.spec_from_file_location(
         "mut_shard", os.path.join(ROOT, "scripts/mutate.py"))
     mut = importlib.util.module_from_spec(spec_)
@@ -1314,15 +1328,15 @@ def test_un_shard_sin_mutaciones_del_diff_contesta_vacio_y_no_muere(tmp_path):
     objetivo = "ddw/rules/define.instructions.md"
     tocadas = {i for i, (_l, m) in enumerate(mut.MUTATIONS, 1)
                if getattr(m, "probe", None) is None or m.probe[1] == objetivo}
-    assert tocadas, "ningún fault nombra el archivo del escenario"
+    assert tocadas, "no fault names the scenario's file"
     n = 24
     vacios = [s for s in range(1, n + 1)
               if not tocadas & set(mut.slice_of("%d/%d" % (s, n), len(mut.MUTATIONS)))]
     assert vacios, "el diff del escenario toca mutaciones en los 24 shards; elegir otro archivo"
-    # Un repo sintético mínimo: el runner solo necesita existir en un git cuyo
-    # último commit toque el archivo del escenario. Nada de clonar ROOT — la
-    # suite de mutaciones corre estos tests dentro de una copia SIN .git, y un
-    # clone de esa copia moría en 128 antes de medir nada.
+    # A minimal synthetic repo: the runner only needs to sit in a git whose
+    # last commit touches the scenario's file. No cloning ROOT — the mutation
+    # suite runs these tests inside a copy WITHOUT .git, and a clone of that
+    # copy died at 128 before measuring anything.
     clone = tmp_path / "repo"
     (clone / "scripts").mkdir(parents=True)
     (clone / os.path.dirname(objetivo)).mkdir(parents=True)
@@ -1342,6 +1356,6 @@ def test_un_shard_sin_mutaciones_del_diff_contesta_vacio_y_no_muere(tmp_path):
                         "--shard", "%d/%d" % (vacios[0], n), "--changed", "HEAD~1"],
                        cwd=str(clone), capture_output=True, text=True)
     assert r.returncode == 0, \
-        "el shard sin trabajo murió en rojo otra vez: " + (r.stdout + r.stderr)[-300:]
+        "the shard with no work died in red again: " + (r.stdout + r.stderr)[-300:]
     assert "holds none of the" in r.stdout, \
-        "el shard vacío no dijo por qué no inyectó nada: " + r.stdout[-300:]
+        "the empty shard did not say why it injected nothing: " + r.stdout[-300:]

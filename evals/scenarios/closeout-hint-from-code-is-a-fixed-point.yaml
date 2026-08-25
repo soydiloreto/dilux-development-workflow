@@ -1,27 +1,27 @@
 id: closeout-hint-from-code-is-a-fixed-point
 kind: router-reachability
 
-# La regresión real de la que sale.
+# The real regression this comes from.
 regression:
   changelog: "0.20.0 — On the way to IDLE, the hint prescribed gates the edge never asks for"
   commit: 7dc4369
   what_happened: >
-    `--to IDLE` desde CODE se rechaza porque no hay arista CODE→IDLE, y el hint
-    que acompañaba a ese rechazo estaba pegado a TODO estado que llegara a esa
-    rama: «Run `--claim commit --claim pr` first (one run, no phase change),
-    then take this edge». Desde CLOSEOUT es la frase correcta; desde CODE los
-    dos claims salían 0, el reintento imprimía el mismo rechazo palabra por
-    palabra, y al lector le quedaba una sola conclusión: la herramienta está
-    rota. Un punto fijo — hacés lo que te dijeron, las compuertas ahora son
-    verdaderas, no hay en qué gastarlas y el rechazo no se movió. El hint se lee
-    del grafo ahora: las compuertas donde la arista las pide, y qué fase cierra
-    un ticket donde esa arista no existe.
+    `--to IDLE` from CODE is refused because there is no CODE→IDLE edge, and the
+    hint that came with that refusal was glued to EVERY state that reached that
+    branch: "Run `--claim commit --claim pr` first (one run, no phase change),
+    then take this edge". From CLOSEOUT that is the right sentence; from CODE
+    both claims exited 0, the retry printed the same refusal word for word, and
+    the reader was left with only one conclusion: the tool is broken. A fixed
+    point — you do what you were told, the gates are now true, there is nothing
+    to spend them on and the refusal did not move. The hint is read from the
+    graph now: the gates where the edge asks for them, and which phase closes a
+    ticket where that edge does not exist.
 
 given:
   install: claude
-  # Mitad de ticket en CODE, tier FEATURE: la fase desde la que un modelo pide
-  # cerrar y desde la que el grafo no tiene arista a IDLE. Es el estado exacto
-  # sobre el que se midió el punto fijo.
+  # Mid-ticket in CODE, tier FEATURE: the phase a model asks to close from and
+  # the one the graph has no edge to IDLE from. It is the exact state the fixed
+  # point was measured on.
   state:
     phase: CODE
     tier: FEATURE
@@ -34,44 +34,48 @@ given:
       - {timestamp: "2026-01-01T00:10:00Z", from: CLASSIFY, to: DEFINE, action: "classified", tier: FEATURE, ticket: T-1}
 
 when:
-  # Quién dice el rechazo: el HELPER. Los dos hints que 7dc4369 arregló viven
-  # sólo en el `main()` de `transition.py` — el hook no los imprime nunca — así
-  # que la única forma de afirmar sobre el texto que el lector realmente ve es
-  # correr el helper y leer su stderr.
+  # Who says the refusal: the HELPER. The two hints 7dc4369 fixed live only in
+  # the `main()` of `transition.py` — the hook never prints them — so the only
+  # way to assert on the text the reader actually sees is to run the helper and
+  # read its stderr.
   triggered_by:
     transition: ["--to", "IDLE", "--action", "close: the work is done"]
 
-  # Las dos mitades del rechazo, en el orden en que salen y en la misma línea.
+  # The two halves of the refusal, in the order they come out and on the same
+  # line.
   #
-  # La primera es de `validate()` y no cambió nunca: irse de un ticket sin
-  # cerrarlo se escribe en la `action`. La segunda es la que 7dc4369 arregló, y
-  # es la que discrimina: la versión rota decía «Run `--claim commit --claim pr`
-  # first» acá, y ninguna de estas dos frases aparecía.
+  # The first is from `validate()` and never changed: leaving a ticket without
+  # closing it is written into the `action`. The second is the one 7dc4369
+  # fixed, and it is the one that discriminates: the broken version said "Run
+  # `--claim commit --claim pr` first" here, and neither of these two sentences
+  # appeared.
   #
-  # Se exigen LAS DOS a propósito. Con la primera sola el escenario pasaría el
-  # control —esa oración está en las dos versiones— y con la segunda sola el
-  # paso que se replica abajo no estaría anclado a ningún texto.
+  # BOTH are required on purpose. With the first alone the scenario would pass
+  # the control — that sentence is in both versions — and with the second alone
+  # the step replicated below would not be anchored to any text.
   refusal_matches: 'pause: <reason>.*no CODE→IDLE edge in tier FEATURE — the closeout is taken from CLOSEOUT'
 
-  # El movimiento que el rechazo prescribe, al pie de la letra, y que el helper
-  # sancionado tiene que aceptar.
+  # The move the refusal prescribes, to the letter, and which the sanctioned
+  # helper has to accept.
   #
-  # Se replica la pausa y no la ruta a CLOSEOUT porque la pausa es lo que este
-  # rechazo ofrece DESDE ESTA FASE en un solo movimiento: el rechazo dice que la
-  # arista es lo que falta, no la evidencia, y llegar a CLOSEOUT es caminar el
-  # pipeline entero con sus artefactos — que es precisamente lo que el hint roto
-  # prometía saltear con dos `--claim`. Si esto sale 0 y mueve el estado, el
-  # rechazo tiene salida; si no la tuviera, sería el punto fijo otra vez.
+  # The pause is replicated, not the route to CLOSEOUT, because the pause is
+  # what this refusal offers FROM THIS PHASE in a single move: the refusal says
+  # the edge is what is missing, not the evidence, and reaching CLOSEOUT means
+  # walking the whole pipeline with its artifacts — which is precisely what the
+  # broken hint promised to skip with two `--claim`s. If this exits 0 and moves
+  # the state, the refusal has a way out; if it did not, it would be the fixed
+  # point all over again.
   prescribed_steps:
     - ["--to", "IDLE", "--action", "pause: the closeout is taken from CLOSEOUT, not from here"]
 
 expect:
   every_step_succeeds: true
 
-# El control: `substitute`, no `restore_from_commit`. El commit del fix vive en
-# una rama que NO es ancestro de ésta: un clon local la tiene, un checkout de CI
-# no, y un control que no se puede aplicar falla — por una razón que no es la
-# del escenario. Reinyectar el defecto sobre HEAD no depende de la topología.
+# The control: `substitute`, not `restore_from_commit`. The fix's commit lives
+# on a branch that is NOT an ancestor of this one: a local clone has it, a CI
+# checkout does not, and a control that cannot be applied fails — for a reason
+# that is not the scenario's. Reinjecting the defect onto HEAD does not depend
+# on the topology.
 control:
   type: substitute
   path: ddw/scripts/transition.py

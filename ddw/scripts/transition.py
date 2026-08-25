@@ -196,24 +196,25 @@ def build_next_state(old_state, to_phase, action, gates, tier, clear_gates=(),
 
     new_state["phase"] = to_phase
     history = list(new_state.get("history") or [])
-    # El sello, y nunca ANTERIOR al de la entrada previa.
+    # The stamp, and never EARLIER than the previous entry's.
     #
-    # El reloj de pared retrocede. Medido en esta máquina —WSL2, que resincroniza
-    # con el host— seis saltos de un segundo hacia atrás en 33.465 muestras
-    # tomadas a lo largo de 75 segundos bajo carga. Un salto entre dos pasos del
-    # pipeline deja la entrada nueva sellada antes que la anterior, y la guarda
-    # de monotonía —que existe para que una historia editada a mano no pueda
-    # reordenarse— refusa una transición legal que el helper acaba de construir.
+    # The wall clock goes backwards. Measured on this machine — WSL2, which
+    # resyncs with the host — six one-second backward jumps in 33,465 samples
+    # taken over 75 seconds under load. A jump between two pipeline steps
+    # leaves the new entry stamped before the previous one, and the
+    # monotonicity guard — which exists so a hand-edited history cannot be
+    # reordered — refuses a legal transition the helper just built.
     #
-    # Sin salida, además: el rechazo dice que la historia va hacia atrás, y lo
-    # único que la corregiría es editar la historia, que el hook también
-    # rechaza. Un rechazo sobre el que no se puede actuar es el peor que hay.
+    # With no way out, on top of it: the refusal says the history goes
+    # backwards, and the only thing that would fix it is editing the history,
+    # which the hook also refuses. A refusal that cannot be acted on is the
+    # worst kind there is.
     #
-    # La guarda se queda como está: protege contra una historia reordenada, que
-    # es lo que fue escrita para atrapar. Lo que cambia es que el camino
-    # sancionado no puede producir el caso. Igual está permitido — dos
-    # transiciones en el mismo segundo son corrientes — así que sujetar al
-    # último sello no inventa orden, sólo se niega a perderlo.
+    # The guard stays as it is: it protects against a reordered history,
+    # which is what it was written to catch. What changes is that the
+    # sanctioned path cannot produce the case. Equality is still allowed —
+    # two transitions in the same second are ordinary — so clamping to the
+    # last stamp invents no order, it only refuses to lose it.
     _stamp = _now_iso()
     _last = next((e.get("timestamp") for e in reversed(history)
                   if isinstance(e, dict) and isinstance(e.get("timestamp"), str)), None)

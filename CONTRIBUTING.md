@@ -115,6 +115,14 @@ English, present tense, no first person. Comments explain why a guard exists —
 without that, the next reader deletes it as redundant. They do not narrate the
 history of the project.
 
+**English is repository-wide** — code, comments, docs, eval scenario prose,
+workflow comments, ledger excuses, commit messages and PR bodies. Spanish (or
+any other language) appears only where it IS the material: fixture data
+simulating a non-English user, regexes that recognize artifacts written in that
+user's language, verbatim quotes from measured sessions, and illustrations of
+the language-following feature (`🙋 TU TURNO`). One language pass already had
+to sweep fifty files because this rule lived nowhere; now it lives here.
+
 ## Using AI to contribute
 
 Assumed, not merely tolerated — this is a tool for driving coding agents, built

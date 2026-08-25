@@ -30,65 +30,66 @@
 # list below is discovered from the adapters directory.
 set -euo pipefail
 
-# ── Pegado desde una URL, sin repositorio alrededor ───────────────────────────
+# ── Pasted from a URL, with no repository around it ───────────────────────────
 #
-# El instalador no se basta solo: copia `ddw/`, `adapters/`, `scripts/` y el
-# manifiesto desde su propio árbol. Una línea pegada en una terminal no tiene
-# ninguno de los cuatro — y hasta hoy ni siquiera llegaba a decirlo: bajo
-# `bash -s` la variable `BASH_SOURCE[0]` no existe, y con `set -u` eso es un
-# "unbound variable" en la línea siguiente, sin una palabra sobre qué pasó.
+# The installer is not self-sufficient: it copies `ddw/`, `adapters/`,
+# `scripts/` and the manifest from its own tree. A line pasted into a terminal
+# has none of the four — and until today it did not even get to say so: under
+# `bash -s` the variable `BASH_SOURCE[0]` does not exist, and with `set -u`
+# that is an "unbound variable" on the next line, without a word about what
+# happened.
 #
-# Así que si no se encuentra a sí mismo, se trae el árbol y se vuelve a correr
-# desde ahí. Es el patrón de rustup y de nvm, por el mismo motivo: la línea que
-# alguien pega tiene que SER el instalador, no un paso previo al instalador. El
-# camino de plugin ya era una línea y el drop-in pedía clonar primero, que es la
-# única puerta que tienen tres de las seis herramientas.
+# So if it cannot find itself, it fetches the tree and re-runs from there. It
+# is the rustup and nvm pattern, for the same reason: the line someone pastes
+# has to BE the installer, not a step before the installer. The plugin path
+# was already one line and the drop-in demanded cloning first, which is the
+# only door three of the six tools have.
 #
-# `DDW_REF` elige qué se trae. Por defecto `main`, y eso es una deuda dicha en
-# voz alta: `release.yml` corta releases con tags `v*` y todavía no se cortó
-# ninguno, así que hoy no hay una versión a la que apuntar.
+# `DDW_REF` chooses what gets fetched. `main` by default, and that is a debt
+# said out loud: `release.yml` cuts releases with `v*` tags and none has been
+# cut yet, so today there is no version to point at.
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
 DDW_REF="${DDW_REF:-main}"
 if ! { [ -f "$SELF/.claude-plugin/plugin.json" ] && [ -d "$SELF/ddw" ] && [ -d "$SELF/adapters" ]; }; then
-  # Una sola vez. Si el árbol que bajó tampoco los tiene, el problema no se
-  # arregla bajándolo de nuevo, y un bootstrap que se llama a sí mismo es una
-  # recursión sin fondo — la forma que este repositorio ya pagó una vez.
+  # Once. If the tree it fetched does not have them either, the problem is
+  # not fixed by fetching it again, and a bootstrap that calls itself is a
+  # bottomless recursion — the shape this repository has already paid for once.
   if [ -n "${DDW_BOOTSTRAPPED:-}" ]; then
-    echo "install.sh: lo que se descargó de '$DDW_REF' no trae el método (ddw/, adapters/)." >&2
-    echo "  Revisá que la ref exista, o cloná el repositorio y corré install.sh desde ahí." >&2
+    echo "install.sh: what was downloaded from '$DDW_REF' does not carry the method (ddw/, adapters/)." >&2
+    echo "  Check that the ref exists, or clone the repository and run install.sh from there." >&2
     exit 1
   fi
   FETCH=""
   if command -v curl >/dev/null 2>&1; then FETCH="curl -fsSL"
   elif command -v wget >/dev/null 2>&1; then FETCH="wget -qO-"
   else
-    echo "install.sh: hace falta curl o wget para traer el método, y no hay ninguno." >&2
+    echo "install.sh: fetching the method needs curl or wget, and neither is present." >&2
     exit 1
   fi
   command -v tar >/dev/null 2>&1 || {
-    echo "install.sh: hace falta tar para desempaquetar el método, y no está." >&2; exit 1; }
+    echo "install.sh: unpacking the method needs tar, and it is not present." >&2; exit 1; }
   DDW_TARBALL="${DDW_TARBALL:-https://codeload.github.com/soydiloreto/dilux-development-workflow/tar.gz/$DDW_REF}"
   DDW_BOOT_DIR="$(mktemp -d)"
   trap 'rm -rf "$DDW_BOOT_DIR"' EXIT
-  echo "  Trayendo DDW ($DDW_REF)…"
+  echo "  Fetching DDW ($DDW_REF)…"
   $FETCH "$DDW_TARBALL" | tar xz -C "$DDW_BOOT_DIR" || {
-    echo "install.sh: no se pudo traer $DDW_TARBALL" >&2; exit 1; }
+    echo "install.sh: could not fetch $DDW_TARBALL" >&2; exit 1; }
   DDW_REAL="$(find "$DDW_BOOT_DIR" -maxdepth 2 -name install.sh -type f | head -1)"
   [ -n "$DDW_REAL" ] || {
-    echo "install.sh: el árbol descargado no trae un install.sh." >&2; exit 1; }
+    echo "install.sh: the downloaded tree does not carry an install.sh." >&2; exit 1; }
   DDW_BOOT_RC=0
   DDW_BOOTSTRAPPED=1 bash "$DDW_REAL" "$@" || DDW_BOOT_RC=$?
   exit $DDW_BOOT_RC
 fi
 
-# ¿Hay una terminal a la que preguntarle? La respuesta NO es stdin.
+# Is there a terminal to ask? The answer is NOT stdin.
 #
-# Las ocho lecturas de este archivo leen de `/dev/tty`, y está bien: bajo
-# `curl | bash` stdin es el script. Pero las tres decisiones de SI preguntar
-# miraban `[ -t 0 ]`, que es stdin — así que con el instalador llegando por un
-# pipe, con la terminal ahí al lado, se iba a modo no-interactivo en silencio:
-# elegía drop-in sin decirlo y se salteaba entera la pregunta de dónde aterriza
-# la instalación. Se pregunta por el mismo canal del que se lee.
+# All eight reads in this file read from `/dev/tty`, and that is right: under
+# `curl | bash` stdin is the script. But the three decisions about WHETHER to
+# ask looked at `[ -t 0 ]`, which is stdin — so with the installer arriving
+# through a pipe, terminal right there beside it, it went non-interactive in
+# silence: it chose drop-in without saying so and skipped the whole question
+# of where the install lands. It asks on the same channel it reads from.
 have_tty() { { : < /dev/tty; } 2>/dev/null; }
 TARGET_DIR=""
 TARGETS=""
@@ -258,12 +259,12 @@ for rel in (".ddw-installed.json", os.path.join(".ddw", ".installed.json")):
         continue
 if keys is None:
     sys.exit(0)
-# Sólo los prefijos que nombran un adaptador. El manifiesto lleva también
-# `method:.ddw/...`, que no es una herramienta: sin filtrar, un repo ya
-# instalado ofrecía "claude method", y elegir eso moría en `Unknown target:
-# method`. Con --target, avisaba de un "target" no actualizado y daba el
-# comando para incluirlo, que también sale 1. La lista de adaptadores está en
-# disco; es la que manda.
+# Only the prefixes that name an adapter. The manifest also carries
+# `method:.ddw/...`, which is not a tool: unfiltered, an already-installed
+# repo offered "claude method", and choosing that died on `Unknown target:
+# method`. With --target, it warned about a "target" not updated and gave the
+# command to include it, which also exits 1. The adapter list is on disk; it
+# is the one in charge.
 adapters = os.path.join(sys.argv[2], "adapters") if len(sys.argv) > 2 else ""
 known = ({d for d in os.listdir(adapters)
           if os.path.isfile(os.path.join(adapters, d, "adapter.json"))}

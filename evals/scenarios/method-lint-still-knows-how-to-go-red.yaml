@@ -5,26 +5,26 @@ regression:
   changelog: "0.21.0 — «A field the boot does not name does not survive a compaction»"
   commit: b605648
   what_happened: >
-    `scripts/lint_method.py` es el único instrumento que mira la PROSA del
-    método contra sus datos, y la suite sólo le pregunta si hoy está verde.
-    Nadie le pregunta si todavía sabe ponerse rojo. Un linter de prosa se rompe
-    callado: se renombra una sección, el check deja de encontrar lo que miraba,
-    y sigue informando verde por no tener otra cosa que decir — que es la
-    familia entera de `docs/CHECKS-THAT-CANNOT-FAIL.md`, cinco de las cuales ya
-    shippearon acá.
+    `scripts/lint_method.py` is the only instrument that checks the method's
+    PROSE against its data, and the suite only asks it whether it is green
+    today. Nobody asks it whether it still knows how to go red. A prose linter
+    breaks silently: a section gets renamed, the check stops finding what it
+    was looking at, and it keeps reporting green for want of anything else to
+    say — which is the whole family in `docs/CHECKS-THAT-CANNOT-FAIL.md`, five
+    of which already shipped here.
 
-    La afirmación que este escenario rompe es la que costó una release:
-    `autonomy` entró al esquema del estado y quedó fuera de la lista que la Boot
-    Sequence recupera, así que toda compactación olvidaba el modo y el pipeline
-    volvía a preguntar por cada arista a alguien que había dicho que no le
-    preguntaran. Nada falló y el estado en disco estaba perfecto.
+    The assertion this scenario breaks is the one that cost a release:
+    `autonomy` entered the state schema and was left out of the list the Boot
+    Sequence recovers, so every compaction forgot the mode and the pipeline
+    went back to asking about every edge to someone who had said not to ask.
+    Nothing failed and the state on disk was perfect.
 
 given: {}
 
-# No hay `when`: el veredicto ES el linter, corrido sobre el árbol del método —
-# el original en modo normal, la copia con el defecto reinyectado en modo
-# control. Un `lint_method` que no imprime su línea de veredicto no salió ni
-# verde ni rojo: se cayó antes de juzgar, y eso es ERROR, nunca un pase.
+# There is no `when`: the verdict IS the linter, run over the method's tree —
+# the original in normal mode, the copy with the defect reinjected in control
+# mode. A `lint_method` that does not print its verdict line came out neither
+# green nor red: it fell over before judging, and that is ERROR, never a pass.
 
 expect:
   clean: true
@@ -41,8 +41,8 @@ control:
       new: |-
         extract `phase`, `tier`, `ticket`,
            `title`, `tracker`, `block`, `discovery`.
-  # El linter tiene que ponerse rojo POR ESTO. Un control que se pone rojo por
-  # otra afirmación no probó que sepa cazar la suya — es el mismo defecto que
-  # los controles que fallaban con un `TypeError`, con mejor disfraz, y el
-  # runner lo cuenta como control fallado (`control off-target`), no como rojo.
+  # The linter has to go red FOR THIS. A control that goes red on some other
+  # assertion did not prove it can hunt its own — it is the same defect as the
+  # controls that failed with a `TypeError`, in a better disguise, and the
+  # runner counts it as a failed control (`control off-target`), not as red.
   finding_matches: "Boot Sequence does not recover .*`autonomy`"

@@ -1,36 +1,36 @@
 id: painted-door-plugin-reconciles-method
 kind: painted-door
 
-# La regresión real de la que sale. No está en el CHANGELOG: el único registro
-# que existe es la quinta observación de la aceptación, que es donde viven los
-# defectos que sólo aparecen manejando la herramienta de verdad.
+# The real regression this comes from. It is not in the CHANGELOG: the only
+# record that exists is the acceptance's fifth observation, which is where the
+# defects that only show up driving the tool for real live.
 regression:
-  changelog: "sin entrada — el hallazgo vive en la aceptación, no en el registro de cambios"
+  changelog: "no entry — the finding lives in the acceptance, not in the change log"
   acceptance: "scripts/acceptance.md, «A fifth observation for plugin installs, learned live on OpenCode»"
   commit: c1ec313
   what_happened: >
-    Instalado como PLUGIN no hay `.ddw/` en el repo: el método viaja con el
-    plugin y el bootstrap le dice al modelo dónde resolverlo. Manejado en vivo
-    sobre OpenCode con un pedido completo —«implementá este PRD», no el
-    propone-y-espera del check 2— el primer agente que llegó tan lejos leyó que
-    el método estaba en otro lado, lo interpretó como una instalación a medias, y
-    reconcilió el `.ddw/` faltante corriendo `install.sh` dentro del repo del
-    usuario: el drop-in que el usuario nunca eligió. Y esa escritura es
-    exactamente la que toda fase rechaza — `.ddw/` y el cableado de cada
-    herramienta son insobornables en cualquier fase, porque un pipeline que
-    puede editar las reglas que lo frenan no está imponiendo nada. Una puerta
-    pintada sin instrucción: el bootstrap no ordenaba la copia, simplemente no
-    la desaconsejaba, y el modelo la dedujo. Es la misma familia que 3b145df —
-    el modelo hace lo que el documento lo lleva a hacer y lo frenan a mitad de
-    ticket — con la diferencia de que acá el documento pecaba por callarse.
+    Installed as a PLUGIN there is no `.ddw/` in the repo: the method travels
+    with the plugin and the bootstrap tells the model where to resolve it.
+    Driven live on OpenCode with a full request — "implementá este PRD", not
+    check 2's propose-and-wait — the first agent that got that far read that
+    the method was somewhere else, interpreted it as a half-finished install,
+    and reconciled the missing `.ddw/` by running `install.sh` inside the
+    user's repo: the drop-in the user never chose. And that write is exactly
+    the one every phase refuses — `.ddw/` and each tool's wiring are
+    unbribable in any phase, because a pipeline that can edit the rules that
+    stop it is enforcing nothing. A painted door with no instruction: the
+    bootstrap did not order the copy, it simply did not advise against it, and
+    the model deduced it. It is the same family as 3b145df — the model does
+    what the document leads it to do and is stopped mid-ticket — with the
+    difference that here the document sinned by staying silent.
 
 given:
-  # El adaptador que se instala es el que trae el bootstrap que se juzga. Correr
-  # esto sobre un repo cableado para claude mediría el archivo de OpenCode
-  # contra un enforcement que ese archivo nunca menciona.
+  # The adapter that gets installed is the one that carries the bootstrap being
+  # judged. Running this over a repo wired for claude would measure OpenCode's
+  # file against an enforcement that file never mentions.
   install: opencode
-  # Mitad de ticket en CODE: la fase desde la que sale un «implementá este PRD»,
-  # y donde el sello sobre `.ddw/` y sobre el cableado es absoluto.
+  # Mid-ticket in CODE: the phase an "implementá este PRD" comes from, and
+  # where the seal on `.ddw/` and on the wiring is absolute.
   state:
     phase: CODE
     tier: FEATURE
@@ -44,37 +44,40 @@ given:
 when:
   instruction: adapters/opencode/plugin/ddw.js
   probes:
-    # LO QUE SE MIDE ES EL SILENCIO, y por eso el patrón es una ausencia.
+    # WHAT IS MEASURED IS THE SILENCE, and that is why the pattern is an
+    # absence.
     #
-    # Los otros `painted-door` de este árbol buscan una orden: un paso numerado
-    # cuyo verbo es una escritura. Acá no hubo nunca una orden que borrar — el
-    # bootstrap decía dónde vivía el método y nada más, y el modelo dedujo el
-    # resto. Lo que arregló esto fue una frase que PROHÍBE, así que el defecto
-    # es el bloque de bootstrap sin esa frase, y eso es lo que el patrón busca:
-    # de `BOOT_MARK,` a `"</DDW_BOOTSTRAP>"` sin que la prohibición aparezca en
-    # el medio. Si vuelve a borrarse, el patrón vuelve a casar.
+    # The other `painted-door`s in this tree look for an order: a numbered step
+    # whose verb is a write. Here there was never an order to delete — the
+    # bootstrap said where the method lived and nothing more, and the model
+    # deduced the rest. What fixed this was a sentence that FORBIDS, so the
+    # defect is the bootstrap block without that sentence, and that is what the
+    # pattern looks for: from `BOOT_MARK,` to `"</DDW_BOOTSTRAP>"` without the
+    # prohibition appearing in between. If it ever gets deleted again, the
+    # pattern matches again.
     #
-    # `BOOT_MARK,` con coma: la constante se define arriba como `BOOT_MARK = `,
-    # y sin la coma el patrón arrancaría en la definición y no en el bloque.
+    # `BOOT_MARK,` with the comma: the constant is defined above as
+    # `BOOT_MARK = `, and without the comma the pattern would start at the
+    # definition and not at the block.
     - path: .ddw/rules/transition-graph.json
       ordered_if_matches: 'BOOT_MARK,(?:(?!do NOT install DDW into this repo).)*?"</DDW_BOOTSTRAP>"'
-    # La segunda mitad de lo que `install.sh . --target opencode` escribe. Se
-    # prueban las dos porque la reconciliación era UN comando que escribe las
-    # dos, y arreglar el sello de una sola dejaría la puerta abierta por la otra.
+    # The second half of what `install.sh . --target opencode` writes. Both are
+    # probed because the reconciliation was ONE command that writes both, and
+    # fixing the seal on only one would leave the door open through the other.
     - path: .opencode/plugins/ddw.js
       ordered_if_matches: 'BOOT_MARK,(?:(?!do NOT install DDW into this repo).)*?"</DDW_BOOTSTRAP>"'
 
 expect:
   no_ordered_write_is_refused: true
 
-# El control: `substitute`, obligatoriamente.
+# The control: `substitute`, necessarily.
 #
-# `restore_from_commit` no sirve acá aunque se quiera: la prohibición está en el
-# árbol desde el primer commit público (la historia anterior está aplastada), así
-# que no existe un `^` que restaurar. Se reinyecta el defecto sobre HEAD —el
-# bootstrap que dice dónde vive el método y no dice que se quede ahí— y el
-# patrón de arriba vuelve a casar, con lo que las dos escrituras que ese silencio
-# induce quedan frente al gate que las rechaza.
+# `restore_from_commit` is no use here even if you wanted it: the prohibition
+# has been in the tree since the first public commit (the earlier history is
+# squashed), so there is no `^` to restore. The defect is reinjected onto
+# HEAD — the bootstrap that says where the method lives and does not say to
+# leave it there — and the pattern above matches again, putting the two writes
+# that silence induces in front of the gate that refuses them.
 control:
   type: substitute
   path: adapters/opencode/plugin/ddw.js

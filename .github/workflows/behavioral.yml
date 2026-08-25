@@ -1,29 +1,30 @@
-# La capa que necesita un modelo.
+# The layer that needs a model.
 #
-# `verify` corre los escenarios OFFLINE en cada push: los que se juzgan leyendo
-# una instrucción y preguntándole al gate de verdad, sin llamar a nadie. Los
-# conductuales son la otra mitad — se instala DDW en un repo real, se le mandan
-# los turnos de un usuario, y después se le pregunta AL REPO qué pasó — y ésos
-# cuestan dinero y minutos. Por eso viven acá: SOLO a pedido. Hubo un cron
-# semanal y se quitó: cada corrida cobra créditos del gateway, y un lunes sin
-# saldo pinta rojo el repo sin decir nada del código. El precio es conocido:
-# un escenario roto no avisa hasta la próxima corrida manual.
+# `verify` runs the OFFLINE scenarios on every push: the ones judged by reading
+# an instruction and asking the real gate, without calling anyone. The
+# behavioral ones are the other half — DDW gets installed into a real repo, a
+# user's turns get sent at it, and then the REPO is asked what happened — and
+# those cost money and minutes. That is why they live here: ON DEMAND only.
+# There was a weekly cron and it was removed: every run charges gateway
+# credits, and a Monday without balance paints the repo red while saying
+# nothing about the code. The price is known: a broken scenario stays silent
+# until the next manual run.
 #
-# Lo que no puede pasar, y este archivo está escrito para eso: que la corrida
-# reporte verde sin haber medido. `runner.py` ya trata un escenario que no se
-# puede juzgar como ROJO, y el modo `--control` exige que cada escenario se
-# ponga rojo contra la regresión de la que salió. Acá se corren los dos.
+# What cannot happen, and this file is written for it: a run reporting green
+# without having measured. `runner.py` already treats a scenario that cannot
+# be judged as RED, and `--control` mode demands that every scenario go red
+# against the regression it came from. Both run here.
 name: behavioral
 
 on:
   workflow_dispatch:
     inputs:
       model:
-        description: "Modelo (id de opencode). El gratis se queda sin turno y un timeout no mide nada."
+        description: "Model (opencode id). The free one runs out of turns and a timeout measures nothing."
         required: false
         default: opencode/claude-sonnet-5
       scenario:
-        description: "Un escenario por id, o vacío para todos los conductuales"
+        description: "One scenario by id, or empty for all behavioral ones"
         required: false
         default: ""
 
@@ -45,15 +46,15 @@ jobs:
           python3 -m pip install --quiet pyyaml
           npm install -g opencode-ai
 
-      # Los controles reinyectan la regresión de la que sale cada escenario, y
-      # algunos commits viven en ramas que no son ancestro de ésta.
+      # The controls re-inject the regression each scenario came from, and
+      # some of those commits live on branches that are not ancestors of this one.
       - name: The history the controls reach back into
         run: git fetch --quiet --no-tags origin "+refs/heads/*:refs/remotes/origin/*" || true
 
-      # Sin la key no hay medición, y una corrida sin medición NO puede salir
-      # verde: el `runner` cuenta un escenario injuzgable como rojo, pero un
-      # workflow que ni siquiera lo intenta terminaría en verde por no haber
-      # corrido nada. Se falla acá, en una línea que dice por qué.
+      # Without the key there is no measurement, and a run that measured
+      # nothing must NOT come out green: the `runner` counts an unjudgeable
+      # scenario as red, but a workflow that never even tries would end green
+      # for having run nothing. It fails here, on a line that says why.
       - name: The key this layer runs on
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
@@ -73,10 +74,11 @@ jobs:
           [ -n "$ONLY" ] && ARGS="$ARGS --only $ONLY"
           python3 evals/runner.py $ARGS
 
-      # El control, aparte y siempre. Un escenario que pasa en normal y NO se
-      # pone rojo con su regresión puesta no está midiendo nada, y es el modo
-      # de falla que esta capa tiene más a mano: la prosa del modelo cambia, el
-      # repo termina igual, y el escenario aplaude.
+      # The control, separate and always. A scenario that passes in normal
+      # mode and does NOT go red with its regression in place is measuring
+      # nothing, and that is the failure mode this layer has closest to hand:
+      # the model's prose changes, the repo ends up the same, and the scenario
+      # applauds.
       - name: And each one still goes red against the regression it came from
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}

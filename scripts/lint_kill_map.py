@@ -40,17 +40,17 @@ import subprocess
 import sys
 import tempfile
 
-# Lo único que se saltea: los faults sobre un `.py`. El linter no lee código —
-# lee prosa, el grafo, los hooks de compactación y el SISTEMA DE ARCHIVOS — y
-# correr los quinientos y pico multiplica por tres lo que tarda esto.
+# The only thing skipped: faults on a `.py`. The linter reads no code — it
+# reads prose, the graph, the compaction hooks and the FILESYSTEM — and running
+# the five-hundred-odd of them triples how long this takes.
 #
-# La primera versión listaba en cambio las extensiones que el linter SÍ lee
-# (`.md`, `.json`, `.sh`), y con eso se comía todos los faults que borran un
-# DIRECTORIO: `delete("skills/ddw-test")` no termina en ninguna de las tres. Los
-# dos guardias que ese fault existe para encender siguieron saliendo como «no
-# los provoca nada» después de haberles escrito el fault, y por veinte minutos
-# el hueco parecía del producto. Un filtro por lista blanca esconde lo que no
-# previó; uno por lista negra deja pasar de más, que acá cuesta segundos.
+# The first version instead listed the extensions the linter DOES read
+# (`.md`, `.json`, `.sh`), and that ate every fault that deletes a DIRECTORY:
+# `delete("skills/ddw-test")` ends in none of the three. The two guards that
+# fault exists to light up kept coming out as "nothing provokes them" right
+# after their fault was written, and for twenty minutes the hole looked like
+# the product's. An allowlist filter hides what it did not foresee; a
+# blocklist lets too much through, which here costs seconds.
 SKIP_EXT = (".py",)
 
 LEDGER_HEADER = """# Lint checks that cannot fail
@@ -71,24 +71,24 @@ here why there is not one.
 
 
 def sites_of(path):
-    """Cada `fail(...)` de cada `check_*`, por LÍNEA.
+    """Every `fail(...)` of every `check_*`, by LINE.
 
-    La primera versión de esto reconocía cada sitio por un trozo literal de su
-    mensaje, y tenía dos agujeros que se midieron:
+    The first version recognised each site by a literal piece of its message,
+    and it had two measured holes:
 
-      · Un `fail()` con `%s` adentro NO imprime `%s`, imprime el valor. Tomando
-        el format string entero como literal, ese sitio no puede matchear nunca
-        y sale "no lo provoca ninguna mutación" con la mutación existiendo —
-        pasó con el check del boot, que tiene la suya desde b605648. Es el mismo
-        error de medición que el mapa de kills cometió cinco veces.
-      · Partiendo por los placeholders, DIEZ sitios se quedaban sin ningún tramo
-        literal largo: mensajes que son casi todo interpolación. Pedirle al
-        ledger una excusa por ellos habría sido registrar como hueco del
-        producto un techo del instrumento.
+      · A `fail()` with `%s` inside does NOT print `%s`, it prints the value.
+        Taking the whole format string as the literal, that site can never
+        match and comes out as "no mutation provokes it" with the mutation
+        existing — it happened to the boot check, which has had its own since
+        b605648. The same measurement error the kill map committed five times.
+      · Splitting on the placeholders, TEN sites were left with no long
+        literal stretch at all: messages that are almost pure interpolation.
+        Demanding a ledger excuse for them would have recorded an instrument's
+        ceiling as a product hole.
 
-    Así que no se reconoce por texto: se instrumenta `fail` y se anota la línea
-    desde la que se llamó. Un sitio nuevo entra a la cuenta el día que se
-    escribe, diga lo que diga su mensaje.
+    So no recognition by text: `fail` is instrumented and the line it was
+    called from is what gets recorded. A new site joins the count the day it
+    is written, whatever its message says.
     """
     tree = ast.parse(open(path, encoding="utf-8").read())
     by_line = {}
@@ -112,7 +112,7 @@ def load(root, name, rel):
 
 
 def fault_target(apply_fn):
-    """El archivo que el fault toca, leído de su propio probe."""
+    """The file the fault touches, read from its own probe."""
     probe = getattr(apply_fn, "probe", None)
     if probe and len(probe) > 1:
         return probe[1]
@@ -120,13 +120,13 @@ def fault_target(apply_fn):
 
 
 def lint_lines(tree, n):
-    """Corre el linter sobre `tree` y devuelve las LÍNEAS de los `fail()` que
-    salieron.
+    """Runs the linter over `tree` and returns the LINES of the `fail()`s that
+    came out.
 
-    El linter se importa, no se lanza como subproceso: así se le puede envolver
-    `fail` y anotar desde dónde se llamó, que es lo único que identifica un
-    sitio sin depender de cómo esté escrito su mensaje. De paso, quinientas
-    corridas dejan de pagar quinientos intérpretes.
+    The linter is imported, not launched as a subprocess: that way `fail` can
+    be wrapped and the calling line recorded, which is the only thing that
+    identifies a site without depending on how its message is written. As a
+    bonus, five hundred runs stop paying for five hundred interpreters.
     """
     mod = load(tree, f"ddw_lint_{n}", "scripts/lint_method.py")
     hit = set()
@@ -163,8 +163,8 @@ def measure(root, sites):
         subprocess.run(cmd, cwd=tree, check=True, capture_output=True)
 
     if lint_lines(tree, 0):
-        # Un árbol base sucio mide su propia suciedad: todo sitio que ya esté
-        # saliendo cuenta como provocado por el primer fault que se aplique.
+        # A dirty base tree measures its own dirt: every site already firing
+        # counts as provoked by the first fault that gets applied.
         print("FATAL: lint_method is not green on this tree, so nothing below would "
               "measure the faults.", file=sys.stderr)
         shutil.rmtree(work, ignore_errors=True)
@@ -193,17 +193,17 @@ _LEDGER_LINE = re.compile(r"^- \[ \] `([^`]+)`", re.M)
 
 
 def existing_reason(old, name):
-    """La razón escrita para un sitio, ENTERA.
+    """The written reason for a site, WHOLE.
 
-    Capturaba una sola línea (`( +.*)$`, y `.` no cruza el salto), así que
-    regenerar el ledger recortaba cada explicación a su primer renglón — las
-    razones son de cinco o seis. Una regeneración habría dejado cuarenta y
-    cuatro excusas truncadas a media frase, cada una todavía excusando su sitio:
-    el archivo seguiría verde y ya no diría por qué. Un registro que pierde lo
-    único que registra es peor que no tenerlo, porque nadie vuelve a mirarlo.
+    This used to capture a single line (`( +.*)$`, and `.` does not cross the
+    newline), so regenerating the ledger cut every explanation to its first
+    line — the reasons run five or six. One regeneration would have left
+    forty-four excuses truncated mid-sentence, each still excusing its site:
+    the file would stay green and no longer say why. A record that loses the
+    one thing it records is worse than none, because nobody looks at it again.
 
-    Se toma el bloque indentado completo que sigue al nombre, hasta el próximo
-    ítem o el final.
+    The whole indented block after the name is taken, up to the next item or
+    the end.
     """
     m = re.search(r"^- \[ \] `%s`\n((?:[ \t]+.*(?:\n|$))*)" % re.escape(name), old, re.M)
     return m.group(1).rstrip("\n") if m else ""
@@ -250,7 +250,7 @@ def main():
         old = open(ledger_path, encoding="utf-8").read() if os.path.exists(ledger_path) else ""
         for name in naked:
             reason = existing_reason(old, name)
-            body.append(f"- [ ] `{name}`\n{reason or '      **Sin razón escrita todavía.**'}")
+            body.append(f"- [ ] `{name}`\n{reason or '      **No written reason yet.**'}")
         open(ledger_path, "w", encoding="utf-8").write("\n".join(body) + "\n")
         print(f"  wrote {ledger_path} — {len(naked)} site(s) with no fault")
         return 0

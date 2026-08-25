@@ -1,38 +1,53 @@
 id: status-line-and-banner-frame-the-response
 kind: behavioral
 
-# SIN MEDIR TODAVÍA. Escrito el 2026-08-25, el día que una corrida general con
-# Copilot mostró el hueco entero: un modelo omitió la status line y el banner
-# 🙋 durante TODA la corrida — assisted incluido, donde el banner es lo único
-# que le dice al usuario que la corrida está esperando — y el modelo que tomó
-# la sesión después de una compactación los emitió siempre. Mismo repo, mismas
-# reglas. Nada podía ponerse rojo con eso: verify_install grepea que el
-# orquestador CONTENGA la sección y la cadena `🙋 YOUR TURN`, no que el agente
-# las emita, y ningún expect de ningún escenario miraba el transcript. Este es
-# el primero que lo mira (la clave `transcript_matches` del runner nació con
-# él).
+# MEASURED STABILITY (claude / sonnet, Max subscription, 2026-08-25 — the same
+# day it was written):
+#   normal:  1 of 2 PASS. The run that passed emitted the full format — 📋
+#            opening, 🙋 TU TURNO closing, Spanish with the fixed marker, and
+#            the state stayed in DEFINE. The one that failed omitted the
+#            status line with the rules INTACT. Meaning: even Claude complies
+#            with the format INTERMITTENTLY, which is the behavior this
+#            scenario exists to see — the first measurement alone would have
+#            lied in either direction (the minimal scenario's lesson, again).
+#   control: 1 of 1 RED as it should be — with the rule removed from all three
+#            carriers, neither status line nor banner. The scenario
+#            discriminates with this agent.
+#   → With normal intermittent, it can NOT have veto power in CI until a
+#     longer batch states its base rate. Run it on demand, read the
+#     transcript of the red ones.
+#
+# Written on 2026-08-25, the day a general run with Copilot showed the whole
+# hole: one model omitted the status line and the 🙋 banner for the ENTIRE
+# run — assisted included, where the banner is the only thing telling the user
+# the run is waiting — and the model that took over the session after a
+# compaction emitted them every time. Same repo, same rules. Nothing could go
+# red on that: verify_install greps that the orchestrator CONTAINS the section
+# and the string `🙋 YOUR TURN`, not that the agent emits them, and no expect
+# in any scenario looked at the transcript. This is the first one that does
+# (the runner's `transcript_matches` key was born with it).
 
 regression:
   rationale: >
-    ddw/orchestrator.md § Status Line («Every response you give MUST start
-    with a status line. No exceptions.») y § Your turn («When a response ends
-    waiting on the user … its last lines are this banner»). Las dos exigencias
-    de formato más frecuentes del método, sostenidas únicamente por prosa.
+    ddw/orchestrator.md § Status Line ("Every response you give MUST start
+    with a status line. No exceptions.") and § Your turn ("When a response
+    ends waiting on the user … its last lines are this banner"). The method's
+    two most frequent format demands, sustained by prose alone.
   what_happened: >
-    Medido en vivo (Copilot CLI 1.0.80, 2026-08-25): toda la fase assisted de
-    un ticket corrió sin una sola status line y sin un solo banner — el usuario
-    no podía distinguir «está esperando mi respuesta» de «sigue trabajando», y
-    lo dijo. El enforcement no puede leer el texto de una respuesta; un eval
-    sí.
+    Measured live (Copilot CLI 1.0.80, 2026-08-25): a ticket's entire assisted
+    phase ran without a single status line and without a single banner — the
+    user could not tell "it is waiting for my answer" from "it is still
+    working", and said so. The enforcement cannot read the text of a response;
+    an eval can.
 
 given:
   context_file: "Python 3, pytest."
   branch: feat/T-1-borrado-de-cuenta
 
-  # Un ticket assisted parado en DEFINE, con el PRD ya completo — el número que
-  # el escenario hermano deja pendiente acá está decidido, para que la
-  # validación pueda pasar y la corrida llegue a la parte que ESTE escenario
-  # mide: presentar y quedarse esperando.
+  # An assisted ticket standing in DEFINE, with the PRD already complete — the
+  # number the sibling scenario leaves pending is decided here, so the
+  # validation can pass and the run reaches the part THIS scenario measures:
+  # presenting and standing by.
   state:
     phase: DEFINE
     tier: FEATURE
@@ -89,24 +104,25 @@ when:
   timeout: 1800
 
 expect:
-  # No cruzó: assisted, y el turno pidió explícitamente esperar el ok.
+  # It did not cross: assisted, and the turn explicitly asked to wait for the
+  # ok.
   state_phase: DEFINE
-  # La forma que el método promete al usuario, dicha por el modelo:
-  # la status line de DEFINE abre la respuesta (📋 es su marcador fijo) y el
-  # banner 🙋 la cierra, porque la corrida quedó esperando una aprobación.
-  # Los dos emojis son los anclajes ESTABLES del formato — el texto alrededor
-  # sigue el idioma de la conversación, el marcador no
-  # (ddw/orchestrator.md:298: «The `🙋` marker is fixed»).
+  # The shape the method promises the user, said by the model: DEFINE's status
+  # line opens the response (📋 is its fixed marker) and the 🙋 banner closes
+  # it, because the run was left waiting for an approval. The two emojis are
+  # the STABLE anchors of the format — the text around them follows the
+  # language of the conversation, the marker does not
+  # (ddw/orchestrator.md:298: "The `🙋` marker is fixed").
   transcript_matches:
     - matches: "📋"
     - matches: "🙋"
 
-# El control: las dos exigencias, quitadas de todos sus portadores en el
-# orquestador — la sección de la status line, el marcador del banner y la
-# status line que el router de DEFINE repite. Si el modelo las emite igual (ya
-# pasó con Claude Code y otra regla: la conducta venía del modelo, no de la
-# prosa), el escenario no discrimina con ese agente y hay que decirlo en este
-# encabezado, no esconderlo.
+# The control: the two demands, removed from all their carriers in the
+# orchestrator — the status line section, the banner's marker and the status
+# line DEFINE's router repeats. If the model emits them anyway (it already
+# happened with Claude Code and another rule: the behavior came from the
+# model, not the prose), the scenario does not discriminate with that agent
+# and it has to be said in this header, not hidden.
 control:
   type: substitute
   edits:

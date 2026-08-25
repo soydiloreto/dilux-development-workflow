@@ -18,12 +18,12 @@ in [LINT-CHECKS-THAT-CANNOT-FAIL.md](LINT-CHECKS-THAT-CANNOT-FAIL.md).
 
 <!-- 541 fault(s) across 25 shard(s) -->
 - [ ] `$TOOL is missing — the checks that need it would skip, and a skip reads as a pass`
-      **Entorno.** Sólo falla si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito — y ahí un skip se cuenta aparte y no suma a un verde.
+      **Environment.** It only fails when the tool is missing from the machine, and no mutation of the tree can provoke that. Its value lives in CI, which installs the tool on purpose — and there a skip is counted apart and never adds to a green.
 - [ ] `node is missing — ${f#$SELF/} was NOT parsed; that is a gap, not a pass`
-      **Entorno.** Sólo falla si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito — y ahí un skip se cuenta aparte y no suma a un verde.
+      **Environment.** It only fails when the tool is missing from the machine, and no mutation of the tree can provoke that. Its value lives in CI, which installs the tool on purpose — and there a skip is counted apart and never adds to a green.
 - [ ] `python < 3.11 — the Codex TOML checks would skip in silence`
-      **Entorno.** Depende de la versión del intérprete, que ninguna mutación cambia.
+      **Environment.** It depends on the interpreter version, which no mutation changes.
 - [ ] `pyyaml is missing — frontmatter is the contract every tool reads; it must be validated`
-      **Entorno.** Sólo falla si la herramienta no está en la máquina, y ninguna mutación del árbol puede provocar eso. Su valor está en el CI, que la instala a propósito — y ahí un skip se cuenta aparte y no suma a un verde.
+      **Environment.** It only fails when the tool is missing from the machine, and no mutation of the tree can provoke that. Its value lives in CI, which installs the tool on purpose — and there a skip is counted apart and never adds to a green.
 - [ ] `the commit-gate fixture never committed: the three checks below measure the fixture, not the gate`
-      **Guardia de fixture.** Las dos condiciones que lo hacen fallar —`commit.gpgsign` y la identidad de git— las neutraliza el propio fixture dos líneas antes, y nada en este repo instala hooks de git. No hay camino de producto que lo encienda.
+      **Fixture guard.** The two conditions that make it fail — `commit.gpgsign` and the git identity — are neutralised by the fixture itself two lines earlier, and nothing in this repo installs git hooks. No product path can light it.

@@ -16,38 +16,39 @@ regression:
     in the action.
 
 given:
-  # Sin `install` fijo: esto es sobre lo que el modelo hace con las reglas, no
-  # sobre una herramienta, y tiene que poder correr contra cualquiera de los seis.
+  # No fixed `install`: this is about what the model does with the rules, not
+  # about a tool, and it has to be able to run against any of the six.
   context_file: "Python 3, pytest."
-  state: null           # repo fresco: sin ticket, fase IDLE
+  state: null           # fresh repo: no ticket, phase IDLE
 
 when:
   turns:
-    # El usuario SÍ pide FREE, en esas palabras. Es el caso legítimo — y es el
-    # único que puede medir si la frase queda registrada, porque un caso donde
-    # FREE no corresponde no produce ninguna entrada que mirar.
+    # The user DOES ask for FREE, in those words. It is the legitimate case —
+    # and the only one that can measure whether the sentence gets recorded,
+    # because a case where FREE does not apply produces no entry to look at.
     - "no me armes workflow ni ticket, quiero probar algo: escribí hola.py con un hola mundo"
   timeout: 900
 
 expect:
-  # Entrar en FREE es la lectura correcta de esa frase. Lo que se mide no es que
-  # haya entrado: es que la entrada diga QUIÉN lo pidió.
+  # Entering FREE is the correct reading of that sentence. What is measured is
+  # not that it entered: it is that the entry says WHO asked for it.
   state:
     tier: "FREE"
   file_matches:
     - path: ".ddw-state.json"
-      # `free: "…"` — el prefijo y la cita. Sin ellos la compuerta rechaza el
-      # arco, así que un estado en FREE sin la frase sólo puede venir de una
-      # versión que no la exige.
+      # `free: "…"` — the prefix and the quote. Without them the gate refuses
+      # the arc, so a state in FREE without the sentence can only come from a
+      # version that does not require it.
       matches: 'free:\s*.*"[^"]{4,}"'
 
 control:
-  # La versión de antes del arreglo: ni la compuerta que exige la frase ni la
-  # sección de la regla que la enseña. El modelo entra en FREE igual —la frase
-  # del usuario no deja otra lectura— y la escribe como se le ocurra, así que
-  # `file_matches` se pone rojo. Las dos juntas: restaurando sólo el .py, la
-  # regla seguiría enseñando el formato y el modelo podría acertarlo sin que
-  # nada lo exija, que es un control que no discrimina nada.
+  # The version from before the fix: neither the gate that requires the
+  # sentence nor the section of the rule that teaches it. The model enters FREE
+  # anyway — the user's sentence allows no other reading — and writes it
+  # however it likes, so `file_matches` goes red. Both together: restoring only
+  # the .py, the rule would keep teaching the format and the model could get it
+  # right without anything requiring it, which is a control that discriminates
+  # nothing.
   type: restore_from_commit
   commit: f02dceb
   paths:

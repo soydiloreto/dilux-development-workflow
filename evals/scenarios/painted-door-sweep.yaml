@@ -1,21 +1,21 @@
 id: painted-door-sweep
 kind: painted-door-sweep
 
-# Éste no viene de una regresión: viene de las cuatro que sí, y de que las
-# cuatro se encontraron DESPUÉS de shippear. Los escenarios `painted-door`
-# fijan un regex sobre un archivo y vuelven a encontrar una puerta que ya se
-# abrió. Éste busca la próxima.
+# This one does not come from a regression: it comes from the four that do,
+# and from the fact that all four were found AFTER shipping. The
+# `painted-door` scenarios pin a regex on a file and re-find a door that
+# already opened. This one looks for the next.
 regression:
-  changelog: "0.19.0, 0.9.2 y 0.20.0 — cuatro puertas pintadas, cuatro veces encontradas tarde"
+  changelog: "0.19.0, 0.9.2 and 0.20.0 — four painted doors, four times found late"
   commit: 3b145df
   what_happened: >
-    `/ddw-eject` mandaba copiar el método a `.ddw/`, que toda fase rechaza. El
-    rechazo de estado corrupto ordenaba dos escrituras que él mismo rechazaba.
-    INSTALL.md describía el eject como "copia el método". Ninguna la vio un
-    check: los hooks estaban bien, la instrucción estaba mal, y no había nada
-    que le preguntara a la instrucción. Cada una se arregló con un escenario que
-    la re-encuentra; ninguno de esos escenarios habría encontrado a las otras
-    tres. Esto le pregunta al gate por TODA escritura que el método ordena.
+    `/ddw-eject` ordered the method copied to `.ddw/`, which every phase
+    refuses. The corrupt-state refusal ordered two writes it itself refused.
+    INSTALL.md described the eject as "copies the method". No check saw any of
+    them: the hooks were right, the instruction was wrong, and nothing asked
+    the instruction anything. Each one was fixed with a scenario that re-finds
+    it; none of those scenarios would have found the other three. This asks
+    the gate about EVERY write the method orders.
 
 given:
   install: claude
@@ -33,21 +33,23 @@ when:
     - "skills/*/SKILL.md"
     - "ddw/rules/*.instructions.md"
     - "ddw/orchestrator.md"
-  # Cada orden se juzga en estas fases y basta que UNA la rechace para que sea
-  # una puerta pintada: el archivo que la ordena no dice en cuál se lo van a
-  # pedir, y un skill se invoca donde el usuario quiera.
+  # Every order is judged in these phases and it takes only ONE refusing it for
+  # it to be a painted door: the file that orders it does not say in which
+  # phase it will be asked for, and a skill is invoked wherever the user
+  # pleases.
   #
-  # CODE y CLOSEOUT quedan afuera a propósito: ahí se puede escribir código, así
-  # que una escritura permitida no dice nada, y una rechazada ahí lo está en
-  # todas las demás también.
+  # CODE and CLOSEOUT are left out on purpose: code can be written there, so a
+  # permitted write says nothing, and one refused there is refused in all the
+  # others too.
   phases: [DEFINE, PLAN, VERIFY]
 
 expect:
   no_ordered_write_is_refused: true
 
-# El control: el skill de eject como shippeó en 3b145df^, con «**Copy** the
-# method to `.ddw/`» en su protocolo. El barrido tiene que encontrarlo sin que
-# nadie le diga dónde mirar — que es toda la diferencia con `painted-door`.
+# The control: the eject skill as it shipped at 3b145df^, with "**Copy** the
+# method to `.ddw/`" in its protocol. The sweep has to find it without anyone
+# telling it where to look — which is the whole difference from
+# `painted-door`.
 control:
   type: restore_from_commit
   commit: 3b145df^

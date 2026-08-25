@@ -51,11 +51,11 @@ def repo(tmp_path):
 
 
 def state(phase="IDLE", tier=None, ticket=None, gates=None, history=None, title=None):
-    # Un ticket lleva nombre desde el arco que lo clasifica, y el validador lo
-    # exige ahí. Las fixtures no lo ponían —el campo no existía en este helper—
-    # así que doce tests construían el estado que el producto ya no acepta y
-    # medían la regla equivocada. Se completa solo, salvo que el test diga otra
-    # cosa a propósito.
+    # A ticket carries a name from the arc that classifies it, and the
+    # validator demands it there. The fixtures did not set it — the field did
+    # not exist in this helper — so twelve tests were building the state the
+    # product no longer accepts and measuring the wrong rule. It fills itself
+    # in, unless the test deliberately says otherwise.
     return {"phase": phase, "tier": tier, "ticket": ticket,
             "title": title if title is not None else (f"ticket {ticket}" if ticket else None),
             "gates": gates or {}, "history": history or []}
@@ -95,23 +95,24 @@ def test_a_repository_at_rest_still_writes_what_it_needs(repo, rel):
 
 
 def test_the_refusal_at_idle_does_not_hand_over_the_way_around_itself(repo):
-    """El rechazo nombra el camino sancionado y NO la receta para evitarlo.
+    """The refusal names the sanctioned path and NOT the recipe around it.
 
-    Traía las dos: `--to CLASSIFY` y, al lado, `--to CLASSIFY --tier FREE` con
-    su segundo paso. Medido con un modelo en vivo sobre OpenCode: leyó el
-    rechazo, tomó los dos pasos del tier sin enforcement, y escribió el archivo.
-    No hizo trampa — hizo lo que el mensaje decía que podía hacer.
+    It used to carry both: `--to CLASSIFY` and, right beside it, `--to
+    CLASSIFY --tier FREE` with its second step. Measured with a live model on
+    OpenCode: it read the refusal, took the two steps of the unenforced tier,
+    and wrote the file. It did not cheat — it did what the message said it
+    could do.
 
-    Trabajar sin pipeline es una decisión del usuario. Puesta en el rechazo,
-    pasa a ser una decisión del modelo, y un pipeline que enseña cómo saltearlo
-    no está imponiendo nada. El tier no se toca; lo que se saca es la receta.
+    Working without the pipeline is the user's decision. Put in the refusal,
+    it becomes the model's decision, and a pipeline that teaches how to skip
+    itself is enforcing nothing. The tier stays; what goes is the recipe.
     """
     why = vt.source_write_denied(os.path.join(repo, "src/app.py"), repo, "IDLE")
-    assert "CLASSIFY" in why, "el rechazo no nombra el camino sancionado"
+    assert "CLASSIFY" in why, "the refusal does not name the sanctioned path"
     assert "--tier FREE" not in why and "--to FREE" not in why, \
-        "el rechazo sigue entregando la receta para saltearse el pipeline: " + why
+        "the refusal still hands over the recipe for skipping the pipeline: " + why
     assert "ask" in why.lower() or "user" in why.lower(), \
-        "el rechazo no dice de quién es la decisión: " + why
+        "the refusal does not say whose decision it is: " + why
 
 
 # ── DDW's own machinery, unwritable in every phase ───────────────────────────
@@ -144,12 +145,12 @@ def test_a_dropin_install_does_not_seal_the_project(tmp_path):
 
 # ── FREE is the one tier the user has to ask for ─────────────────────────────
 #
-# Medido en vivo sobre 0.32.2: pedido de crear un archivo en IDLE, el modelo leyó
-# `classify.instructions.md` —el archivo que dice *nunca lo propongas, nunca lo
-# ofrezcas como salida de un rechazo que acabás de dar*— y ofreció exactamente
-# eso, con "(Recomendado)" al lado. El rechazo de escritura ya no entrega la
-# receta; la aprendió de la regla que se la prohíbe. Una regla que el modelo lee
-# y pisa es una regla que el pipeline no tiene.
+# Measured live on 0.32.2: asked to create a file in IDLE, the model read
+# `classify.instructions.md` — the file that says *never propose it, never
+# offer it as the way out of a refusal you just gave* — and offered exactly
+# that, with "(Recomendado)" beside it. The write refusal no longer hands over
+# the recipe; the model learned it from the rule that forbids it. A rule the
+# model reads and steps over is a rule the pipeline does not have.
 
 _INTO_CLASSIFY = entry("IDLE", "CLASSIFY", tier=None, ticket=None)
 
@@ -166,20 +167,20 @@ def test_free_needs_the_users_own_words():
         vt.validate(old, _free_arrow("sin workflow para esta prueba"), GRAPH)
     assert "own words" in str(exc.value), str(exc.value)
 
-    # Con la frase del usuario citada, pasa.
+    # With the user's own sentence quoted, it passes.
     vt.validate(old, _free_arrow('free: "no me armes workflow, quiero probar algo"'), GRAPH)
 
 
 def test_el_ticket_sale_de_classify_con_nombre():
-    """Medido en vivo: un FEATURE llegó a DEFINE con `"title": null`.
+    """Measured live: a FEATURE reached DEFINE with `"title": null`.
 
-    Las reglas dicen que `title` y `tracker` se llenan en el MISMO write que la
-    flecha que clasifica — y ese write era un `Write` a mano. Cuando el helper
-    ganó `--write` y pasó a ser la puerta por la que el estado aterriza de
-    verdad, los dos campos se quedaron sin manera de entrar. De ahí en adelante
-    cada línea de estado, cada encabezado de reporte y el título del PR fueron
-    el modelo reconstruyendo el nombre de contexto, mientras el estado —lo que
-    sobrevive a la sesión— no nombraba nada.
+    The rules say `title` and `tracker` get filled in the SAME write as the
+    arrow that classifies — and that write used to be a hand-made `Write`.
+    When the helper gained `--write` and became the door the state actually
+    lands through, both fields were left with no way in. From then on every
+    status line, every report header and the PR title were the model
+    reconstructing the name from context, while the state — the thing that
+    survives the session — named nothing.
     """
     old = state("CLASSIFY", None, None, {}, [entry("IDLE", "CLASSIFY")])
     sin_nombre = {**state("DEFINE", "FEATURE", "F-1", {},
@@ -195,7 +196,7 @@ def test_el_ticket_sale_de_classify_con_nombre():
 
 
 def test_the_tier_cannot_turn_free_in_a_silent_write():
-    """Sin entrada nueva no hay dónde poner las palabras — y sin ellas, no hay FREE."""
+    """Without a new entry there is nowhere to put the words — and without them, no FREE."""
     old = state("CLASSIFY", None, None, {}, [_INTO_CLASSIFY])
     silent = state("CLASSIFY", "FREE", None, {}, [_INTO_CLASSIFY])
     with pytest.raises(vt.Block):
@@ -356,20 +357,20 @@ def test_a_read_is_not_judged_as_a_write(tmp_path):
 
 
 def test_the_agent_may_read_the_method_it_is_held_to(tmp_path):
-    """El test de arriba mide un path de PRODUCTO, y por eso este defecto vivió.
+    """The test above measures a PRODUCT path, and that is why this defect lived.
 
-    `decide_pre` tiene dos guardas y una sola pregunta de "¿esto es una
-    escritura?". La guarda del método fue subida al tope de la función para
-    cerrar el agujero del plugin y quedó ADELANTE de esa pregunta, así que
-    cualquier tool que nombrara un path bajo `.ddw/` —un `view` incluido— se
-    rechazaba. En Claude no se ve: el matcher del hook manda sólo Edit|Write.
-    En Copilot el preToolUse no tiene matcher y recibe todas.
+    `decide_pre` has two guards and a single "is this a write?" question. The
+    method guard was hoisted to the top of the function to close the plugin
+    hole and landed IN FRONT of that question, so any tool naming a path under
+    `.ddw/` — a `view` included — got refused. In Claude it does not show: the
+    hook's matcher sends only Edit|Write. In Copilot preToolUse has no matcher
+    and receives them all.
 
-    Medido en vivo: el hook de sessionStart inyecta "read `.ddw/orchestrator.md`
-    now and run its Boot Sequence" y la tool siguiente volvió con "DDW blocked
-    this write: orchestrator.md is part of DDW itself". El agente no pudo cargar
-    la máquina de estados a la que estaba sometido, y la corrida entera se vio
-    como DDW no instalado — con los rechazos escritos con las palabras de DDW.
+    Measured live: the sessionStart hook injects "read `.ddw/orchestrator.md`
+    now and run its Boot Sequence" and the next tool came back with "DDW
+    blocked this write: orchestrator.md is part of DDW itself". The agent
+    could not load the state machine it was being held to, and the whole run
+    looked like DDW not installed — with the refusals written in DDW's words.
     """
     repo = _repo_at(tmp_path, phase="IDLE", gates={})
     method = os.path.join(repo, ".ddw")
@@ -383,74 +384,74 @@ def test_the_agent_may_read_the_method_it_is_held_to(tmp_path):
     leer = vt.decide_pre(state_path, graph, "Edit", {"path": orch}, [orch],
                          repo=repo, raw_tool="view", method=method)
     assert leer is None, \
-        "el agente no puede LEER el orquestador que el hook le ordena leer: " + str(leer)
+        "the agent cannot READ the orchestrator the hook orders it to read: " + str(leer)
 
-    # `rg` no dice "read" ni "grep" en ninguna letra: la lista de arriba se
-    # matchea por substring y una abreviatura no matchea nada. Copilot llama
-    # así a ripgrep, y medido en vivo una release después de dejar pasar las
-    # lecturas: `view` del orquestador pasaba y `rg` sobre el mismo archivo
-    # volvía "DDW blocked this write". El agente se recuperó por `bash grep`,
-    # que es lo que hay que leer dos veces — el rechazo no frenó la lectura, la
-    # mudó a la única puerta que PreToolUse no ve.
+    # `rg` says neither "read" nor "grep" in any of its letters: the list
+    # above is matched by substring and an abbreviation matches nothing.
+    # Copilot calls ripgrep that way, and measured live one release after the
+    # reads were let through: `view` of the orchestrator passed and `rg` on
+    # the same file came back "DDW blocked this write". The agent recovered
+    # via `bash grep`, which is the part to read twice — the refusal did not
+    # stop the read, it moved it to the one door PreToolUse cannot see.
     assert vt.decide_pre(state_path, graph, "Edit", {"path": orch}, [orch],
                          repo=repo, raw_tool="rg", method=method) is None, \
-        "`rg` sobre el método se juzga como escritura"
-    # Y la abreviatura se matchea ENTERA: dos letras adentro de otro nombre no
-    # pueden convertir una escritura en una lectura.
+        "`rg` over the method is judged as a write"
+    # And the abbreviation matches WHOLE: two letters inside another name
+    # cannot turn a write into a read.
     assert vt.decide_pre(state_path, graph, "Edit", {"path": orch}, [orch],
                          repo=repo, raw_tool="purge", method=method), \
-        "un nombre que sólo CONTIENE `rg` pasó como lectura"
+        "a name that merely CONTAINS `rg` passed as a read"
 
-    # …y la regla que la guarda sí impone sigue en pie: escribirlo se rechaza.
+    # …and the rule the guard does impose still stands: writing it is refused.
     escribir = vt.decide_pre(state_path, graph, "Write",
                              {"path": orch, "content": "otras reglas"}, [orch],
                              repo=repo, raw_tool="create", method=method)
-    assert escribir, "el método quedó escribible desde adentro del pipeline"
+    assert escribir, "the method ended up writable from inside the pipeline"
 
 
-# ── El artefacto que sostiene una compuerta ganada ───────────────────────────
+# ── The artifact that holds up an earned gate ────────────────────────────────
 #
-# Medido en la ronda 6: CODE encontró un error real en la spec, anunció que
-# quedaría "registrado en VERIFY" —un lugar que no existe— y siguió. Corregirla
-# ahí mismo habría sido peor: el documento cambiaba de forma bajo una compuerta
-# que nadie volvió a ganar, que es exactamente el lavado que el `clears` del
-# grafo existe para impedir, entrando por otra puerta.
+# Measured in round 6: CODE found a real error in the spec, announced it would
+# be "registrado en VERIFY" — a place that does not exist — and moved on.
+# Fixing it right there would have been worse: the document changing shape
+# under a gate nobody re-earned, which is exactly the laundering the graph's
+# `clears` exists to prevent, coming in through another door.
 
 def test_la_spec_no_se_reescribe_con_su_compuerta_en_pie(tmp_path):
     repo = _repo_at(tmp_path, phase="CODE", ticket="T-1",
                     gates={"define": True, "spec": True, "threat": True})
     why = _pre(repo, os.path.join(repo, "docs/ddw/specs/spec-T-1.md"), "corregida a mano")
     assert why and "PLAN" in why, \
-        "la spec aprobada se reescribió desde CODE sin volver a ganar la compuerta: %r" % why
+        "the approved spec was rewritten from CODE without re-earning the gate: %r" % why
 
 
 def test_el_modelo_de_amenazas_tambien_esta_sellado(tmp_path):
-    """`CODE->PLAN` limpia `spec` Y `threat`: los dos son artefactos de PLAN, y
-    sellar uno solo deja el otro reescribible bajo su propia compuerta."""
+    """`CODE->PLAN` clears `spec` AND `threat`: both are PLAN's artifacts, and
+    sealing only one leaves the other rewritable under its own gate."""
     repo = _repo_at(tmp_path, phase="CODE", ticket="T-1",
                     gates={"define": True, "spec": True, "threat": True})
     why = _pre(repo, os.path.join(repo, "docs/ddw/security/threat-T-1.md"), "x")
-    assert why, "el modelo de amenazas aprobado se reescribió desde CODE"
+    assert why, "the approved threat model was rewritten from CODE"
 
 
 def test_en_PLAN_la_spec_se_escribe_porque_su_compuerta_no_esta_ganada(tmp_path):
-    """La otra mitad, y la que impide que el sello sea un candado: PLAN es donde
-    la spec se escribe, y la vuelta desde CODE limpia la compuerta justamente
-    para que se pueda corregir. Un sello que también muerde acá no deja arreglar
-    nada — deja el ticket muerto."""
+    """The other half, and the one that keeps the seal from being a padlock:
+    PLAN is where the spec gets written, and the way back from CODE clears the
+    gate precisely so it can be corrected. A seal that also bites here fixes
+    nothing — it leaves the ticket dead."""
     repo = _repo_at(tmp_path, phase="PLAN", ticket="T-1", gates={"define": True})
     assert _pre(repo, os.path.join(repo, "docs/ddw/specs/spec-T-1.md"), "x") is None, \
-        "la spec no se puede escribir en la fase que la escribe"
+        "the spec cannot be written in the phase that writes it"
 
 
 def test_la_spec_de_otro_ticket_no_es_este_sello(tmp_path):
-    """El sello es sobre el artefacto de ESTE ticket. El índice del padre de un
-    split y la spec del hermano son otros documentos; sellarlos por parecido de
-    nombre rompe el cierre del split, que edita el índice del padre."""
+    """The seal is on THIS ticket's artifact. A split parent's index and the
+    sibling's spec are other documents; sealing them for looking alike breaks
+    the split's closeout, which edits the parent's index."""
     repo = _repo_at(tmp_path, phase="CODE", ticket="T-1",
                     gates={"define": True, "spec": True, "threat": True})
     assert _pre(repo, os.path.join(repo, "docs/ddw/specs/spec-T-2.md"), "x") is None, \
-        "el sello del ticket activo alcanzó al documento de otro ticket"
+        "the active ticket's seal reached another ticket's document"
 
 
 # ── Three guards nothing else drives ─────────────────────────────────────────
@@ -538,13 +539,13 @@ def test_one_undecodable_byte_in_the_journal_is_a_refusal_not_a_traceback(tmp_pa
             "traceback: every write in the repository is refused for it, permanently") from exc
 
 
-# ── Tres guardas que la suite ejecuta cero veces ─────────────────────────────
+# ── Three guards the suite executes zero times ───────────────────────────────
 #
-# No salieron de leer el código buscando qué falta: salieron de correr la suite
-# bajo `coverage` con `COVERAGE_PROCESS_START`, que mide también los subprocesos
-# —los validadores y los hooks son subprocesos, y sin eso no se mide ninguno— y
-# de mirar qué líneas de este archivo no ejecuta ni una vez. Las tres son reglas
-# de enforcement, no ramas de error.
+# These did not come from reading the code for what is missing: they came from
+# running the suite under `coverage` with `COVERAGE_PROCESS_START`, which also
+# measures subprocesses — the validators and the hooks are subprocesses, and
+# without it none gets measured — and looking at which lines of this file it
+# never executes once. All three are enforcement rules, not error branches.
 
 def _journal(repo, records):
     with open(os.path.join(repo, ".ddw-journal.jsonl"), "w", encoding="utf-8") as fh:
@@ -553,65 +554,66 @@ def _journal(repo, records):
 
 
 def test_a_receipt_from_before_the_corrective_loop_does_not_reopen_the_gate(tmp_path):
-    """El caso entero de `_receipt_spent`, y la suite no lo tocaba.
+    """The whole case for `_receipt_spent`, and the suite never touched it.
 
-    Un bucle correctivo devuelve la compuerta: el código cambió, así que lo que
-    decía el reporte anterior ya no dice nada sobre ESTE código. Un recibo
-    escrito antes de esa devolución atestigua una corrida vieja — y como los
-    bytes de un reporte no cambian cuando cambia el código, es exactamente el
-    recibo que vuelve a abrir la puerta sin que nadie haya vuelto a medir.
+    A corrective loop hands the gate back: the code changed, so whatever the
+    previous report said no longer says anything about THIS code. A receipt
+    written before that hand-back witnesses an old run — and since a report's
+    bytes do not change when the code does, it is exactly the receipt that
+    reopens the door without anyone having measured again.
     """
     repo = _repo_at(tmp_path)
     marker = "tests-validated-abc123"
     _journal(repo, [{"record": "receipt", "name": marker, "file": "x.md"},
                     {"record": "spent", "gates": ["tests"]}])
     why = vt._receipt_spent(repo, "tests", marker)
-    assert why, "un recibo anterior al bucle correctivo volvió a abrir la compuerta"
+    assert why, "a receipt from before the corrective loop reopened the gate"
     assert "again" in why.lower() or "re-run" in why.lower(), \
-        f"el rechazo no dice qué hacer: {why[:160]}"
+        f"the refusal does not say what to do: {why[:160]}"
 
-    # Y el orden es lo único que decide: el mismo recibo, escrito DESPUÉS de que
-    # la compuerta se devolvió, es el recibo bueno.
+    # And the order is the only thing that decides: the same receipt, written
+    # AFTER the gate was handed back, is the good receipt.
     _journal(repo, [{"record": "spent", "gates": ["tests"]},
                     {"record": "receipt", "name": marker, "file": "x.md"}])
     assert vt._receipt_spent(repo, "tests", marker) is None, \
-        "un recibo escrito después del bucle correctivo fue rechazado igual"
+        "a receipt written after the corrective loop was refused anyway"
 
 
 def test_a_repo_upgraded_mid_ticket_has_to_re_earn_its_receipts(tmp_path):
-    """Sin journal pero con historia: la respuesta es el conjunto VACÍO, no
-    "no sé". Leerlo como "no sé" hace que un repo al que le borraron el journal
-    quede más permisivo que uno que lo tiene — que es al revés de lo que promete
-    el resto del archivo. Cuesta volver a correr los validadores, un minuto."""
+    """No journal but with history: the answer is the EMPTY set, not "don't
+    know". Read as "don't know", a repo whose journal was deleted ends up more
+    permissive than one that has it — the reverse of what the rest of the file
+    promises. The cost is re-running the validators, a minute."""
     repo = _repo_at(tmp_path)
     os.remove(os.path.join(repo, ".ddw-journal.jsonl")) if os.path.exists(
         os.path.join(repo, ".ddw-journal.jsonl")) else None
     assert vt._receipt_witnesses(repo) == set(), \
-        "un repo con historia y sin journal da por buenos los recibos que encuentre en disco"
+        "a repo with history and no journal takes whatever receipts it finds on disk as good"
 
-    # Un repo que todavía no empezó nada es el otro caso, y ahí sí es "no sé":
-    # no hay nada que re-ganar y refusar sería refusar una instalación nueva.
+    # A repo that has not started anything is the other case, and there it IS
+    # "don't know": there is nothing to re-earn and refusing would refuse a
+    # fresh install.
     fresh = tmp_path / "fresh"
     fresh.mkdir()
     with open(fresh / ".ddw-state.json", "w", encoding="utf-8") as fh:
         json.dump(state("IDLE"), fh)
     assert vt._receipt_witnesses(str(fresh)) is None, \
-        "un repo recién instalado tiene que re-ganar recibos que nunca ganó"
+        "a freshly installed repo has to re-earn receipts it never earned"
 
 
 @pytest.mark.parametrize("tool,needle", [("Edit", "not an Edit"), ("Write", "history")])
 def test_the_refusal_for_a_phase_without_its_entry_names_the_tool_that_can_fix_it(
         tmp_path, tool, needle):
-    """Un Edit NO PUEDE cambiar la cabecera (arriba) y agregar a `history`
-    (abajo) en una operación. Decirle a quien usó Edit "reescribí el archivo
-    agregando la entrada" es mandarlo a repetir lo que acaba de fallar, y
-    medido en vivo el modelo entra en bucle. El rechazo es el mismo; lo que
-    cambia es si se puede actuar sobre él."""
+    """An Edit CANNOT change the header (above) and append to `history`
+    (below) in one operation. Telling whoever used Edit "rewrite the file
+    adding the entry" sends them to repeat what just failed, and measured
+    live the model loops. The refusal is the same; what changes is whether it
+    can be acted on."""
     repo = _repo_at(tmp_path, phase="PLAN")
     target = os.path.join(repo, ".ddw-state.json")
     graph = os.path.join(ROOT, "ddw/rules/transition-graph.json")
     if tool == "Edit":
-        # Un Edit de verdad: sólo la cabecera, que es todo lo que un Edit alcanza.
+        # A real Edit: only the header, which is all an Edit reaches.
         payload = {"file_path": target, "old_string": '"phase": "PLAN"',
                    "new_string": '"phase": "CODE"'}
     else:
@@ -624,31 +626,31 @@ def test_the_refusal_for_a_phase_without_its_entry_names_the_tool_that_can_fix_i
         why = vt.decide_pre(target, graph, tool, payload, [target], repo=repo)
     except vt.Block as exc:
         why = str(exc)
-    assert why, "una fase que cambió sin su entrada de historia pasó"
+    assert why, "a phase that changed without its history entry passed"
     low = why.lower()
-    assert "history" in low, f"el rechazo no nombra lo que falta: {why[:200]}"
+    assert "history" in low, f"the refusal does not name what is missing: {why[:200]}"
     if tool == "Edit":
         assert "edit cannot" in low or "use a write" in low, \
-            f"a quien usó Edit no se le dice que Edit no puede hacerlo: {why[:240]}"
+            f"whoever used Edit is not told that Edit cannot do it: {why[:240]}"
 
 
-# ── Cuatro agujeros que la suite entera no ve ────────────────────────────────
+# ── Four holes the entire suite cannot see ───────────────────────────────────
 #
-# De una auditoría dirigida al núcleo: guardas correctas en el código y sin
-# nada que las midiera. Los cuatro faults sobrevivían a las 553 comprobaciones.
+# From an audit aimed at the core: correct guards in the code and nothing
+# measuring them. All four faults survived the 553 checks.
 
 def test_a_notebook_write_carries_a_path_the_guards_can_see(tmp_path):
-    """`NotebookEdit` está en el matcher de los seis adaptadores y trae el path
-    en `notebook_path`, no en `file_path`. Si esa clave no está en la lista que
-    sabe dónde cada herramienta esconde el path, el evento llega al gate sin
-    NINGÚN path que juzgar — y un guard que no recibe rutas no rechaza nada:
-    product source escrito en cualquier fase, con los dos hooks en verde."""
+    """`NotebookEdit` is in all six adapters' matchers and carries the path in
+    `notebook_path`, not `file_path`. If that key is not in the list that
+    knows where each tool hides the path, the event reaches the gate with NO
+    path to judge — and a guard that receives no paths refuses nothing:
+    product source written in any phase, with both hooks green."""
     repo = _repo_at(tmp_path, phase="PLAN")
     nb = os.path.join(repo, "src/model.ipynb")
     payload = {"notebook_path": nb, "new_source": "x = 1"}
-    # Las rutas se sacan del evento CON `PATH_KEYS`, que es lo que se está
-    # probando: pasar la lista a mano acá saltea justo la línea que decide. El
-    # hook hace exactamente esto, en `main`.
+    # The paths are pulled out of the event WITH `PATH_KEYS`, which is what is
+    # being tested: passing the list by hand here skips exactly the line that
+    # decides. The hook does precisely this, in `main`.
     paths = [payload.get(k) for k in vt.PATH_KEYS]
     why = None
     try:
@@ -657,30 +659,31 @@ def test_a_notebook_write_carries_a_path_the_guards_can_see(tmp_path):
                             "NotebookEdit", payload, paths, repo=repo)
     except vt.Block as exc:
         why = str(exc)
-    assert why, "un NotebookEdit escribió product source en PLAN sin que ningún guard viera el path"
-    assert "source" in why.lower(), f"el rechazo no dice qué se rechazó: {why[:160]}"
+    assert why, "a NotebookEdit wrote product source in PLAN without any guard seeing the path"
+    assert "source" in why.lower(), f"the refusal does not say what was refused: {why[:160]}"
 
 
 @pytest.mark.parametrize("rel", ["src/docs/app.py", "lib/docs/ddw/helper.py"])
 def test_the_artefact_allowlist_is_a_prefix_and_not_a_substring(tmp_path, rel):
-    """`docs/` abre las fases a los artefactos que el método manda escribir.
-    Leído como subcadena en vez de como prefijo, cualquier ruta que lleve
-    `docs/` en el medio queda escribible en toda fase — y `src/docs/` es un
-    nombre de directorio corriente, no rebuscado."""
+    """`docs/` opens the phases to the artifacts the method orders written.
+    Read as a substring instead of a prefix, any path carrying `docs/` in the
+    middle becomes writable in every phase — and `src/docs/` is an ordinary
+    directory name, not a contrived one."""
     repo = _repo_at(tmp_path, phase="PLAN")
     assert vt.source_write_denied(os.path.join(repo, rel), repo, "PLAN"), \
-        f"{rel} se pudo escribir en PLAN: el allowlist dejó de estar anclado al principio"
-    # …y lo que el allowlist existe para permitir sigue permitido.
+        f"{rel} could be written in PLAN: the allowlist is no longer anchored at the start"
+    # …and what the allowlist exists to allow stays allowed.
     assert vt.source_write_denied(
         os.path.join(repo, "docs/ddw/prd/prd-T-1.md"), repo, "PLAN") is None, \
-        "el guard se comió el artefacto que la fase tiene que escribir"
+        "the guard swallowed the artifact the phase has to write"
 
 
 def test_a_forged_history_cannot_skip_whole_phases(tmp_path):
-    """En post mode —la única vía que ve un `jq` o un `sed`— esto es lo único
-    que impide saltear fases: cada arista suelta SÍ está en el grafo, y lo que
-    no está es el salto entre una y la siguiente. Sin comparar el `to` de una
-    con el `from` de la que sigue, IDLE→CLASSIFY seguido de PLAN→CODE pasa."""
+    """In post mode — the only route that sees a `jq` or a `sed` — this is the
+    only thing preventing skipped phases: each loose edge IS in the graph, and
+    what is not is the jump between one and the next. Without comparing one's
+    `to` against the next one's `from`, IDLE→CLASSIFY followed by PLAN→CODE
+    passes."""
     repo = _repo_at(tmp_path)
     h = [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-1"),
          entry("PLAN", "CODE", tier="FEATURE", ticket="T-1")]
@@ -693,20 +696,20 @@ def test_a_forged_history_cannot_skip_whole_phases(tmp_path):
                              os.path.join(ROOT, "ddw/rules/transition-graph.json"))
     except vt.Block as exc:
         why = str(exc)
-    assert why, "un historial que saltea de CLASSIFY a PLAN sin pasar por DEFINE pasó el post"
+    assert why, "a history that jumps from CLASSIFY to PLAN without DEFINE passed the post gate"
     assert "contiguous" in why.lower() or "CLASSIFY" in why, \
-        f"el rechazo no dice dónde se rompe la cadena: {why[:200]}"
+        f"the refusal does not say where the chain breaks: {why[:200]}"
 
 
 def test_a_receipt_earned_for_another_document_does_not_open_this_gate(tmp_path):
-    """El recibo se nombra por un digest del CONTENIDO solo, a propósito: uno
-    con la clave puesta en el nombre del archivo seguiría atestiguando un
-    documento que después se reescribió. El precio es que dos tickets con
-    documentos byte-idénticos comparten nombre de recibo, y la primera línea del
-    archivo —para qué documento se ganó— es lo único que los distingue.
+    """The receipt is named by a digest of the CONTENT alone, on purpose: one
+    keyed on the file name would keep witnessing a document that was later
+    rewritten. The price is that two tickets with byte-identical documents
+    share a receipt name, and the file's first line — which document it was
+    earned for — is the only thing that tells them apart.
 
-    El ataque no necesita nada raro: `docs/` se puede escribir en toda fase, así
-    que es un `cp`."""
+    The attack needs nothing exotic: `docs/` is writable in every phase, so
+    it is a `cp`."""
     repo = _repo_at(tmp_path, phase="DEFINE", gates={})
     prd_dir = os.path.join(repo, "docs/ddw/prd")
     os.makedirs(prd_dir)
@@ -720,93 +723,94 @@ def test_a_receipt_earned_for_another_document_does_not_open_this_gate(tmp_path)
     name = "prd-validated-" + receipt.digest_of(body)
     os.makedirs(os.path.join(repo, ".ddw-sessions"), exist_ok=True)
     with open(os.path.join(repo, ".ddw-sessions", name), "w", encoding="utf-8") as fh:
-        fh.write("prd-T-1.md\n")          # ganado para T-1, y sólo para T-1
+        fh.write("prd-T-1.md\n")          # earned for T-1, and only for T-1
     with open(os.path.join(repo, ".ddw-journal.jsonl"), "a", encoding="utf-8") as fh:
         fh.write(json.dumps({"record": "receipt", "name": name, "file": "prd-T-1.md"}) + "\n")
 
     st = state("DEFINE", "FEATURE", "T-1", {}, [entry("IDLE", "CLASSIFY", tier="FEATURE",
                                                       ticket="T-1")])
     assert vt._prd_receipt_missing(repo, st) is None, \
-        "el ticket que SÍ ganó el recibo quedó afuera, así que lo de abajo no prueba nada"
+        "the ticket that DID earn the receipt was shut out, so the check below proves nothing"
     st2 = dict(st, ticket="T-2")
     why = vt._prd_receipt_missing(repo, st2)
-    assert why, ("un recibo ganado para prd-T-1.md abrió la compuerta de prd-T-2.md — un `cp` de "
-                 "un documento que toda fase puede escribir vale por una validación")
-    assert "T-2" in why, f"el rechazo no nombra el documento que falta validar: {why[:200]}"
+    assert why, ("a receipt earned for prd-T-1.md opened prd-T-2.md's gate — a `cp` of a "
+                 "document every phase can write counts as a validation")
+    assert "T-2" in why, f"the refusal does not name the document left to validate: {why[:200]}"
 
 
 def test_the_helper_never_stamps_an_entry_before_the_one_it_follows(tmp_path):
-    """El reloj de pared retrocede, y el pipeline se detenía sin salida.
+    """The wall clock goes backwards, and the pipeline used to stop with no way out.
 
-    Medido en la máquina donde se escribe esto —WSL2, que resincroniza con el
-    host— seis saltos de un segundo hacia atrás en 33.465 muestras a lo largo de
-    75 segundos bajo carga. Un salto entre dos pasos deja la entrada nueva
-    sellada antes que la anterior, y la guarda de monotonía refusa una
-    transición legal que el helper acaba de construir. Sin salida: lo único que
-    la corregiría es editar la historia, que el hook también rechaza.
+    Measured on the machine this is written on — WSL2, which resyncs with the
+    host — six one-second backward jumps in 33,465 samples over 75 seconds
+    under load. A jump between two steps leaves the new entry stamped before
+    the previous one, and the monotonicity guard refuses a legal transition
+    the helper just built. No way out: the only thing that would fix it is
+    editing the history, which the hook also refuses.
 
-    La guarda no se toca — protege contra una historia reordenada a mano, que es
-    para lo que se escribió. Lo que no puede pasar es que el camino sancionado
-    produzca el caso.
+    The guard stays untouched — it protects against a hand-reordered history,
+    which is what it was written for. What cannot happen is the sanctioned
+    path producing the case.
     """
-    # Desde CLASSIFY, no desde IDLE: la arista que SETEA el tier tiene sus
-    # propias reglas, y la primera versión de este test las pisaba — fallaba con
-    # un mensaje sobre el tier, no sobre el reloj, y sólo a veces. Un test que
-    # se cae por otra cosa que la que mide es ruido, que es exactamente lo que
-    # este archivo entero está tratando de sacar del instrumento.
+    # From CLASSIFY, not from IDLE: the edge that SETS the tier has rules of
+    # its own, and the first version of this test stepped on them — it failed
+    # with a message about the tier, not the clock, and only sometimes. A test
+    # that falls over for something other than what it measures is noise,
+    # which is exactly what this whole file is trying to get out of the
+    # instrument.
     repo = _repo_at(tmp_path, phase="CLASSIFY")
-    ahead = "2099-01-01T00:00:00Z"          # el último sello, en el futuro
+    ahead = "2099-01-01T00:00:00Z"          # the last stamp, in the future
     with open(os.path.join(repo, ".ddw-state.json"), "w", encoding="utf-8") as fh:
         json.dump(state("CLASSIFY", "FEATURE", "T-1", {},
                         [dict(entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-1"),
                               timestamp=ahead)]), fh)
-    # `CLAUDE_PROJECT_DIR` explícito: el helper resuelve el repo por esa variable
-    # ANTES que por el cwd, y la suite la exporta y no la limpia. Heredada, este
-    # subproceso trabajaba sobre un repo de otra sección: el test pasaba solo y
-    # fallaba adentro de la suite, con un mensaje sobre gates que no tenía nada
-    # que ver con lo que mide.
+    # An explicit `CLAUDE_PROJECT_DIR`: the helper resolves the repo through
+    # that variable BEFORE the cwd, and the suite exports it and does not
+    # clean it up. Inherited, this subprocess worked on another section's
+    # repo: the test passed alone and failed inside the suite, with a message
+    # about gates that had nothing to do with what it measures.
     r = subprocess.run(
         [sys.executable, os.path.join(ROOT, "ddw/scripts/transition.py"),
          "--to", "DEFINE", "--action", "x", "--write"],
         capture_output=True, text=True, cwd=repo,
         env=dict(os.environ, CLAUDE_PROJECT_DIR=repo))
     assert r.returncode == 0, \
-        ("una transición legal fue rechazada porque el reloj retrocedió, y no hay nada que el "
-         "usuario pueda hacer: " + (r.stderr or r.stdout)[-200:])
+        ("a legal transition was refused because the clock went backwards, and there is "
+         "nothing the user can do: " + (r.stderr or r.stdout)[-200:])
     history = json.load(open(os.path.join(repo, ".ddw-state.json"), encoding="utf-8"))["history"]
     stamps = [e["timestamp"] for e in history]
-    assert stamps == sorted(stamps), f"la historia quedó desordenada igual: {stamps}"
+    assert stamps == sorted(stamps), f"the history ended up out of order anyway: {stamps}"
     assert stamps[-1] >= ahead, \
-        "el sello nuevo quedó antes que el anterior, que es lo que la guarda refusa"
+        "the new stamp landed before the previous one, which is what the guard refuses"
 
 
-# ── El helper y su propia compuerta ──────────────────────────────────────────
+# ── The helper and its own gate ──────────────────────────────────────────────
 #
-# Dos defectos medidos en una corrida real, una flecha de distancia. El helper
-# resolvía un valor para la entrada de history y dejaba el header sin él; post
-# mode lee el tier y el ticket de las entradas, así que condenaba los bytes que
-# el helper acababa de escribir con exit 0. Y el rechazo, que es correcto, dice
-# no reparar: una flag faltante frenaba la corrida y sólo un `cp` a mano la
-# devolvía.
+# Two defects measured in one real run, an arrow apart. The helper resolved a
+# value for the history entry and left the header without it; post mode reads
+# the tier and the ticket from the entries, so it condemned the very bytes the
+# helper had just written with exit 0. And the refusal, which is correct, says
+# do not repair: one missing flag stopped the run and only a hand-made `cp`
+# brought it back.
 
-# Rutas, no el grafo ya cargado: `GRAPH` en este módulo es el JSON parseado y
-# media docena de tests lo usan como dict.
+# Paths, not the already-loaded graph: `GRAPH` in this module is the parsed
+# JSON and half a dozen tests use it as a dict.
 _TRANSITION_PY = os.path.join(ROOT, "ddw/scripts/transition.py")
 _GRAPH_PATH = os.path.join(ROOT, "ddw/rules/transition-graph.json")
 
 
 def test_el_helper_sin_write_dice_que_no_escribio(tmp_path):
-    """Una salida que no se distingue de un éxito es un éxito falso.
+    """An output indistinguishable from a success is a false success.
 
-    El helper IMPRIME a propósito: el estado tiene que aterrizar por un `Write`,
-    que es la puerta que PreToolUse vigila. Lo que no hacía era decirlo, y su
-    stdout es un archivo de estado completo y válido.
+    The helper PRINTS on purpose: the state has to land through a `Write`,
+    which is the door PreToolUse watches. What it did not do was say so, and
+    its stdout is a complete, valid state file.
 
-    Medido en vivo sobre Copilot: el modelo corrió el comando documentado, leyó
-    un estado que decía `"phase": "CLASSIFY"`, le avisó al usuario que el
-    pipeline había avanzado y siguió clasificando. En disco la fase seguía en
-    IDLE, `history` estaba vacío y no existía una línea de journal. Exit 0, el
-    JSON de DDW, y una transición que nunca ocurrió.
+    Measured live on Copilot: the model ran the documented command, read a
+    state that said `"phase": "CLASSIFY"`, told the user the pipeline had
+    advanced and went on classifying. On disk the phase was still IDLE,
+    `history` was empty and no journal line existed. Exit 0, DDW's JSON, and
+    a transition that never happened.
     """
     p = str(tmp_path / ".ddw-state.json")
     open(p, "w", encoding="utf-8").write(json.dumps(state()))
@@ -815,22 +819,23 @@ def test_el_helper_sin_write_dice_que_no_escribio(tmp_path):
                        capture_output=True, text=True, cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr[-300:]
     assert json.loads(r.stdout)["phase"] == "CLASSIFY", \
-        "el helper dejó de emitir el estado siguiente, que es para lo que existe"
+        "the helper stopped emitting the next state, which is what it exists for"
     on_disk = json.load(open(p, encoding="utf-8"))
     assert on_disk["phase"] == "IDLE" and on_disk["history"] == [], \
-        "sin --write el helper escribió igual, salteando la puerta que PreToolUse vigila"
+        "without --write the helper wrote anyway, skipping the door PreToolUse watches"
     aviso = r.stderr.lower()
     assert "nothing was written" in aviso or "not been written" in aviso, \
-        ("el helper imprime un estado que parece haber aterrizado y no dice que no lo hizo: "
+        ("the helper prints a state that looks landed and does not say it did not land: "
          + repr(r.stderr))
-    assert "write" in aviso, "el aviso no dice cuál es el paso que falta: " + repr(r.stderr)
+    assert "write" in aviso, "the notice does not say which step is missing: " + repr(r.stderr)
 
 
 def _step(state_path, *args):
-    # `--title` se completa solo cuando el paso nombra un ticket y el test no
-    # dijo otra cosa: el arco que clasifica lo exige, y ninguno de estos pasos
-    # mide eso — miden el tier, el reloj, el turno o la pausa. Un test que se
-    # cae por un campo que no está midiendo deja de medir lo suyo.
+    # `--title` fills itself in when the step names a ticket and the test said
+    # nothing else: the classifying arc demands it, and none of these steps
+    # measures that — they measure the tier, the clock, the turn or the pause.
+    # A test that falls over on a field it is not measuring stops measuring
+    # its own thing.
     args = list(args)
     if "--ticket" in args and "--title" not in args:
         args += ["--title", "un ticket de prueba"]
@@ -841,7 +846,7 @@ def _step(state_path, *args):
 
 
 def _split_upto_pause(tmp_path):
-    """CLASSIFY → DEFINE → IDLE(pause), que es como termina todo split."""
+    """CLASSIFY → DEFINE → IDLE(pause), which is how every split ends."""
     p = str(tmp_path / ".ddw-state.json")
     open(p, "w", encoding="utf-8").write(json.dumps(state()))
     assert _step(p, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
@@ -853,22 +858,22 @@ def _split_upto_pause(tmp_path):
 
 
 def test_el_header_lleva_el_tier_que_lleva_la_entrada(tmp_path):
-    """Saliendo de IDLE tras un pause, el helper recupera el tier pausado y lo
-    estampa en la entrada. Si no lo pone también en el header, el estado se
-    contradice con su propia flecha más nueva y post mode lo condena."""
+    """Leaving IDLE after a pause, the helper recovers the paused tier and
+    stamps it on the entry. If it does not put it in the header too, the
+    state contradicts its own newest arrow and post mode condemns it."""
     p = _split_upto_pause(tmp_path)
     r = _step(p, "--to", "CLASSIFY", "--ticket", "F-1a", "--action", "abrir sub-ticket")
     assert r.returncode == 0, r.stderr[-300:]
     d = json.load(open(p, encoding="utf-8"))
     assert d["tier"] == "FEATURE", (
-        "el header quedó sin tier mientras su última entrada dice %r — es el estado que el "
-        "post-write llama corrupto" % d["history"][-1].get("tier"))
+        "the header was left without a tier while its last entry says %r — the state the "
+        "post-write calls corrupt" % d["history"][-1].get("tier"))
     assert d["history"][-1].get("tier") == "FEATURE"
 
 
 def test_el_header_lleva_el_ticket_que_lleva_la_entrada_al_retomar(tmp_path):
-    """Un `resume:` sí hereda el ticket pausado — y tiene que restaurarlo en el
-    header por la misma razón."""
+    """A `resume:` does inherit the paused ticket — and has to restore it in
+    the header for the same reason."""
     p = _split_upto_pause(tmp_path)
     r = _step(p, "--to", "DEFINE", "--action", "resume: seguimos con lo pausado")
     assert r.returncode == 0, r.stderr[-300:]
@@ -877,23 +882,23 @@ def test_el_header_lleva_el_ticket_que_lleva_la_entrada_al_retomar(tmp_path):
 
 
 def test_saliendo_de_idle_tras_un_pause_el_helper_no_adivina_el_ticket(tmp_path):
-    """Para un sub-ticket de un split —la forma normal en que termina un pause—
-    heredar el ticket pausado estampa el ID del padre en una corrida que es del
-    hijo, y post mode encuentra una corrida nombrando dos tickets."""
+    """For a split's sub-ticket — the normal way a pause ends — inheriting the
+    paused ticket stamps the parent's ID on a run that belongs to the child,
+    and post mode finds one run naming two tickets."""
     p = _split_upto_pause(tmp_path)
     r = _step(p, "--to", "CLASSIFY", "--action", "abrir sub-ticket del split")
-    assert r.returncode == 2, "el helper adivinó en vez de pedir --ticket"
+    assert r.returncode == 2, "the helper guessed instead of asking for --ticket"
     assert "--ticket" in r.stderr, r.stderr[-300:]
-    assert json.load(open(p, encoding="utf-8"))["phase"] == "IDLE", "escribió igual"
+    assert json.load(open(p, encoding="utf-8"))["phase"] == "IDLE", "it wrote anyway"
 
 
-# ── Una flecha por turno ─────────────────────────────────────────────────────
+# ── One arrow per turn ───────────────────────────────────────────────────────
 #
-# El orquestador lo dice duro — "NUNCA corras más de una transición en una sola
-# respuesta" — y decía cómo se hacía cumplir: "el hook rechaza un write que
-# agregue dos". Eso cubre una de las dos formas de romperlo. Medido: tres writes
-# separados, una entrada cada uno, 37 segundos de diferencia, sobre un solo
-# "avanti". Cada uno legal por su cuenta.
+# The orchestrator says it hard — "NEVER run more than one transition in a
+# single response" — and used to say how it was enforced: "the hook refuses a
+# write that appends two". That covers one of the two ways to break it.
+# Measured: three separate writes, one entry each, 37 seconds apart, on a
+# single "avanti". Each one legal on its own.
 
 def _turn_passes(repo_dir):
     subprocess.run([sys.executable, os.path.join(ROOT, "ddw/scripts/hook-gate.py"),
@@ -903,11 +908,11 @@ def _turn_passes(repo_dir):
 
 
 def _arrow(repo_dir, *args):
-    """La flecha por el camino sancionado, con el guard de pre-write mirando."""
+    """The arrow via the sanctioned path, with the pre-write guard watching."""
     p = os.path.join(repo_dir, ".ddw-state.json")
     args = list(args)
     if "--ticket" in args and "--title" not in args:
-        args += ["--title", "un ticket de prueba"]   # ver `_step`
+        args += ["--title", "un ticket de prueba"]   # see `_step`
     emitted = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p,
                               "--graph", _GRAPH_PATH, *args],
                              capture_output=True, text=True, cwd=repo_dir)
@@ -940,7 +945,7 @@ def test_dos_flechas_en_un_turno_son_rechazadas(tmp_path):
     reason = _arrow(d, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
                     "--action", "definir")
     assert reason and "already landed in this turn" in reason, \
-        "la segunda transición del mismo turno pasó: %r" % reason
+        "the second transition of the same turn passed: %r" % reason
 
 
 def test_despues_de_que_hable_el_usuario_la_siguiente_flecha_pasa(tmp_path):
@@ -950,23 +955,23 @@ def test_despues_de_que_hable_el_usuario_la_siguiente_flecha_pasa(tmp_path):
            "--autonomy", "assisted", "--action", "clasificar")
     _turn_passes(d)
     assert _arrow(d, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
-                  "--action", "definir") is None, "la flecha aprobada fue rechazada igual"
+                  "--action", "definir") is None, "the approved arrow was refused anyway"
 
 
 def test_en_minimal_las_flechas_no_esperan(tmp_path):
-    """Lo que ese modo saca es la confirmación, y se opta a él con el costo
-    dicho en voz alta."""
+    """What that mode removes is the confirmation, and it is opted into with
+    the cost said out loud."""
     d = _repo_con_estado(tmp_path, autonomy="minimal")
     _turn_passes(d)
     _arrow(d, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
            "--autonomy", "minimal", "--action", "clasificar")
     assert _arrow(d, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
-                  "--action", "definir") is None, "minimal quedó atrapado por la regla"
+                  "--action", "definir") is None, "minimal got caught by the rule"
 
 
 def test_sin_señal_de_turno_no_se_refusa_nada(tmp_path):
-    """Una guarda que dispara porque falta un contador refusa cada write en toda
-    herramienta que no escriba uno."""
+    """A guard that fires because a counter is missing refuses every write in
+    every tool that does not write one."""
     d = _repo_con_estado(tmp_path)
     assert _arrow(d, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
                   "--autonomy", "assisted", "--action", "c") is None
@@ -975,8 +980,8 @@ def test_sin_señal_de_turno_no_se_refusa_nada(tmp_path):
 
 
 def test_el_guard_de_pre_write_es_el_que_refusa_la_segunda_flecha(tmp_path):
-    """Por el camino que corre de verdad. El test de arriba llama la función; si
-    `decide_pre` deja de consultarla, ese test sigue verde y el hueco vuelve."""
+    """Via the path that actually runs. The test above calls the function; if
+    `decide_pre` stops consulting it, that test stays green and the hole comes back."""
     d = _repo_con_estado(tmp_path)
     _turn_passes(d)
     p = os.path.join(d, ".ddw-state.json")
@@ -984,7 +989,7 @@ def test_el_guard_de_pre_write_es_el_que_refusa_la_segunda_flecha(tmp_path):
     def write(*args):
         args = list(args)
         if "--ticket" in args and "--title" not in args:
-            args += ["--title", "un ticket de prueba"]   # ver `_step`
+            args += ["--title", "un ticket de prueba"]   # see `_step`
         emitted = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p,
                                   "--graph", _GRAPH_PATH, *args],
                                  capture_output=True, text=True, cwd=d)
@@ -999,16 +1004,17 @@ def test_el_guard_de_pre_write_es_el_que_refusa_la_segunda_flecha(tmp_path):
                  "--autonomy", "assisted", "--action", "c") is None
     reason = write("--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1", "--action", "d")
     assert reason and "already landed in this turn" in reason, \
-        "el guard dejó pasar la segunda flecha del turno: %r" % reason
+        "the guard let the turn's second arrow through: %r" % reason
 
 
-# ── El hijo de un split abre directo en la fase que el split pausó ───────────
+# ── A split's child opens directly in the phase the split paused ─────────────
 #
-# CLASSIFY existe para producir tier, ticket y autonomy — y para un hijo de
-# split los tres ya existen: los produjo el run del padre y el usuario aprobó
-# el split que nombró al hijo. Mandarlo por CLASSIFY re-decidía nada y cobraba
-# un turno que no decidía nada. La flecha `split:` salta el grafo como un
-# resume, así que cada parte de la prueba tiene que estar en el registro.
+# CLASSIFY exists to produce tier, ticket and autonomy — and for a split's
+# child all three already exist: the parent's run produced them and the user
+# approved the split that named the child. Sending it through CLASSIFY
+# re-decided nothing and charged a turn that decided nothing. The `split:`
+# arrow jumps the graph like a resume does, so every part of the proof has to
+# be on the record.
 
 def _split_history():
     return [
@@ -1037,31 +1043,31 @@ def test_split_sin_pause_de_split_es_una_llave_maestra_refusada():
     new = state(phase="DEFINE", tier="FEATURE", ticket="F-1a",
                 history=[entry("IDLE", "DEFINE", "split: abrir F-1a",
                                tier="FEATURE", ticket="F-1a")])
-    assert refusal(old, new), "split: sin pause del padre abrió DEFINE desde la nada"
+    assert refusal(old, new), "split: with no parent pause opened DEFINE out of nowhere"
 
 
 def test_el_hijo_abre_en_la_fase_del_pause_y_en_ninguna_otra():
     old, new = _open_child(dst="PLAN")
-    assert refusal(old, new), "el hijo eligió fase: abrió en PLAN un split pausado en DEFINE"
+    assert refusal(old, new), "the child chose a phase: it opened in PLAN a split paused in DEFINE"
 
 
 def test_un_ticket_que_no_deriva_del_padre_no_es_hijo():
     old, new = _open_child(ticket="OTRA-9")
-    assert refusal(old, new), "un ticket ajeno pasó como hijo del split"
+    assert refusal(old, new), "an unrelated ticket passed as the split's child"
 
 
 def test_el_hijo_no_hereda_gates():
-    # Dos capas lo agarran — `_check_gate_owner` primero (IDLE no gana nada) y
-    # la rama del split después. El test fija el VEREDICTO, no cuál capa habla.
+    # Two layers catch it — `_check_gate_owner` first (IDLE earns nothing) and
+    # the split branch after. The test pins the VERDICT, not which layer speaks.
     old, new = _open_child(gates={"define": True})
     why = refusal(old, new)
     assert why and "gate" in why.lower(), \
-        "el hijo abrió con gates que nunca ganó: %r" % why
+        "the child opened with gates it never earned: %r" % why
 
 
 def test_el_tier_del_hijo_es_el_del_pause():
     old, new = _open_child(tier="FIX")
-    assert refusal(old, new), "un split re-clasificó el trabajo al abrir el hijo"
+    assert refusal(old, new), "a split re-classified the work while opening the child"
 
 
 def test_un_split_que_el_journal_nunca_vio_es_refusado(tmp_path):
@@ -1072,7 +1078,7 @@ def test_un_split_que_el_journal_nunca_vio_es_refusado(tmp_path):
         json.dumps(entry("IDLE", "CLASSIFY", "c")) + "\n", encoding="utf-8")
     why = refusal(old, new, state_path=str(sp))
     assert why and "journal" in why.lower(), \
-        "un pause forjado por shell avaló la apertura: %r" % why
+        "a shell-forged pause vouched for the opening: %r" % why
 
 
 def test_el_journal_que_vio_el_split_lo_avala(tmp_path):
@@ -1085,8 +1091,8 @@ def test_el_journal_que_vio_el_split_lo_avala(tmp_path):
 
 
 def test_un_pause_comun_del_padre_no_autoriza_un_split():
-    """La prueba es el pause DEL SPLIT, no cualquier pause: un padre pausado por
-    otra razón no tiene hijos que abrir."""
+    """The proof is THE SPLIT'S pause, not any pause: a parent paused for
+    another reason has no children to open."""
     hist = [
         entry("IDLE", "CLASSIFY", "clasificar"),
         entry("CLASSIFY", "DEFINE", "clasificado FEATURE", tier="FEATURE", ticket="F-1"),
@@ -1096,16 +1102,16 @@ def test_un_pause_comun_del_padre_no_autoriza_un_split():
     new = state(phase="DEFINE", tier="FEATURE", ticket="F-1a",
                 history=hist + [entry("IDLE", "DEFINE", "split: abrir F-1a",
                                       tier="FEATURE", ticket="F-1a")])
-    assert refusal(old, new), "un pause cualquiera del padre avaló abrir un hijo de split"
+    assert refusal(old, new), "an ordinary pause of the parent vouched for opening a split child"
 
 
-# ── El gate pr resuelve por receipt, no por la rama del momento ──────────────
+# ── The pr gate resolves by receipt, not by the branch of the moment ─────────
 #
-# El happy path del closeout DESTRUYE la rama (merge + delete), y el check
-# resolvía el PR por la rama actual: la corrida 4 terminó con el modelo
-# recreando la rama borrada para satisfacer al gate — un gate que enseña a
-# rodearlo. El receipt nombra el PR por número; el forge sigue siendo quien
-# dice en qué estado está.
+# The closeout's happy path DESTROYS the branch (merge + delete), and the
+# check used to resolve the PR by the current branch: run 4 ended with the
+# model recreating the deleted branch to satisfy the gate — a gate that
+# teaches how to go around it. The receipt names the PR by number; the forge
+# is still the one that says what state it is in.
 
 def _gh_stub(tmp_path):
     b = tmp_path / "bin"
@@ -1149,15 +1155,15 @@ def _ask_pr(repo, binpath, **stub_env):
 
 def test_el_gate_pr_sobrevive_al_merge_que_borra_la_rama(tmp_path):
     repo, binpath = _pr_repo(tmp_path), _gh_stub(tmp_path)
-    # Se gana en la rama del ticket: el receipt queda escrito.
+    # It is earned on the ticket's branch: the receipt gets written.
     assert _ask_pr(repo, binpath, GH_LIST_OUT='[{"number":7,"state":"OPEN"}]') is None
     assert os.path.exists(os.path.join(repo, ".ddw-sessions", "pr-T-1.json"))
-    # El happy path del cierre: merge, rama borrada, parados en la base.
+    # The closeout's happy path: merge, branch deleted, standing on the base.
     subprocess.run(["git", "-C", repo, "checkout", "-q", "-b", "landing"], check=True)
     subprocess.run(["git", "-C", repo, "branch", "-q", "-D", "feat/T-1-x"], check=True)
     why = _ask_pr(repo, binpath, GH_LIST_OUT="[]",
                   GH_VIEW_OUT='{"state":"MERGED","headRefName":"feat/T-1-x"}')
-    assert why is None, "el gate quedó ciego tras el merge otra vez: %r" % why
+    assert why is None, "the gate went blind after the merge again: %r" % why
 
 
 def test_un_receipt_que_nombra_el_pr_de_otro_ticket_es_refusado(tmp_path):
@@ -1167,7 +1173,7 @@ def test_un_receipt_que_nombra_el_pr_de_otro_ticket_es_refusado(tmp_path):
         json.dump({"number": 99, "head": "feat/OTRO-9-x"}, fh)
     why = _ask_pr(repo, binpath,
                   GH_VIEW_OUT='{"state":"MERGED","headRefName":"feat/OTRO-9-x"}')
-    assert why and "T-1" in why, "el PR de otro ticket pasó como evidencia: %r" % why
+    assert why and "T-1" in why, "another ticket's PR passed as evidence: %r" % why
 
 
 def test_un_pr_cerrado_sin_mergear_no_sostiene_el_gate(tmp_path):
@@ -1186,4 +1192,4 @@ def test_un_gh_roto_con_receipt_sigue_sin_ser_un_veredicto(tmp_path):
     with open(os.path.join(repo, ".ddw-sessions", "pr-T-1.json"), "w") as fh:
         json.dump({"number": 7, "head": "feat/T-1-x"}, fh)
     assert _ask_pr(repo, binpath, GH_VIEW_RC="1", GH_LIST_RC="1") is None, \
-        "un gh caído se leyó como veredicto"
+        "a fallen-over gh was read as a verdict"

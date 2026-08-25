@@ -107,38 +107,39 @@ jobs:
             python3 scripts/mutate.py --shard ${{ matrix.shard }}/24
           fi
 
-  # ── ¿Hay checks que no pueden fallar? ──────────────────────────────────────
+  # ── Are there checks that cannot fail? ─────────────────────────────────────
   #
-  # El mapa de kills anota QUÉ check caza cada fault. Cruzado con todo `bad` que
-  # la suite sabe decir, lo que queda son los checks que ningún fault provoca: no
-  # se sabe si pueden fallar, y un check que no puede fallar informa verde por no
-  # saber decir otra cosa. Cinco de ésos shippearon en este repo — se leían a sí
-  # mismos, y aparecieron de casualidad.
+  # The kill map records WHICH check catches each fault. Crossed against every
+  # `bad` the suite knows how to say, what remains are the checks no fault
+  # provokes: whether they can fail is unknown, and a check that cannot fail
+  # reports green for not knowing how to say anything else. Five of those
+  # shipped in this repo — they were reading themselves, and surfaced by
+  # accident.
   #
-  # Acá y no en la máquina de nadie: son 472 corridas COMPLETAS de la suite, sin
-  # la parada al primer ✗ (que haría ver sólo el primer check de cada fault, que
-  # es la pregunta equivocada). Local son ~2,5 horas; repartido en veinticuatro,
-  # quince minutos.
+  # Here and not on anyone's machine: it is 472 COMPLETE runs of the suite,
+  # without the stop at the first ✗ (which would show only the first check of
+  # each fault — the wrong question). Locally that is ~2.5 hours; split across
+  # twenty-four, fifteen minutes.
   #
-  # Donde corre todo lo demás, y no a pedido. Estuvo diecisiete pull requests
-  # detrás de `if: workflow_dispatch`, con el argumento de que contesta una
-  # pregunta sobre la SUITE y la suite no cambia en cada push. La suite de este
-  # repositorio cambia en casi cada push: los `bad` nuevos y los faults nuevos
-  # son la mitad de lo que se mergea acá. `docs/CHECKS-THAT-CANNOT-FAIL.md` no
-  # se tocó desde el PR #7, y el job que lo compara es el único que podía
-  # decirlo. Un job que no corre no es una compuerta — que es exactamente la
-  # regla que `--cover` le aplica al job de mutaciones, dos jobs más arriba.
+  # Where everything else runs, and not on demand. It sat seventeen pull
+  # requests behind `if: workflow_dispatch`, on the argument that it answers a
+  # question about the SUITE and the suite does not change on every push. This
+  # repository's suite changes on almost every push: new `bad`s and new faults
+  # are half of what gets merged here. `docs/CHECKS-THAT-CANNOT-FAIL.md` had
+  # not been touched since PR #7, and the job that compares it is the only one
+  # that could say so. A job that does not run is not a gate — which is exactly
+  # the rule `--cover` applies to the mutations job, two jobs up.
   #
-  # Lo que cuesta, dicho y no descubierto: el gate del pull request pasa de unos
-  # veinte minutos a unos cuarenta y siete. Medido el 20-ago-2026, no estimado.
+  # The cost, stated and not discovered: the pull request gate goes from about
+  # twenty minutes to about forty-seven. Measured on 20-Aug-2026, not estimated.
   kill-map:
     name: which checks can never fail? (shard ${{ matrix.shard }}/24)
     needs: anchors
     runs-on: ubuntu-latest
-    # 75, igual que el job de mutaciones y por la misma cuenta: veintiocho
-    # corridas por shard a dos minutos son cincuenta y seis. Estaba en 45 y
-    # nadie hacía la cuenta, porque la suite se la preguntaba al job de
-    # mutaciones y a ningún otro. El shard más lento tardó 38.
+    # 75, same as the mutations job and by the same arithmetic: twenty-eight
+    # runs per shard at two minutes is fifty-six. It sat at 45 and nobody did
+    # the arithmetic, because the suite asked the question of the mutations
+    # job and of no other. The slowest shard took 38.
     timeout-minutes: 75
     strategy:
       fail-fast: false
@@ -156,12 +157,12 @@ jobs:
           node-version: "20"
       - run: |
           python3 -m pip install --quiet pyyaml pytest
-          # Igual que el job de mutaciones: el preflight de la suite llama a
-          # `bad()` por una herramienta ausente, así que sin el CLI la suite sale
-          # distinta de cero en un árbol LIMPIO — y en un job de mutaciones eso
-          # se lee como cada fault cazado. El baseline lo refusa, que convierte
-          # el 100% falso en un job rojo; instalarlo es lo que lo vuelve una
-          # medición. La suite lo comprueba, y me lo dijo acá.
+          # Same as the mutations job: the suite's preflight calls `bad()` for
+          # a missing tool, so without the CLI the suite exits non-zero on a
+          # CLEAN tree — and in a mutations job that reads as every fault
+          # caught. The baseline refuses it, which turns the false 100% into a
+          # red job; installing it is what turns it back into a measurement.
+          # The suite checks for this, and it told me so here.
           npm install -g @anthropic-ai/claude-code
       - run: |
           python3 scripts/mutate.py --shard ${{ matrix.shard }}/24 --no-fast \
@@ -187,12 +188,12 @@ jobs:
           pattern: kill-map-*
           path: parts
           merge-multiple: true
-      # El libro de cuentas es la EXPECTATIVA, no el reporte. Un reporte
-      # generado que se commitea y nadie regenera miente a las dos semanas; una
-      # expectativa que el CI compara no puede envejecer en silencio. Un check
-      # nuevo que no puede fallar entra en rojo hasta que alguien escriba por
-      # qué, o le escriba un fault. Es el idioma de las supresiones de SAST: no
-      # prohíbe, obliga a decirlo.
+      # The ledger is the EXPECTATION, not the report. A generated report that
+      # gets committed and never regenerated lies within two weeks; an
+      # expectation CI compares cannot age in silence. A new check that cannot
+      # fail comes in red until someone writes down why, or writes it a fault.
+      # It is the idiom of SAST suppressions: it does not forbid, it makes you
+      # say it.
       - run: python3 -m pip install --quiet pyyaml
       - run: python3 scripts/kill_map_ledger.py --parts parts --ledger docs/CHECKS-THAT-CANNOT-FAIL.md
       - uses: actions/upload-artifact@v7

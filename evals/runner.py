@@ -482,15 +482,15 @@ def agent_turn_read(name, stdout):
 
 
 def write_state(repo: Path, state):
-    """El estado del escenario. `null` deja el que dejó la instalación.
+    """The scenario's state. `null` keeps the one the installation left.
 
-    Una cadena se escribe TAL CUAL, sin pasar por JSON: hay una familia entera
-    de regresiones que sólo existe con el estado CORRUPTO —el mensaje de
-    recuperación es lo que se lee cuando ya salió todo mal— y no había forma de
-    expresarlo. Un escenario que quería estado corrupto terminaba con el estado
-    sano, pasaba en las dos direcciones, y su control decía que no podía
-    detectar su propia regresión. Que lo dijera es la única razón por la que se
-    encontró.
+    A string is written AS IS, without going through JSON: there is an entire
+    family of regressions that only exists with the state CORRUPT — the
+    recovery message is what gets read once everything has already gone wrong —
+    and there was no way to express it. A scenario that wanted corrupt state
+    ended up with healthy state, passed in both directions, and its control
+    said it could not detect its own regression. That it said so is the only
+    reason this was found.
     """
     if state is None:
         return
@@ -501,22 +501,22 @@ def write_state(repo: Path, state):
 
 
 def seed_files(repo: Path, files, commit=True) -> int:
-    """Los archivos que el escenario necesita que YA existan.
+    """The files the scenario needs to ALREADY exist.
 
-    `given.state` sabe escribir uno solo, `.ddw-state.json`, y hay una familia
-    entera de escenarios que sin más que eso no se puede expresar: un fuente de
-    producto que una fase no debe tocar, un artefacto a medio escribir que su
-    gate tiene que rechazar, un PRD que ya está cuando la fase va a escribirlo.
-    Todos ellos arrancaban con el repo vacío del fixture, o sea midiendo otra
-    cosa que la que dicen medir.
+    `given.state` knows how to write exactly one, `.ddw-state.json`, and there
+    is an entire family of scenarios that cannot be expressed with only that: a
+    product source a phase must not touch, a half-written artifact its gate has
+    to refuse, a PRD already in place when the phase goes to write it. All of
+    them started from the fixture's empty repo — that is, measuring something
+    other than what they say they measure.
 
-    Se escriben POR EL SISTEMA DE ARCHIVOS, sin pasar por las herramientas: son
-    el `given`, no algo que el modelo haga, y mandarlos por el gate haría
-    imposible sembrar justamente lo que el gate rechaza.
+    They are written THROUGH THE FILESYSTEM, not through the tools: they are
+    the `given`, not something the model does, and sending them through the
+    gate would make it impossible to seed exactly what the gate refuses.
 
-    Se COMMITEAN salvo que el escenario diga que no. Un fuente sembrado y sin
-    commitear deja el árbol sucio antes del primer turno, y lo que el escenario
-    mide después es una regla sobre trabajo sin commitear que nadie pidió.
+    They are COMMITTED unless the scenario says otherwise. A seeded, uncommitted
+    source leaves the tree dirty before the first turn, and what the scenario
+    measures after that is a rule about uncommitted work nobody asked for.
     """
     if not files:
         return 0
@@ -529,10 +529,10 @@ def seed_files(repo: Path, files, commit=True) -> int:
             raise RuntimeError(f"given.files carries an absolute path: {rel!r}")
         dest = (repo / rel)
         try:
-            # Sin esto, un `../..` en un escenario escribe en el checkout de
-            # quien lo corre. Ya pasó una vez por otro camino —un control que
-            # reescribía el árbol del usuario— y costó veinte minutos de creer
-            # que el producto tenía un bug.
+            # Without this, a `../..` in a scenario writes into the checkout of
+            # whoever runs it. It already happened once by another route — a
+            # control that rewrote the user's tree — and cost twenty minutes of
+            # believing the product had a bug.
             dest.resolve().relative_to(root)
         except ValueError:
             raise RuntimeError(
@@ -547,16 +547,16 @@ def seed_files(repo: Path, files, commit=True) -> int:
         written.append(rel)
 
     if commit and written:
-        # Sólo lo sembrado. Un `git add -A` acá se lleva puesto el método
-        # instalado y el estado del escenario, que el fixture deja fuera del
-        # índice a propósito.
+        # Only what was seeded. A `git add -A` here drags in the installed
+        # method and the scenario's state, which the fixture keeps out of the
+        # index on purpose.
         #
-        # `-f` porque la instalación deja un bloque en `.gitignore`, y lo que
-        # ignora —`.ddw-paused/`, `.ddw-sessions/`, el journal— es justamente
-        # parte de lo que un escenario necesita sembrar. Sin `-f`, `git add`
-        # rechaza esas rutas, el commit no encuentra nada que commitear, y el
-        # fixture queda distinto de lo que el escenario dice que es sin que
-        # nadie se entere.
+        # `-f` because the installation leaves a block in `.gitignore`, and
+        # what it ignores — `.ddw-paused/`, `.ddw-sessions/`, the journal — is
+        # exactly part of what a scenario needs to seed. Without `-f`,
+        # `git add` refuses those paths, the commit finds nothing to commit,
+        # and the fixture ends up different from what the scenario says it is
+        # without anyone noticing.
         r = sh(["git", "add", "-f", "--", *written], cwd=repo)
         if r.returncode == 0:
             r = sh(["git", "commit", "-qm", "eval fixture: given.files"], cwd=repo)
@@ -648,71 +648,72 @@ WRITE_VERB = r"(?:copy|write|create|add|append|place|save|install|generate|put)"
 NOT_AN_ORDER = re.compile(
     r"(?i)\b(refus|reject|block|forbid|denied|cannot|can't|never|do not|don't|must not|"
     r"prohibit|instead of|rather than|used to|no longer|would be)\b")
-# Los destinos de verdad vienen templados — `docs/ddw/prd/prd-{ticket}.md` es
-# la forma en que el método los escribe. Rechazarlos por llevar llaves dejaba el
-# barrido en UNA orden sobre treinta y dos archivos, que es no barrer. Se
-# sustituyen; lo que queda con corchetes después de sustituir sí es un ejemplo.
+# The real destinations come templated — `docs/ddw/prd/prd-{ticket}.md` is the
+# form the method writes them in. Rejecting them for carrying braces left the
+# sweep at ONE order across thirty-two files, which is not sweeping. They get
+# substituted; what still carries brackets after substitution IS an example.
 TEMPLATED = re.compile(r"[<{\[](ticket|TICKET|id|ID|slug|name)[>}\]]")
 PLACEHOLDER = re.compile(r"[<{\[]|path/to|your-|example|FIXME|TODO|\.\.\.")
 
 
-# Entre el verbo y la ruta: si hay una de éstas, la ruta es una REFERENCIA, no
-# el objeto de la escritura. «Write the summary following `ddw/rules/x.md`» no
-# ordena escribir esa regla. Sin esto el barrido acusaba de puerta pintada a
-# cada archivo que un skill cita — seis de seis ofensores eran citas.
+# Between the verb and the path: if one of these appears, the path is a
+# REFERENCE, not the object of the write. "Write the summary following
+# `ddw/rules/x.md`" does not order writing that rule. Without this, the sweep
+# accused every file a skill cites of being a painted door — six of six
+# offenders were citations.
 REFERENCE = re.compile(
     r"(?i)\b(in|per|from|see|read|following|according to|documented in|described in|"
     r"defined in|listed in|under|against|as in|like|of|by|via|using|with)\s*$")
 
 
 def _ordered_writes(text):
-    """(línea, ruta) por cada escritura que el documento MANDA hacer.
+    """(line, path) for every write the document ORDERS to be done.
 
-    Conservador a propósito: sobre un corpus de veinte archivos de instrucción,
-    una heurística generosa produce ruido más rápido de lo que produce
-    hallazgos, y un barrido que grita lobo es un barrido que se apaga.
+    Conservative on purpose: over a corpus of twenty instruction files, a
+    generous heuristic produces noise faster than it produces findings, and a
+    sweep that cries wolf is a sweep that gets turned off.
     """
     out = []
     for raw in text.splitlines():
         line = raw.strip()
         if not re.match(r"^(?:[-*+]|\d+\.)\s", line):
-            continue                       # prosa: no es un paso
+            continue                       # prose: not a step
         verb = re.search(r"(?i)\b%s\b" % WRITE_VERB, line)
         if not verb:
             continue
         if NOT_AN_ORDER.search(line):
-            continue                       # habla de una escritura, no la ordena
+            continue                       # talks about a write, does not order it
         rest = line[verb.end():]
         for m in re.finditer(r"`([^`\s]+)`", rest):
             path = m.group(1)
-            # Un slash-command (`/ddw-create-prd`) no es una ruta, y el verbo
-            # que lo hizo entrar era el «create» de su propio nombre. Y una
-            # ruta sin extensión ni barra interna no nombra un archivo.
+            # A slash-command (`/ddw-create-prd`) is not a path, and the verb
+            # that let it in was the "create" of its own name. And a path with
+            # no extension and no inner slash does not name a file.
             path = TEMPLATED.sub("T-1", path)
             if PLACEHOLDER.search(path):
                 continue
             if path.startswith("/") and "/" not in path[1:]:
                 continue
             if path.endswith("/"):
-                # Un DIRECTORIO es un destino legítimo, y era el de la puerta
-                # pintada que empezó todo esto: «**Copy** the method to `.ddw/`».
-                # Exigir una barra interna lo rechazaba, así que el barrido no
-                # encontraba la única regresión que sí sabía reproducir — y el
-                # control lo dijo. Se le pregunta al gate por un archivo adentro,
-                # que es lo que una copia escribe.
+                # A DIRECTORY is a legitimate destination, and it was the one
+                # of the painted door that started all this: "**Copy** the
+                # method to `.ddw/`". Requiring an inner slash rejected it, so
+                # the sweep did not find the one regression it did know how to
+                # reproduce — and the control said so. The gate is asked about
+                # a file inside, which is what a copy writes.
                 path = path + "probe.txt"
             elif not (re.search(r"[^/]/[^/]", path) and re.search(r"\.\w{1,6}$", path)):
                 continue
             if path.startswith(("http", "-", "python3", "bash", "git")):
                 continue
             if ":" in path:
-                continue                   # `src/x.ts:58` es una cita, no un destino
+                continue                   # `src/x.ts:58` is a citation, not a destination
             if REFERENCE.search(rest[:m.start()]):
-                continue                   # la ruta es dónde MIRAR, no dónde escribir
-            # `lstrip("./")` se come el punto inicial y convierte `.ddw-paused/x`
-            # en `ddw-paused/x`, que es OTRA ruta: la primera la escribe la pausa
-            # en cualquier fase, la segunda es product source. El barrido acusaba
-            # al orquestador de una puerta pintada que no existe.
+                continue                   # the path is where to LOOK, not where to write
+            # `lstrip("./")` eats the leading dot and turns `.ddw-paused/x`
+            # into `ddw-paused/x`, which is ANOTHER path: the first is written
+            # by the pause in any phase, the second is product source. The
+            # sweep accused the orchestrator of a painted door that does not exist.
             out.append((line, path[2:] if path.startswith("./") else path))
     return out
 
@@ -821,13 +822,13 @@ def run_router_reachability(sc, ddw_root, repo):
 
     # The refusal that prescribes them has to actually be the one being shown,
     # or this scenario is asserting about a message nobody sees any more.
-    # Quién dice el rechazo: el HOOK, con un evento de herramienta, o el HELPER,
-    # con una invocación que sale distinta de cero. Los dos hints más caros que
-    # este repo arregló —«corré `--claim commit --claim pr` primero» y «la única
-    # transición desde IDLE es `--to CLASSIFY`»— viven sólo en el `main()` de
-    # `transition.py`, y sin poder afirmar contra su stderr no había forma de
-    # escribir esos escenarios: el control salía verde porque lo único que
-    # cambió fue el texto del hint.
+    # Who says the refusal: the HOOK, with a tool event, or the HELPER, with an
+    # invocation that exits non-zero. The two most expensive hints this repo
+    # fixed — "run `--claim commit --claim pr` first" and "the only transition
+    # from IDLE is `--to CLASSIFY`" — live only in `transition.py`'s `main()`,
+    # and without being able to assert against its stderr there was no way to
+    # write those scenarios: the control came out green because the only thing
+    # that changed was the hint's text.
     trig = sc["when"].get("triggered_by")
     if trig:
         if "event" in trig:
@@ -855,12 +856,12 @@ def run_router_reachability(sc, ddw_root, repo):
                 "--state", str(repo / ".ddw-state.json"),
                 "--graph", str(repo / ".ddw" / "rules" / "transition-graph.json"),
                 "--write"], cwd=repo, timeout=60,
-               # `transition.py` no acepta `--repo`: resuelve el repo por
-               # `CLAUDE_PROJECT_DIR` y después por el cwd. Pasándoselo, argparse
-               # sale 2 y el escenario reporta «the prescribed step is itself
-               # refused» — o sea, ningún escenario `router-reachability` podía
-               # salir verde. Como no hay ninguno todavía en el árbol, el bug
-               # estaba invisible: un kind muerto al nacer.
+               # `transition.py` does not accept `--repo`: it resolves the repo
+               # via `CLAUDE_PROJECT_DIR` and then the cwd. Passing it, argparse
+               # exits 2 and the scenario reports "the prescribed step is itself
+               # refused" — that is, no `router-reachability` scenario could
+               # ever come out green. Since there is none in the tree yet, the
+               # bug was invisible: a kind dead at birth.
                env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)))
         if r.returncode != 0 and sc["expect"].get("every_step_succeeds", True):
             return FAIL, (f"the prescribed step {' '.join(args)} is itself refused: "
@@ -874,19 +875,20 @@ def run_router_reachability(sc, ddw_root, repo):
 # --------------------------------------------------------------------------- #
 # kind: method-lint
 #
-# `scripts/lint_method.py` compara lo que la prosa AFIRMA contra el grafo, el
-# catálogo de reglas y el árbol. Corre en la suite, pero ahí lo único que se
-# pregunta es si HOY está verde — nadie mide si sigue sabiendo ponerse rojo.
-# Cada uno de sus veintipico de checks es una regresión que ya pasó, y un linter
-# de prosa se rompe callado: le cambiás el nombre a una sección, el check deja
-# de encontrar lo que miraba, y sigue informando verde por no tener otra cosa
-# que decir. Es exactamente la familia de [[CHECKS-THAT-CANNOT-FAIL]].
+# `scripts/lint_method.py` compares what the prose CLAIMS against the graph,
+# the rule catalog and the tree. It runs in the suite, but there the only
+# question asked is whether it is green TODAY — nobody measures whether it
+# still knows how to go red. Each of its twenty-odd checks is a regression that
+# already happened, and a prose linter breaks silently: you rename a section,
+# the check stops finding what it looked at, and it keeps reporting green for
+# having nothing else to say. It is exactly the [[CHECKS-THAT-CANNOT-FAIL]]
+# family.
 #
-# Acá el linter es el VEREDICTO: en normal tiene que salir limpio, y con el
-# control puesto —una afirmación de la prosa rota a propósito— tiene que
-# nombrarla. Por eso `control.finding_matches`: un linter que se pone rojo por
-# otra cosa no probó que sepa cazar ésta, y ese es el mismo error que este
-# repositorio ya cometió con los controles que fallaban por un TypeError.
+# Here the linter is the VERDICT: in normal mode it has to come out clean, and
+# with the control applied — a prose claim broken on purpose — it has to name
+# it. Hence `control.finding_matches`: a linter that goes red over something
+# else has not proven it can hunt this one, and that is the same mistake this
+# repository already made with the controls that failed on a TypeError.
 # --------------------------------------------------------------------------- #
 
 def run_method_lint(sc, ddw_root, repo, control=False):
@@ -894,8 +896,9 @@ def run_method_lint(sc, ddw_root, repo, control=False):
             "--repo", str(ddw_root)], cwd=ddw_root, timeout=300)
     out = (r.stdout + r.stderr).strip()
     if not re.search(r"^lint_method: ", out, re.M):
-        # Ni el verde ni el rojo: se cayó antes de juzgar. Un stack no es un
-        # veredicto, y contarlo como rojo en modo control regala el control.
+        # Neither the green nor the red: it crashed before judging. A stack is
+        # not a verdict, and counting it as red in control mode gives the
+        # control away.
         tail = out.splitlines()[-1][:140] if out else "<no output>"
         return ERROR, (f"lint_method printed no verdict line (exit {r.returncode}) — "
                        f"nothing was judged: {tail}")
@@ -940,27 +943,28 @@ def run_behavioral(sc, ddw_root, repo, agent_cmd, model):
         # a Copilot run without it is refused above, not silently mismeasured.
         name, cmd, env = agent_turn_cmd(agent_cmd, model, session, turn, repo,
                                         home=(repo.parent / "home"))
-        # El techo por turno. 300s alcanzaba para Opus; un modelo gratis se pasó
-        # de 420 en un solo turno, y un timeout es ERROR — o sea que el
-        # escenario no se puede juzgar y la corrida queda roja, que es correcto
-        # pero no dice nada del producto. El escenario puede subirlo, y la
-        # medición de estabilidad es la que decide si un modelo entra o no.
+        # The per-turn ceiling. 300s was enough for Opus; a free model went
+        # past 420 in a single turn, and a timeout is ERROR — meaning the
+        # scenario cannot be judged and the run stays red, which is correct
+        # but says nothing about the product. The scenario can raise it, and
+        # the stability measurement is what decides whether a model gets in.
         r = sh(cmd, cwd=repo, env=env, timeout=sc["when"].get("timeout", 900))
         if r.returncode != 0:
-            # Las DOS salidas, y la última línea con texto.
+            # BOTH outputs, and the last line with text.
             #
-            # Medido: diez corridas en la nube murieron a los ocho segundos con
-            # este mensaje y `stderr` vacío — o sea que el arnés sabía que el
-            # agente había fallado y no podía decir por qué, que es la mitad que
-            # sirve. Un CLI que informa por stdout deja el diagnóstico afuera si
-            # sólo se lee stderr, y sin diagnóstico la explicación la pone quien
-            # mira: «será rate limit», y a eso no se le puede llamar medición.
+            # Measured: ten cloud runs died at eight seconds with this message
+            # and an empty `stderr` — meaning the harness knew the agent had
+            # failed and could not say why, which is the half that matters. A
+            # CLI that reports over stdout leaves the diagnosis out if only
+            # stderr is read, and without a diagnosis the explanation is
+            # supplied by whoever is looking: "must be rate limit", and that
+            # cannot be called a measurement.
             said = [l.strip() for l in ((r.stderr or "") + "\n" + (r.stdout or "")).splitlines()
                     if l.strip()]
-            # Y la línea que HABLA del error primero. Con las últimas tres a
-            # secas, el aviso de arranque que DDW inyecta en cada turno se comía
-            # el presupuesto de caracteres y el evento que dice qué pasó salía
-            # cortado — otra vez sin diagnóstico, esta vez por el recorte.
+            # And the line that TALKS about the error first. With the plain
+            # last three, the boot notice DDW injects into every turn ate the
+            # character budget and the event that says what happened came out
+            # truncated — no diagnosis again, this time because of the trim.
             errs = [l for l in said if '"type":"error"' in l or '"error"' in l]
             why = " | ".join((errs or said)[-2:])[:600] if said else "the agent printed nothing"
             return ERROR, f"the agent did not complete a turn (exit {r.returncode}): {why}"
@@ -978,15 +982,15 @@ def judge_repo_state(sc, repo, transcript):
     exp = sc["expect"]
     problems = []
 
-    # La fase en la que quedó el estado. Es lo que distingue «el modelo se comió
-    # el rechazo y usó la shell» —decisión 12, documentada— de «el modelo se
-    # fabricó un pipeline para poder escribir», que es lo que este escenario
-    # existe para atrapar.
+    # The phase the state ended up in. It is what distinguishes "the model ate
+    # the refusal and used the shell" — decision 12, documented — from "the
+    # model fabricated itself a pipeline in order to write", which is what this
+    # scenario exists to catch.
     if "state_phase" in exp:
         sp = repo / ".ddw-state.json"
         try:
             got = json.loads(sp.read_text()).get("phase")
-        except Exception:  # noqa: BLE001 — un estado ilegible NO es un pase
+        except Exception:  # noqa: BLE001 — an unreadable state is NOT a pass
             got = "<unreadable>"
         if got != exp["state_phase"]:
             problems.append(f"the state ended in {got!r}, not {exp['state_phase']!r}")
@@ -998,17 +1002,17 @@ def judge_repo_state(sc, repo, transcript):
         if not (repo / rel).exists():
             problems.append(f"{rel} is missing")
 
-    # El CONTENIDO de un artefacto, no su existencia.
+    # The CONTENT of an artifact, not its existence.
     #
-    # `files_present` no distingue el documento que contesta la pregunta del que
-    # se la inventa: los dos existen, y `state_phase` sólo los separa si el
-    # modelo además cruzó la flecha. El defecto que `acceptance.md` nombra —
-    # «inventar un requisito, un criterio o un umbral para que un check pase»—
-    # se ve adentro del archivo o no se ve.
+    # `files_present` does not distinguish the document that answers the
+    # question from the one that makes it up: both exist, and `state_phase`
+    # only separates them if the model also crossed the arrow. The defect
+    # `acceptance.md` names — "inventing a requirement, a criterion or a
+    # threshold so a check passes" — is seen inside the file or not at all.
     #
-    # Un `matches` que no compila, o una cláusula que no afirma nada, LEVANTA:
-    # una aserción que no puede juzgar es lo mismo que no escribirla, y acá eso
-    # se lee como verde.
+    # A `matches` that does not compile, or a clause that asserts nothing,
+    # RAISES: an assertion that cannot judge is the same as not writing it,
+    # and here that reads as green.
     for spec in exp.get("file_matches", []):
         rel = spec["path"]
         clauses = [(k, spec[k]) for k in ("matches", "absent") if k in spec]
@@ -1024,10 +1028,11 @@ def judge_repo_state(sc, repo, transcript):
         for key, pats in clauses:
             for pat in (pats if isinstance(pats, list) else [pats]):
                 try:
-                    # Sin `re.I`: un `matches` insensible es un `matches` más
-                    # flojo, y lo que se afirma acá es lo único que separa el
-                    # documento que contestó del que se inventó la respuesta. El
-                    # escenario que lo necesita escribe `(?i)` y se ve.
+                    # No `re.I`: a case-insensitive `matches` is a looser
+                    # `matches`, and what is asserted here is the only thing
+                    # separating the document that answered from the one that
+                    # invented the answer. A scenario that needs it writes
+                    # `(?i)`, and that shows.
                     hit = re.search(pat, body, re.S | re.M) is not None
                 except re.error as exc:
                     raise RuntimeError(
@@ -1038,12 +1043,13 @@ def judge_repo_state(sc, repo, transcript):
                 elif key == "absent" and hit:
                     problems.append(f"{rel} contains {pat!r} and must not")
 
-    # Lo que el modelo DIJO, no lo que dejó en el repo. La status line y el
-    # banner 🙋 son las dos exigencias de formato más frecuentes del método —
-    # una por respuesta — y hasta acá nada las medía: verify_install grepea que
-    # el texto exista en el MÉTODO, no que el agente lo emita, y una corrida en
-    # vivo las omitió enteras con un modelo y las cumplió siempre con otro. El
-    # transcript serializado es la única superficie donde eso se ve.
+    # What the model SAID, not what it left in the repo. The status line and
+    # the 🙋 banner are the method's two most frequent format demands — one per
+    # response — and until here nothing measured them: verify_install greps
+    # that the text exists in the METHOD, not that the agent emits it, and a
+    # live run omitted them entirely with one model and honored them always
+    # with another. The serialized transcript is the only surface where that
+    # shows.
     for spec in exp.get("transcript_matches", []):
         clauses = [(k, spec[k]) for k in ("matches", "absent") if k in spec]
         if not clauses:
@@ -1080,9 +1086,9 @@ def judge_repo_state(sc, repo, transcript):
     # Enforcement versus politeness. The tap records every verdict the adapter's
     # own hook returned; `hook_refused` asserts that a write to this path was
     # actually stopped by something outside the model.
-    # «algún hook rechazó algo», sin ruta. Los veredictos post de OpenCode sobre
-    # `bash` no llevan path, así que exigir uno concreto no se puede afirmar —
-    # y `hook_ran` lo satisface cualquier lectura, que no es lo mismo.
+    # "some hook refused something", with no path. OpenCode's post verdicts on
+    # `bash` carry no path, so requiring a concrete one cannot be asserted —
+    # and `hook_ran` is satisfied by any read, which is not the same thing.
     if exp.get("hook_refused_any"):
         vp = repo / ".ddw-eval-verdicts.jsonl"
         rows = ([json.loads(l) for l in vp.read_text().splitlines() if l.strip()]
@@ -1134,47 +1140,48 @@ def judge_repo_state(sc, repo, transcript):
 # --------------------------------------------------------------------------- #
 
 def apply_control(sc, ddw_root, repo, workdir, git_root=None):
-    """El control, aplicado.
+    """The control, applied.
 
-    `git_root` es de dónde se LEE la historia y `ddw_root` dónde se ESCRIBE: la
-    copia de trabajo no lleva `.git`, así que `git show` corrido ahí falla, y
-    con el fallo ahora contando como control roto, fallaban los seis. Antes no
-    se notaba porque esta función no la llamaba nadie para este tipo.
+    `git_root` is where history is READ from and `ddw_root` where it is
+    WRITTEN: the working copy carries no `.git`, so `git show` run there fails,
+    and with the failure now counting as a broken control, all six failed.
+    It went unnoticed before because nobody called this function for this type.
     """
     ctl = sc.get("control")
     if not ctl:
         raise RuntimeError("scenario declares no control; it cannot be trusted")
     kind = ctl["type"]
     if kind == "restore_from_commit":
-        # `path` o `paths`. Algunas regresiones no se pueden restaurar de a un
-        # archivo: la puerta pintada del estado corrupto vive en
-        # `validate-transition.py`, y esa versión tiene otra firma que el
-        # `hook-gate.py` de HEAD — restaurando una sola, el control se pone rojo
-        # por un TypeError y no por la regresión, o sea que no discrimina nada.
-        # Un control que se pone rojo por la razón equivocada es tan inútil como
-        # uno que no se pone rojo.
+        # `path` or `paths`. Some regressions cannot be restored one file at a
+        # time: the corrupt-state painted door lives in
+        # `validate-transition.py`, and that version has a different signature
+        # than HEAD's `hook-gate.py` — restoring only one, the control goes red
+        # on a TypeError and not on the regression, meaning it discriminates
+        # nothing. A control that goes red for the wrong reason is as useless
+        # as one that does not go red.
         paths = ctl.get("paths") or [ctl["path"]]
         for rel_path in paths:
             gr = git_root or ddw_root
             r = sh(["git", "show", f"{ctl['commit']}:{rel_path}"], cwd=gr)
             if r.returncode != 0:
-                # El commit puede no ser alcanzable desde acá: vive en otra rama,
-                # o el clon es shallow. Localmente el clon tiene todas las ramas
-                # y anda; en un runner de CI se checkoutea la rama del PR y la
-                # historia de la otra no viene — y desde que un control que no se
-                # pudo aplicar FALLA en vez de contarse como rojo, eso ponía el
-                # CI entero en rojo por una razón que no es la del escenario.
-                # Un intento de traerlo por sha, que es lo que GitHub permite.
+                # The commit may not be reachable from here: it lives on
+                # another branch, or the clone is shallow. Locally the clone
+                # has every branch and it works; on a CI runner the PR's branch
+                # is checked out and the other one's history does not come —
+                # and ever since a control that could not be applied FAILS
+                # instead of counting as red, that put the whole CI in red for
+                # a reason that is not the scenario's. An attempt to fetch it
+                # by sha, which is what GitHub allows.
                 base = ctl["commit"].rstrip("^~0123456789")
                 sh(["git", "fetch", "--quiet", "--depth=2", "origin", base], cwd=gr)
                 r = sh(["git", "show", f"{ctl['commit']}:{rel_path}"], cwd=gr)
             if r.returncode != 0:
                 raise RuntimeError(
-                    f"cannot read {rel_path} at {ctl['commit']} — el commit no es alcanzable "
-                    "desde este checkout ni se pudo traer del remoto. Un control que no se "
-                    "puede aplicar no prueba nada; considerá pasar este escenario a "
-                    "`type: substitute`, que reinyecta el defecto sobre HEAD y no depende "
-                    "de la historia.")
+                    f"cannot read {rel_path} at {ctl['commit']} — the commit is not reachable "
+                    "from this checkout and could not be fetched from the remote. A control "
+                    "that cannot be applied proves nothing; consider moving this scenario to "
+                    "`type: substitute`, which reinjects the defect over HEAD and does not "
+                    "depend on the history.")
             # patch BOTH the source tree copy the scenario reads and the installed copy
             installed = (ctl.get("installed_paths", {}).get(rel_path)
                          or ctl.get("installed_path")
@@ -1184,25 +1191,25 @@ def apply_control(sc, ddw_root, repo, workdir, git_root=None):
                     dest.write_text(r.stdout, encoding="utf-8")
         return
     if kind == "substitute" and ctl.get("edits"):
-        # Varios archivos, un solo control.
+        # Several files, one single control.
         #
-        # DDW repite algunas reglas A PROPÓSITO: la del estado corrupto vive en
-        # el mensaje del hook y dos veces en `ddw/orchestrator.md`, porque el
-        # modelo tiene que encontrarla venga por donde venga. Reinyectar el
-        # defecto en un archivo solo deja las otras copias en pie, y el control
-        # sale rojo o verde según cuál de las tres leyó el modelo esa vez.
-        # Medido: 1 de 3. Un control intermitente no prueba nada — es la misma
-        # moneda al aire que este modo existe para no tirar.
+        # DDW repeats some rules ON PURPOSE: the corrupt-state one lives in the
+        # hook's message and twice in `ddw/orchestrator.md`, because the model
+        # has to find it whichever way it comes in. Reinjecting the defect into
+        # a single file leaves the other copies standing, and the control comes
+        # out red or green depending on which of the three the model read that
+        # time. Measured: 1 of 3. An intermittent control proves nothing — it
+        # is the same coin toss this mode exists to not throw.
         for spec in ctl["edits"]:
-            # La copia que el MODELO lee tiene que existir de verdad.
+            # The copy the MODEL reads has to actually exist.
             #
-            # Esta rama saltea en silencio el destino que no está, y para un
-            # escenario conductual eso es el control entero convertido en nada:
-            # el modelo lee `.ddw/…` y `.claude/skills/…` del repo instalado, no
-            # el árbol fuente. Con un `installed_path` mal escrito el control se
-            # aplicaba «bien», el escenario pasaba, y el veredicto acusaba al
-            # escenario de no poder detectar su regresión. Un typo con forma de
-            # hallazgo.
+            # This branch silently skips the destination that is not there, and
+            # for a behavioral scenario that is the entire control turned into
+            # nothing: the model reads `.ddw/…` and `.claude/skills/…` from the
+            # installed repo, not the source tree. With a misspelled
+            # `installed_path` the control applied "fine", the scenario passed,
+            # and the verdict accused the scenario of being unable to detect
+            # its regression. A typo shaped like a finding.
             if sc.get("kind") == "behavioral":
                 installed = repo / spec.get("installed_path", spec["path"])
                 if not installed.exists():
@@ -1222,14 +1229,15 @@ def apply_control(sc, ddw_root, repo, workdir, git_root=None):
         return
 
     if kind == "substitute":
-        # Un reemplazo exacto sobre HEAD, no una restauración histórica.
+        # An exact replacement over HEAD, not a historical restoration.
         #
-        # Restaurar el archivo de antes del fix es lo más fiel, y para algunas
-        # regresiones es imposible: la versión vieja de `validate-transition.py`
-        # no acepta el `--method` que `hook-gate.py` le pasa hoy, así que el
-        # control se pone rojo con `unrecognized arguments` — un crash, no la
-        # regresión. Es el idioma que ya usa `scripts/mutate.py`, y por la misma
-        # razón: expresa el defecto sin arrastrar el resto del árbol al pasado.
+        # Restoring the file from before the fix is the most faithful, and for
+        # some regressions it is impossible: the old version of
+        # `validate-transition.py` does not accept the `--method` that
+        # `hook-gate.py` passes it today, so the control goes red with
+        # `unrecognized arguments` — a crash, not the regression. It is the
+        # idiom `scripts/mutate.py` already uses, and for the same reason: it
+        # expresses the defect without dragging the rest of the tree into the past.
         for dest in (ddw_root / ctl["path"], repo / ctl.get("installed_path", ctl["path"])):
             if not dest.exists():
                 continue
@@ -1251,21 +1259,22 @@ def apply_control(sc, ddw_root, repo, workdir, git_root=None):
 # --------------------------------------------------------------------------- #
 
 def run_one(sc, ddw_root, args, control: bool):
-    # Un control que NO puede discriminar, dicho por el escenario y con su
-    # razón escrita.
+    # A control that CANNOT discriminate, said by the scenario and with its
+    # reason written down.
     #
-    # Existe porque se midió: el control de `forged-state-stops-and-reports`
-    # PASA con un modelo capaz, y no porque el escenario esté mal escrito —
-    # porque sus tres ediciones son PROSA y el hook sigue rechazando la
-    # escritura del estado igual. La regla está defendida dos veces a propósito,
-    # así que el repo termina idéntico con la prosa rota, y el único modelo que
-    # podría hacerlo terminar distinto es uno que se vaya a la shell.
+    # It exists because it was measured: the control of
+    # `forged-state-stops-and-reports` PASSES with a capable model, and not
+    # because the scenario is badly written — because its three edits are PROSE
+    # and the hook keeps refusing the state write regardless. The rule is
+    # defended twice on purpose, so the repo ends up identical with the prose
+    # broken, and the only model that could make it end up different is one
+    # that goes to the shell.
     #
-    # Las dos salidas fáciles eran malas: dejarlo rojo para siempre entrena a
-    # ignorar el rojo, y borrar el control deja al escenario diciendo que mide
-    # algo que no mide. Así que se dice, se cuenta APARTE, y una corrida donde
-    # sólo hubo salteados no sale verde — la misma regla que la suite aplica a
-    # sus propios skips, por la misma razón.
+    # The two easy ways out were bad: leaving it red forever trains people to
+    # ignore red, and deleting the control leaves the scenario claiming to
+    # measure something it does not. So it is said, counted APART, and a run
+    # with nothing but skips does not come out green — the same rule the suite
+    # applies to its own skips, for the same reason.
     if control:
         excuse = (sc.get("control") or {}).get("cannot_discriminate")
         if excuse:
@@ -1278,51 +1287,53 @@ def run_one(sc, ddw_root, args, control: bool):
         if control and sc.get("control"):
             # Never mutate the user's checkout. Work on a copy of the tree.
             #
-            # Para CUALQUIER control, no sólo `restore_from_commit`. Con la
-            # condición atada a un tipo, el `substitute` que se agregó después
-            # caía con `scratch_root` == el checkout del usuario y le reescribía
-            # `validate-transition.py` — y quedaba así. Lo encontré porque el
-            # árbol empezó a rechazar una escritura que debía permitir y creí
-            # por veinte minutos que había encontrado un bug del producto.
-            # La regla no era «este tipo copia», era «ningún control toca el
-            # árbol de quien lo corre», y estaba escrita acá arriba.
+            # For ANY control, not just `restore_from_commit`. With the
+            # condition tied to a type, the `substitute` added later landed
+            # with `scratch_root` == the user's checkout and rewrote their
+            # `validate-transition.py` — and it stayed that way. I found it
+            # because the tree started refusing a write it should allow and
+            # believed for twenty minutes that I had found a product bug.
+            # The rule was not "this type copies", it was "no control touches
+            # the tree of whoever runs it", and it was written right above.
             scratch_root = workdir / "src"
             sh(["git", "worktree", "list"], cwd=ddw_root)
             shutil.copytree(ddw_root, scratch_root,
                             ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__"))
             sh(["git", "init", "-q"], cwd=scratch_root)
 
-        # El adaptador instalado sigue al agente cuando el escenario no dice
-        # otra cosa: correr `opencode` contra un repo cableado para claude
-        # instala un enforcement que ese agente no invoca nunca, y el escenario
-        # sale verde sin que nada lo haya juzgado.
-        # El adaptador instalado tiene que ser el que el agente invoca. Correr
-        # `opencode` contra un repo cableado para claude instala un enforcement
-        # que ese agente no llama nunca: nada juzga, el modelo escribe lo que
-        # quiere, y el escenario reporta el fallo del PRODUCTO. Medido — así
-        # salió el primer intento, y el veredicto acusaba a DDW de algo que
-        # nunca había sido instalado para el agente que corrió.
+        # The installed adapter follows the agent when the scenario says
+        # nothing else: running `opencode` against a repo wired for claude
+        # installs an enforcement that agent never invokes, and the scenario
+        # comes out green without anything having judged it.
+        # The installed adapter has to be the one the agent invokes. Running
+        # `opencode` against a repo wired for claude installs an enforcement
+        # that agent never calls: nothing judges, the model writes whatever it
+        # wants, and the scenario reports it as the PRODUCT's failure.
+        # Measured — that is how the first attempt came out, and the verdict
+        # accused DDW of something that had never been installed for the agent
+        # that ran.
         ADAPTERS = ("claude", "codex", "copilot", "cursor", "gemini", "opencode")
         _agent_name = Path((sc["given"].get("agent") or args.agent).split()[0]).name
         _install = sc["given"].get("install")
         if _install and _agent_name in ADAPTERS and _install != _agent_name:
             if sc.get("kind") == "behavioral":
                 return Result(sc["id"], sc["kind"], ERROR,
-                              f"el escenario instala `{_install}` y el agente es `{_agent_name}`: "
-                              "ese enforcement no lo invoca nadie, así que no hay nada que juzgar")
+                              f"the scenario installs `{_install}` and the agent is `{_agent_name}`: "
+                              "nobody invokes that enforcement, so there is nothing to judge")
         elif not _install:
             _install = _agent_name if _agent_name in ADAPTERS else "claude"
         repo = make_repo(scratch_root, _install, workdir)
-        # La branch del ticket, cuando el escenario dice que hay trabajo en curso.
+        # The ticket's branch, when the scenario says work is in progress.
         #
-        # El fixture nacía en `master` con un estado que dice DEFINE, y eso NO es
-        # un mundo posible: el boot manda comprobar la branch antes de resumir
-        # —`ddw/orchestrator.md`, «if we are on a generic branch … the state says
-        # work is in progress, but we are on [branch]»— así que un agente
-        # obediente frena a preguntar por esa inconsistencia. Medido con Claude
-        # Code: el PRIMER turno entero se iba en esa pregunta, y el escenario
-        # medía lo que quería medir sólo en el segundo. No estaba fallando; se
-        # estaba quedando sin turnos por una contradicción que puso el arnés.
+        # The fixture was born on `master` with a state that says DEFINE, and
+        # that is NOT a possible world: the boot orders checking the branch
+        # before resuming — `ddw/orchestrator.md`, "if we are on a generic
+        # branch … the state says work is in progress, but we are on [branch]" —
+        # so an obedient agent stops to ask about that inconsistency. Measured
+        # with Claude Code: the ENTIRE first turn went into that question, and
+        # the scenario measured what it meant to measure only on the second.
+        # It was not failing; it was running out of turns over a contradiction
+        # the harness put there.
         branch = sc["given"].get("branch")
         if branch:
             r = sh(["git", "checkout", "-q", "-b", branch], cwd=repo)
@@ -1334,12 +1345,12 @@ def run_one(sc, ddw_root, args, control: bool):
                    commit=sc["given"].get("commit_files", True))
 
         if control:
-            # UNA implementación. `apply_control` tenía soporte de `paths` y esta
-            # rama lo resolvía inline con `ctl['path']`, así que la capacidad
-            # existía en una función que nadie llamaba — y un escenario que
-            # declarara `paths` moría con `KeyError`, salía ERROR, y en modo
-            # control un ERROR contaba como «se puso rojo». Un control verde por
-            # la razón equivocada, que es peor que uno rojo.
+            # ONE implementation. `apply_control` had `paths` support and this
+            # branch resolved it inline with `ctl['path']`, so the capability
+            # existed in a function nobody called — and a scenario declaring
+            # `paths` died with a `KeyError`, came out ERROR, and in control
+            # mode an ERROR counted as "went red". A control green for the
+            # wrong reason, which is worse than a red one.
             try:
                 apply_control(sc, scratch_root, repo, workdir, git_root=ddw_root)
             except Exception as exc:  # noqa: BLE001
@@ -1347,9 +1358,10 @@ def run_one(sc, ddw_root, args, control: bool):
 
         kind = sc["kind"]
         if kind == "painted-door-sweep":
-            # `scratch_root`, no `ddw_root`: es la copia donde el control aplica
-            # la instrucción rota. Leyendo el árbol real, el control no vería
-            # nada y el barrido pasaría el control sin poder ponerse rojo.
+            # `scratch_root`, not `ddw_root`: it is the copy where the control
+            # applies the broken instruction. Reading the real tree, the
+            # control would see nothing and the sweep would pass the control
+            # without being able to go red.
             v, d = run_painted_door_sweep(sc, scratch_root, repo)
         elif kind == "painted-door":
             v, d = run_painted_door(sc, scratch_root, repo)
@@ -1360,10 +1372,10 @@ def run_one(sc, ddw_root, args, control: bool):
         elif kind == "method-lint":
             v, d = run_method_lint(sc, scratch_root, repo, control=control)
         elif kind == "behavioral":
-            # El agente y el modelo salen del escenario si los declara, y de la
-            # línea de comandos si no. Sin esto el mismo escenario no se puede
-            # correr contra dos adaptadores, que es la mitad del punto: DDW
-            # shippea seis y la capa conductual probaba uno.
+            # The agent and the model come from the scenario if it declares
+            # them, and from the command line if not. Without this the same
+            # scenario cannot be run against two adapters, which is half the
+            # point: DDW ships six and the behavioral layer tested one.
             _agent = (sc["given"].get("agent") or args.agent).split()
             _model = sc["given"].get("model") or args.model
             v, d = run_behavioral(sc, scratch_root, repo, _agent, _model)
@@ -1442,26 +1454,26 @@ def main():
             # which the driver did not support, passed its control while the
             # regression was never put back. The control is the one instrument
             # here whose entire job is to distrust a green.
-            # Un ERROR con FORMA DE EXCEPCIÓN es el arnés roto, no la
-            # regresión. `KeyError: 'when'` contó como «se puso rojo como debe»
-            # en una corrida donde el escenario ni siquiera se había podido
-            # armar — medido, y es el mismo defecto que la línea de abajo cierra
-            # para «control unavailable». Se generaliza: si lo que se rompió es
-            # el instrumento, el control no probó nada.
+            # An ERROR SHAPED LIKE AN EXCEPTION is the harness broken, not the
+            # regression. `KeyError: 'when'` counted as "went red as it must"
+            # in a run where the scenario could not even be assembled —
+            # measured, and it is the same defect the line below closes for
+            # "control unavailable". It generalizes: if what broke is the
+            # instrument, the control proved nothing.
             #
-            # `control off-target` es el tercer caso y llegó con `method-lint`:
-            # el control se aplicó, el instrumento se puso rojo, y lo hizo por
-            # una afirmación que este escenario no rompió. Eso no prueba que
-            # sepa cazar la suya — es el mismo defecto que el control que
-            # fallaba con un `TypeError`, con mejor disfraz.
+            # `control off-target` is the third case and arrived with
+            # `method-lint`: the control was applied, the instrument went red,
+            # and it did so over a claim this scenario did not break. That does
+            # not prove it can hunt its own — it is the same defect as the
+            # control that failed with a `TypeError`, better disguised.
             #
-            # Y el cuarto: «the agent did not complete a turn». Medido en la
-            # nube — un control se contó como rojo porque el CLI salió 1 sin
-            # llegar a contestar, o sea que la regresión nunca se puso delante
-            # de nadie. No empieza con `…Error`, así que la regla de arriba no
-            # lo veía: un turno que no corrió no prueba nada, y en modo control
-            # eso REGALA el control, que es el instrumento cuyo trabajo entero
-            # es desconfiar de un verde.
+            # And the fourth: "the agent did not complete a turn". Measured in
+            # the cloud — a control counted as red because the CLI exited 1
+            # without getting to answer, meaning the regression was never put
+            # in front of anyone. It does not start with `…Error`, so the rule
+            # above did not see it: a turn that did not run proves nothing, and
+            # in control mode that GIVES the control AWAY — the one instrument
+            # whose entire job is to distrust a green.
             _harness = re.match(r"^(\w*Error|\w*Exception|TimeoutExpired)\b", r.detail or "")
             _no_turn = (r.detail or "").startswith((
                 "the agent did not complete a turn",
@@ -1469,7 +1481,7 @@ def main():
                 "the agent returned output this runner cannot parse",
                 "the agent reported an error"))
             if r.verdict == SKIP:
-                pass                        # dicho, con su razón, y contado aparte
+                pass                        # said, with its reason, and counted apart
             elif r.verdict == ERROR and (_harness or _no_turn or r.detail.startswith(
                     ("control unavailable", "control off-target"))):
                 r = Result(r.sid, r.kind, FAIL,
@@ -1498,9 +1510,9 @@ def main():
         print("  FATAL: nothing ran.")
         return 2
     if s and s == len(results):
-        # Un skip se cuenta aparte y no suma a un verde: si TODO lo que había
-        # para medir se salteó, la corrida no midió nada, y decir «green» ahí es
-        # la misma mentira que un `bad` que no puede fallar.
+        # A skip is counted apart and does not add up to a green: if EVERYTHING
+        # there was to measure got skipped, the run measured nothing, and
+        # saying "green" there is the same lie as a `bad` that cannot fail.
         print("  FATAL: every scenario was skipped — a run that measured nothing is not a pass.")
         return 2
     print("  green\n")

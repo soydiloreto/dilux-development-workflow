@@ -16,43 +16,45 @@ here why there is not one.
 <!-- 56 site(s), 234 fault(s) measured -->
 
 - [ ] `check_boot_reads_every_state_field[0]`
-      **Guardia de forma, y la forma es una tabla entera.** Salta cuando
-      `ddw/rules/state.instructions.md` existe y no se le puede leer NI UN campo
-      —la tabla dejó de tener la forma `| \`campo\` | …`—, y eso son todas sus
-      filas a la vez, no una línea. Un fault de una edición no puede expresarlo,
-      y uno que reescriba la tabla completa mide el fault, no el check. El caso
-      de al lado —el archivo directamente ausente— sí tiene fault y sale por
-      otra rama.
+      **Shape guard, and the shape is a whole table.** It fires when
+      `ddw/rules/state.instructions.md` exists and NOT ONE field can be read
+      out of it — the table stopped having the `| \`field\` | …` shape — and
+      that is all of its rows at once, not one line. A one-edit fault cannot
+      express it, and one that rewrites the whole table measures the fault,
+      not the check. The neighbouring case — the file outright missing — does
+      have a fault and exits through another branch.
 - [ ] `check_rationale[1]`
-      **Guardia de forma, ídem.** Pide que `docs/RATIONALE.md` exista y no tenga
-      NINGUNA decisión numerada: hoy son veinte encabezados `## N.`, así que el
-      fault tendría que borrarlos todos. Que el archivo falte lo cubre el sitio
-      anterior, que sí tiene fault.
+      **Shape guard, same story.** It demands `docs/RATIONALE.md` exists with
+      NO numbered decision at all: today that is twenty `## N.` headings, so
+      the fault would have to delete every one. The file being missing is
+      covered by the previous site, which does have a fault.
 - [ ] `check_autonomy_prose_matches_the_hook[0]`
-      **Rama defensiva sobre el instrumento, no sobre el producto.** Salta si
-      `ddw/scripts/validate-transition.py` no se puede importar, que es la
-      condición en la que ningún check del linter mide nada y la suite entera ya
-      está roja por otras cien razones. Un fault que la provoque mide el fault.
+      **Defensive branch about the instrument, not the product.** It fires if
+      `ddw/scripts/validate-transition.py` cannot be imported, which is the
+      condition under which no linter check measures anything and the whole
+      suite is already red for a hundred other reasons. A fault provoking it
+      measures the fault.
 - [ ] `check_autonomy_prose_matches_the_hook[1]`
-      **Pide un fault en un `.py`, y el mapa los saltea por construcción**
-      (`SKIP_EXT = (".py",)` en `scripts/lint_kill_map.py`: este check es el
-      primero del linter que lee código y no prosa). Lo que el sitio afirma —que
-      el guard refusa la segunda flecha bajo `assisted`— sí está medido, una
-      capa más abajo, por `test_dos_flechas_en_un_turno_son_rechazadas`. Lo que
-      queda sin fault es el AVISO del linter, no la conducta.
+      **It asks for a fault in a `.py`, and the map skips those by
+      construction** (`SKIP_EXT = (".py",)` in `scripts/lint_kill_map.py`:
+      this check is the linter's first that reads code and not prose). What
+      the site asserts — that the guard refuses the second arrow under
+      `assisted` — IS measured, one layer down, by
+      `test_dos_flechas_en_un_turno_son_rechazadas`. What is left without a
+      fault is the linter's WARNING, not the behaviour.
 - [ ] `check_autonomy_prose_matches_the_hook[2]`
-      **Guardia de forma.** Salta cuando `ddw/orchestrator.md` no tiene sección
-      `## Autonomy` en absoluto — borrar la sección entera, no una línea. Un
-      fault de una edición no puede expresarlo, y uno que la borre mide el
+      **Shape guard.** It fires when `ddw/orchestrator.md` has no
+      `## Autonomy` section at all — deleting the whole section, not one line.
+      A one-edit fault cannot express it, and one that deletes it measures the
       fault.
 - [ ] `check_autonomy_prose_matches_the_hook[4]`
-      **El mismo techo que `[1]`**: la dirección inversa del mismo par (la
-      prosa dice que el hook exceptúa `minimal` y el guard refusa igual) también
-      necesita tocar el `.py` que el mapa saltea. La conducta está medida por
-      `test_en_minimal_las_flechas_no_esperan`.
+      **The same ceiling as `[1]`**: the reverse direction of the same pair
+      (the prose says the hook exempts `minimal` and the guard refuses anyway)
+      also needs to touch the `.py` the map skips. The behaviour is measured
+      by `test_en_minimal_las_flechas_no_esperan`.
 - [ ] `check_minimal_exemption_reaches_the_phase_rules[0]`
-      **Guardia de forma, y la forma son seis routers a la vez.** Salta cuando
-      NINGUNA salida del orquestador se declara exenta bajo `minimal`, o sea
-      seis ediciones en un fault. La que importa —una fase que sí está exenta y
-      cuyo archivo de reglas no lo dice— es el sitio de al lado, y ese sí tiene
-      su fault.
+      **Shape guard, and the shape is six routers at once.** It fires when
+      NO orchestrator exit declares itself exempt under `minimal`, which is
+      six edits in one fault. The one that matters — a phase that IS exempt
+      whose rules file does not say so — is the neighbouring site, and that
+      one has its fault.
