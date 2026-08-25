@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.1.0
+version: 2.2.0
 ---
 
 # Commit and PR Conventions
@@ -197,8 +197,15 @@ consider one PR per coherent group of blocks (but always within the same ticket)
 
 | Label | Color | When to apply |
 |-------|-------|---------------|
-| `AI-assisted` | `#1D76DB` (blue) | PR created with AI assistance |
-| `AI-full` | `#7057FF` (purple) | PR created 100% by AI |
+| `AI-assisted` | `#1D76DB` (blue) | The PR's commits carry `AI-assisted: yes` — a human reviewed the changes |
+| `AI-full` | `#7057FF` (purple) | The PR's commits carry `AI-full: yes` — no human reviewed them before they landed |
+
+**The label follows the trailers, and the same criterion decides both** (see the trailer table
+above: what matters is whether a human reviewed THIS work, which `autonomy` already records).
+A PR mixing both trailers takes `AI-full` — the stronger claim wins, because a reader trusts the
+label as the floor of human review, not its ceiling. These two rows used to restate the trailer
+ambiguity in their own words ("with AI assistance" / "100% by AI"), which is two criteria for one
+question, one document apart.
 
 **NEVER create a PR without an AI attribution label.**
 
