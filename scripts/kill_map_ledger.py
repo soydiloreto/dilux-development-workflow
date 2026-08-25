@@ -1,27 +1,29 @@
 #!/usr/bin/env python3
-"""El libro de cuentas de los checks que ningún fault caza.
+"""The ledger of the checks no fault ever provokes.
 
-`scripts/mutate.py --kill-map` anota, por cada fault, QUÉ check de la suite lo
-cazó. Cruzado con todo `bad` que `scripts/verify_install.sh` sabe decir, lo que
-queda son los checks que ningún fault provoca. De ésos no se sabe si pueden
-fallar — y un check que no puede fallar informa verde por no saber decir otra
-cosa, no porque haya mirado algo. Cinco shippearon en este repositorio: se
-buscaban a sí mismos, y aparecieron de casualidad corriendo mutaciones.
+`scripts/mutate.py --kill-map` records, for every fault, WHICH suite check
+caught it. Crossed against every `bad` that `scripts/verify_install.sh` knows
+how to say, what remains are the checks no fault provokes. Of those, nobody
+knows whether they CAN fail — and a check that cannot fail reports green
+because it has nothing else to say, not because it looked at anything. Five
+shipped in this repository: they were finding themselves, and they surfaced by
+accident while running mutations.
 
-Este archivo NO es un reporte. Un reporte generado que se commitea y nadie
-regenera miente a las dos semanas, y una afirmación sin respaldo es exactamente
-lo que el resto de este repositorio persigue. Es una EXPECTATIVA: la lista que
-alguien ya miró, con la razón al lado, y el CI la compara contra la realidad.
+This file is NOT a report. A generated report that gets committed and never
+regenerated is lying within two weeks, and an unbacked claim is exactly what
+the rest of this repository hunts down. It is an EXPECTATION: the list somebody
+already looked at, with the reason beside each line, and CI compares it against
+reality.
 
-  · Aparece uno que no está en la lista  → rojo. Se escribe por qué, o se le
-    escribe un fault.
-  · Desaparece uno que está en la lista  → rojo. Ya se puede medir; sale.
+  · One appears that is not on the list  → red. Write down why, or write it
+    a fault.
+  · One on the list disappears           → red. It can be measured now; out.
 
-Es el idioma de las supresiones de SAST, y por el mismo motivo: no prohíbe
-nada, obliga a decirlo en voz alta.
+It is the language of SAST suppressions, for the same reason: it forbids
+nothing, it forces it to be said out loud.
 
     python3 scripts/kill_map_ledger.py --parts <dir> --ledger docs/CHECKS-THAT-CANNOT-FAIL.md
-    python3 scripts/kill_map_ledger.py --parts <dir> --ledger <f> --write   # regenerar
+    python3 scripts/kill_map_ledger.py --parts <dir> --ledger <f> --write   # regenerate
 """
 import argparse
 import json
@@ -48,17 +50,17 @@ A check that cannot fail reports green because it has no other thing to say.
 
 
 def declared_bads(text):
-    """Todo `bad "…"` que la suite sabe decir."""
+    """Every `bad "…"` the suite knows how to say."""
     return {m.group(1).strip() for m in re.finditer(r'\bbad\s+"((?:[^"\\]|\\.)*)"', text)}
 
 
 def fired_from(parts_dir):
-    """Los checks que cazaron algo, uniendo los parciales de cada shard."""
+    """The checks that caught something, merging every shard's partials."""
     fired, seen_faults = set(), 0
     files = sorted(f for f in os.listdir(parts_dir) if f.endswith(".json"))
     if not files:
-        raise SystemExit("kill_map_ledger: no hay parciales en %s — una corrida que no "
-                         "examinó nada no es un pase" % parts_dir)
+        raise SystemExit("kill_map_ledger: no partials in %s — a run that examined "
+                         "nothing is not a pass" % parts_dir)
     for name in files:
         with open(os.path.join(parts_dir, name), encoding="utf-8") as fh:
             part = json.load(fh)
@@ -66,39 +68,40 @@ def fired_from(parts_dir):
             seen_faults += 1
             fired |= set(killers if isinstance(killers, list) else [killers])
     if seen_faults == 0:
-        raise SystemExit("kill_map_ledger: los parciales no registran un solo fault")
+        raise SystemExit("kill_map_ledger: the partials record not a single fault")
     return fired, seen_faults, len(files)
 
 
 def _longest_literal(msg):
-    """El tramo literal más largo de un mensaje declarado.
+    """The longest literal stretch of a declared message.
 
-    Comparar el mensaje ENTERO no sirve, y no por las variables: el shell se
-    come pedazos. `bad "inventing a 'pause:' entry…"` sale impreso como
-    «inventing a  entry…», sin lo entrecomillado. Exigir el texto completo daba
-    ese check por nunca disparado cuando el fault 454 lo dispara — la tercera
-    vez en esta sesión que un número suena a hallazgo y mide el formateo.
+    Comparing the WHOLE message does not work, and not because of the
+    variables: the shell eats pieces. `bad "inventing a 'pause:' entry…"`
+    prints as "inventing a  entry…", without the quoted part. Demanding the
+    full text counted that check as never fired while fault 454 fires it —
+    the third time in one session that a number sounded like a finding and
+    was measuring the formatting.
 
-    El tramo más largo es distintivo sin ser frágil: sobrevive a que el shell
-    coma un pedazo por cualquiera de sus dos causas, y no es tan corto como para
-    matchear cualquier cosa.
+    The longest stretch is distinctive without being fragile: it survives the
+    shell eating a piece for either of its two causes, and it is not so short
+    that it matches anything at all.
     """
-    # `$(...)` también, no sólo `$VAR`. Sin eso, «expected $EXPECT_SKILLS
-    # skills, found $(n "$SELF/skills/*/SKILL.md")» dejaba como tramo más largo
-    # la ruta del glob, que no aparece nunca en la salida — y los cuatro conteos
-    # fijados se contaban como nunca disparados JUSTO después de escribirles el
-    # fault que los dispara. La cuarta versión de la misma clase de error.
-    # …y el `$(` SIN cerrar. `declared_bads` extrae el mensaje con una expresión
-    # que termina en la primera comilla doble, así que «found $(n "$SELF/…")»
-    # queda cortado en `found $(n `. Ese resto pegado al literal hacía que el
-    # tramo más largo fuera algo que no aparece nunca — y los cuatro conteos
-    # fijados se contaban como nunca disparados con el kill registrado dos
-    # líneas más abajo en el mismo archivo.
-    # …y los tramos entre BACKTICKS. Un `bad "… \`mkdir .ddw\` …"` sin escapar
-    # es sustitución de comandos para bash: el mensaje sale impreso SIN esa
-    # parte, así que el literal declarado no puede casar con la salida. Tres
-    # entradas estaban acá por eso y no por un agujero — el propio ✗ que las
-    # dispara estaba en el mapa, con el hueco en el medio.
+    # `$(...)` too, not only `$VAR`. Without it, "expected $EXPECT_SKILLS
+    # skills, found $(n "$SELF/skills/*/SKILL.md")" left the glob's path as the
+    # longest stretch — which never appears in the output — and the four pinned
+    # counts read as never fired RIGHT after the fault that fires them was
+    # written. The fourth version of the same class of error.
+    # …and the UNCLOSED `$(`. `declared_bads` extracts the message with an
+    # expression that ends at the first double quote, so "found $(n "$SELF/…")"
+    # is cut at `found $(n `. That remainder glued to the literal made the
+    # longest stretch something that never appears — and the four pinned counts
+    # read as never fired with the kill recorded two lines below in the same
+    # file.
+    # …and the stretches between BACKTICKS. An unescaped `bad "… \`mkdir
+    # .ddw\` …"` is command substitution to bash: the message prints WITHOUT
+    # that part, so the declared literal cannot match the output. Three entries
+    # sat here because of that and not because of a hole — the very ✗ that
+    # fires them was on the map, with the gap in the middle.
     parts = re.split(
         r"\$\([^)]*\)|\$\(|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+|'[^']*'|`[^`]*`|\\?\"",
         msg)
@@ -107,22 +110,22 @@ def _longest_literal(msg):
 
 
 def _as_pattern(msg):
-    """El mensaje declarado, como expresión: cada `$VAR` es lo que se interpola.
+    """The declared message as an expression: each `$VAR` is whatever it interpolates.
 
-    Comparar por el prefijo hasta el primer `$` parece razonable y no lo es:
-    un mensaje que EMPIEZA con una variable —«$label blocks…», y hay muchos—
-    tiene prefijo vacío, y todo mensaje de prefijo vacío contaba como nunca
-    disparado. La primera corrida real dijo 92 y una parte era eso: otro número
-    que suena a hallazgo y mide el formateo. Ahora la variable es un comodín y
-    lo que se compara es la forma entera.
+    Comparing by the prefix up to the first `$` sounds reasonable and is not:
+    a message that STARTS with a variable — "$label blocks…", and there are
+    many — has an empty prefix, and every empty-prefix message counted as
+    never fired. The first real run said 92 and part of it was this: another
+    number that sounds like a finding and measures the formatting. The
+    variable is a wildcard now, and what gets compared is the whole shape.
     """
     parts = re.split(r"\$\([^)]*\)|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\d+", msg)
     rx = ".*".join(re.escape(p) for p in parts if p != "")
-    return re.compile(rx if rx else r"(?!x)x")   # sin literales, no matchea nada
+    return re.compile(rx if rx else r"(?!x)x")   # no literals, matches nothing
 
 
 def never_fired(declared, fired):
-    """Los `bad` que ninguna línea ✗ observada satisface."""
+    """The `bad`s that no observed ✗ line satisfies."""
     out = []
     for msg in sorted(declared):
         pat = _as_pattern(msg)
@@ -136,13 +139,13 @@ def never_fired(declared, fired):
 
 
 def _key(msg):
-    """La forma con la que se compara una entrada.
+    """The shape an entry is compared by.
 
-    El archivo es markdown y las entradas van entre backticks, así que un
-    mensaje que TRAE backticks no puede escribirse tal cual — se convierten a
-    comillas simples. Leído de vuelta ya no coincide con el declarado, y siete
-    entradas aparecían a la vez como «nuevas» y como «ya medibles»: el libro se
-    contradecía consigo mismo. Se compara por esta clave, de los dos lados.
+    The file is markdown and entries sit between backticks, so a message that
+    CARRIES backticks cannot be written verbatim — they become single quotes.
+    Read back, it no longer matches the declared one, and seven entries showed
+    up at once as "new" and as "already measurable": the ledger contradicted
+    itself. Both sides compare through this key.
     """
     return msg.replace("`", "'").replace("\\", "").strip()
 
@@ -163,9 +166,9 @@ def render(entries, previous_reasons, faults, shards):
     for msg in sorted(entries):
         lines.append("- [ ] `%s`\n" % _key(msg))
         reason = previous_reasons.get(_key(msg))
-        lines.append("      %s\n" % (reason or "**Sin justificar.** Escribile un fault en "
-                                               "`scripts/mutate.py`, o decí acá por qué no lo "
-                                               "tiene."))
+        lines.append("      %s\n" % (reason or "**Unjustified.** Write it a fault in "
+                                               "`scripts/mutate.py`, or say here why it has "
+                                               "none."))
     return "".join(lines)
 
 
@@ -185,9 +188,9 @@ def reasons_from(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parts", required=True, help="directorio con los kill-map-*.json")
+    ap.add_argument("--parts", required=True, help="directory holding the kill-map-*.json")
     ap.add_argument("--ledger", required=True)
-    ap.add_argument("--write", action="store_true", help="regenerar en vez de comparar")
+    ap.add_argument("--write", action="store_true", help="regenerate instead of comparing")
     args = ap.parse_args()
 
     suite = open(SUITE, encoding="utf-8").read()
@@ -200,19 +203,19 @@ def main():
                    "never_fired": sorted(dead), "faults": faults, "shards": shards},
                   fh, indent=2)
 
-    print("%d de %d `bad` se dispararon con algún fault; %d no."
+    print("%d of %d `bad`s fired under some fault; %d did not."
           % (len(declared) - len(dead), len(declared), len(dead)))
 
     if args.write:
         os.makedirs(os.path.dirname(args.ledger) or ".", exist_ok=True)
         with open(args.ledger, "w", encoding="utf-8") as fh:
             fh.write(render(dead, reasons_from(args.ledger), faults, shards))
-        print("escrito %s con %d entrada(s)" % (args.ledger, len(dead)))
+        print("wrote %s with %d entry(ies)" % (args.ledger, len(dead)))
         return 0
 
     known = read_ledger(args.ledger)
     if known is None:
-        print("\nNo existe %s. Generalo con --write y justificá cada línea." % args.ledger,
+        print("\n%s does not exist. Generate it with --write and justify every line." % args.ledger,
               file=sys.stderr)
         return 1
 
@@ -220,15 +223,15 @@ def main():
     new = sorted(keyed[k] for k in set(keyed) - known)
     gone = sorted(known - set(keyed))
     if not new and not gone:
-        print("el libro de cuentas describe la suite: %d entrada(s)." % len(known))
+        print("the ledger describes the suite: %d entry(ies)." % len(known))
         return 0
     if new:
-        print("\n%d check(s) que ningún fault caza y no están en el libro. Escribiles un "
-              "fault, o el motivo:" % len(new), file=sys.stderr)
+        print("\n%d check(s) no fault provokes and the ledger does not carry. Write them "
+              "a fault, or the reason:" % len(new), file=sys.stderr)
         for m in new:
             print("  + %s" % m[:110], file=sys.stderr)
     if gone:
-        print("\n%d entrada(s) del libro que YA se pueden medir. Sacalas:" % len(gone),
+        print("\n%d ledger entry(ies) that CAN be measured now. Take them out:" % len(gone),
               file=sys.stderr)
         for m in gone:
             print("  - %s" % m[:110], file=sys.stderr)

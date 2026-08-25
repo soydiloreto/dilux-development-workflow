@@ -74,17 +74,17 @@ def edit(rel, old, new, last=False, may_not_parse=False):
 
 
 def edit_re(rel, pattern, repl, what):
-    """Como `edit`, pero el ancla es una EXPRESIÓN, no un literal.
+    """Like `edit`, but the anchor is an EXPRESSION, not a literal.
 
-    Existe por una sola clase de fault: los que tienen que tocar una línea que
-    lleva un número que cambia solo. `EXPECT_CHECKS=553` como ancla literal
-    significa que agregar un check rompe el fault que comprueba que el total
-    está fijado — y lo que se rompe es justamente la comprobación de que nadie
-    borró checks. Pasó tres veces en una noche, con `EXPECT_MUTATIONS` y con
-    `EXPECT_CHECKS` dos veces.
+    It exists for a single class of fault: the ones that have to touch a line
+    carrying a number that changes on its own. `EXPECT_CHECKS=553` as a literal
+    anchor means that adding a check breaks the fault that verifies the total
+    is pinned — and what breaks is precisely the verification that nobody
+    deleted checks. It happened three times in one night, with
+    `EXPECT_MUTATIONS` and with `EXPECT_CHECKS` twice.
 
-    `what` describe qué se espera encontrar, para que `--check-anchors` diga
-    algo accionable cuando deje de estar.
+    `what` describes what is expected to be found, so that `--check-anchors`
+    says something actionable when it is gone.
     """
     rx = re.compile(pattern, re.M)
 
@@ -93,9 +93,9 @@ def edit_re(rel, pattern, repl, what):
         text = open(path, encoding="utf-8").read()
         out, n = rx.subn(repl, text, count=1)
         if not n:
-            return f"{what} ya no está en {rel} — actualizá esta mutación"
+            return f"{what} is gone from {rel} — update this mutation"
         if out == text:
-            return f"{what} en {rel}: la sustitución no cambió nada"
+            return f"{what} in {rel}: the substitution changed nothing"
         open(path, "w", encoding="utf-8").write(out)
         return None
 
@@ -104,17 +104,17 @@ def edit_re(rel, pattern, repl, what):
 
 
 def multi(*parts):
-    """Varias ediciones como UN fault.
+    """Several edits as ONE fault.
 
-    Existe porque hay defectos que no viven en una línea. El bucle correctivo
-    devuelve compuertas en dos lugares —el estado en disco y la lista de aristas
-    que las devuelven— y romper uno solo lo tapa el otro: el fault sobrevive y
-    parece que el check no puede fallar, cuando lo que no puede es una edición
-    sola. Lo pidió el mapa de kills, que es donde se vio.
+    It exists because some defects do not live on one line. The corrective loop
+    returns gates in two places — the state on disk and the list of edges that
+    return them — and breaking just one is covered by the other: the fault
+    survives and the check looks like it cannot fail, when what cannot fail is
+    a single edit. The kill map asked for this, which is where it was seen.
 
-    El probe es el del PRIMER pedazo: `--check-anchors` pregunta si el fault
-    todavía encuentra qué romper, y si el primero se movió el resto no importa.
-    Los demás igual reportan su propio problema al inyectarse.
+    The probe is the FIRST piece's: `--check-anchors` asks whether the fault
+    still finds something to break, and if the first piece moved the rest do
+    not matter. The others still report their own problem when injected.
     """
     def apply(repo):
         for part in parts:
@@ -212,8 +212,9 @@ MUTATIONS = [
           "    if require_seal and sealed != digest:",
           "    if False:")),
     ("the spent proposal is consumed on the gate's word again, not the commit's",
-     # El defecto medido: git falla después del allow y la aprobación ya no
-     # está. Acá el consumo deja de mirar si HEAD lleva los bytes aprobados.
+     # The measured defect: git fails after the allow and the approval is no
+     # longer there. Here the consumption stops checking whether HEAD carries
+     # the approved bytes.
      edit("ddw/scripts/hook-gate.py",
           '    if head.returncode != 0:\n'
           '        return\n'
@@ -272,7 +273,7 @@ MUTATIONS = [
      edit("ddw/rules/define.instructions.md",
           "2. **Open the sub-ticket, directly in the phase the split paused from.**",
           "2. **Open the sub-ticket through CLASSIFY, like every ticket.**")),
-    # La familia de la ronda 4: reglas que median cero y avalaban igual.
+    # The round-4 family: rules that measured zero and vouched anyway.
     ("the backticked test names go back to being invisible to F-VER-06",
      edit("ddw/scripts/validate_verify.py",
           '            name = raw.strip("`").rsplit("::", 1)[-1].strip("`")',
@@ -289,7 +290,7 @@ MUTATIONS = [
      edit("ddw/scripts/validate_spec.py",
           "        if not frs or not acs:",
           "        if False:")),
-    # El gate pr y su receipt (ronda 4: el merge borra la rama y el check quedaba ciego).
+    # The pr gate and its receipt (round 4: the merge deletes the branch and the check went blind).
     ("the pr gate goes back to resolving through whatever branch the repo is on",
      edit("ddw/scripts/validate-transition.py",
           "        if isinstance(rec, dict) and rec.get(\"number\"):",
@@ -306,7 +307,7 @@ MUTATIONS = [
      edit("ddw/scripts/validate-transition.py",
           '    if str(pr.get("state", "")).upper() in ("OPEN", "MERGED"):',
           '    if str(pr.get("state", "")).upper() in ("OPEN", "MERGED", "CLOSED"):')),
-    # El merge gate (ronda 4: el acto irreversible corría sin que ningún hook lo viera).
+    # The merge gate (round 4: the irreversible act ran with no hook watching it).
     ("gh pr merge goes back to running with no hook watching",
      edit("ddw/scripts/hook-gate.py",
           "        if _IS_PR_MERGE.search(command):",
@@ -411,15 +412,15 @@ MUTATIONS = [
      edit("ddw/scripts/validate_adr.py", "    if offenders:", "    if False:")),
     ("one option is a decision again",
      edit("ddw/scripts/validate_adr.py", "    if len(names) >= 2:", "    if len(names) >= 0:")),
-    # El bloque ENTERO, que es como estaba el repo: `plan.instructions.md` no
-    # nombraba la skill en ningún lado de su proceso. Recortar sólo la primera
-    # frase dejaba el resto del párrafo nombrándola, y el control —que pregunta
-    # si la fase rutea a la skill— seguía pasando sobre un defecto real.
+    # The WHOLE block, which is how the repo actually was: `plan.instructions.md`
+    # named the skill nowhere in its process. Trimming only the first sentence
+    # left the rest of the paragraph naming it, and the control — which asks
+    # whether the phase routes to the skill — kept passing over a real defect.
     ("PLAN stops asking what it decided that nobody could reconstruct",
      edit_re("ddw/rules/plan.instructions.md",
              r"(?s)   \*\*Then ask what step 3 decided.*?(?=\n5\. \*\*Impact check)",
              "",
-             "el paso que manda escribir un ADR desaparece de PLAN")),
+             "the step that orders writing an ADR disappears from PLAN")),
     ("a split can drop an acceptance criterion and nothing counts",
      edit("ddw/scripts/validate_prd.py",
           "            if problems:", "            if False:")),
@@ -436,11 +437,11 @@ MUTATIONS = [
      edit("ddw/scripts/validate-transition.py",
           '    if autonomy == "minimal":\n        return None\n    turn = _turn_now(root)',
           '    if autonomy == "never-happens":\n        return None\n    turn = _turn_now(root)')),
-    # Las dos mitades juntas: sin contador, `_turn_now` devuelve 0 en vez de
-    # None y `_record_arrow` escribe igual, así que la primera flecha deja
-    # marca y la segunda se refusa — en toda herramienta que no escriba turnos.
-    # Mutar una sola de las dos no cambia nada, y una mutación que no puede
-    # fallar no es evidencia de nada.
+    # Both halves together: without a counter, `_turn_now` returns 0 instead of
+    # None and `_record_arrow` writes anyway, so the first arrow leaves a mark
+    # and the second is refused — in every tool that does not write turns.
+    # Mutating only one of the two changes nothing, and a mutation that cannot
+    # fail is not evidence of anything.
     ("a missing turn counter refuses every write instead of staying quiet",
      multi(edit("ddw/scripts/validate-transition.py",
                 "    except (OSError, ValueError):\n        return None\n\n\ndef _record_arrow(root):",
@@ -2232,14 +2233,14 @@ MUTATIONS = [
           'repo = tempfile.mkdtemp(dir=os.environ["WORK"])', "repo = tempfile.mkdtemp()")),
     ("WORK stops being exported, so nothing can anchor to the one cleanup there is",
      edit("scripts/verify_install.sh", 'export WORK="$(mktemp -d)"', 'WORK="$(mktemp -d)"')),
-    # Dos redacciones anteriores de este fault picaban código redundante y no
-    # las mataba nada: `UnicodeDecodeError` es subclase de `ValueError`, y la
-    # lectura en bytes está cubierta por el guard que corre antes en TODOS los
-    # caminos. El guard es la defensa viva — sin él la línea rota se descarta
-    # callada y el journal queda más corto que la historia que verifica.
-    # Las tres siguientes salieron de correr la suite bajo `coverage` midiendo
-    # también los subprocesos: son líneas de enforcement que la suite no
-    # ejecutaba ni una vez. No las encontró nadie leyendo el código.
+    # Two earlier wordings of this fault picked at redundant code and nothing
+    # killed them: `UnicodeDecodeError` is a subclass of `ValueError`, and the
+    # byte-level read is covered by the guard that runs earlier on ALL paths.
+    # The guard is the living defense — without it the broken line is discarded
+    # silently and the journal ends up shorter than the history it verifies.
+    # The next three came from running the suite under `coverage`, measuring
+    # the subprocesses too: they are enforcement lines the suite was not
+    # executing even once. Nobody found them by reading the code.
     ("a receipt written before the corrective loop took the gate back reopens it again",
      edit("ddw/scripts/validate-transition.py",
           "    if written_at is not None and written_at > spent_at:\n        return None",
@@ -2256,8 +2257,8 @@ MUTATIONS = [
      edit("ddw/scripts/validate_sast.py",
           "                if (today - made).days > 190:",
           "                if False:")),
-    # Estos cuatro salieron de una auditoría dirigida a la instalación y los seis
-    # adaptadores. Los cuatro sobrevivían a la suite entera cuando se propusieron.
+    # These four came out of an audit aimed at the installation and the six
+    # adapters. All four survived the entire suite when they were proposed.
     ("a write-deciding hook stops refusing when there is no python3 to judge with",
      edit("adapters/copilot/scripts/pre-tool-use.sh",
           'command -v python3 >/dev/null 2>&1 || {\n'
@@ -2277,10 +2278,10 @@ MUTATIONS = [
      edit("uninstall.sh",
           'python3 "$SELF/scripts/uninstall_repo.py" --repo "$TARGET" --self "$SELF" --plan $FORCE',
           'python3 "$SELF/scripts/uninstall_repo.py" --repo "$TARGET" --self "$SELF" --plan')),
-    # Ocho de una auditoría dirigida al núcleo de enforcement. Cuatro sobrevivían
-    # a la suite entera cuando se propusieron; los otros cuatro ya morían y se
-    # agregan porque la lista es la cobertura: un check sin nada que lo mida es
-    # un check que nadie sabe si puede fallar.
+    # Eight from an audit aimed at the enforcement core. Four survived the
+    # entire suite when they were proposed; the other four already died, and
+    # they are added because the list is the coverage: a check with nothing
+    # measuring it is a check nobody knows can fail.
     ("a NotebookEdit writes product source with no path for any guard to see",
      edit("ddw/scripts/validate-transition.py",
           'PATH_KEYS = ("file_path", "notebook_path", "path", "filePath", "file", "absolute_path")',
@@ -2310,9 +2311,9 @@ MUTATIONS = [
      edit("ddw/scripts/validate-transition.py",
           "    if not appended:\n        if new_phase != old_phase:",
           "    if not appended:\n        if False:")),
-    # Diez de una auditoría dirigida a los validadores de artefactos. Ocho
-    # sobrevivían a las 553 comprobaciones: son las reglas que deciden si un
-    # documento vacío, o uno que se aprueba a sí mismo, gana una compuerta.
+    # Ten from an audit aimed at the artifact validators. Eight survived the
+    # 553 checks: these are the rules that decide whether an empty document,
+    # or one that approves itself, earns a gate.
     ("a threat model that names nothing from its own design earns the gate",
      edit("ddw/scripts/validate_threat.py",
           "        if anchors and not cited:", "        if False:")),
@@ -2369,18 +2370,19 @@ MUTATIONS = [
      edit("ddw/scripts/validate-transition.py",
           '"this at all, that is theirs to say — ASK them, and classify with the tier "',
           '"this at all, take `--to CLASSIFY --tier FREE` and then `--to FREE`. Or ask "')),
-    # Cuatro de FORMA, no de contenido: borran un archivo entero.
+    # Four of FORM, not content: they delete an entire file.
     #
-    # El mapa de kills los pidió. Los cuatro conteos fijados —skills, agentes,
-    # reglas, adaptadores— eran checks que ningún fault provocaba, y no porque
-    # no pudieran fallar sino porque la lista no tenía ninguna mutación capaz de
-    # borrar un archivo. Un conteo que nada puede desmentir es un conteo que
-    # informa verde por no saber decir otra cosa.
-    # El recibo, que es lo único que separa «el validador dijo que pasa» de «hay
-    # una compuerta abierta». Cuatro checks lo afirmaban —spec, tests, threat,
-    # verify: «rechaza un documento sano o no escribe recibo»— y ningún fault
-    # los provocaba: se podía dejar de escribirlo entero y los cuatro seguían
-    # verdes. Es la mitad de cada uno de esos mensajes que nadie medía.
+    # The kill map asked for them. The four pinned counts — skills, agents,
+    # rules, adapters — were checks no fault ever triggered, and not because
+    # they could not fail but because the list had no mutation capable of
+    # deleting a file. A count nothing can contradict is a count that reports
+    # green for lack of anything else to say.
+    # The receipt, which is the only thing separating "the validator said it
+    # passes" from "there is an open gate". Four checks asserted it — spec,
+    # tests, threat, verify: "rejects a healthy document or writes no receipt" —
+    # and no fault triggered them: the whole receipt could stop being written
+    # and all four stayed green. It is the half of each of those messages that
+    # nobody measured.
     ("a validator that passes stops leaving the receipt its gate looks for",
      edit("ddw/scripts/ddw_receipt.py",
           '    with open(os.path.join(sess, name), "w", encoding="utf-8") as fh:\n'
@@ -2395,10 +2397,10 @@ MUTATIONS = [
      delete("ddw/rules/branches.instructions.md")),
     ("an adapter disappears from the tree and the pinned count says nothing",
      delete("adapters/cursor")),
-    # ── Del mapa de kills, lista A ──────────────────────────────────────────
-    # El stand-down volvió a existir. Antes era un bug de condición; ahora el
-    # fault es el bloque entero, porque no hay manifiesto de repo que releve a
-    # nadie: pararse acá es no gatear en ningún lado.
+    # ── From the kill map, list A ───────────────────────────────────────────
+    # The stand-down came back into existence. It used to be a condition bug;
+    # now the fault is the whole block, because there is no repo manifest that
+    # relieves anyone: standing down here is gating nowhere.
     ("Copilot's user-level hook stands down for a repo hook again, and `copilot -p` gates nothing",
          edit("adapters/copilot/scripts/post-write.sh",
               "cat > /dev/null            # drain the event; post mode reads the disk, not stdin\n",
@@ -2407,10 +2409,10 @@ MUTATIONS = [
               "  echo '{}'\n"
               "  exit 0\n"
               "fi\n")),
-    # El `bad` del modo `report` de `check_post_hook` no lo disparaba ningún
-    # fault: el stand-down de arriba está detrás de `DDW_PLUGIN_ROOT`, y ese
-    # check corre el hook sin esa variable. Un check que nada puede hacer
-    # fallar informa verde por no saber decir otra cosa. Éste lo hace fallar.
+    # The `bad` of `check_post_hook`'s `report` mode was triggered by no
+    # fault: the stand-down above sits behind `DDW_PLUGIN_ROOT`, and that
+    # check runs the hook without that variable. A check nothing can make
+    # fail reports green for lack of anything else to say. This one makes it fail.
     ("Copilot's post net answers every write with a bare {} — the one tool whose post hook cannot "
      "refuse stops speaking too, and a forged state reaches the model as nothing",
          edit("adapters/copilot/scripts/post-write.sh",
@@ -2531,30 +2533,31 @@ MUTATIONS = [
               "        # An error is not an answer. Offline, rate-limited, unauthenticated, a",
               "    if False:\n"
               "        # An error is not an answer. Offline, rate-limited, unauthenticated, a")),
-    # Era: «deja de pararse, y toda escritura se juzga dos veces». Ese fault
-    # murió con el stand-down, y su lugar lo toma el que sí existe — el hook
-    # resuelve el método desde el repo y, si no hay, desde el plugin. Sacarle la
-    # segunda mitad deja al plugin sin nada que ejecutar.
+    # It used to be: "stops standing down, and every write is judged twice".
+    # That fault died with the stand-down, and its place is taken by the one
+    # that does exist — the hook resolves the method from the repo and, failing
+    # that, from the plugin. Removing the second half leaves the plugin with
+    # nothing to execute.
     ("the Copilot hook stops falling back to the plugin's method, so a plugin-only install gates nothing",
          edit("adapters/copilot/scripts/pre-tool-use.sh",
               "  if [ -n \"${DDW_PLUGIN_ROOT:-}\" ] && [ -f \"$DDW_PLUGIN_ROOT/ddw/scripts/hook-gate.py\" ]; then\n"
               "    DDW=\"$DDW_PLUGIN_ROOT/ddw\"\n",
               "  if false; then\n"
               "    DDW=\"$DDW_PLUGIN_ROOT/ddw\"\n")),
-    # ── Del mapa de kills, lista B ──────────────────────────────────────────
-    ("el recipe de Claude coloca las skills dentro de .ddw/, y el método vuelve a llevar "
-     "payload de una herramienta",
+    # ── From the kill map, list B ───────────────────────────────────────────
+    ("Claude's recipe places the skills inside .ddw/, and the method goes back to "
+     "carrying one tool's payload",
      edit("adapters/claude/adapter.json",
           '"dir": ".claude/skills",',
           '"dir": ".ddw/skills",')),
-    ("el snippet de Claude deja de ser un puntero y copia las instrucciones: dos copias "
-     "que mantener en paso",
+    ("Claude's snippet stops being a pointer and copies the instructions: two copies "
+     "to keep in step",
      edit("adapters/claude/CLAUDE.snippet.md",
           "@AGENTS.md\n@.ddw/orchestrator.md\n",
           "@AGENTS.md\n@.ddw/orchestrator.md\n\n"
           "Before answering, read `.ddw/orchestrator.md` and run its Boot Sequence. It is a strict state\n"
           "machine: it decides what you are allowed to do based on the phase recorded in `.ddw-state.json`.\n")),
-    ("el plugin de OpenCode deja de juzgar las escrituras antes de que ocurran",
+    ("OpenCode's plugin stops judging writes before they happen",
      edit("adapters/opencode/plugin/ddw.js",
           '      if (!WRITE_TOOLS.has(input?.tool)) return\n'
           '      if (!installed()) return\n'
@@ -2564,35 +2567,35 @@ MUTATIONS = [
           '      if (!installed()) return\n'
           '      try {\n'
           '        runGate("pre",')),
-    ("W-SAST-01 deja de contar la palabra 'low' y sólo mira 'informational'",
+    ("W-SAST-01 stops counting the word 'low' and only looks at 'informational'",
      edit("ddw/scripts/validate_sast.py",
           '    lows = [m for m in re.finditer(r"\\b(?:low|informational|informativ\\w*)\\b",',
           '    lows = [m for m in re.finditer(r"\\b(?:informational|informativ\\w*)\\b",')),
-    ("F-SPEC-15 aprueba un fix-plan sin plan de rollback: la sección deja de ser obligatoria",
+    ("F-SPEC-15 approves a fix-plan with no rollback plan: the section stops being mandatory",
      edit("ddw/scripts/validate_spec.py",
           '        rb = _section_body(text, ("rollback", "plan de rollback", "reversa"))\n'
           '        if rb:\n',
           '        rb = _section_body(text, ("rollback", "plan de rollback", "reversa"))\n'
           '        if True:\n')),
-    ("DEFINE deja de medir la deriva al retomar una rama que ya existía",
+    ("DEFINE stops measuring the drift when resuming a branch that already existed",
      edit("ddw/rules/define.instructions.md",
           '**Then measure the drift** (checkpoint 2 of "Staying current" in `.ddw/rules/branches.instructions.md`):\n'
           '`git fetch origin` and `git rev-list --count HEAD..origin/{base}`. Silent if it is 0; if the base\n'
           'moved, report how far and offer to update. Do not rebase or merge without the user saying so.',
           'Do not rebase or merge without the user saying so.')),
-    ("el instalador deja de decir si está instalando o actualizando",
+    ("the installer stops saying whether it is installing or updating",
      edit("install.sh",
           '  echo "  DDW is updating: $TARGET"',
           '  echo "  DDW: $TARGET"')),
-    ("un rule file puede cambiar sin mover su propia versión",
+    ("a rule file can change without moving its own version",
      edit("scripts/check_versions.py",
           "                if m and m.group(1) == now:",
           "                if False:")),
-    ("un recipe se queda sin label, y el instalador pierde el bloque de esa herramienta",
+    ("a recipe is left without a label, and the installer loses that tool's block",
      edit("adapters/opencode/adapter.json",
           '"label": "OpenCode",',
           '"label": "",')),
-    ("el cierre de un ticket FEATURE deja de exigir commit y PR",
+    ("closing a FEATURE ticket stops requiring commit and PR",
      edit("ddw/rules/transition-graph.json",
           '      "CLOSEOUT->IDLE": {\n'
           '        "gates": [\n'
@@ -2603,21 +2606,21 @@ MUTATIONS = [
           '      "CLOSEOUT->IDLE": {\n'
           '        "gates": []\n'
           '      },')),
-    ("el validador de tests vuelve a exigir la etiqueta larga: una tabla `| Line | 88% |` "
-     "se lee como cobertura ausente",
+    ("the tests validator goes back to demanding the long label: a `| Line | 88% |` "
+     "table reads as absent coverage",
      edit("ddw/scripts/validate_tests.py",
           '    line = _number(text, "Line coverage", "Cobertura de l[ií]neas", "Lines", "Line")',
           '    line = _number(text, "Line coverage", "Cobertura de l[ií]neas", "Lines")')),
-    ("el instalador vuelve a pisar el AGENTS.md que ya estaba con la plantilla",
+    ("the installer goes back to flattening the AGENTS.md that was already there with the template",
      edit("install.sh",
           'if [ -f "$TARGET/AGENTS.md" ]; then',
           'if false; then')),
-    ("el marketplace declara el owner con otro nombre de campo y el esquema lo rechaza",
+    ("the marketplace declares the owner under another field name and the schema rejects it",
      edit(".claude-plugin/marketplace.json",
           '  "owner": {',
           '  "author": {')),
-    ("el instalador deja de reconocer sus propios archivos: toda segunda corrida los "
-     "reporta como colisión del usuario",
+    ("the installer stops recognising its own files: every second run reports them "
+     "as the user's collision",
      edit("scripts/install_target.py",
           "    if _same(src_path, dst_path):\n"
           "        manifest[rel] = _fingerprint(dst_path)\n"
@@ -2625,120 +2628,120 @@ MUTATIONS = [
           "    if manifest.get(rel) == _fingerprint(dst_path):\n"
           "        return True                       # ours, untouched, superseded\n",
           "")),
-    ("el procedimiento de desinstalación de Copilot deja de decir qué archivo de nivel "
-     "usuario hay que borrar",
+    ("Copilot's uninstall procedure stops saying which user-level file has to be "
+     "deleted",
      edit(".github/INSTALL.md",
           "Then delete `~/.copilot/hooks/ddw.json`",
           "Then delete `~/.copilot/ddw/`")),
-    ("la doc del instalador de Copilot vuelve a dictar el JSON en vez de correr el script "
-     "que lo escribe, y el nivel se retipea mal",
+    ("Copilot's install doc goes back to dictating the JSON instead of running the "
+     "script that writes it, and the level gets retyped wrong",
      edit(".github/INSTALL.md",
           "python3 ROOT/adapters/copilot/wire-user-hooks.py ROOT",
           "cat ~/.copilot/hooks/ddw.json")),
-    ("el instalador avisa por un heading que su propia plantilla nunca escribe, así que "
-     "el aviso sale en cada corrida",
+    ("the installer warns over a heading its own template never writes, so the "
+     "warning comes out on every run",
      edit("install.sh",
           '  for h in "## Stack" "## Architecture conventions" "## Domain glossary"; do',
           '  for h in "## Stack" "## Architecture conventions" "## Domain glossary" "## Deployment"; do')),
-    ("el desinstalador nunca borra el manifest: el repo sigue diciendo que DDW está instalado",
+    ("the uninstaller never deletes the manifest: the repo keeps saying DDW is installed",
      edit("scripts/uninstall_repo.py",
           "    if os.path.exists(mpath) and not kept:",
           "    if False:")),
-    ("el closeout deja el modo de autonomía puesto, y el ticket siguiente hereda el "
-     "permiso de no preguntar",
+    ("the closeout leaves the autonomy mode set, and the next ticket inherits the "
+     "permission not to ask",
      edit("ddw/scripts/transition.py",
           '        for key in ("ticket", "title", "tracker", "block", "discovery", "autonomy"):',
           '        for key in ("ticket", "title", "tracker", "block", "discovery"):')),
-    ("validate_spec.py deja de refutar QUICK-FIX y acuña un recibo para una fase que ese "
-     "tier no tiene",
+    ("validate_spec.py stops refuting QUICK-FIX and mints a receipt for a phase that "
+     "tier does not have",
      edit("ddw/scripts/validate_spec.py",
           '    if args.tier == "QUICK-FIX":',
           '    if False:')),
-    # ── Del mapa de kills, lista C ──────────────────────────────────────────
-    ("el desinstalador busca en .gitignore los marcadores del archivo de contexto",
+    # ── From the kill map, list C ───────────────────────────────────────────
+    ("the uninstaller searches .gitignore for the context file's markers",
          edit("scripts/uninstall_repo.py",
               "        out, found = strip_block(text, GI_BEGIN, GI_END)",
               "        out, found = strip_block(text, BEGIN, END)")),
-    ("la excepción del cascarón vacío se ensancha de AGENTS.md a todo archivo de contexto",
+    ("the empty-shell exception widens from AGENTS.md to every context file",
          edit("scripts/uninstall_repo.py",
               '        if not out.strip() and name != "AGENTS.md":',
               "        if not out.strip() and name not in CONTEXT_FILES:")),
-    ("FEATURE gana un atajo DEFINE->CODE y PLAN deja de ser obligatorio",
+    ("FEATURE gains a DEFINE->CODE shortcut and PLAN stops being mandatory",
          json_edit("ddw/rules/transition-graph.json",
                    lambda d: d["tiers"]["FEATURE"].update({"DEFINE->CODE": {"gates": []}}))),
-    ("el grafo deja salir de IDLE directo a DEFINE, sin clasificar y sin ticket",
+    ("the graph lets IDLE go straight to DEFINE, unclassified and with no ticket",
          json_edit("ddw/rules/transition-graph.json",
                    lambda d: d["common"].update({"IDLE->DEFINE": {"gates": []}}))),
-    ("la arista de QUICK-FIX a CODE deja de pedir el fix-brief",
+    ("QUICK-FIX's edge into CODE stops asking for the fix-brief",
          json_edit("ddw/rules/transition-graph.json",
                    lambda d: d["tiers"]["QUICK-FIX"]["DEFINE->CODE"].update({"gates": []}))),
-    ("F-SPEC-06 sigue en el catálogo y ya no mira nada: siempre dice que sí",
+    ("F-SPEC-06 stays in the catalog and no longer looks at anything: it always says yes",
          edit("ddw/scripts/validate_spec.py",
               '    verdict("F-SPEC-06", no_tests, "every block lists at least one required test",\n'
               '            "block with no tests")',
               '    ok("F-SPEC-06", "every block lists at least one required test")')),
-    ("el validador de amenazas se queda con cinco categorías STRIDE",
+    ("the threat validator is left with five STRIDE categories",
          edit("ddw/scripts/validate_threat.py",
               'STRIDE = ("Spoofing", "Tampering", "Repudiation", "Information Disclosure",',
               'STRIDE = ("Spoofing", "Tampering", "Information Disclosure",')),
-    ("el hook PreCompact de Claude vuelve a llevar su propia copia del recordatorio",
+    ("Claude's PreCompact hook goes back to carrying its own copy of the reminder",
          edit("adapters/claude/hooks/pre-compact.sh",
               "command -v python3 >/dev/null 2>&1 || exit 0",
               'echo "DDW POST-COMPACTION: re-read the orchestrator and .ddw-state.json before answering."\n'
               "command -v python3 >/dev/null 2>&1 || exit 0")),
-    ("el archivo de estado se reconoce por el nombre con que se lo escribió, no por lo que resuelve",
+    ("the state file is recognised by the name it was written under, not by what it resolves to",
          edit("ddw/scripts/validate-transition.py",
               "    if state_real in targets and writing:",
               "    if state_real in lexicals and writing:")),
-    ("el conjunto sellado pierde el directorio de hooks de Gemini",
+    ("the sealed set loses Gemini's hooks directory",
          edit("ddw/scripts/validate-transition.py",
               '    ".gemini/hooks/ddw/", ".github/hooks/", ".opencode/plugins/",',
               '    ".github/hooks/", ".opencode/plugins/",')),
-    ("package.json apunta a un ddw.js que se movió",
+    ("package.json points at a ddw.js that moved",
          edit("package.json",
               '"main": "adapters/opencode/plugin/ddw.js"',
               '"main": "adapters/opencode/ddw.js"')),
-    ("una skill queda con el `name` del frontmatter distinto de su directorio",
+    ("a skill is left with its frontmatter `name` different from its directory",
          edit("skills/ddw-create-adr/SKILL.md",
               "name: ddw-create-adr", "name: create-adr")),
-    ("el trailer de atribución sólo se busca al principio del mensaje, no línea por línea",
+    ("the attribution trailer is only searched for at the start of the message, not line by line",
          edit("scripts/check_commits.py",
               'TRAILER = re.compile(r"^(?:AI-assisted|AI-full):\\s*yes\\s*$", re.M | re.I)',
               'TRAILER = re.compile(r"^(?:AI-assisted|AI-full):\\s*yes\\s*$", re.I)')),
-    ("el bucle correctivo vuelve a VERIFY con los gates que había invalidado",
-         multi(  # ← primitivo que hoy no existe en mutate.py
+    ("the corrective loop returns to VERIFY with the gates it had invalidated",
+         multi(  # ← a primitive that does not exist in mutate.py today
            json_edit("ddw/rules/transition-graph.json",
                      lambda d: d["tiers"]["FEATURE"]["VERIFY->CODE"].pop("clears", None)),
            edit("ddw/scripts/transition.py",
                 "        for gate in clear_gates:\n            merged.pop(gate, None)\n",
                 ""))),
-    ("el aviso de headings faltantes imprime el AGENTS.md del usuario en la salida del instalador",
+    ("the missing-headings notice prints the user's AGENTS.md into the installer's output",
          edit("install.sh",
               '    echo "  ⚠ AGENTS.md              is missing headings the method reads:"',
               '    echo "  ⚠ AGENTS.md              is missing headings the method reads; it has:"\n'
               "    grep '^##' \"$TARGET/AGENTS.md\" || true")),
-    ("la línea de arranque vuelve a nombrar un .ddw/orchestrator.md relativo",
+    ("the boot line goes back to naming a relative .ddw/orchestrator.md",
          edit("ddw/scripts/session-boot.py",
               '\n    orch = os.path.join(method, "orchestrator.md")',
               '\n    orch = ".ddw/orchestrator.md"')),
-    ("la plantilla de AGENTS.md deja de aplicarse una sola vez: -f pasa a -d y todo AGENTS.md se pisa",
+    ("the AGENTS.md template stops applying exactly once: -f turns into -d and every AGENTS.md is flattened",
          edit("install.sh",
               'if [ -f "$TARGET/AGENTS.md" ]; then',
               'if [ -d "$TARGET/AGENTS.md" ]; then')),
     ("the seal over DDW's own machinery stops refusing, in the one phase where nothing else does",
      edit("ddw/scripts/validate-transition.py",
           "    if rel == INSTALL_MANIFEST:", "    if False:")),
-    # Los cuatro que el libro de cuentas todavía debía.
+    # The four the ledger still owed.
     ("the PRD validator skill stops naming the rule it is the only one that applies",
-     # La cabecera ahora nombra un rango (F-PRD-01 to F-PRD-10), así que el
-     # literal F-PRD-09 vive solo en la fila del catálogo.
+     # The header now names a range (F-PRD-01 to F-PRD-10), so the literal
+     # F-PRD-09 lives only in the catalog row.
      edit("skills/ddw-validate-prd/SKILL.md",
           "| F-PRD-09 | An AC matches none of the five EARS patterns",
           "| F-PRD-XX | An AC matches none of the five EARS patterns")),
     ("the PRD template goes back to acceptance criteria in prose the validator cannot match",
-     # Las CUATRO apariciones: el check pregunta si la palabra está en el
-     # archivo, y tres ejemplos más una nota sobre el idioma la mantienen viva
-     # aunque el template deje de emitir la forma. Otra defensa por repetición.
+     # All FOUR occurrences: the check asks whether the word is in the file,
+     # and three examples plus a note about the language keep it alive even
+     # when the template stops emitting the form. Another defense by repetition.
      multi(
          edit("skills/ddw-create-prd/SKILL.md",
               "- AC-01 (FR-01): WHEN [trigger], THE [system] SHALL [response].",
@@ -2753,8 +2756,8 @@ MUTATIONS = [
               "`IF … THEN`, `SHALL`)", "`IF … THEN`)"))),
     ("the context check goes back to being able to block over somebody else's stack",
      multi(
-         # Dos frases satisfacen el mismo `grep`, así que una edición sola la
-         # tapa la otra: es la clase de defecto para la que existe `multi`.
+         # Two sentences satisfy the same `grep`, so a single edit is covered
+         # by the other one: the class of defect `multi` exists for.
          edit("skills/ddw-context-check/SKILL.md",
               "commands DDW would otherwise run wrong. Never blocks.",
               "commands DDW would otherwise run wrong."),
@@ -2771,8 +2774,8 @@ MUTATIONS = [
           "5. Am I writing product source? → however is convenient.")),
     ("the file the router loads every turn stops saying what a history entry carries",
      multi(
-         # Lo dice dos veces —la forma declarada y la frase que la sigue— así que
-         # una edición sola la tapa la otra.
+         # It says it twice — the declared shape and the sentence that follows
+         # it — so a single edit is covered by the other one.
          edit("ddw/orchestrator.md",
               "**Shape:** `{timestamp, from, to, action, ticket,\n   tier}`",
               "**Shape:** `{timestamp, from, to, action}`"),
@@ -2782,16 +2785,16 @@ MUTATIONS = [
           "`title`, `tracker`, `autonomy`, `block`, `discovery`",
           "`title`, `tracker`, `discovery`")),
 
-    # ── Los checks del linter de la prosa, uno por uno ────────────────────────
+    # ── The prose linter's checks, one by one ─────────────────────────────────
     #
-    # La suite tiene UN check para todo `lint_method.py` ("the method's prose
-    # claims something the repo does not support"), así que en el mapa de kills
-    # sus treinta y cuatro `fail()` colapsan en uno: mientras cualquier fault lo
-    # mantenga rojo, un check del linter que dejó de encontrar lo suyo sigue
-    # informando verde. Medido aplicando cada mutación a una copia y leyendo QUÉ
-    # mensaje salía: de 34 sitios, 16 los provocaba alguna mutación y 18 no los
-    # provocaba ninguna. Lo que sigue cierra catorce de esos dieciocho; los
-    # cuatro que quedan están en `docs/CHECKS-THAT-CANNOT-FAIL.md` con su razón.
+    # The suite has ONE check for all of `lint_method.py` ("the method's prose
+    # claims something the repo does not support"), so in the kill map its
+    # thirty-four `fail()` sites collapse into one: as long as any fault keeps
+    # it red, a linter check that stopped finding its target keeps reporting
+    # green. Measured by applying each mutation to a copy and reading WHICH
+    # message came out: of 34 sites, 16 were triggered by some mutation and 18
+    # by none. What follows closes fourteen of those eighteen; the four that
+    # remain are in `docs/CHECKS-THAT-CANNOT-FAIL.md` with their reason.
     ("the 🔒 marks vanish from the router, so every Blocked line reads as enforcement",
      multi(*[edit("ddw/orchestrator.md", "🔒 ", "") for _ in range(7)])),
     ("the legend that explains 🔒 goes away and the mark becomes decoration",
@@ -2837,16 +2840,16 @@ MUTATIONS = [
     ("codex's pre-compact passes an event the compaction table does not name",
      edit("adapters/codex/hooks/pre-compact.sh",
           "--format nested --event PreCompact", "--format nested --event preCompact")),
-    # Los cuatro de abajo no rompen una afirmación: hacen DESAPARECER la fuente
-    # contra la que se comprueba. Son los guardias del linter — «el catálogo
-    # parece vacío», «el skill no existe» — y son los que evitan que informe
-    # verde por no haber leído nada. Sin un fault que los encienda, un linter
-    # que dejó de encontrar sus archivos dice lo mismo que uno que los leyó
-    # todos.
-    # `ddw-test`, y no cualquiera: el check mira las invocaciones con la forma
-    # `Skill(skill="…")`, y ése es el que CODE invoca así media docena de veces.
-    # Borrando uno que la prosa nombra sólo como slash-command, el fault no
-    # provoca nada — medido.
+    # The four below do not break a claim: they make the source it is checked
+    # against DISAPPEAR. They are the linter's guards — "the catalog looks
+    # empty", "the skill does not exist" — and they are what keeps it from
+    # reporting green for having read nothing. Without a fault to light them
+    # up, a linter that stopped finding its files says the same thing as one
+    # that read them all.
+    # `ddw-test`, and not just any skill: the check looks at invocations of the
+    # form `Skill(skill="…")`, and that is the one CODE invokes that way half a
+    # dozen times. Deleting one the prose names only as a slash-command, the
+    # fault triggers nothing — measured.
     ("the skill a rule invokes disappears and the prose goes on invoking it",
      delete("skills/ddw-test")),
     ("the skill that reports a context file's missing sections disappears",
@@ -2865,11 +2868,11 @@ MUTATIONS = [
            edit("docs/DEVELOPMENT.md",
                 "| Cursor | `preCompact` | `additional_context` |",
                 "| Cursor | `preCompact` | its own field |"),
-           # Tres filas, no dos. La de OpenCode entra en la tabla por decir
-           # `stdout` de pasada —«its plugin's stdout reaches the terminal»— así
-           # que rompiendo dos quedaban CUATRO y el check no llegaba a su umbral.
-           # Medido: la mutación salía sin provocar nada, que es exactamente el
-           # fault que parece cobertura y no la es.
+           # Three rows, not two. OpenCode's makes it into the table for saying
+           # `stdout` in passing — "its plugin's stdout reaches the terminal" —
+           # so breaking two still left FOUR and the check never reached its
+           # threshold. Measured: the mutation went through triggering nothing,
+           # which is exactly the fault that looks like coverage and is not.
            edit("docs/DEVELOPMENT.md",
                 "its plugin's stdout reaches the terminal",
                 "its plugin's output reaches the terminal"))),
@@ -2883,23 +2886,23 @@ MUTATIONS = [
           "        _odd = _not_a_regular_file(_path)\n        if _odd:\n            raise Block(_odd)\n",
           "")),
     ("the mutation count goes back to being pinned nowhere",
-     # Anclado a la COMPARACIÓN, no al número: anclado al número, agregar un
-     # fault rompe este fault, y lo que se rompe es justo la comprobación de que
-     # no se borraron faults. La única línea que hay que tocar al sumar uno es
-     # `EXPECT_MUTATIONS`, y ninguna otra.
-     # Con `edit_re`, sobre el PIN. Reanclarlo a la comparación fue un error y
-     # la corrida lo dijo: hacer la comparación trivialmente cierta APAGA el
-     # check, y un check apagado no pone nada en rojo — el fault sobrevivía.
-     # Lo que tiene que romperse es el número, para que el check hable.
+     # Anchored to the COMPARISON, not the number: anchored to the number,
+     # adding a fault breaks this fault, and what breaks is precisely the
+     # verification that no faults were deleted. The only line that has to be
+     # touched when adding one is `EXPECT_MUTATIONS`, and no other.
+     # With `edit_re`, over the PIN. Re-anchoring it to the comparison was a
+     # mistake and the run said so: making the comparison trivially true turns
+     # the check OFF, and a check turned off puts nothing in red — the fault
+     # survived. What has to break is the number, so the check speaks.
      edit_re("scripts/verify_install.sh", r"^EXPECT_MUTATIONS=\d+$", "EXPECT_MUTATIONS=0",
-             "la línea que fija el total de mutaciones")),
+             "the line that pins the total of mutations")),
     ("the check total goes back to being unpinned, which used to print as a pass",
      edit_re("scripts/verify_install.sh", r"^EXPECT_CHECKS=\d+$", "EXPECT_CHECKS=0",
-             "la línea que fija el total de checks")),
+             "the line that pins the total of checks")),
     ("the check total becomes a knob the environment can turn again",
      edit_re("scripts/verify_install.sh", r"^EXPECT_CHECKS=(\d+)$",
              r"EXPECT_CHECKS=${EXPECT_CHECKS:-\1}",
-             "la línea que fija el total de checks")),
+             "the line that pins the total of checks")),
     ("the sealed names are judged only after symlinks are followed again",
      edit("ddw/scripts/validate-transition.py",
           "        if lexical != target:\n            reason = enforcement_write_denied(lexical, root)\n"
@@ -3061,11 +3064,12 @@ MUTATIONS = [
      edit("scripts/lint_method.py", "    check_tiers_documented(root, graph)\n", "")),
     ("the shard timeout goes back under what a shard actually takes",
      edit(".github/workflows/mutations.yml", "    timeout-minutes: 75", "    timeout-minutes: 30")),
-    # Era `\bdos\b` contra `dos\b`, y no la mata nada: `_entry_after` ya exige que
-    # el match SEA la etiqueta, así que el boundary quedó redundante cuando llegó
-    # el guard de posición. Un fault que ninguna comprobación puede ver no mide
-    # una defensa — mide que había dos. Ésta es la que queda viva, y cubre las
-    # seis categorías, no sólo la que termina en `dos`.
+    # It used to be `\bdos\b` against `dos\b`, and nothing kills it:
+    # `_entry_after` already requires the match to BE the label, so the boundary
+    # became redundant when the position guard arrived. A fault no check can see
+    # does not measure a defense — it measures that there were two. This is the
+    # one left alive, and it covers all six categories, not just the one ending
+    # in `dos`.
     ("a category word inside somebody else's sentence answers for the category again",
      edit("ddw/scripts/validate_threat.py",
           '        if m and re.fullmatch(r"[\\s*_`\\-\u2014\u2013|>]*", ln[:m.start()]):',
@@ -3190,29 +3194,29 @@ MUTATIONS = [
      edit("ddw/rules/state.instructions.md",
           '**Under `assisted`, the question comes BEFORE the edge.** A backward edge exists because something\nalready approved turned out to be wrong — and what there is to ask is never permission to correct\na known defect (that is a rubber stamp; the corrective loop is mandatory everywhere the catalog\ndescribes one, `validation-rules.instructions.md` §2) but the decision that MOTIVATES the\ncorrection: which of two contradicting stacks stands, whether the too-big scope splits, the answer\nnobody wrote down. Measured on a live run: the helper took `PLAN→DEFINE` first and asked which\nstack should prevail after, so a user answering "neither — drop the ticket" would have answered\ninto a phase already re-entered and a gate already spent. Where such a decision exists, announce\nthe reason, put the question to the user, and take the edge WITH their answer in hand. Where\nnothing is theirs to decide before the fix — CODE finding a block that names the wrong file has no\nquestion in it, only a correction (`code.instructions.md` § When the spec is the thing that is\nwrong) — announce with the flag up and go; inventing a question there is the rubber stamp again.\nUnder `minimal` the pause goes away like every other arrow\'s, and the move is announced with its\nreason.\n\n**The lane is enforced, not promised — through a file.** Before taking a backward edge under\n`assisted`, write its reason to `.ddw-work/goback-proposal.txt`, naming the edge and opening with\nthe lane: `correction: <the defect a validator or review named>`, or `ask: <the question>`. A\n`correction:` announces and goes, with the file as its durable record. An `ask:` is held by the\nhook until the sealed copy of that exact question matches — which can only be true if it was on\nscreen before the user answered — so executing the loop first and asking after now bounces instead\nof landing (this paragraph alone did not stop it; the fix that introduced it touched only prose,\nand a later run took the edge first anyway). Where no turn hook is wired, the gate stands down and\nsays so here rather than reading as coverage. In both modes what waits at the far end is unchanged:\nthe corrected artifact re-earning the gate the edge just cleared, from a banner that says where it\ncame back from — an approval\nthat does not know it is a re-approval is the same rubber stamp one document later.\n\n',
           "")),
-    # El gemelo del fault de más arriba, que sólo tocaba el mensaje de la
-    # actualización: el `case` de la suite tiene tres brazos y el tercero —el
-    # que dice que la corrida no se anunció de ninguna de las dos maneras— no
-    # lo provocaba nada. Lo pidió el libro de checks, en voz alta, la primera
-    # vez que su job corrió fuera de un dispatch a mano.
-    ("el instalador deja de decir que está instalando, en la primera corrida",
+    # The twin of the fault above, which only touched the update message: the
+    # suite's `case` has three arms and the third — the one that says the run
+    # announced itself in neither of the two ways — was triggered by nothing.
+    # The book of checks asked for it, out loud, the first time its job ran
+    # outside a manual dispatch.
+    ("the installer stops saying that it is installing, on the first run",
      edit("install.sh",
           '  echo "  DDW is installing into: $TARGET"',
           '  echo "  DDW: $TARGET"')),
-    ("el mapa de kills vuelve a correr sólo cuando alguien lo pide",
+    ("the kill map goes back to running only when somebody asks for it",
      edit(".github/workflows/mutations.yml",
           "    name: which checks can never fail? (shard ${{ matrix.shard }}/24)\n"
           "    needs: anchors",
           "    name: which checks can never fail? (shard ${{ matrix.shard }}/24)\n"
           "    if: github.event_name == 'workflow_dispatch'\n"
           "    needs: anchors")),
-    ("el shard del mapa de kills vuelve a un techo donde no entra",
+    ("the kill map's shard goes back to a ceiling it does not fit under",
      edit(".github/workflows/mutations.yml",
-          "    # mutaciones y a ningún otro. El shard más lento tardó 38.\n"
+          "    # job and of no other. The slowest shard took 38.\n"
           "    timeout-minutes: 75",
-          "    # mutaciones y a ningún otro. El shard más lento tardó 38.\n"
+          "    # job and of no other. The slowest shard took 38.\n"
           "    timeout-minutes: 45")),
-    ("el instalador pegado desde una URL vuelve a no encontrarse a sí mismo",
+    ("the installer pasted from a URL goes back to not finding itself",
      edit("install.sh",
           'if ! { [ -f "$SELF/.claude-plugin/plugin.json" ]',
           'if false && { [ -f "$SELF/.claude-plugin/plugin.json" ]')),
@@ -3278,10 +3282,10 @@ MUTATIONS = [
 ]
 
 
-# ¿Hay capa rápida? Preguntado una vez: sin pytest instalado el runner no la
-# usa, y el baseline no tiene que negarse por la ausencia de algo que no iba a
-# usar. El aviso sale una vez, arriba, para que nadie lea una corrida más lenta
-# como una corrida distinta.
+# Is there a fast layer? Asked once: without pytest installed the runner does
+# not use it, and the baseline must not refuse over the absence of something it
+# was never going to use. The notice comes out once, up top, so nobody reads a
+# slower run as a different run.
 HAVE_PYTEST = subprocess.run([sys.executable, "-c", "import pytest"],
                              capture_output=True).returncode == 0
 
@@ -3333,12 +3337,12 @@ def baseline():
         print("The suite does not pass on an UNMUTATED copy of this tree, so every fault "
               "below would\nbe recorded as caught without being examined. Nothing was "
               "injected. The suite said:\n")
-        # Las líneas ✗ PRIMERO, y después la cola. El baseline no para en el
-        # primer fallo —tiene que poder decir «la suite pasa», que es una
-        # afirmación sobre todos los checks— así que lo que falló puede quedar a
-        # cuatrocientas líneas del final, y la cola sola dice «falló algo» sin
-        # decir qué. Eso es exactamente lo que este archivo entero está tratando
-        # de que no pase.
+        # The ✗ lines FIRST, and then the tail. The baseline does not stop at
+        # the first failure — it has to be able to say "the suite passes",
+        # which is a statement about every check — so what failed can sit four
+        # hundred lines from the end, and the tail alone says "something
+        # failed" without saying what. That is exactly what this whole file is
+        # trying to prevent.
         out = r.stdout + r.stderr
         marks = [re.sub(r"\x1b\[[0-9;]*m", "", ln).strip()
                  for ln in r.stdout.splitlines()
@@ -3379,32 +3383,33 @@ def run_one(index, label, mutate, skip_fast=False, want_all_failures=False):
         # The baseline pays the same question on an unmutated copy, for the same
         # reason it pays the suite: a pytest that is already red would report
         # every fault as caught without examining one.
-        # …y el mapa de kills NO la usa, aunque no se haya pedido `--no-fast`.
-        # `run_one` corta acá si pytest se pone rojo, así que el check de la
-        # suite que también habría cazado ese fault nunca queda registrado — y
-        # aparece como «ningún fault lo provoca» cuando sí lo provoca uno. Parte
-        # de los 83 era eso. El atajo es correcto para el veredicto y falso para
-        # el mapa: son dos preguntas distintas sobre la misma corrida.
+        # …and the kill map does NOT use it, even when `--no-fast` was not
+        # asked for. `run_one` cuts off here if pytest goes red, so the suite
+        # check that would also have caught that fault never gets recorded —
+        # and it shows up as "no fault triggers it" when one does. Part of the
+        # 83 was that. The shortcut is correct for the verdict and false for
+        # the map: two different questions about the same run.
         if not skip_fast and not want_all_failures and HAVE_PYTEST:
             fast = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
                                   capture_output=True, text=True, cwd=repo)
             if fast.returncode != 0:
-                return True, None, ["tests/ (capa rápida)"]
-        # Parar al primer ✗ contesta «¿se puso roja?», que es la pregunta del
-        # veredicto. NO es la pregunta del mapa de kills: ahí interesa QUÉ
-        # checks pueden fallar, y con la parada temprana sólo se registra el
-        # primero de cada fault. La primera corrida del mapa dio «352 de 402
-        # nunca se disparan», que leído así es falso — son 352 que nunca fueron
-        # los PRIMEROS. Un número que suena a hallazgo y mide otra cosa.
+                return True, None, ["tests/ (fast layer)"]
+        # Stopping at the first ✗ answers "did it go red?", which is the
+        # verdict's question. It is NOT the kill map's question: there what
+        # matters is WHICH checks can fail, and with the early stop only the
+        # first one for each fault gets recorded. The map's first run said
+        # "352 of 402 never fire", which read that way is false — they are 352
+        # that were never FIRST. A number that sounds like a finding and
+        # measures something else.
         env = dict(os.environ)
         if not want_all_failures:
             env["DDW_STOP_ON_FIRST_FAILURE"] = "1"
         r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                            capture_output=True, text=True, cwd=repo, env=env)
-        # QUÉ check lo mató, no sólo que murió. Con la parada al primer ✗ ese es
-        # el primero que aparece. Sirve para la pregunta que ninguna otra cosa
-        # responde: qué `bad` de la suite no se dispara NUNCA — un check que no
-        # puede fallar reporta verde por no poder decir otra cosa.
+        # WHICH check killed it, not just that it died. With the stop at the
+        # first ✗ that is the first one to appear. It serves the question
+        # nothing else answers: which `bad` of the suite NEVER fires — a check
+        # that cannot fail reports green for lack of anything else to say.
         killers = []
         if r.returncode != 0:
             for ln in r.stdout.splitlines():
@@ -3417,21 +3422,21 @@ def run_one(index, label, mutate, skip_fast=False, want_all_failures=False):
 
 
 def flake_check(rounds, jobs):
-    """El ruido del instrumento, medido antes de creerle.
+    """The instrument's noise, measured before believing it.
 
-    Un rojo espurio no se pierde: se convierte en un KILL. `run_one` lee un exit
-    distinto de cero como «la suite cazó el fault», y no tiene forma de
-    distinguirlo de «la suite falló por su cuenta». Bajo la concurrencia de una
-    corrida completa eso fabrica cobertura, que es el mismo defecto que
-    `baseline` y `--check-anchors` existen para impedir, una capa más abajo.
+    A spurious red does not get lost: it turns into a KILL. `run_one` reads a
+    non-zero exit as "the suite caught the fault", and has no way to tell it
+    apart from "the suite failed on its own". Under the concurrency of a full
+    run that fabricates coverage, which is the same defect `baseline` and
+    `--check-anchors` exist to prevent, one layer further down.
 
-    Así que se corre la suite SIN MUTAR, tantas veces como se pida y a la misma
-    concurrencia que la corrida real, y se nombra todo check que falle. Un check
-    que falla acá no puede matar nada: lo que reporte sobre un fault es sobre sí
-    mismo.
+    So the suite is run UNMUTATED, as many times as asked and at the same
+    concurrency as the real run, and every check that fails is named. A check
+    that fails here cannot kill anything: whatever it reports about a fault is
+    about itself.
 
-    Observado dos veces y no reproducido en cuarenta corridas dirigidas. Esto no
-    lo explica — lo hace visible, que es lo que se puede prometer.
+    Observed twice and not reproduced in forty targeted runs. This does not
+    explain it — it makes it visible, which is what can be promised.
     """
     print(f"Midiendo el ruido: {rounds} corridas de la suite sin mutar, {jobs} a la vez.\n")
 
@@ -3441,19 +3446,19 @@ def flake_check(rounds, jobs):
             shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
             r = subprocess.run(["bash", os.path.join(repo, "scripts", "verify_install.sh")],
                                capture_output=True, text=True, cwd=repo)
-            # El ✗ como MARCADOR, no en cualquier lado de la línea: hay un check
-            # cuyo propio mensaje lleva un ✗ («…can stop the suite at the first
-            # ✗…»), y buscarlo en cualquier posición reportaba ese check verde
-            # como ruido en 24 de 24 corridas. El mismo defecto que este modo
-            # existe para medir, cometido por el modo.
+            # The ✗ as a MARKER, not anywhere in the line: there is a check
+            # whose own message carries a ✗ ("…can stop the suite at the first
+            # ✗…"), and searching for it at any position reported that green
+            # check as noise in 24 of 24 runs. The very defect this mode exists
+            # to measure, committed by the mode.
             bad_lines = []
             for ln in r.stdout.splitlines():
                 clean = re.sub(r"\x1b\[[0-9;]*m", "", ln)
                 if clean.lstrip().startswith("✗"):
                     bad_lines.append(clean.strip().lstrip("✗").strip())
-            # Guardada, no descartada: el nombre del check dice CUÁL falló y no
-            # dice por qué, y el árbol se borra al salir del `with`. Sin esto
-            # cada rojo hay que volver a cazarlo.
+            # Kept, not discarded: the check's name says WHICH one failed and
+            # not why, and the tree is deleted on leaving the `with`. Without
+            # this, every red has to be hunted down again.
             if r.returncode != 0:
                 keep = os.path.join(tempfile.gettempdir(), "ddw-flake-%d.log" % n)
                 with open(keep, "w", encoding="utf-8") as fh:
@@ -3472,14 +3477,14 @@ def flake_check(rounds, jobs):
 
     print(f"\n{'─' * 60}")
     if not seen:
-        print(f"{rounds}/{rounds} corridas verdes. Ningún check falló por su cuenta a esta "
-              f"concurrencia — lo que no prueba que no pueda, sólo que no lo hizo acá.")
+        print(f"{rounds}/{rounds} green runs. No check failed on its own at this "
+              f"concurrency — which does not prove it cannot, only that it did not here.")
         return 0
-    print(f"{len(seen)} check(s) fallaron sobre un árbol SIN MUTAR. Lo que reporten sobre un "
-          f"fault es sobre sí mismos:")
+    print(f"{len(seen)} check(s) failed on an UNMUTATED tree. Whatever they report about a "
+          f"fault is about themselves:")
     for ln, rounds_hit in sorted(seen.items(), key=lambda kv: -len(kv[1])):
         print(f"  · {len(rounds_hit)}/{rounds}  {ln[:96]}")
-    print(f"\nLa salida entera de cada corrida roja quedó en "
+    print(f"\nThe full output of every red run was kept at "
           f"{os.path.join(tempfile.gettempdir(), 'ddw-flake-<n>.log')}")
     return 1
 
@@ -3563,16 +3568,16 @@ def check_anchors():
             _rx = re.compile(probe[2], re.M)
             _out, _n = _rx.subn(probe[3], cache[rel], count=1)
             if not _n:
-                stale.append((i, label, "%s ya no está en %s" % (probe[4], rel)))
+                stale.append((i, label, "%s is gone from %s" % (probe[4], rel)))
                 continue
             if _out == cache[rel]:
-                stale.append((i, label, "%s: la sustitución no cambia nada en %s" % (probe[4], rel)))
+                stale.append((i, label, "%s: the substitution changes nothing in %s" % (probe[4], rel)))
                 continue
             if rel.endswith(".py"):
                 try:
                     compile(_out, rel, "exec")
                 except SyntaxError as exc:
-                    stale.append((i, label, "deja %s sin compilar (%s, línea %s)"
+                    stale.append((i, label, "leaves %s uncompilable (%s, line %s)"
                                   % (rel, exc.msg, exc.lineno)))
                     continue
             continue
@@ -3589,10 +3594,10 @@ def check_anchors():
             # a kill, and the fault it claimed to measure was never in the tree.
             # One of these shipped, and it read as covered for as long as it
             # existed. Compiled in memory: the answer is a parse, not a copy.
-            # …salvo cuando NO parsear ES el defecto. Hay un check que afirma
-            # que un script de `scripts/` deja de parsear y nadie lo corre hasta
-            # el CI; el único fault que puede provocarlo es uno que rompa la
-            # sintaxis. La guarda existe para el caso accidental, no para éste.
+            # …except when NOT parsing IS the defect. There is a check that
+            # asserts a script in `scripts/` stops parsing and nobody runs it
+            # until CI; the only fault that can trigger it is one that breaks
+            # the syntax. The guard exists for the accidental case, not this one.
             if rel.endswith(".py") and not (len(probe) > 5 and probe[5]):
                 text, new, last = cache[rel], probe[3], probe[4]
                 if last:
@@ -3650,10 +3655,11 @@ def cover(path, count):
     wf = yaml.safe_load(open(path, encoding="utf-8"))
     jobs = wf.get("jobs", {})
     steps = [(name, s) for name, job in jobs.items() for s in job.get("steps", [])]
-    # `--kill-map` es OTRA medición, repartida en la misma forma y a pedido: no
-    # contesta «¿se inyectó cada fault?» sino «¿qué check caza a cada uno?». Se
-    # excluye acá y sólo acá, para que la regla de abajo —un job con `if:` no
-    # cubre nada— siga valiendo entera para el job que sí es la cobertura.
+    # `--kill-map` is ANOTHER measurement, sharded the same way and on demand:
+    # it does not answer "was every fault injected?" but "which check catches
+    # each one?". It is excluded here and only here, so that the rule below —
+    # a job with `if:` covers nothing — keeps holding in full for the job that
+    # IS the coverage.
     found = [(name, m) for name, s in steps
              if "--kill-map" not in str(s.get("run", ""))
              for m in [re.search(r"--shard\s+\$\{\{\s*matrix\.(\w+)\s*\}\}/(\d+)",
@@ -3728,17 +3734,17 @@ def main():
                     help="how many faults to inject at once (default: half the cores, capped at "
                          "4 — the bound is disk, not CPU)")
     ap.add_argument("--flake-check", metavar="N", type=int,
-                    help="correr la suite SIN MUTAR N veces a la concurrencia de --jobs y "
-                         "nombrar todo check que falle: un rojo espurio no se pierde, se "
-                         "convierte en un kill")
+                    help="run the suite UNMUTATED N times at the concurrency of --jobs and "
+                         "name every check that fails: a spurious red does not get lost, it "
+                         "turns into a kill")
     ap.add_argument("--no-fast", action="store_true",
-                    help="no preguntar a tests/ primero: cada fault paga la suite entera. "
-                         "Necesario para el mapa de kills, que pregunta QUÉ check mata a "
-                         "cada uno — un kill de la capa rápida esconde el check que también "
-                         "habría fallado.")
-    ap.add_argument("--kill-map", metavar="ARCHIVO",
-                    help="escribir qué check mató a cada fault, y listar los `bad` de la "
-                         "suite que no se disparan con ninguno")
+                    help="do not ask tests/ first: every fault pays for the entire suite. "
+                         "Needed for the kill map, which asks WHICH check kills each one "
+                         "— a kill from the fast layer hides the check that would also "
+                         "have failed.")
+    ap.add_argument("--kill-map", metavar="FILE",
+                    help="write which check killed each fault, and list the suite's `bad` "
+                         "that fire with none of them")
     ap.add_argument("--changed", metavar="BASE",
                     help="only the mutations whose file the diff against BASE touches "
                          "(a pull request's question); the whole list still runs on main")
@@ -3937,17 +3943,17 @@ def main():
             print(f"  {i:2d}. {label}: {why}")
 
     if args.kill_map:
-        # Todos los `bad` que la suite sabe decir, contra los que alguna vez dijo.
-        # Un `bad` que ningún fault provoca es un check que, hasta donde esta
-        # lista sabe, no puede fallar — y un check que no puede fallar informa
-        # verde porque no sabe decir otra cosa, no porque haya mirado algo.
+        # Every `bad` the suite knows how to say, against the ones it ever
+        # said. A `bad` no fault triggers is a check that, as far as this list
+        # knows, cannot fail — and a check that cannot fail reports green
+        # because it cannot say anything else, not because it looked at something.
         suite = open(os.path.join(ROOT, "scripts/verify_install.sh"), encoding="utf-8").read()
         declared = set()
         for m in re.finditer(r'\bbad\s+"((?:[^"\\]|\\.)*)"', suite):
             declared.add(m.group(1).strip())
         fired = {k for ks in kills.values() for k in ks}
-        # El texto que imprime `bad` puede llevar interpolación; se comparan por
-        # prefijo estable para no llamar "nunca disparado" a uno que sí lo fue.
+        # The text `bad` prints can carry interpolation; they are compared by
+        # stable prefix so one that DID fire is not called "never fired".
         def seen(msg):
             head = msg.split("$")[0].strip()[:40]
             return any(head and head in f for f in fired)
@@ -3956,12 +3962,12 @@ def main():
             json.dump({"kills": kills, "never_fired": never,
                        "declared": len(declared), "fired": len(fired)}, fh, indent=2)
         print(f"\n{'─' * 60}")
-        print(f"Mapa de kills: {len(fired)} checks distintos mataron algo; "
-              f"{len(never)} de {len(declared)} `bad` no se disparan con ningún fault.")
+        print(f"Kill map: {len(fired)} distinct checks killed something; "
+              f"{len(never)} of {len(declared)} `bad` fire with no fault at all.")
         for d in never[:40]:
             print(f"  · {d[:100]}")
         if len(never) > 40:
-            print(f"  … y {len(never) - 40} más (la lista completa en {args.kill_map})")
+            print(f"  … and {len(never) - 40} more (the full list in {args.kill_map})")
     return 1 if (survived or broken) else 0
 
 

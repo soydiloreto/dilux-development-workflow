@@ -19,6 +19,32 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.38.0] — Unreleased
+
+### Changed
+
+- **The repository speaks one language.** Roughly fifty files carried Spanish
+  prose — eval scenario narratives, workflow comments, both kill-map ledgers
+  and their generators, installer and adapter comments, test docstrings, the
+  mutation descriptions and the instruments' own messages — while the docs
+  said the repo was English. All of it is English now, and the rule is written
+  in CONTRIBUTING.md. Spanish survives only where it IS the material: fixture
+  data simulating a Spanish-speaking user, the regexes that recognize
+  artifacts written in Spanish, verbatim quotes from measured sessions, and
+  the language-following illustrations. One mutation was re-anchored to the
+  translated line it pins (`690`); every other anchor, grep and ledger key was
+  verified untouched — 704/704 anchors, the full suite, both ledger
+  comparators, the offline evals and 186 tests all green over the translated
+  tree. Flagged, not changed: the FREE banner (`ESTÁS TRABAJANDO SIN
+  WORKFLOW`) is product output hardcoded in Spanish — making it follow the
+  conversation's language is a product decision for its own ticket.
+
+- **The banner scenario carries its first measurements.** Normal 1/2 with
+  Claude (the failing run omitted the status line with the rules intact — the
+  format is intermittent even in the most compliant agent measured), control
+  1/1 red: it discriminates. No CI veto power until a longer batch states its
+  base rate.
+
 ## [0.37.0] — Unreleased
 
 ### Fixed

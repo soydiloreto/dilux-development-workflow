@@ -1,22 +1,22 @@
-"""El arnés de los evals, preguntado directamente.
+"""The eval harness, asked directly.
 
-`evals/runner.py` es el instrumento con el que se mide la capa de
-instrucciones, y un instrumento que nadie mide informa lo que sea. Los
-escenarios lo ejercitan de punta a punta —cada uno levanta un repo, instala el
-método y corre el veredicto—, así que cuestan minutos: acá van las capacidades
-del arnés en sí, que se preguntan en milisegundos y son justamente las que, si
-se rompen callado, hacen que un escenario pase por la razón equivocada.
+`evals/runner.py` is the instrument the instruction layer is measured with,
+and an instrument nobody measures reports whatever. The scenarios exercise it
+end to end — each one stands up a repo, installs the method and runs the
+verdict — so they cost minutes: here go the capabilities of the harness
+itself, which can be asked in milliseconds and are precisely the ones that,
+broken silently, make a scenario pass for the wrong reason.
 
-Las tres que se prueban acá llegaron juntas y por la misma razón: sin ellas,
-una familia entera de escenarios se podía escribir pero no juzgar.
+The three tested here arrived together and for the same reason: without them,
+a whole family of scenarios could be written but not judged.
 
-  · `given.files` — sembrar el árbol. Antes sólo se podía escribir
-    `.ddw-state.json`, así que todo escenario sobre un fuente que ya existe
-    arrancaba con el repo vacío del fixture, o sea midiendo otra cosa.
-  · `expect.file_matches` — afirmar sobre el CONTENIDO. `files_present` no
-    distingue el documento que contesta la pregunta del que se la inventa: los
-    dos existen.
-  · `kind: method-lint` — `lint_method.py` como veredicto, con su control.
+  · `given.files` — seeding the tree. Before, only `.ddw-state.json` could be
+    written, so every scenario about a source file that already exists started
+    from the fixture's empty repo — that is, measuring something else.
+  · `expect.file_matches` — asserting on the CONTENT. `files_present` cannot
+    tell the document that answers the question from the one that makes it
+    up: both exist.
+  · `kind: method-lint` — `lint_method.py` as a verdict, with its control.
 """
 import importlib.util
 import json
@@ -26,7 +26,7 @@ import subprocess
 
 import pytest
 
-pytest.importorskip("yaml")  # el runner sale con exit(2) si falta; no colgar la colección
+pytest.importorskip("yaml")  # the runner exits with exit(2) without it; do not hang collection
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -43,7 +43,7 @@ runner = _load("ddw_eval_runner", "evals/runner.py")
 
 @pytest.fixture()
 def repo(tmp_path):
-    """Un repo git de mentira, con la forma que deja `make_repo`."""
+    """A pretend git repo, shaped the way `make_repo` leaves one."""
     r = tmp_path / "repo"
     r.mkdir()
     for cmd in (["git", "init", "-q"],
@@ -57,7 +57,7 @@ def repo(tmp_path):
     return r
 
 
-# ── given.files: sembrar el árbol ────────────────────────────────────────────
+# ── given.files: seeding the tree ────────────────────────────────────────────
 
 def test_seed_files_writes_and_commits(repo):
     n = runner.seed_files(repo, {"src/account.py": "def delete(): ...\n",
@@ -67,8 +67,8 @@ def test_seed_files_writes_and_commits(repo):
     tracked = subprocess.run(["git", "ls-files"], cwd=repo,
                              capture_output=True, text=True).stdout.split()
     assert "src/account.py" in tracked and "docs/ddw/prd/prd-T-1.md" in tracked
-    # Y el árbol queda limpio: un fuente sembrado y sin commitear es trabajo sin
-    # commitear que el escenario no pidió, y hay reglas que se miden sobre eso.
+    # And the tree ends up clean: a seeded, uncommitted source file is
+    # uncommitted work the scenario did not ask for, and rules get measured on that.
     dirty = subprocess.run(["git", "status", "--porcelain"], cwd=repo,
                            capture_output=True, text=True).stdout.strip()
     assert dirty == ""
@@ -76,18 +76,18 @@ def test_seed_files_writes_and_commits(repo):
 
 def test_seed_files_can_leave_them_uncommitted(repo):
     runner.seed_files(repo, {"src/a.py": "x\n"}, commit=False)
-    # `-uall`: con el default git colapsa el directorio nuevo en `?? src/` y la
-    # aserción sobre la ruta completa no dice nada.
+    # `-uall`: with the default, git collapses the new directory into `?? src/`
+    # and the assertion on the full path says nothing.
     dirty = subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=repo,
                            capture_output=True, text=True).stdout
     assert "?? src/a.py" in dirty
 
 
 def test_seed_files_commits_what_the_install_ignores(repo):
-    # La instalación deja un bloque en `.gitignore`, y lo que ignora —los
-    # tickets pausados, los marcadores de sesión, el journal— es parte de lo que
-    # un escenario necesita sembrar. Sin `-f` el commit no encuentra nada, y el
-    # fixture queda distinto de lo que el escenario dice sin avisar.
+    # The install leaves a block in `.gitignore`, and what it ignores — the
+    # paused tickets, the session markers, the journal — is part of what a
+    # scenario needs to seed. Without `-f` the commit finds nothing, and the
+    # fixture silently ends up different from what the scenario says.
     (repo / ".gitignore").write_text(".ddw-paused/\n")
     runner.seed_files(repo, {".ddw-paused/T-2.json": '{"ticket": "T-2"}\n'})
     tracked = subprocess.run(["git", "ls-files"], cwd=repo,
@@ -96,8 +96,8 @@ def test_seed_files_commits_what_the_install_ignores(repo):
 
 
 def test_seed_files_does_not_write_outside_the_fixture(repo):
-    # El control que reescribió el checkout de quien lo corría costó veinte
-    # minutos de creer que el producto tenía un bug. Por acá no se entra otra vez.
+    # The control that rewrote the checkout of whoever ran it cost twenty
+    # minutes of believing the product had a bug. Nobody comes in this way again.
     with pytest.raises(RuntimeError, match="outside the fixture"):
         runner.seed_files(repo, {"../escaped.py": "x"})
     with pytest.raises(RuntimeError, match="absolute path"):
@@ -110,7 +110,7 @@ def test_seed_files_refuses_the_state_file(repo):
         runner.seed_files(repo, {".ddw-state.json": "{}"})
 
 
-# ── expect.file_matches: el contenido, no la existencia ──────────────────────
+# ── expect.file_matches: the content, not the existence ──────────────────────
 
 def _judge(repo, expect):
     return runner.judge_repo_state({"expect": expect}, repo, [])
@@ -148,8 +148,8 @@ def test_file_matches_on_a_missing_file_is_a_problem_not_a_pass(repo):
 
 
 def test_a_clause_that_asserts_nothing_raises(repo):
-    # Una aserción que no puede juzgar es lo mismo que no escribirla, y acá eso
-    # se lee como verde. Levanta: `run_one` lo convierte en ERROR, que es rojo.
+    # An assertion that cannot judge is the same as not writing it, and here
+    # that reads as green. It raises: `run_one` turns it into ERROR, which is red.
     (repo / "prd.md").write_text("x")
     with pytest.raises(RuntimeError, match="asserts nothing"):
         _judge(repo, {"file_matches": [{"path": "prd.md"}]})
@@ -162,8 +162,8 @@ def test_a_regex_that_does_not_compile_raises(repo):
 
 
 def test_file_matches_works_inside_any_of(repo):
-    # `any_of` juzga cada rama con esta misma función; una capacidad que no
-    # llegue ahí adentro deja media familia de escenarios sin poder escribirse.
+    # `any_of` judges each branch with this same function; a capability that
+    # does not reach inside it leaves half a family of scenarios unwritable.
     (repo / "prd.md").write_text("pendiente de plataforma\n")
     v, _ = _judge(repo, {"any_of": [[
         {"file_matches": [{"path": "prd.md", "matches": "pendiente"}]},
@@ -182,8 +182,8 @@ def _fake_method(tmp_path, body):
 
 
 def test_method_lint_that_never_judged_is_error_not_red(tmp_path, repo):
-    # Un linter que se cae antes de imprimir su veredicto no salió ni verde ni
-    # rojo. Contarlo como rojo regala el modo control entero.
+    # A linter that falls over before printing its verdict came out neither
+    # green nor red. Counting it as red gives away the whole control mode.
     root = _fake_method(tmp_path, "import sys\nsys.stderr.write('Traceback…\\n')\nsys.exit(1)\n")
     v, d = runner.run_method_lint({}, root, repo)
     assert v == runner.ERROR and "nothing was judged" in d
@@ -210,13 +210,13 @@ def test_method_lint_green_tree_passes(tmp_path, repo):
     assert v == runner.PASS
 
 
-# ── un control que no puede discriminar, dicho y contado aparte ──────────────
+# ── a control that cannot discriminate, said and counted separately ──────────
 
 def test_a_control_that_cannot_discriminate_is_skipped_with_its_reason():
-    # Medido: el control de `forged` PASA con un modelo capaz, porque sus tres
-    # ediciones son prosa y el hook rechaza la escritura igual. Dejarlo rojo
-    # para siempre entrena a ignorar el rojo; borrarlo deja al escenario
-    # afirmando que mide algo que no mide.
+    # Measured: the `forged` control PASSES with a capable model, because its
+    # three edits are prose and the hook rejects the write anyway. Leaving it
+    # red forever trains everyone to ignore red; deleting it leaves the
+    # scenario claiming to measure something it does not.
     import types
     sc = {"id": "x", "kind": "behavioral",
           "control": {"cannot_discriminate": "the rule is defended twice"}}
@@ -227,23 +227,23 @@ def test_a_control_that_cannot_discriminate_is_skipped_with_its_reason():
 
 
 def test_the_excuse_does_nothing_in_a_normal_run():
-    # Sólo el modo control lo mira: en normal el escenario tiene que correr como
-    # cualquier otro, o una excusa sobre el control apagaría la medición entera.
+    # Only control mode looks at it: in normal mode the scenario has to run
+    # like any other, or an excuse about the control would switch off the whole measurement.
     import inspect
     src = inspect.getsource(runner.run_one)
     head = src[:src.index("workdir = Path(")]
     assert "if control:" in head and "cannot_discriminate" in head
 
 
-# ── el modo control no acepta un rojo del arnés ──────────────────────────────
+# ── control mode does not accept a red that belongs to the harness ───────────
 
 @pytest.mark.parametrize("detail", [
     "KeyError: 'when'",
     "TimeoutExpired: …",
     "control unavailable: the anchor is gone",
     "control off-target: lint_method went red on another claim",
-    # Medido en la nube: un control se contó como rojo porque el CLI salió 1 sin
-    # llegar a contestar. La regresión nunca se puso delante de nadie.
+    # Measured in the cloud: a control got counted as red because the CLI
+    # exited 1 without ever answering. The regression was never put in front of anyone.
     "the agent did not complete a turn (exit 1): ",
     "the agent produced no JSON events — the turn did not run",
 ])
@@ -251,39 +251,39 @@ def test_a_red_that_is_the_harness_does_not_pass_the_control(detail):
     import inspect
     src = inspect.getsource(runner.main)
     block = src[src.index("if args.control:"):src.index("results.append(r)")]
-    # Las cuatro familias tienen que estar nombradas en la rama que convierte un
-    # ERROR del arnés en un control FALLADO, no en un rojo legítimo.
+    # All four families have to be named in the branch that turns a harness
+    # ERROR into a FAILED control, not into a legitimate red.
     needles = ("_harness", "_no_turn", "control unavailable", "control off-target",
                "the agent did not complete a turn", "the agent produced no JSON events")
     assert all(n in block or n in src for n in needles)
     assert "the control proved nothing" in block
 
 
-# ── un control atado a una rama tiene fecha de vencimiento ───────────────────
+# ── a control tied to a branch has an expiry date ────────────────────────────
 
 def test_every_restored_commit_is_reachable_from_the_main_line():
-    """Un `restore_from_commit` que apunta a un commit de una rama muere con ella.
+    """A `restore_from_commit` pointing at a branch's commit dies with the branch.
 
-    Medido: el squash-merge del PR #7 se llevó puesta la historia de
-    `feat/docs-audit`, y el control de `painted-door-install-doc-eject` —que
-    restauraba `docs/INSTALL.md` en `4c41f3e^`— pasó a fallar desde `main` por
-    no poder aplicarse. Un control que no se puede aplicar no prueba nada, y el
-    escenario sale rojo por una razón que no es la suya.
+    Measured: the squash-merge of PR #7 took the history of `feat/docs-audit`
+    with it, and the control of `painted-door-install-doc-eject` — which
+    restored `docs/INSTALL.md` at `4c41f3e^` — started failing from `main` for
+    not being applicable. A control that cannot be applied proves nothing, and
+    the scenario goes red for a reason that is not its own.
     """
     import glob
     import yaml
-    # Esta pregunta es sobre el REPOSITORIO, no sobre el árbol: sin `.git` no
-    # hay línea principal contra la cual medir, y `git merge-base` falla por no
-    # poder correr — que es indistinguible de un control inaplicable.
+    # This question is about the REPOSITORY, not the tree: without `.git`
+    # there is no main line to measure against, and `git merge-base` fails for
+    # not being able to run — which is indistinguishable from an inapplicable
+    # control.
     #
-    # El sandbox de `scripts/mutate.py` copia el árbol con
-    # `ignore_patterns(".git", …)`, así que acá esto fallaba en TODA copia sin
-    # mutar. La guarda de baseline rojo del runner lo agarraba y se negaba a
-    # inyectar — o sea que la corrida de mutaciones no podía arrancar, ni local
-    # ni en CI, y el motivo era este test preguntando algo que en una copia no
-    # tiene respuesta.
+    # The `scripts/mutate.py` sandbox copies the tree with
+    # `ignore_patterns(".git", …)`, so here this failed on EVERY unmutated
+    # copy. The runner's red-baseline guard caught it and refused to inject —
+    # meaning the mutation run could not start, locally or in CI, and the
+    # cause was this test asking something that has no answer on a copy.
     if not os.path.isdir(os.path.join(ROOT, ".git")):
-        pytest.skip("sin historia git: la pregunta no se puede hacer sobre una copia del árbol")
+        pytest.skip("no git history: the question cannot be asked of a copy of the tree")
     offenders = []
     for path in sorted(glob.glob(os.path.join(ROOT, "evals/scenarios/*.yaml"))):
         sc = yaml.safe_load(open(path, encoding="utf-8"))
@@ -291,9 +291,9 @@ def test_every_restored_commit_is_reachable_from_the_main_line():
         if ctl.get("type") != "restore_from_commit":
             continue
         commit = ctl["commit"]
-        # ¿Está en la línea principal de ESTE checkout? `HEAD` alcanza porque
-        # toda rama de trabajo sale de `main`; lo que se descarta es el commit
-        # que sólo vive en otra rama.
+        # Is it on the main line of THIS checkout? `HEAD` is enough because
+        # every working branch comes off `main`; what gets ruled out is the
+        # commit that lives only on another branch.
         r = subprocess.run(["git", "merge-base", "--is-ancestor", commit, "HEAD"],
                            cwd=ROOT, capture_output=True)
         if r.returncode != 0:
@@ -304,12 +304,13 @@ def test_every_restored_commit_is_reachable_from_the_main_line():
 
 
 def test_a_scenario_with_work_in_progress_says_which_branch_it_is_on():
-    """Un estado que dice trabajo en curso, en `master`, es un mundo imposible.
+    """A state that says work in progress, on `master`, is an impossible world.
 
-    El boot manda comprobar la branch antes de resumir: en una genérica —`main`,
-    `master`, `develop`…— el agente FRENA y pregunta por la inconsistencia. Es
-    lo correcto, y si la puso el arnés el escenario gasta un turno en algo que
-    no mide. Medido con Claude Code: el primer turno entero se iba en eso.
+    The boot orders a branch check before resuming: on a generic one —
+    `main`, `master`, `develop`… — the agent STOPS and asks about the
+    inconsistency. That is the right behavior, and if the harness put it
+    there the scenario spends a turn on something it does not measure.
+    Measured with Claude Code: the entire first turn went to that.
     """
     import glob
     import yaml
@@ -330,53 +331,54 @@ def test_a_scenario_with_work_in_progress_says_which_branch_it_is_on():
         + "; ".join(offenders))
 
 
-# ── el escenario real, leído como dato ───────────────────────────────────────
+# ── the real scenario, read as data ──────────────────────────────────────────
 
 def test_the_method_lint_scenario_declares_a_control_with_a_target(tmp_path):
     import yaml
     p = os.path.join(ROOT, "evals/scenarios/method-lint-still-knows-how-to-go-red.yaml")
     sc = yaml.safe_load(open(p, encoding="utf-8"))
     assert sc["kind"] == "method-lint"
-    # Sin `finding_matches` el control se conforma con cualquier rojo, que es
-    # justamente lo que este kind existe para no aceptar.
+    # Without `finding_matches` the control settles for any red, which is
+    # exactly what this kind exists to not accept.
     assert sc["control"]["finding_matches"]
-    assert sc["kind"] in runner.OFFLINE_KINDS, "el CI corre `--offline`; afuera no se corre"
-    # Y el ancla del control tiene que seguir existiendo en el árbol, o el
-    # control no se puede aplicar y no prueba nada.
+    assert sc["kind"] in runner.OFFLINE_KINDS, "CI runs `--offline`; outside it this never runs"
+    # And the control's anchor has to still exist in the tree, or the control
+    # cannot be applied and proves nothing.
     for edit in sc["control"]["edits"]:
         text = open(os.path.join(ROOT, edit["path"]), encoding="utf-8").read()
-        assert edit["old"] in text, f"el ancla del control ya no está en {edit['path']}"
+        assert edit["old"] in text, f"the control's anchor is no longer in {edit['path']}"
 
 
 def test_json_import_is_used_by_seed_files(repo):
-    # Un `given.files` con un valor que no es texto se escribe como JSON: es la
-    # forma en que un escenario siembra un manifiesto o un estado de otro
-    # archivo sin tener que escaparlo a mano en el YAML.
+    # A `given.files` whose value is not text gets written as JSON: it is how
+    # a scenario seeds a manifest or another file's state without escaping it
+    # by hand in the YAML.
     runner.seed_files(repo, {"pkg.json": {"name": "x"}})
     assert json.loads((repo / "pkg.json").read_text())["name"] == "x"
 
 
-# ── Copilot: el nivel del cableado es lo que decide si algo gatea ────────────
+# ── Copilot: the level of the wiring is what decides whether anything gates ──
 #
-# Copilot no se midió nunca de punta a punta porque no tenía perfil headless.
-# Estos casos fijan lo que el perfil tiene que hacer bien, y cada uno
-# corresponde a una forma de salir verde sin haber medido nada.
+# Copilot was never measured end to end because it had no headless profile.
+# These cases pin what the profile has to get right, and each one corresponds
+# to a way of coming out green without having measured anything.
 
 
 def test_copilot_has_a_headless_profile():
-    """Sin entrada, `agent_profile` levanta y el escenario no corre. Con una mal
-    puesta, corre y mide otra cosa: por eso los flags también se afirman."""
+    """Without an entry, `agent_profile` raises and the scenario does not run.
+    With a wrong one, it runs and measures something else: which is why the
+    flags are asserted too."""
     name, prof = runner.agent_profile(["copilot"])
     assert name == "copilot"
-    assert "--allow-all" in prof["flags"], "sin --allow-all el modo -p ni arranca"
-    assert prof["prompt"] == ["-p", "{turn}"], "-p es el punto de entrada headless"
-    assert prof["dir"] == ["-C", "{repo}"], "sin -C la corrida puede apuntar a otro árbol"
+    assert "--allow-all" in prof["flags"], "without --allow-all, -p mode does not even start"
+    assert prof["prompt"] == ["-p", "{turn}"], "-p is the headless entry point"
+    assert prof["dir"] == ["-C", "{repo}"], "without -C the run can point at another tree"
 
 
 def test_copilot_turn_refuses_to_run_without_its_own_home():
-    """El HOME es donde viven las compuertas de Copilot. Apuntado al del
-    operador, el fixture lo juzga el cableado de esa máquina y el escenario
-    reporta como producto lo que es del arnés."""
+    """HOME is where Copilot's gates live. Pointed at the operator's, the
+    fixture gets judged by that machine's wiring and the scenario reports as
+    product what belongs to the harness."""
     with pytest.raises(RuntimeError) as e:
         runner.agent_turn_cmd(["copilot"], "gpt-5-mini", None, "hacé algo", repo="/tmp/x")
     assert "HOME" in str(e.value)
@@ -405,17 +407,17 @@ def test_copilot_reads_the_session_id_out_of_the_resume_footer():
 
 
 def test_copilot_without_a_resume_id_is_an_error_not_a_pass():
-    """Un turno sin id no es un detalle: el turno siguiente abre otra sesión, el
-    modelo no ve lo que acaba de hacer, y el escenario mide primeros turnos
-    mientras dice que midió una conversación."""
+    """A turn without an id is not a detail: the next turn opens another
+    session, the model does not see what it just did, and the scenario
+    measures first turns while claiming it measured a conversation."""
     payload, session, err = runner.agent_turn_read("copilot", "hecho, saludos")
     assert session is None
     assert err and "new session" in err
 
 
 def test_the_copilot_tap_wraps_the_repo_hooks(tmp_path):
-    """El cableado de nivel usuario corre el script DEL REPO por path relativo,
-    así que envolver la copia del repo es lo único que hay para envolver."""
+    """The user-level wiring runs THE REPO'S script by relative path, so
+    wrapping the repo's copy is the only thing there is to wrap."""
     hooks = tmp_path / ".github" / "hooks" / "ddw"
     hooks.mkdir(parents=True)
     for name in ("pre-tool-use.sh", "post-write.sh", "pre-compact.sh"):
@@ -424,14 +426,14 @@ def test_the_copilot_tap_wraps_the_repo_hooks(tmp_path):
     for name in ("pre-tool-use.sh", "post-write.sh"):
         assert (hooks / (name[:-3] + ".real.sh")).exists()
         assert "DDW_EVAL_PAYLOAD" in (hooks / name).read_text()
-    # pre-compact no es un veredicto: envolverlo pondría un "permitido" en el
-    # log por una escritura que nunca existió.
+    # pre-compact is not a verdict: wrapping it would put an "allowed" in the
+    # log for a write that never existed.
     assert not (hooks / "pre-compact.real.sh").exists()
 
 
 def test_the_copilot_home_refuses_to_run_unauthenticated(tmp_path, monkeypatch):
-    """Un HOME en blanco no tiene credenciales, y Copilot falla de una forma que
-    se lee como veredicto del producto."""
+    """A blank HOME has no credentials, and Copilot fails in a way that reads
+    as a verdict about the product."""
     fake = tmp_path / "fakehome"
     (fake / ".copilot").mkdir(parents=True)
     (fake / ".copilot" / "config.json").write_text("{}")
@@ -446,9 +448,9 @@ def test_the_copilot_home_refuses_to_run_unauthenticated(tmp_path, monkeypatch):
 def test_the_copilot_home_carries_credentials_and_trusts_the_fixture(tmp_path, monkeypatch):
     fake = tmp_path / "fakehome"
     (fake / ".copilot").mkdir(parents=True)
-    # JSONC: el archivo real abre con dos líneas `//`. Parseado como JSON
-    # estricto revienta, las credenciales se pierden en silencio, y la corrida
-    # falla autenticando.
+    # JSONC: the real file opens with two `//` lines. Parsed as strict JSON it
+    # blows up, the credentials get lost in silence, and the run fails at
+    # authentication.
     (fake / ".copilot" / "config.json").write_text(
         '// managed automatically\n{"copilotTokens": {"t": 1}, "trustedFolders": ["/otro"]}\n')
     monkeypatch.setattr(os.path, "expanduser",
@@ -459,19 +461,18 @@ def test_the_copilot_home_carries_credentials_and_trusts_the_fixture(tmp_path, m
     cfg = json.loads((home / ".copilot" / "config.json").read_text())
     assert cfg["copilotTokens"] == {"t": 1}
     assert str(repo) in cfg["trustedFolders"] and "/otro" in cfg["trustedFolders"]
-    # Y NADA más cruza: la sesión, los settings y los hooks arrancan vacíos.
+    # And NOTHING else crosses over: the session, the settings and the hooks start empty.
     assert sorted(p.name for p in (home / ".copilot").iterdir()) == ["config.json"]
 
 
-# ── Lo que el arnés tiene que hacer bien para que una corrida signifique algo ──
+# ── What the harness has to get right for a run to mean anything ─────────────
 #
-# Las tres de abajo salieron de mutaciones que SOBREVIVIERON: el código estaba
-# bien y no había nada que lo sostuviera. Un fault que nadie mata es un fault
-# que vuelve.
+# The three below came out of mutations that SURVIVED: the code was right and
+# nothing was holding it up. A fault nobody kills is a fault that comes back.
 
 
 def _fake_install(runner_mod, monkeypatch, calls, wire_hooks=True):
-    """Reemplaza `sh` por algo que finge la instalación y anota cómo la llamaron."""
+    """Replaces `sh` with something that fakes the install and records how it was called."""
     real_sh = runner_mod.sh
 
     def fake(cmd, cwd=None, env=None, timeout=120, stdin=None):
@@ -499,23 +500,23 @@ def _fake_creds(runner_mod, monkeypatch, tmp_path):
 
 
 def test_a_copilot_install_never_touches_the_operators_own_home(tmp_path, monkeypatch):
-    """Instalar para Copilot escribe FUERA del fixture, en `$HOME`. Sin un HOME
-    propio, una sola corrida de evals recablea todas las sesiones de Copilot de
-    la máquina, y dos corridas en paralelo se recablean entre sí."""
+    """Installing for Copilot writes OUTSIDE the fixture, in `$HOME`. Without
+    a HOME of its own, a single eval run rewires every Copilot session on the
+    machine, and two parallel runs rewire each other."""
     _fake_creds(runner, monkeypatch, tmp_path)
     calls = []
     _fake_install(runner, monkeypatch, calls)
     wd = tmp_path / "wd"
     runner.make_repo(tmp_path / "src", "copilot", wd)
     install = [c for c in calls if any("install.sh" in str(x) for x in c["cmd"])][0]
-    assert install["env"] is not None, "la instalación de Copilot corrió con el HOME del operador"
+    assert install["env"] is not None, "the Copilot install ran with the operator's HOME"
     assert install["env"]["HOME"] == str(wd / "home")
     assert install["env"]["HOME"] != os.environ.get("HOME")
 
 
 def test_a_copilot_install_that_wired_no_hooks_is_refused(tmp_path, monkeypatch):
-    """Salir 0 sin cablear nada es la forma exacta en que esto se veía sano: el
-    escenario corre, nada juzga, y el resultado se lee como un pase limpio."""
+    """Exiting 0 without wiring anything is the exact way this looked healthy:
+    the scenario runs, nothing judges, and the result reads as a clean pass."""
     _fake_creds(runner, monkeypatch, tmp_path)
     calls = []
     _fake_install(runner, monkeypatch, calls, wire_hooks=False)
@@ -525,7 +526,7 @@ def test_a_copilot_install_that_wired_no_hooks_is_refused(tmp_path, monkeypatch)
 
 
 def test_the_verdict_tap_covers_copilot(tmp_path, monkeypatch):
-    """`_tap_copilot` puede estar perfecto y no ser llamado por nadie."""
+    """`_tap_copilot` can be perfect and called by nobody."""
     monkeypatch.setattr(runner, "_tap_claude", lambda repo: 0)
     monkeypatch.setattr(runner, "_tap_opencode", lambda repo: 0)
     hooks = tmp_path / ".github" / "hooks" / "ddw"

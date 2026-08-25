@@ -1,52 +1,52 @@
 id: resume-carries-the-mode-the-user-names
 kind: behavioral
 
-# ESTABILIDAD MEDIDA (opencode / opencode/deepseek-v4-flash-free, 2026-08-09)
-#   normal:  5 de 5 PASS.
-#   control: 2 de 2 rojo, y con el mensaje del propio guard —«the state ended in
-#            'IDLE', not 'DEFINE'; state.autonomy is None»— que es la regresión
-#            y no un crash.
+# MEASURED STABILITY (opencode / opencode/deepseek-v4-flash-free, 2026-08-09)
+#   normal:  5 of 5 PASS.
+#   control: 2 of 2 red, and with the guard's own message — "the state ended in
+#            'IDLE', not 'DEFINE'; state.autonomy is None" — which is the
+#            regression and not a crash.
 
 regression:
   changelog: "0.20.x — `autonomy` may be chosen again when a paused ticket is resumed"
   commit: 2d6163e
   what_happened: >
-    Llegar a IDLE limpia `autonomy`, así que una pausa se llevaba el modo con
-    ella y la única forma de volver era abandonar el ticket y clasificarlo de
-    nuevo — tirar el trabajo para recuperar una preferencia. Reanudar es ahora
-    el único otro lugar donde ese campo puede escribirse, y el protocolo de
-    pausa obliga a poner el valor anterior sobre la mesa ANTES de restaurar
-    nada: este ticket venía en minimal, pasaron dos días, ¿lo mantenemos?
+    Reaching IDLE clears `autonomy`, so a pause took the mode with it and the
+    only way back was to abandon the ticket and classify it again — throw away
+    the work to recover a preference. Resuming is now the only other place
+    that field can be written, and the pause protocol forces the previous
+    value onto the table BEFORE restoring anything: this ticket was running in
+    minimal, two days went by, do we keep it?
   what_this_can_and_cannot_see: >
-    El commit lo dice él mismo: «what the hook cannot see is whether the
-    question was asked». Este escenario NO afirma que la pregunta se hizo —
-    eso sólo se puede leer en la prosa, y la prosa acá no vota. Lo que sí es
-    una pregunta sobre el repo es dónde termina el modo que el usuario nombró:
-    `autonomy` sólo puede escribirse en CLASSIFY y en la arista de resume, así
-    que un modelo que reanuda ANTES de preguntar se queda con el valor viejo y
-    después no puede cambiarlo — el gate rechaza la corrección, y el ticket
-    termina caminando en el modo que nadie eligió. Eso es exactamente el costo
-    que 2d6163e sacó, y se lee en el archivo de estado.
+    The commit says it itself: "what the hook cannot see is whether the
+    question was asked". This scenario does NOT assert that the question was
+    asked — that can only be read in the prose, and the prose does not vote
+    here. What IS a question about the repo is where the mode the user named
+    ends up: `autonomy` can only be written in CLASSIFY and on the resume
+    edge, so a model that resumes BEFORE asking keeps the old value and cannot
+    change it afterwards — the gate refuses the correction, and the ticket
+    ends up walking in the mode nobody chose. That is exactly the cost 2d6163e
+    removed, and it can be read in the state file.
 
 given:
   context_file: "Python 3, pytest."
 
-  # Un ticket pausado, en la forma exacta que deja `transition.py --to IDLE
-  # --action "pause: …"`: fase IDLE, `tier`/`ticket`/`autonomy` en null, y la
-  # pausa viva en la historia. La misma fixture que usa
-  # `paused-ticket-told-to-reclassify`, con dos condiciones que la hacen
-  # ejecutable de verdad:
+  # A paused ticket, in the exact shape `transition.py --to IDLE --action
+  # "pause: …"` leaves behind: phase IDLE, `tier`/`ticket`/`autonomy` null, and
+  # the pause alive in the history. The same fixture
+  # `paused-ticket-told-to-reclassify` uses, with two conditions that make it
+  # actually runnable:
   #
-  #   · La pausa es en DEFINE y no más adelante. Post mode revalida la corrida
-  #     entera contra el grafo y le cobra las gates a toda arista que el journal
-  #     todavía no bendijo — y el journal de un repo recién instalado está
-  #     vacío. Una historia sembrada que pase por DEFINE→PLAN pide el recibo del
-  #     PRD que ninguna fixture puede escribir, y el repo arranca trabado.
-  #   · `autonomy` en null, o sea `assisted`. El escenario pide MINIMAL al
-  #     reanudar: si la fixture ya viniera en minimal, un modelo que restaura el
-  #     valor viejo sin preguntar quedaría indistinguible de uno que preguntó.
-  #     Pidiendo lo contrario de lo que había, el estado final dice cuál de las
-  #     dos cosas pasó.
+  #   · The pause is in DEFINE and not further on. Post mode revalidates the
+  #     whole run against the graph and charges the gates on every edge the
+  #     journal has not yet blessed — and a freshly installed repo's journal is
+  #     empty. A seeded history that passes through DEFINE→PLAN asks for the
+  #     receipt of a PRD no fixture can write, and the repo starts stuck.
+  #   · `autonomy` null, i.e. `assisted`. The scenario asks for MINIMAL on
+  #     resume: if the fixture already came in minimal, a model that restores
+  #     the old value without asking would be indistinguishable from one that
+  #     asked. By asking for the opposite of what was there, the final state
+  #     says which of the two things happened.
   state:
     phase: IDLE
     tier: null
@@ -61,40 +61,42 @@ given:
 
 when:
   turns:
-    # 1. Lo que dice quien vuelve a su ticket. El protocolo de pausa manda
-    #    preguntar por el modo ANTES de restaurar nada, así que acá no debería
-    #    haber todavía una arista escrita.
+    # 1. What someone coming back to their ticket says. The pause protocol
+    #    orders asking about the mode BEFORE restoring anything, so at this
+    #    point there should not yet be a written edge.
     - "volvamos al ticket T-1, el que dejamos pausado en DEFINE la semana pasada"
-    # 2. La respuesta, y es la que CAMBIA el modo respecto de lo que había. Si
-    #    en el turno 1 ya reanudó por su cuenta, esta corrección no entra: el
-    #    gate sólo deja tocar `autonomy` en la arista de resume, y esa arista ya
-    #    pasó.
+    # 2. The answer, and it is the one that CHANGES the mode relative to what
+    #    was there. If it already resumed on its own in turn 1, this correction
+    #    cannot land: the gate only lets `autonomy` be touched on the resume
+    #    edge, and that edge already passed.
     - "dale, retomalo. pero esta vez andá solo: modo minimal, no me preguntes en cada paso"
   timeout: 900
 
 expect:
-  # El ticket volvió a la fase en la que se pausó — no se reclasificó desde
-  # cero, que es el consejo que 2d6163e existe para no tener que dar.
+  # The ticket came back to the phase it was paused in — it was not
+  # reclassified from scratch, which is the advice 2d6163e exists to not have
+  # to give.
   state_phase: DEFINE
 
-  # Y el modo con el que volvió es el que el usuario nombró en el turno 2.
-  # `ticket` va también porque un abandono seguido de una reclasificación
-  # también llega a minimal, y no es lo mismo: ahí el trabajo pausado se tiró.
+  # And the mode it came back with is the one the user named in turn 2.
+  # `ticket` is included too because an abandonment followed by a
+  # reclassification also reaches minimal, and it is not the same thing: there
+  # the paused work was thrown away.
   state:
     autonomy: minimal
     ticket: T-1
     tier: FEATURE
 
-# El control: el `resuming` de `_check_autonomy`, apagado — el producto de antes
-# de 2d6163e, donde el único momento en que el modo podía elegirse era CLASSIFY.
-# Con eso, la reanudación que nombra `--autonomy minimal` se rechaza con el
-# mensaje del propio guard («`autonomy` changed None→'minimal' outside
-# CLASSIFY»), y el estado termina sin el modo que el usuario pidió.
+# The control: `_check_autonomy`'s `resuming`, switched off — the product from
+# before 2d6163e, where the only moment the mode could be chosen was CLASSIFY.
+# With that, the resume that names `--autonomy minimal` is refused with the
+# guard's own message ("`autonomy` changed None→'minimal' outside CLASSIFY"),
+# and the state ends up without the mode the user asked for.
 #
-# Es la mutación que `scripts/mutate.py` ya lleva para esta misma regresión
-# («resuming stops being a moment the mode can be chosen, so a pause loses it»),
-# y como muta el árbol de hoy no depende de que el commit sea alcanzable desde
-# el checkout que corre el eval.
+# It is the mutation `scripts/mutate.py` already carries for this same
+# regression ("resuming stops being a moment the mode can be chosen, so a
+# pause loses it"), and since it mutates today's tree it does not depend on the
+# commit being reachable from the checkout that runs the eval.
 control:
   type: substitute
   path: ddw/scripts/validate-transition.py

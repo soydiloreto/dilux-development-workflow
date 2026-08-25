@@ -76,12 +76,13 @@ def occupied_paths(target, recipe):
     """
     wanted = ([(recipe.get("skills") or {}).get("dir"),
                (recipe.get("agents") or {}).get("dir"),
-               # `commands`, en plural, que es la clave que el instalador
-               # escribe más abajo. En singular esto no leía nada: `.get` de una
-               # clave que no existe da `{}`, `{}.get("dir")` da None, y el
-               # preflight se saltaba en silencio el directorio donde caen los
-               # diecisiete comandos de OpenCode. Ocupado ese path, el refuse que
-               # promete «nothing has been written» llegaba después de escribir.
+               # `commands`, plural, which is the key the installer writes
+               # further down. In the singular this read nothing: `.get` of a
+               # key that does not exist gives `{}`, `{}.get("dir")` gives
+               # None, and the preflight silently skipped the directory where
+               # OpenCode's seventeen commands land. With that path occupied,
+               # the refuse that promises «nothing has been written» arrived
+               # after writing.
                (recipe.get("commands") or {}).get("dir")]
               + [w.get("to") for w in recipe.get("wiring", [])]
               + [os.path.dirname((recipe.get("settings_merge") or {}).get("to", "")) or None])

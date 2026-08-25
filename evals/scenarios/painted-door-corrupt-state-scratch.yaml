@@ -5,50 +5,51 @@ regression:
   changelog: "0.9.2 — Fixed: the corrupt-state refusal ordered a write it refused"
   commit: a6732fd
   what_happened: >
-    Con el estado corrupto la única recuperación que el producto prescribe es
-    «guardá el contenido corregido en un archivo scratch FUERA del repo y dale
-    al usuario un comando para copiarlo». Y la guarda que refusa todo mientras
-    el estado está corrupto se aplicaba antes de mirar las rutas, así que ese
-    write también se rechazaba. Medido en vivo: el modelo intentó exactamente lo
-    que se le acababa de decir, y lo frenaron. La puerta pintada estaba en el
-    mensaje de recuperación, que es el peor lugar donde puede estar — es lo que
-    se lee cuando ya salió todo mal.
+    With the state corrupt, the only recovery the product prescribes is "save
+    the corrected content to a scratch file OUTSIDE the repo and hand the user
+    a command to copy it". And the guard that refuses everything while the
+    state is corrupt was applied before looking at the paths, so that write was
+    refused too. Measured live: the model tried exactly what it had just been
+    told, and was stopped. The painted door was in the recovery message, which
+    is the worst place it can be — it is what gets read when everything has
+    already gone wrong.
 
 given:
   install: claude
-  # El estado, CORRUPTO: es la única condición en la que este mensaje se emite,
-  # y por lo tanto la única en la que la puerta pintada existe. Escrito como
-  # texto crudo, que es lo que un estado corrupto es.
+  # The state, CORRUPT: it is the only condition in which this message is
+  # emitted, and therefore the only one in which the painted door exists.
+  # Written as raw text, which is what a corrupt state is.
   state: "{ this is not json"
 
 when:
   instruction: ddw/scripts/hook-gate.py
   probes:
-    # La ruta que la instrucción nombra: un scratch afuera del repo. `/tmp` es
-    # donde cae cualquier lector obediente de «outside the repo».
-    # Absoluta, no `<repo>/../x`: esa forma empieza LEXICALMENTE con el repo, y
-    # la guarda mira las dos lecturas de cada ruta —resuelta y literal— a
-    # propósito, porque un `.ddw` symlinkeado afuera hacía que escribir el grafo
-    # resolviera fuera del repo. Así que `<repo>/../scratch.json` se rechaza y
-    # `/tmp/scratch.json` no: sólo la segunda es lo que la instrucción pide.
+    # The path the instruction names: a scratch outside the repo. `/tmp` is
+    # where any obedient reader of "outside the repo" lands.
+    # Absolute, not `<repo>/../x`: that form starts LEXICALLY with the repo,
+    # and the guard looks at both readings of every path — resolved and
+    # literal — on purpose, because a `.ddw` symlinked outside made writing the
+    # graph resolve outside the repo. So `<repo>/../scratch.json` is refused
+    # and `/tmp/scratch.json` is not: only the second is what the instruction
+    # asks for.
     - path: /tmp/ddw-eval-scratch-state.json
       ordered_if_matches: '(?s)save it to a scratch file outside the repo'
 
 expect:
   no_ordered_write_is_refused: true
 
-# El control NO restaura el archivo histórico, y eso es deliberado: la versión
-# de `validate-transition.py` anterior a a6732fd no acepta el `--method` que
-# `hook-gate.py` le pasa hoy, así que restaurarla pone el control en rojo por
-# `unrecognized arguments` — un crash, no la regresión. Y restaurar los dos
-# archivos juntos da el mismo crash del otro lado. Un control que se pone rojo
-# por la razón equivocada no prueba nada, que es justo lo que este modo existe
-# para no dejar pasar.
+# The control does NOT restore the historical file, and that is deliberate:
+# the version of `validate-transition.py` before a6732fd does not accept the
+# `--method` that `hook-gate.py` passes it today, so restoring it puts the
+# control in red on `unrecognized arguments` — a crash, not the regression. And
+# restoring both files together gives the same crash from the other side. A
+# control that goes red for the wrong reason proves nothing, which is exactly
+# what this mode exists to not let through.
 #
-# Así que se reinyecta el DEFECTO sobre HEAD: sin la salida temprana, ninguna
-# ruta se mira y el scratch afuera del repo vuelve a ser rechazado. Es el mismo
-# idioma que usa `scripts/mutate.py` para esta misma regresión, y es inmune a la
-# deriva de firmas porque muta el árbol de hoy.
+# So the DEFECT is reinjected onto HEAD: without the early exit, no path is
+# looked at and the scratch outside the repo is refused again. It is the same
+# idiom `scripts/mutate.py` uses for this same regression, and it is immune to
+# signature drift because it mutates today's tree.
 control:
   type: substitute
   path: ddw/scripts/validate-transition.py

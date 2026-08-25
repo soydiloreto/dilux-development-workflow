@@ -75,7 +75,8 @@ not. Observation 3 says *"take it to PLAN, then…"*, so every acceptance sessio
 ever run asked the question from a phase where the guard applied — and the guard
 did not cover `IDLE`, which is where every session starts. Driven on 2026-08-06,
 the model refused the first request and classified it, exactly as the rules say;
-told the sentence above, it wrote the file, both hooks green, and said so itself:
+told the sentence above, it wrote the file, both hooks green, and said so itself
+(in the session's Spanish):
 *"el bypass funcionó porque el gate no cubre este caso"*. A blind spot in this
 file and a blind spot in the code, and they were the same blind spot.
 

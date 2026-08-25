@@ -1514,18 +1514,18 @@ def source_write_denied(target, root, phase):
         # From IDLE there is no phase to finish and no ticket to finish it for,
         # so the two real answers are: start one, or say out loud that you are
         # not going to.
-        # Sin la receta del tier sin enforcement.
+        # Without the recipe for the unenforced tier.
         #
-        # Este mensaje la traía: `--to CLASSIFY --tier FREE` y después `--to
-        # FREE`. Medido con un modelo en vivo — leyó el rechazo, tomó esos dos
-        # pasos por su cuenta, y escribió el archivo. Obedeció las dos mitades
-        # del mismo mensaje: el bloqueo y la forma de saltearlo.
+        # This message used to carry it: `--to CLASSIFY --tier FREE` and then
+        # `--to FREE`. Measured with a live model — it read the refusal, took
+        # those two steps on its own, and wrote the file. It obeyed both
+        # halves of the same message: the block and the way around it.
         #
-        # Trabajar sin pipeline es una decisión del USUARIO, y era la premisa de
-        # FREE desde que se agregó. Ofrecérsela al modelo dentro del rechazo la
-        # convierte en una decisión del modelo, que es lo contrario. El tier
-        # sigue existiendo, `classify.instructions.md` sigue enseñando cuándo
-        # corresponde, y el camino sigue abierto — para quien lo pida.
+        # Working without the pipeline is the USER's decision, and that was
+        # FREE's premise from the day it was added. Offering it to the model
+        # inside the refusal turns it into the model's decision, which is the
+        # opposite. The tier still exists, `classify.instructions.md` still
+        # teaches when it applies, and the path stays open — for whoever asks.
         unlock = ("Nothing is open here: classify the work with `--to CLASSIFY`, and the tier "
                   "decides what it owes before CODE. If the user does not want a pipeline for "
                   "this at all, that is theirs to say — ASK them, and classify with the tier "

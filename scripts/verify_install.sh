@@ -788,11 +788,12 @@ step --to VERIFY --action x --gate tests --gate sast
 step --to CLOSEOUT --action x --gate verify
 python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
   && bad "closed WITHOUT commit+pr" || ok "closeout blocked without commit+pr"
-# `--claim commit`, que es lo que el producto manda, y no `--gate commit`: ese
-# flag se rechaza de plano en `--to IDLE` —«--gate is not read on --to IDLE»— así
-# que este check mandaba exactamente el mismo input que el de arriba y no podía
-# distinguir «commit pago y pr faltante» de «ninguno de los dos». Dos checks, una
-# sola pregunta, y el segundo verde por no poder decir otra cosa.
+# `--claim commit`, which is what the product orders, and not `--gate commit`:
+# that flag is rejected outright on `--to IDLE` — "--gate is not read on --to
+# IDLE" — so this check was sending exactly the same input as the one above and
+# could not tell "commit paid and pr missing" from "neither of the two". Two
+# checks, one single question, and the second green for lack of anything else
+# to say.
 python3 "$TRC" --claim commit --graph "$G" >/dev/null 2>&1
 python3 "$TRC" --to IDLE --action done --graph "$G" >/dev/null 2>&1 \
   && bad "closed with commit but no pr" || ok "closeout blocked with commit but no pr"
@@ -1743,11 +1744,11 @@ suite = open(os.path.join(src, "scripts/verify_install.sh"), encoding="utf-8").r
 # a shortcut and a softened verdict — `EXPECT_CHECKS` is the cautionary tale, and
 # it is refused from the environment for exactly this reason.
 # The needle is built rather than written, so this check does not count itself.
-# Y el runner que la paga tiene que PEDIRLO. Sin esto cada fault corre la suite
-# entera después de haber probado lo que tenía que probar: la corrida completa
-# pasó de ~13 minutos a más de una hora, y el ahorro no se ve en ningún ✗ —
-# nada falla, sólo tarda. El baseline es la excepción y tiene que seguir
-# siéndolo: mide que la suite esté verde ENTERA, no hasta el primer problema.
+# And the runner that pays for it has to ASK for it. Without this, every fault
+# runs the entire suite after having proven what it had to prove: the full run
+# went from ~13 minutes to over an hour, and the saving shows in no ✗ —
+# nothing fails, it just takes longer. The baseline is the exception and has to
+# stay one: it measures that the suite is green WHOLE, not up to the first problem.
 runner = open(os.path.join(src, "scripts/mutate.py"), encoding="utf-8").read()
 # Asked of the FUNCTION, not of the file. The file also holds the list of faults,
 # and one of those faults is written as the literal this looks for — so read
@@ -4759,12 +4760,12 @@ for f in sorted(glob.glob(os.path.join(root, ".github/**/*.yml"), recursive=True
 sys.exit(0)
 PYEOF
 
-# Inicializada, y no es un detalle de estilo: este archivo corre con `set -u`, así
-# que la primera vez que faltaba uno de los nueve la línea de abajo mataba bash
-# en el acto — `MISSING_FRONT: unbound variable`, exit 1, y TODO lo que viene
-# después sin correr. El fault que borra `CODE_OF_CONDUCT.md` se contaba como
-# cazado sin que ningún check hubiera hablado, y los cinco que sí tenían algo que
-# decir sobre eso no llegaron a decirlo. Un kill por caída no es un kill.
+# Initialized, and it is not a style detail: this file runs with `set -u`, so
+# the first time one of the nine was missing the line below killed bash on the
+# spot — `MISSING_FRONT: unbound variable`, exit 1, and EVERYTHING that follows
+# never ran. The fault that deletes `CODE_OF_CONDUCT.md` counted as caught
+# without a single check having spoken, and the five that did have something to
+# say about it never got to say it. A kill by crash is not a kill.
 MISSING_FRONT=""
 for f in CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md LICENSE NOTICE CHANGELOG.md docs/AI-POLICY.md \
          .github/PULL_REQUEST_TEMPLATE.md .github/ISSUE_TEMPLATE/config.yml; do
@@ -5115,15 +5116,15 @@ for needle in ("scripts/mutate.py --shard", "--check-anchors", "--cover"):
         assert not s.get("continue-on-error"), f"`{needle}` runs with continue-on-error"
         assert "|| true" not in str(s.get("run", "")), f"`{needle}`'s failure is swallowed"
 
-# La capa conductual, que es la única que cuesta dinero y por eso la única que
-# se corre a pedido. Nada comprobaba que exista: borrando el workflow, la
-# medición que necesita un modelo simplemente deja de existir y ningún contexto
-# requerido se pone rojo, porque no era uno.
+# The behavioral layer, which is the only one that costs money and therefore
+# the only one run on demand. Nothing verified it exists: deleting the
+# workflow, the measurement that needs a model simply stops existing and no
+# required context goes red, because it was not one.
 #
-# Y el CONTROL aparte del normal, porque es el que discrimina: un escenario
-# conductual que pasa y no se pone rojo con su regresión puesta está aplaudiendo
-# la prosa del modelo. Un workflow que corre sólo la mitad normal reporta verde
-# sobre eso.
+# And the CONTROL apart from the normal run, because it is the one that
+# discriminates: a behavioral scenario that passes and does not go red with its
+# regression in place is applauding the model's prose. A workflow that runs
+# only the normal half reports green over that.
 beh_path = os.path.join(sys.argv[1], ".github/workflows/behavioral.yml")
 assert os.path.exists(beh_path), \
     "there is no behavioral workflow — the layer that puts the instructions in front of a model"
@@ -5332,13 +5333,13 @@ grep -q "node_modules/" "$UN/.gitignore" && ! grep -q "BEGIN DDW" "$UN/.gitignor
 grep -q "MY OWN HOOK" "$UN/.claude/settings.json" && grep -q '"model"' "$UN/.claude/settings.json" \
   && ok "settings.json keeps your hooks and your other settings" \
   || bad "the uninstall overwrote settings.json instead of removing only DDW's blocks"
-# Por el NOMBRE de los scripts, no por la cadena `ddw`. Claude es el único de los
-# seis cuyo wiring no cuelga de un subdirectorio `ddw/` —`bash
-# ${CLAUDE_PROJECT_DIR}/.claude/hooks/enforce.sh`— así que buscar «ddw» acá no
-# encontraba nada ni cuando los cinco bloques quedaban puestos apuntando a
-# scripts recién borrados. Comprobado desarmando el des-merge entero: tres checks
-# vecinos en rojo y éste informando ✓. Un check que no puede fallar informa verde
-# por no saber decir otra cosa.
+# By the scripts' NAME, not by the string `ddw`. Claude is the only one of the
+# six whose wiring does not hang off a `ddw/` subdirectory — `bash
+# ${CLAUDE_PROJECT_DIR}/.claude/hooks/enforce.sh` — so searching for "ddw" here
+# found nothing even when all five blocks were left in place pointing at
+# freshly deleted scripts. Verified by undoing the entire un-merge: three
+# neighboring checks in red and this one reporting ✓. A check that cannot fail
+# reports green for lack of anything else to say.
 grep -qE "enforce\.sh|session-start\.sh|validate-state-transition\.sh" "$UN/.claude/settings.json" \
   && bad "DDW's hooks are still wired to scripts that were just deleted — every session fails on a missing command" \
   || ok "and DDW's own hook blocks are unwired"
@@ -5455,12 +5456,12 @@ assert not orphans, \
     ("the uninstall left %d hook block(s) an older version wired: %s — every write in that "
      "repository now fails on a script the uninstall deleted" % (len(orphans), orphans[:2]))
 
-# El archivo de contexto de cada herramienta que tiene uno. `GEMINI.md` se
-# escribía y no se removía: quedaba en el repo importando `@.ddw/orchestrator.md`
-# con `.ddw/` ya borrado, y toda sesión de Gemini ahí arranca leyendo un archivo
-# que no está. Derivado de los adaptadores, no de una lista acá: una lista acá es
-# una segunda copia, y la segunda copia es la que se queda sin la herramienta que
-# se agregue mañana.
+# The context file of every tool that has one. `GEMINI.md` was written and not
+# removed: it stayed in the repo importing `@.ddw/orchestrator.md` with `.ddw/`
+# already deleted, and every Gemini session there starts by reading a file that
+# is not there. Derived from the adapters, not from a list here: a list here is
+# a second copy, and the second copy is the one that misses the tool added
+# tomorrow.
 for _recipe in sorted(glob.glob(os.path.join(src, "adapters/*/adapter.json"))):
     _tool = os.path.basename(os.path.dirname(_recipe))
     _ctx = (json.load(open(_recipe, encoding="utf-8")) or {}).get("context_file")
@@ -5473,20 +5474,20 @@ for _recipe in sorted(glob.glob(os.path.join(src, "adapters/*/adapter.json"))):
                    capture_output=True, text=True)
     _path = os.path.join(_repo, _ctx)
     assert os.path.exists(_path), \
-        "%s declara `context_file` %s y la instalación no lo escribió" % (_tool, _ctx)
+        "%s declares `context_file` %s and the installation did not write it" % (_tool, _ctx)
     subprocess.run(["bash", os.path.join(src, "uninstall.sh"), _repo, "--yes"],
                    capture_output=True, text=True)
     if os.path.exists(_path):
         _left = open(_path, encoding="utf-8").read()
         assert "BEGIN DDW" not in _left, \
-            ("%s quedó con el bloque de DDW después de desinstalar: importa un método que ya "
-             "no está, y cada sesión en ese repo arranca leyendo un archivo borrado" % _ctx)
+            ("%s was left with DDW's block after uninstalling: it imports a method that is "
+             "no longer there, and every session in that repo starts by reading a deleted file" % _ctx)
 
-# Y el plan que se aprueba tiene que ser el borrado que corre. Con `--force`, el
-# plan se imprimía SIN `--force`: decía «Kept 1 file(s) … re-run with --force» y
-# a continuación borraba ese archivo. Se lee «se conserva» y se pierde el
-# archivo propio — el peor orden posible, porque el plan existe justamente para
-# ser leído antes de decir que sí.
+# And the plan that gets approved has to be the deletion that runs. With
+# `--force`, the plan was printed WITHOUT `--force`: it said "Kept 1 file(s) …
+# re-run with --force" and then deleted that file. You read "kept" and lose
+# your own file — the worst possible order, because the plan exists precisely
+# to be read before saying yes.
 _pf = os.path.join(work, "plan-force")
 os.makedirs(_pf)
 subprocess.run(["git", "-C", _pf, "init", "-q"], check=True)
@@ -5499,12 +5500,12 @@ _plan = subprocess.run(["bash", os.path.join(src, "uninstall.sh"), _pf, "--plan"
 subprocess.run(["bash", os.path.join(src, "uninstall.sh"), _pf, "--yes", "--force"],
                capture_output=True, text=True)
 assert "enforce.sh" in _plan, \
-    ("el plan de un `--force` no nombra el archivo editado que `--force` va a borrar: "
+    ("the plan of a `--force` does not name the edited file `--force` is about to delete: "
      + _plan[-400:])
-assert not os.path.exists(_mine), "el `--force` no borró lo que su propio plan dijo que borraba"
+assert not os.path.exists(_mine), "the `--force` did not delete what its own plan said it would delete"
 assert "Kept" not in _plan or "--force" not in _plan.split("Kept")[1][:200], \
-    ("el plan de un `--force` dice que conserva archivos y sugiere volver a correr con "
-     "`--force`, que es lo que se acaba de pedir — y después los borra: " + _plan[-400:])
+    ("the plan of a `--force` says it keeps files and suggests re-running with "
+     "`--force`, which is what was just asked for — and then deletes them: " + _plan[-400:])
 PYUNINST
 
 # The manifest is COMMITTED, so it arrives with the clone, from whoever wrote it —
@@ -5822,34 +5823,35 @@ assert code != 0 and "Deployment topology" in out, \
     "the template shipped a section nothing looks for and linted clean: " + out[-300:]
 open(tpl, "w", encoding="utf-8").write(text)
 
-# El encabezado que los skills mandan CITAR tiene que estar en la plantilla que
-# el instalador escribe. Los dos skills que piden un piso de cobertura citan
-# `AGENTS.md, "Testing"` en el documento que enseñan, y el barrido del linter
-# sólo miraba `ddw/**`: se podía borrar la sección de la plantilla y el lint
-# quedaba verde. Es lo que arregló 87ae703, y no lo sostenía nada.
+# The heading the skills order CITED has to be in the template the installer
+# writes. The two skills that ask for a coverage floor cite
+# `AGENTS.md, "Testing"` in the document they teach, and the linter's sweep
+# only looked at `ddw/**`: the template's section could be deleted and the lint
+# stayed green. It is what 87ae703 fixed, and nothing was holding it up.
 tpl2 = os.path.join(repo, "ddw/AGENTS.template.md")
 text = open(tpl2, encoding="utf-8").read()
 cut = re.sub(r"^## Testing.*?(?=^## )", "", text, flags=re.M | re.S)
-assert cut != text, "la plantilla ya no trae `## Testing`, así que no hay caso que plantar"
+assert cut != text, "the template no longer carries `## Testing`, so there is no case to plant"
 open(tpl2, "w", encoding="utf-8").write(cut)
 code, out = lint()
 assert code != 0 and "Testing" in out and "installer" in out, \
-    "la plantilla perdió una sección que los skills mandan citar y el lint pasó: " + out[-300:]
+    "the template lost a section the skills order cited and the lint passed: " + out[-300:]
 open(tpl2, "w", encoding="utf-8").write(text)
 
-# Un tier que no pide NINGUNA compuerta tiene que estar explicado donde lee una
-# persona. Los otros se anuncian solos: algo se pide, algo se rechaza. En ése no
-# se pide nada, así que si `docs/METHOD.md` no lo nombra, el producto tiene un
-# modo sin enforcement del que sólo se entera quien lee el grafo. Es la mitad de
-# 4c41f3e que no sostenía ningún check — `check_tiers_documented` mira los dos
-# archivos que lee el MODELO, y ninguno que lea una persona.
+# A tier that asks for NO gate has to be explained where a person reads. The
+# others announce themselves: something is asked for, something is refused. In
+# that one nothing is asked, so if `docs/METHOD.md` does not name it, the
+# product has an enforcement-free mode that only whoever reads the graph finds
+# out about. It is the half of 4c41f3e no check was holding up —
+# `check_tiers_documented` looks at the two files the MODEL reads, and none a
+# person reads.
 method = os.path.join(repo, "docs/METHOD.md")
 text = open(method, encoding="utf-8").read()
 graph = json.load(open(os.path.join(repo, "ddw/rules/transition-graph.json"), encoding="utf-8"))
 def _asks(tier):
-    """Lo que pide un tier, con la cadena `extends` resuelta: leyendo sólo sus
-    claves propias, todo tier que hereda parece no pedir nada — y entonces esta
-    sonda elegía cualquiera y borrarlo de METHOD.md no cambiaba nada."""
+    """What a tier asks for, with the `extends` chain resolved: reading only its
+    own keys, every inheriting tier looks like it asks for nothing — and then
+    this probe picked any one, and deleting it from METHOD.md changed nothing."""
     out, seen, cur = set(), set(), tier
     while cur and cur not in seen:
         seen.add(cur)
@@ -5863,11 +5865,11 @@ def _asks(tier):
 
 
 free = [t for t in (graph.get("tiers") or {}) if not _asks(t)]
-assert free, "el grafo ya no define ningún tier sin compuertas, así que no hay caso que plantar"
+assert free, "the graph no longer defines any gateless tier, so there is no case to plant"
 open(method, "w", encoding="utf-8").write(text.replace(free[0], "REDACTED"))
 code, out = lint()
 assert code != 0 and free[0] in out, \
-    "se borró de METHOD.md el único tier sin enforcement y el lint pasó: " + out[-300:]
+    "the only enforcement-free tier was deleted from METHOD.md and the lint passed: " + out[-300:]
 open(method, "w", encoding="utf-8").write(text)
 
 code, out = lint()
@@ -6157,15 +6159,15 @@ assert sorted(os.listdir(p)) == before, (
     "the refusal says nothing has been written and something was: %s appeared"
     % sorted(set(os.listdir(p)) - set(before)))
 
-# La HOJA de cada wiring, ocupada, con el ancestro sano. Arriba se ocupa
-# `.claude`, que es ancestro común de las cuatro rutas que el preflight junta
-# para claude: romper una sola no cambia nada ahí, así que la comprobación
-# pasaba con el preflight mirando cualquier subconjunto. Y `commands` se leía en
-# singular donde el instalador lo escribe en plural, con lo cual el directorio
-# de los diecisiete comandos de OpenCode no se miraba nunca. Ocupado ése, el
-# rechazo que promete «nothing has been written» llegaba después de escribir
-# `.ddw/` y `AGENTS.md`, y sin manifiesto — o sea con el detector de deriva
-# apagado para siempre.
+# The LEAF of each wiring, occupied, with the ancestor healthy. Above,
+# `.claude` gets occupied, which is the common ancestor of the four paths the
+# preflight gathers for claude: breaking a single one changes nothing there, so
+# the verification passed with the preflight looking at any subset. And
+# `commands` was read in the singular where the installer writes it in the
+# plural, so the directory of OpenCode's seventeen commands was never looked
+# at. With that one occupied, the refusal that promises "nothing has been
+# written" arrived after writing `.ddw/` and `AGENTS.md`, and with no manifest
+# — that is, with the drift detector off forever.
 for _rec in sorted(glob.glob(os.path.join(src, "adapters/*/adapter.json"))):
     _tool = os.path.basename(os.path.dirname(_rec))
     _r = json.load(open(_rec, encoding="utf-8")) or {}
@@ -6185,17 +6187,17 @@ for _rec in sorted(glob.glob(os.path.join(src, "adapters/*/adapter.json"))):
                              capture_output=True, text=True, timeout=180)
         _out = _ir.stdout + _ir.stderr
         assert "Traceback" not in _out, \
-            "%s: `%s` ocupado contestó con un stack:\n%s" % (_tool, _leaf, _out[-400:])
+            "%s: `%s` occupied answered with a stack:\n%s" % (_tool, _leaf, _out[-400:])
         assert _ir.returncode != 0, \
-            "%s: la instalación dijo que salió bien con `%s` ocupado por un archivo" % (_tool, _leaf)
+            "%s: the installation said it went fine with `%s` occupied by a file" % (_tool, _leaf)
         _after = set()
         for _dp, _dn, _fn in os.walk(_p):
             if ".git" in _dp.split(os.sep):
                 continue
             _after |= {os.path.relpath(os.path.join(_dp, f), _p) for f in _fn}
         assert _after == _before, \
-            ("%s: el rechazo por `%s` dice que no se escribió nada y se escribió %s — "
-             "una instalación a medias, y sin manifiesto no hay nada que la detecte después"
+            ("%s: the refusal over `%s` says nothing was written and %s was — "
+             "a half-done installation, and with no manifest nothing detects it afterwards"
              % (_tool, _leaf, sorted(_after - _before)[:5]))
 
 # …and the ordinary repo still installs, or the guard has eaten the product.
@@ -6928,10 +6930,10 @@ name = os.ttyname(slave)
 
 def preexec():
     os.setsid()
-    # Sin O_NOCTTY, y después el ioctl: Linux se la queda con el open, los BSD
-    # (macOS es uno) exigen TIOCSCTTY y sin él `/dev/tty` no abre. Costó una
-    # corrida entera de CI descubrirlo, porque la sonda se colgaba cinco minutos
-    # y no decía qué había visto.
+    # Without O_NOCTTY, and then the ioctl: Linux takes it on the open, the
+    # BSDs (macOS is one) demand TIOCSCTTY and without it `/dev/tty` does not
+    # open. It cost an entire CI run to discover, because the probe hung for
+    # five minutes and did not say what it had seen.
     fd = os.open(name, os.O_RDWR)
     try:
         fcntl.ioctl(fd, termios.TIOCSCTTY, 0)
@@ -6945,11 +6947,11 @@ p = subprocess.Popen(["bash", "-s", "--", repo, "--target", "claude"],
                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                      text=True, preexec_fn=preexec, env=env)
 seen = []
-# Se lee CRUDO, no por líneas, y ésa es la corrección que costó dos corridas de
-# macOS: un prompt no termina en newline (`printf "… [y/N] "`), así que iterando
-# líneas la pregunta nunca aparece — y lo único que se ve es un hijo que no
-# avanza, sin decir qué está esperando. Un check sobre preguntas que no puede
-# ver una pregunta a medio renglón mira para otro lado.
+# Read RAW, not by lines, and that is the correction that cost two macOS runs:
+# a prompt does not end in a newline (`printf "… [y/N] "`), so iterating lines
+# the question never shows up — and the only thing visible is a child that does
+# not advance, without saying what it is waiting for. A check about questions
+# that cannot see a question mid-line is looking the other way.
 _fd = p.stdout.fileno()
 
 
@@ -6978,19 +6980,19 @@ def feed():
 
 threading.Thread(target=feed, daemon=True).start()
 
-# Contestar cuando la pregunta aparece; y si a los veinte segundos no apareció,
-# contestar igual. La afirmación de esta comprobación NO es "yo vi la pregunta a
-# tiempo" —eso es una carrera contra el buffer de un pipe, y perderla colgaba
-# cinco minutos— sino "la pregunta está en lo que imprimió". Se afirma al final,
-# sobre todo lo capturado.
+# Answer when the question appears; and if at twenty seconds it has not,
+# answer anyway. What this verification asserts is NOT "I saw the question in
+# time" — that is a race against a pipe's buffer, and losing it hung for five
+# minutes — but "the question is in what it printed". Asserted at the end,
+# over everything captured.
 QUESTION = "How do you want DDW installed?"
 
-# Lo que esta comprobación afirma es que PREGUNTA, y que usa la respuesta. Ni
-# una cosa ni la otra necesitan que el proceso termine — y esperarlo fue lo que
-# costó cuatro corridas de macOS, donde `poll()` decía vivo y `getpgid` del
-# mismo pid contestaba "no such process": eso acusa al arnés, no al producto, y
-# no es lo que este check está mirando. Así que se mira la pantalla y se mira el
-# disco, que son las dos mitades de la afirmación, y después se lo mata.
+# What this verification asserts is that it ASKS, and that it uses the answer.
+# Neither needs the process to finish — and waiting for it is what cost four
+# macOS runs, where `poll()` said alive and `getpgid` of the same pid answered
+# "no such process": that accuses the harness, not the product, and is not
+# what this check is looking at. So the screen is looked at and the disk is
+# looked at, which are the two halves of the assertion, and then it is killed.
 sent = False
 landed = False
 nudged = 0.0
@@ -7002,8 +7004,8 @@ while time.time() < deadline:
         sent = True
         nudged = now
     elif sent and now - nudged > 2:
-        # El default a todo lo que venga después: el instalador ofrece commitear
-        # y ofrece pushear, y las dos esperan en `/dev/tty`.
+        # The default to whatever comes after: the installer offers to commit
+        # and offers to push, and both wait on `/dev/tty`.
         os.write(master, b"\n")
         nudged = now
     if sent and os.path.isdir(os.path.join(repo, ".ddw")):
@@ -7012,10 +7014,10 @@ while time.time() < deadline:
     time.sleep(0.2)
 out = "".join(seen)
 
-# Best-effort, y en grupo: el hijo es líder de sesión —eso es lo que le da la
-# terminal de control— y arrancó un segundo bash para el bootstrap. Matar el pid
-# deja al nieto vivo con el pipe abierto. Nada de esto puede tirar el
-# diagnóstico, que ya está armado.
+# Best-effort, and by group: the child is a session leader — that is what
+# gives it the controlling terminal — and it started a second bash for the
+# bootstrap. Killing the pid leaves the grandchild alive with the pipe open.
+# None of this may throw away the diagnosis, which is already assembled.
 try:
     os.killpg(os.getpgid(p.pid), signal.SIGKILL)
 except OSError:
@@ -8225,13 +8227,13 @@ def denied(rel, phase):
     return vt.source_write_denied(os.path.join(repo, rel), repo, phase)
 
 
-# 0. Y el método le PIDE que escriba código con la herramienta de escritura, no
-#    con la shell. No se puede imponer —DDW ve un comando de shell y no puede
-#    distinguir el del agente del tuyo en otra terminal, que es la decisión 12—
-#    así que lo único que queda es pedirlo, y lo único que sostiene un pedido es
-#    que esté escrito. Medido: ante un `Write` rechazado, un modelo en vivo se
-#    fue a la shell en la mayoría de las corridas. No por hacer trampa: porque
-#    nada le había dicho que no.
+# 0. And the method ASKS it to write code with the write tool, not with the
+#    shell. It cannot be enforced — DDW sees a shell command and cannot tell
+#    the agent's from yours in another terminal, which is decision 12 — so the
+#    only thing left is to ask for it, and the only thing that holds up a
+#    request is that it is written down. Measured: facing a refused `Write`, a
+#    live model went to the shell in most runs. Not by cheating: because
+#    nothing had told it not to.
 _orch = open(os.path.join(src, "ddw/orchestrator.md"), encoding="utf-8").read()
 assert "never with a shell command" in _orch and "bypasses PreToolUse" in _orch, \
     ("the method no longer asks the model to write source with the write tool. That request is "
@@ -8638,40 +8640,41 @@ PYNOTICKET
 # success for anything that exits 0, including a command that ran nothing —
 # replace the invocation with `true` and this line still printed that the layer
 # "passes". The count is the evidence that tests were collected and run.
-# `CLAUDE_PROJECT_DIR` se exporta tres veces más arriba y nunca se limpia, y el
-# helper la lee ANTES que el cwd: heredada, todo lo que corra después trabaja
-# sobre un repo de otra sección. Medido — un test que pasaba solo veinte veces
-# seguidas fallaba acá adentro, con un mensaje sobre gates que no tenía nada que
-# ver con lo que medía. Las dos capas de abajo levantan sus propios repos.
+# `CLAUDE_PROJECT_DIR` is exported three times further up and never cleaned,
+# and the helper reads it BEFORE the cwd: inherited, everything that runs after
+# works on some other section's repo. Measured — a test that passed twenty
+# times in a row on its own failed in here, with a message about gates that had
+# nothing to do with what it measured. The two layers below stand up their own repos.
 unset CLAUDE_PROJECT_DIR
 
-# ── La capa de instrucciones ──────────────────────────────────────────────────
+# ── The instruction layer ─────────────────────────────────────────────────────
 #
-# Todo lo de arriba mide los HOOKS: dado un evento, ¿el gate contesta bien? Esto
-# mide las INSTRUCCIONES: un lector obediente de las reglas tal como están
-# escritas, ¿termina donde los hooks permiten? Ningún check se pone rojo cuando
-# un skill manda hacer un write que el enforcement rechaza — el modelo
-# simplemente obedece y choca.
+# Everything above measures the HOOKS: given an event, does the gate answer
+# correctly? This measures the INSTRUCTIONS: does an obedient reader of the
+# rules as written end up where the hooks allow? No check goes red when a
+# skill orders a write the enforcement refuses — the model simply obeys and
+# crashes into it.
 #
-# Se corre acá, y con el CONTROL, por la misma razón que todo lo demás en este
-# archivo: una capa que nadie ejecuta reporta verde por no haber mirado. El
-# control aplica a cada escenario la versión histórica rota de su instrucción y
-# EXIGE que el escenario se ponga rojo; si pasa, el escenario no puede detectar
-# la regresión de la que salió y no está midiendo nada.
+# It runs here, and with the CONTROL, for the same reason as everything else in
+# this file: a layer nobody executes reports green for not having looked. The
+# control applies to each scenario the historical broken version of its
+# instruction and DEMANDS that the scenario go red; if it passes, the scenario
+# cannot detect the regression it came from and is measuring nothing.
 if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" 2>/dev/null; then
   EV_OUT="$(python3 "$SELF/evals/runner.py" --repo "$SELF" --offline 2>&1)"
   EV_RC=$?
-  # El CONTROL necesita la historia: cada escenario declara el commit de la
-  # regresión de la que sale, y sin `.git` no hay de dónde sacarla. Las copias
-  # que hace `mutate.py` no la llevan, así que ahí el control no se puede
-  # preguntar — y desde que un control inaplicable FALLA en vez de contarse
-  # como rojo, preguntarlo igual ponía en rojo cada copia y el runner se negaba
-  # a inyectar nada. Skip, que se cuenta aparte y no suma a un verde.
+  # The CONTROL needs the history: each scenario declares the commit of the
+  # regression it comes from, and without `.git` there is nowhere to get it.
+  # The copies `mutate.py` makes do not carry it, so there the control cannot
+  # be asked — and ever since an inapplicable control FAILS instead of
+  # counting as red, asking anyway put every copy in red and the runner
+  # refused to inject anything. Skip, which is counted apart and does not add
+  # up to a green.
   if git -C "$SELF" rev-parse --git-dir >/dev/null 2>&1; then
     EV_CTL="$(python3 "$SELF/evals/runner.py" --repo "$SELF" --offline --control 2>&1)"
     EV_CRC=$?
   else
-    EV_CTL="(sin historia git: el control no se puede preguntar acá)"
+    EV_CTL="(no git history: the control cannot be asked here)"
     EV_CRC=0
   fi
   if [ "$EV_RC" = 0 ] && [ "$EV_CRC" = 0 ]; then
@@ -9063,12 +9066,12 @@ PYONESIDED
 # ── The guard cannot exempt its own rulebook ──────────────────────────────────
 section "What a blocked phase still cannot touch"
 
-# En CODE, y ahí está el punto. Corrido en PLAN —donde estaba— el guardia de
-# código fuente rechaza estos cuatro paths por su cuenta, así que romper el SELLO
-# entero no cambiaba ningún veredicto: el check informaba verde por una razón que
-# no era la suya, y ninguna edición de una línea sobre el sello se podía ver desde
-# acá. En CODE escribir código está permitido, así que lo único que puede negar
-# estas rutas es el sello, que es lo que este check dice medir.
+# In CODE, and that is the point. Run in PLAN — where it was — the source-code
+# guard refuses these four paths on its own, so breaking the entire SEAL
+# changed no verdict: the check reported green for a reason that was not its
+# own, and no one-line edit over the seal could be seen from here. In CODE
+# writing code is allowed, so the only thing that can deny these paths is the
+# seal, which is what this check claims to measure.
 printf '%s' "$IN_CODE" > "$GST"
 # The graph and the gate ARE the enforcement. Allowing a phase to write there let
 # an agent that could not write code rewrite the rules that stopped it: add an
@@ -9417,28 +9420,29 @@ kept = open(os.path.join(gi2, ".gitignore"), encoding="utf-8").read()
 assert "node_modules/" in kept and "BEGIN DDW" not in kept, \
     "a .gitignore of the user's was destroyed or left with DDW's block: %r" % kept
 
-# 4b. Y ANTES que eso: que el hook rechace de verdad, ejecutado sin python3.
-#     Lo de abajo lee texto y saltea el archivo que no lo tiene («if "command -v
-#     python3" not in text: continue»), o sea que borrar el bloque entero pasa —
-#     y globea `adapters/*/hooks/**`, donde los de Copilot no viven: los suyos
-#     están en `adapters/copilot/scripts/`. Los dos hooks de Copilot que deciden
-#     escrituras salían 127 («python3: not found») donde los otros cinco salen
-#     2, y cualquier exit distinto de 2 es un error NO BLOQUEANTE: la escritura
-#     entraba sin que nada la juzgara. Medido, no leído.
+# 4b. And BEFORE that: that the hook actually refuses, executed without
+#     python3. The block below reads text and skips the file that lacks it
+#     ('if "command -v python3" not in text: continue'), meaning deleting the
+#     whole block passes — and it globs `adapters/*/hooks/**`, where Copilot's
+#     do not live: theirs are in `adapters/copilot/scripts/`. Copilot's two
+#     write-deciding hooks exited 127 ("python3: not found") where the other
+#     five exit 2, and any exit other than 2 is a NON-BLOCKING error: the
+#     write went in with nothing judging it. Measured, not read.
 #
-#     Sobre los hooks INSTALADOS, no sobre los del árbol fuente: corridos desde
-#     acá se dan por no instalados y salen 0 con razón, y ese 0 se lee idéntico
-#     al que este check existe para prohibir.
+#     Over the INSTALLED hooks, not the source tree's: run from here they
+#     consider themselves not installed and exit 0 rightly, and that 0 reads
+#     identical to the one this check exists to forbid.
 _bin = tempfile.mkdtemp(dir=os.environ["WORK"])
 for _tool in ("bash", "sh", "git", "env", "cat", "grep", "sed", "dirname", "basename", "mkdir"):
     _found = shutil.which(_tool)
     if _found:
         os.symlink(_found, os.path.join(_bin, _tool))
-# Los que JUZGAN una escritura. `enforce.sh` corre en el mismo PreToolUse y no
-# es uno: hace housekeeping (crea el estado, refresca el marcador de sesión) y
-# salir 0 sin python3 es lo correcto ahí — no tenía nada que decir sobre el
-# write. `session-start.sh` y `pre-compact.sh` informan. La diferencia es la que
-# este check mide: quien decide, decide o rechaza; quien no, se calla.
+# The ones that JUDGE a write. `enforce.sh` runs in the same PreToolUse and is
+# not one: it does housekeeping (creates the state, refreshes the session
+# marker) and exiting 0 without python3 is correct there — it had nothing to
+# say about the write. `session-start.sh` and `pre-compact.sh` inform. The
+# difference is what this check measures: whoever decides, decides or refuses;
+# whoever does not, stays silent.
 _DECIDERS = ("pre-tool-use.sh", "post-write.sh",
              "validate-state-transition.sh", "validate-state-postwrite.sh")
 _open, _seen = [], 0
@@ -9447,9 +9451,10 @@ for _target in ("claude", "codex", "copilot", "cursor", "gemini"):
     subprocess.run(["git", "-C", _r6, "init", "-q"], check=True)
     subprocess.run(["bash", os.path.join(src, "install.sh"), _r6, "--target", _target],
                    capture_output=True, text=True)
-    # `os.walk`, no `glob`: `**` no entra en directorios ocultos, y TODOS los
-    # hooks viven en uno — `.claude/`, `.github/`, `.cursor/`. El glob devolvía
-    # cero archivos y el check habría pasado por no encontrar nada que juzgar.
+    # `os.walk`, not `glob`: `**` does not enter hidden directories, and ALL
+    # the hooks live in one — `.claude/`, `.github/`, `.cursor/`. The glob
+    # returned zero files and the check would have passed for finding nothing
+    # to judge.
     _found_hooks = []
     for _dirpath, _dirnames, _files in os.walk(_r6):
         if ".git" in _dirpath.split(os.sep):
@@ -9461,21 +9466,21 @@ for _target in ("claude", "codex", "copilot", "cursor", "gemini"):
                             input='{"tool_name":"Write","tool_input":{"file_path":"'
                                   + os.path.join(_r6, "src/a.py") + '"}}',
                             capture_output=True, text=True, cwd=_r6,
-                            # Claude resuelve el repo por `CLAUDE_PROJECT_DIR` y se
-                            # calla si no está: sin esto sus tres hooks salen 0 por
-                            # no saber dónde están, y ese 0 se lee igual que el que
-                            # este check prohíbe.
+                            # Claude resolves the repo via `CLAUDE_PROJECT_DIR`
+                            # and stays silent if it is missing: without this its
+                            # three hooks exit 0 for not knowing where they are,
+                            # and that 0 reads like the one this check forbids.
                             env={"PATH": _bin, "HOME": os.environ.get("HOME", "/tmp"),
                                  "CLAUDE_PROJECT_DIR": _r6},
                             timeout=30)
         if _r.returncode != 2:
             _open.append("%s/%s → exit %d" % (_target, os.path.basename(_h), _r.returncode))
 assert _seen >= 8, \
-    ("sólo se encontraron %d hooks de escritura instalados de los cinco adaptadores; el "
-     "barrido dejó de ver alguno, y un barrido vacío pasa este check sin juzgar nada" % _seen)
+    ("only %d installed write-deciding hooks were found across the five adapters; the "
+     "sweep stopped seeing one, and an empty sweep passes this check judging nothing" % _seen)
 assert not _open, \
-    ("sin python3 en el PATH estos hooks instalados no rechazan la escritura, y cualquier exit "
-     "que no sea 2 es un error no bloqueante — el write entra sin que nada lo haya juzgado: "
+    ("without python3 on the PATH these installed hooks do not refuse the write, and any exit "
+     "other than 2 is a non-blocking error — the write goes in with nothing having judged it: "
      + "; ".join(_open))
 
 # 4. A comment that says the opposite of the four lines under it is worse than no
@@ -10302,9 +10307,9 @@ assert re.search(r"^assert not skipped, \(", suite, re.M), \
 # the suite that run launched, and the probe that suite reached: a recursion
 # outliving every one of its ancestors. Found still spawning hours later, inside
 # temporary trees from a version of the list that no longer existed.
-# Construido por pedazos, como el otro: escrito entero, este assert se encuentra
-# a sí mismo y la comprobación pasa aunque el código lo haya perdido. Ya me pasó
-# con `EXPECT_CHECKS` cuarenta líneas más arriba, en este mismo bloque.
+# Built in pieces, like the other one: written whole, this assert finds itself
+# and the verification passes even when the code has lost it. It already
+# happened to me with `EXPECT_CHECKS` forty lines further up, in this same block.
 _group_kill = "start_new_" + "session=True"
 assert suite.count(_group_kill) >= 1 and "killpg" in suite, \
     ("the empty-selection probe no longer kills the process group; a timeout that kills one "
@@ -12038,15 +12043,15 @@ TRL="$LOOP/.ddw/scripts/transition.py"
 lstep() { python3 "$TRL" "$@" --state "$LOOP/.ddw-state.json" --graph "$G" > "$LOOP/s" 2>/dev/null \
           && cp "$LOOP/s" "$LOOP/.ddw-state.json"; }
 python3 "$TRL" --to CLASSIFY --action r --ticket T-1 --state "$LOOP/.ddw-state.json" --graph "$G" > "$LOOP/.ddw-state.json"
-# Las compuertas, GANADAS. Sin `ddw_earn` cada paso falla en silencio —`lstep`
-# redirige stderr y sólo copia el estado si el helper salió 0— y el fixture se
-# quedaba en DEFINE: los dos checks de abajo preguntaban por una arista
-# DEFINE→VERIFY que no está en el grafo, así que uno informaba verde por una
-# razón que no tenía nada que ver con el bucle correctivo, y el otro medía lo
-# mismo que su vecino. Es el único de los tres fixtures de esta sección que no
-# las ganaba.
-# Reclamar y MOVERSE son dos llamadas: `--claim` marca compuertas en la fase
-# actual y no toma arista. En una sola, el helper rechaza las dos cosas.
+# The gates, EARNED. Without `ddw_earn` every step fails silently — `lstep`
+# redirects stderr and only copies the state if the helper exited 0 — and the
+# fixture stayed in DEFINE: the two checks below asked about a DEFINE→VERIFY
+# edge that is not in the graph, so one reported green for a reason that had
+# nothing to do with the corrective loop, and the other measured the same
+# thing as its neighbor. It is the only one of this section's three fixtures
+# that did not earn them.
+# Claiming and MOVING are two calls: `--claim` marks gates in the current
+# phase and takes no edge. In a single one, the helper refuses both things.
 lstep --to DEFINE --action c --tier FEATURE --title "the fixture ticket"
 ddw_earn "$LOOP" define T-1;  lstep --claim define
 lstep --to PLAN   --action p
