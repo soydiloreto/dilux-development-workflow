@@ -1580,3 +1580,28 @@ def test_una_pausa_comun_sigue_sin_gates(tmp_path):
                         "--to", "IDLE", "--action", "pause: lo retomo mañana", "--write"],
                        capture_output=True, text=True, cwd=d)
     assert r.returncode == 0, "an ordinary pause got gated: " + r.stderr[-200:]
+
+
+def test_la_pausa_multirepo_por_el_hook_tambien_debe_el_recibo(tmp_path):
+    """Mutation 230 survived: the helper's path was checked and the hook's was
+    not — a gate only one door enforces is decoration at the other."""
+    d = str(tmp_path / "wshook")
+    os.makedirs(os.path.join(d, "docs", "ddw", "prd"))
+    subprocess.run(["git", "-C", d, "init", "-q"], check=True)
+    open(os.path.join(d, "docs", "ddw", "prd", "prd-CHK-1.md"), "w",
+         encoding="utf-8").write(FAM_INDEX)
+    hist = [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="CHK-1"),
+            entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="CHK-1")]
+    old = state("DEFINE", "FEATURE", "CHK-1", {}, hist)
+    p = os.path.join(d, ".ddw-state.json")
+    open(p, "w", encoding="utf-8").write(json.dumps(old))
+    new = json.loads(json.dumps(old))
+    new.update({"tier": None, "phase": "IDLE", "ticket": None, "title": None,
+                "autonomy": None, "gates": {}})
+    new["history"] = hist + [entry("DEFINE", "IDLE",
+                                   "pause: multirepo split into back/bff",
+                                   tier="FEATURE", ticket="CHK-1")]
+    reason = vt.decide_pre(p, _GRAPH_PATH, "Write",
+                           {"file_path": p, "content": json.dumps(new)}, [p], repo=d)
+    assert reason and "vouched" in reason, \
+        "a hand-written multirepo pause slipped the hook with no receipt: %r" % reason
