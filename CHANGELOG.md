@@ -47,6 +47,18 @@ move at different speeds. So the promise is specific:
   id; the workspace's sessions update the index against the forge's answers;
   nothing ever writes across repositories.
 
+### Known issue (found live, fix queued)
+
+- **Re-claiming gates after a corrective loop wedges the run.** `VERIFY → CODE`
+  clears `tests`+`sast`; re-claiming them with `--claim` — what the helper's
+  own help teaches — makes the post net condemn the state: the replay
+  re-litigates the backward edge's clears against the re-earned gates, because
+  the in-phase claim appends no history entry and the backward edge is still
+  the newest one. The path that works is claiming ON the forward edge
+  (`--to VERIFY --gate tests --gate sast`), which is what the suite's own
+  corrective-loop check exercises. Caught by a live minimal run that did
+  exactly the right thing: stopped, reported, repaired nothing.
+
 ## [0.39.0] — Unreleased
 
 ### Added
