@@ -1196,6 +1196,38 @@ MUTATIONS = [
      edit("ddw/scripts/validate_prd.py",
           '    if re.search(r"^\\|\\s*Status\\s*\\|\\s*Multirepo", text, re.MULTILINE | re.IGNORECASE):',
           "    if False:")),
+    ("a departure vanishes from the catalog silently",
+     edit("ddw/scripts/family_catalog.py",
+          '                gone.append((name, "no longer declares this family"))',
+          "                pass")),
+    ("the regenerated catalog eats the prose outside its markers",
+     edit("ddw/scripts/family_catalog.py",
+          "    if BEGIN in current:\n"
+          "        head = current.split(BEGIN, 1)[0]\n"
+          '        tail = current.split(END, 1)[1] if END in current else "\\n"\n'
+          "        new_text = head + block + tail",
+          "    if BEGIN in current:\n"
+          '        new_text = block + "\\n"')),
+    ("an unchanged family rewrites the catalog anyway",
+     edit("ddw/scripts/family_catalog.py",
+          "    if strip_stamp(current) == strip_stamp(new_text):\n"
+          '        print("family_catalog: no changes — %d repo(s), catalog already current." % len(rows))',
+          "    if False:\n"
+          '        print("family_catalog: no changes — %d repo(s), catalog already current." % len(rows))')),
+    ("--check calls a stale catalog fresh",
+     edit("ddw/scripts/family_catalog.py",
+          "        if strip_stamp(current) == strip_stamp(new_text):\n"
+          '            print("family_catalog: fresh — every row matches its repo\'s AGENTS.md.")',
+          "        if True:\n"
+          '            print("family_catalog: fresh — every row matches its repo\'s AGENTS.md.")')),
+    ("the sync lands on a ticket branch again",
+     edit("ddw/scripts/family_catalog.py",
+          '        if head not in ("", default) or mid_ticket:',
+          "        if False:")),
+    ("the member sync eats the rest of the AGENTS.md",
+     edit("ddw/scripts/family_catalog.py",
+          "            new_text = text[:m.start()] + section + chr(10) + text[end:].lstrip(chr(10))",
+          "            new_text = section")),
     ("a status outside the vocabulary lands unjudged",
      edit("ddw/scripts/validate-transition.py",
           '        status_ok = bool(drop or unver\n'
