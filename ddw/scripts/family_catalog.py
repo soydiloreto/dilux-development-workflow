@@ -261,7 +261,19 @@ def write_members(root, local, ws_slug, push=False):
         default = subprocess.run(
             ["git", "-C", clone, "symbolic-ref", "--quiet", "--short",
              "refs/remotes/origin/HEAD"], capture_output=True, text=True
-        ).stdout.strip().split("/")[-1] or "main"
+        ).stdout.strip().split("/")[-1]
+        if not default:
+            # No origin to ask. `main` as a guess skipped every clone whose
+            # git initialises `master` — measured in CI, where the runner's
+            # git does exactly that and the sync silently stamped nobody. A
+            # repo with ONE branch is standing on its default by definition;
+            # only with several is there a work branch to protect.
+            branches = [b.strip() for b in subprocess.run(
+                ["git", "-C", clone, "branch", "--format=%(refname:short)"],
+                capture_output=True, text=True).stdout.splitlines() if b.strip()]
+            default = (head if len(branches) <= 1
+                       else "main" if "main" in branches
+                       else "master" if "master" in branches else head)
         mid_ticket = False
         try:
             st = json.load(open(os.path.join(clone, ".ddw-state.json"), encoding="utf-8"))

@@ -194,3 +194,20 @@ def test_write_members_saltea_un_clon_a_mitad_de_ticket(tmp_path):
     log = subprocess.run(["git", "-C", str(tmp_path / "alpha"), "log", "--oneline"],
                          capture_output=True, text=True).stdout
     assert "Repo family" not in log, "the sync landed on a ticket branch anyway"
+
+
+def test_write_members_funciona_cuando_git_inicializa_master(tmp_path):
+    """Measured in CI: the runner's git inits `master`, the guard's `main`
+    guess read every clone as mid-ticket, and the sync silently stamped
+    nobody. A single-branch clone is standing on its default by definition."""
+    ws = _git_family(tmp_path)
+    for name in ("alpha", "beta"):
+        d = str(tmp_path / name)
+        cur = subprocess.run(["git", "-C", d, "branch", "--show-current"],
+                             capture_output=True, text=True).stdout.strip()
+        if cur != "master":
+            subprocess.run(["git", "-C", d, "branch", "-m", cur, "master"], check=True)
+    r = _run(ws, "--local", str(tmp_path), "--repos", "ws,alpha,beta", "--write-members")
+    a = (tmp_path / "alpha" / "AGENTS.md").read_text()
+    assert "| Provides | REST /v1 |" in a, \
+        "a master-default clone was skipped as mid-ticket: %s" % r.stdout
