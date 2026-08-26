@@ -12575,16 +12575,24 @@ PYE2E
 # project-scope install records the activation in the repo's own settings file.
 # This is not a check for a sentence — it compares two facts inside the file, so
 # rewording the promise keeps it honest and reverting the behaviour trips it.
-python3 - "$SELF" <<'PYCHK' && ok "the plugin banner names the file a project-scope install leaves behind" || bad "the installer claims a plugin writes nothing while installing at project scope"
+python3 - "$SELF" <<'PYCHK' && ok "the plugin banner tells the truth about its scope — user-wide, with the per-repo off switch named" || bad "the plugin's scope and its banner disagree, or the user-wide install hides its reach"
 import sys
 src = open(f"{sys.argv[1]}/install.sh", encoding="utf-8").read()
-if "--scope project" not in src:
-    sys.exit(0)                      # nothing lands in the repo: nothing to disclose
 start = src.index('MODE" = "plugin"')
-banner = src[start:start + 2000]
-assert ".claude/settings.json" in banner, (
-    "install.sh installs at --scope project but its plugin banner never names "
-    ".claude/settings.json, so the user is told nothing lands in the repo")
+banner = src[start:start + 2200]
+if "--scope user" in src:
+    # A user-scope install reaches every repo the user opens. A banner that
+    # does not say so is the measured defect inverted: one repo of a family
+    # got project scope, the sibling ran naked, and nothing warned. Whole
+    # profile, said out loud, and the way to switch one repo off named.
+    assert "YOUR profile" in banner and "plugin disable" in banner, (
+        "install.sh installs at --scope user but its banner does not say the "
+        "install covers the whole profile, or does not name the per-repo off "
+        "switch — reach that is not disclosed reads as a repo-local install")
+elif "--scope project" in src:
+    assert ".claude/settings.json" in banner, (
+        "install.sh installs at --scope project but its plugin banner never names "
+        ".claude/settings.json, so the user is told nothing lands in the repo")
 PYCHK
 
 # ── The two writers of .gitignore write the same list ──────────────────

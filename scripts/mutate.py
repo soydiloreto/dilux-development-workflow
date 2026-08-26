@@ -3323,10 +3323,10 @@ MUTATIONS = [
     # Four of them were found by reading the code against what it printed, and
     # one by running it: a plugin install at project scope leaves a file in the
     # repo the banner swore was untouched.
-    ("the plugin banner goes back to naming nothing that a project-scope install leaves in the repo",
+    ("the plugin banner stops saying the install covers the whole profile",
      edit("install.sh",
-          '  echo "  (Claude Code records it in .claude/settings.json, which is how a"',
-          '  echo "  (nothing of it is recorded anywhere in your tree, which is how a"')),
+          '  echo "  plugin store, installed to YOUR profile: every repo you open gets the"',
+          '  echo "  plugin store, for the repos where you activate it, one at a time, and"')),
     ("the runtime's gitignore list drops the scratch directory again, so a plugin-only install leaks the drafted commit message",
      edit("ddw/scripts/session-boot.py",
           '                     ".ddw-work/", ".ddw-journal.jsonl", ".ddw/**/__pycache__/")',

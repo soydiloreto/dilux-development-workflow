@@ -63,12 +63,14 @@ The manual equivalents are below, and are what the installer runs.
 
 ```
 /plugin marketplace add soydiloreto/dilux-development-workflow
-/plugin install ddw@dilux --scope project
+/plugin install ddw@dilux --scope user
 ```
 
-`--scope project` records the plugin in the repo's `.claude/settings.json`, so a teammate who clones
-gets the pipeline from one line of config. `--scope local` is you alone in this repo; `--scope user`
-is every repo you open.
+`--scope user` installs the method to your profile, once: every repo you open has it, and each repo
+decides its own behavior from its own context files — a `## Repo family` section makes it part of a
+family, no section leaves it standalone, and `claude plugin disable ddw` standing in a repo switches
+it off there. `--scope project` (recorded in the repo's `.claude/settings.json`, so teammates get it
+on clone) and `--scope local` remain the tool's own options for teams that want per-repo activation.
 
 ### Copilot CLI and OpenCode
 
@@ -89,11 +91,11 @@ section means by *verified at the boundary*.
 ### What a plugin install does not do
 
 **The method is never copied into your repo, and no pipeline artifact appears until one starts.**
-Clone something to read for five minutes and you get no state file and no edited `.gitignore`. The
-one thing a plugin install does write here is the activation itself: with `--scope project`, Claude
-Code records `ddw@dilux` in the repo's `.claude/settings.json` — that line is the whole point of
-project scope, and it arrives untracked, so commit it when you want your teammates to have it.
-Copilot and OpenCode register outside the repo and write nothing here at all.
+Clone something to read for five minutes and you get no state file and no edited `.gitignore`. Under
+the installer's user-scope activation nothing of DDW is written into the repo at all — Claude,
+Copilot and OpenCode all register in your profile. (If you choose Claude's `--scope project`
+yourself, the activation lands untracked in the repo's `.claude/settings.json`; commit it when you
+want your teammates to have it.)
 
 **The repo always wins.** Every hook looks for `.ddw/` in the project first and the plugin second, so
 a repo that wants its own version just has one.

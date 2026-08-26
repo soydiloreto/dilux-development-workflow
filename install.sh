@@ -417,15 +417,21 @@ if [ "$MODE" = "plugin" ]; then
   echo "$RULE"
   echo
   # What this says used to be "nothing of DDW is written into your repo", and
-  # thirty lines below the same run printed "scope: project — your teammates get
-  # it on clone". Both cannot be true: a project-scope install records the
-  # activation in the repo's own settings file. The promise a plugin can keep is
-  # about the METHOD, not about every byte.
+  # thirty lines below the same run printed "scope: project". Both could not be
+  # true then: a project-scope install records the activation in the repo's own
+  # settings file. The activation is USER scope now — a plugin is installed to
+  # your profile, once, and every repo decides its own behavior from its own
+  # context files — so the sentence finally holds: nothing of DDW lands in the
+  # repo until a ticket starts, and that byte is gitignored. Measured the other
+  # way first: a live run installed project-scope into one repo of a family,
+  # the sibling ran a naked session, and nothing anywhere could warn — a
+  # per-repo switch on a user-level product is a gap that reads as coverage.
   echo "  The method is not copied into your repo — it lives in the tool's own"
-  echo "  plugin store. What lands here is at most the activation your tool needs"
-  echo "  (Claude Code records it in .claude/settings.json, which is how a"
-  echo "  teammate gets the pipeline on clone), plus .ddw-state.json when the"
-  echo "  first ticket starts — and that one is gitignored."
+  echo "  plugin store, installed to YOUR profile: every repo you open gets the"
+  echo "  method, and each decides its own behavior from its own context files."
+  echo "  Nothing lands in the repo until a ticket starts (.ddw-state.json,"
+  echo "  gitignored). To switch DDW off for one repo: claude plugin disable ddw"
+  echo "  standing in it."
   echo
   PLUGIN_FAILED=""
   for t in $TARGETS; do
@@ -453,8 +459,8 @@ if [ "$MODE" = "plugin" ]; then
         "$t" plugin marketplace add "$SELF" >/dev/null 2>&1 \
           || "$t" plugin marketplace update dilux >/dev/null 2>&1 || true
         if [ "$t" = "claude" ]; then
-          ( cd "$TARGET" && claude plugin install ddw@dilux --scope project ) \
-            && echo "  ✓ installed  ddw@dilux (scope: project — recorded in .claude/settings.json, your teammates get it on clone)" \
+          claude plugin install ddw@dilux --scope user \
+            && echo "  ✓ installed  ddw@dilux (scope: user — your whole profile; each repo behaves per its own context files)" \
             || { echo "  ⚠ claude: the plugin install did not complete."; PLUGIN_FAILED="yes"; }
         else
           copilot plugin install ddw@dilux \
