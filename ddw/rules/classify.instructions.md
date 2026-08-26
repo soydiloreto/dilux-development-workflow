@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.10.0
+version: 2.11.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -111,6 +111,35 @@ runs stack commands, so there is nothing for the comparison to protect): this st
 measured general runs, and a step only prose orders is a step the least obedient model decides
 about. The file does not prove the comparison was good — it makes skipping it a deliberate act
 that leaves no file where the record demands one.
+
+### Step 1.2: Is this repo part of a family?
+
+Read the **`## Repo family`** section of `AGENTS.md`. No section → the repo is standalone: skip
+this step entirely, ask nothing, change nothing. That absence IS the mono/multi switch, and it is
+the user's file that flips it — never the installation.
+
+When the section exists, it names the family's **workspace** (the coordination repo, all documents)
+and this repo's seams — what it provides, what consumes it, what it consumes. Then:
+
+1. **Judge the request against the seams.** A change that stays inside this repo's own walls is an
+   ordinary ticket — say nothing. A change that touches a declared seam (the API another repo
+   consumes, the contract this repo reads) gets the question **in the classification box, with the
+   tier and the autonomy — one ok**: "this touches `<seam>`, which `<repo>` consumes — is the
+   scope this repo alone, or the family?"
+2. **Scope = this repo** → classify normally; record the seam warning with the decision.
+3. **Scope = the family, and this repo is NOT the workspace** → do not classify here. The
+   initiative's parent is a committed document and it lives in the workspace — this session cannot
+   write it (nothing writes outside its own repo, ever). Name the move and stop:
+   `cd <workspace clone>` and open the initiative there.
+4. **This repo IS the workspace** → classify the initiative as a FEATURE whose DEFINE writes the
+   **multirepo index** (`define.instructions.md` § Multirepo split): one row per repo, the order
+   from the family's dependency chain, the children run in their own repositories.
+
+A child ticket opened FROM a parent initiative (the request names it, or the PRD parent's row does)
+reads the parent index from the workspace clone or the forge — **read-only** — and, when its row
+depends on another repo, asks the forge whether that repo's child PR merged before entering CODE.
+Building on a dependency that is not on main yet is a fact to put in front of the user, not a
+detail to discover in integration.
 
 ---
 

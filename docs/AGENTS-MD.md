@@ -92,6 +92,27 @@ than you get.
 | `## Code conventions` | whoever is reviewing | no | Same, one level down — but nothing goes looking for it |
 | `## What NOT to do in this project` | whoever is reviewing (`/ddw-context-check` lists it) | no | Your hard-won "never do X here" is unknown, and X gets done |
 | `## Domain glossary` | whoever is writing the PRD or the spec | no | The PRD and the spec invent names for things you already named |
+| `## Repo family` | CLASSIFY (Step 1.2) | **yes** | The repo is treated as standalone: no multi-repo scope question, no seam warnings, no family initiative — which is also exactly what its ABSENCE means on purpose. This heading IS the mono/multi switch |
+
+**The `## Repo family` section**, for a repo that is part of one, carries four facts and nothing
+else — the family's name, the workspace repo (`owner/repo`, cloned as a sibling), what this repo
+provides, and who consumes it / what it consumes:
+
+```markdown
+## Repo family
+
+| Field | Value |
+|---|---|
+| Family | tienda-demo |
+| Workspace | acme/tienda-workspace |
+| Provides | REST API /api/v1 (facturación) |
+| Consumed by | tienda-bff |
+| Consumes | none |
+```
+
+Keep it to the seams other repos actually touch. It is a declaration, not a contract: it feeds the
+scope question in CLASSIFY, and nothing verifies it — which is why it stays one small table instead
+of a system map that would rot.
 
 **A missing heading fails quietly.** The lookup finds nothing and the phase carries on. Nothing goes
 red. That is the whole hazard of this file, and it is why the installer and `/ddw-context-check` both

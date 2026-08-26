@@ -75,6 +75,7 @@ there is a lookup that silently finds nothing:
 | `## Domain glossary` | DEFINE, PLAN |
 | `## Testing` | `ddw-test`, `ddw-verify-module` — the coverage floor and where it came from |
 | `## What this project is` | CLASSIFY, `ddw-create-prd` — what the work is FOR, when the request does not say |
+| `## Repo family` | CLASSIFY Step 1.2 — the mono/multi switch; only report it as missing when the repo visibly belongs to a family (a workspace repo names it), never as a default gap |
 
 `AGENTS.md` is copied from DDW's template **once**, when the installer finds none. Three situations
 leave it without these, and all three are ordinary:

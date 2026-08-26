@@ -1172,6 +1172,34 @@ MUTATIONS = [
      edit("ddw/scripts/validate_prd.py",
           "            if renumbered:",
           "            if False:")),
+    ("the family index gets its gate taken away",
+     edit("ddw/scripts/validate-transition.py",
+          '    rel = os.path.relpath(target, root).replace(os.sep, "/")\n'
+          '    if not (rel.startswith("docs/ddw/prd/") and rel.endswith(".md")):\n'
+          "        return None",
+          '    rel = os.path.relpath(target, root).replace(os.sep, "/")\n'
+          "    if True:\n"
+          "        return None")),
+    ("the family gate disappears from the hook's pre path",
+     edit("ddw/scripts/validate-transition.py",
+          "        reason = family_index_write_denied(target, root, tool_name, tool_input)",
+          "        reason = None")),
+    ("a dropped row stops needing its reason",
+     edit("ddw/scripts/validate_prd.py",
+          '            if r["status"].startswith("dropped") and not r["drop_reason"]:',
+          "            if False:")),
+    ("the multirepo index stops being judged as one",
+     edit("ddw/scripts/validate_prd.py",
+          '    if re.search(r"^\\|\\s*Status\\s*\\|\\s*Multirepo", text, re.MULTILINE | re.IGNORECASE):',
+          "    if False:")),
+    ("an unaskable forge reads as merged",
+     edit("ddw/scripts/validate-transition.py",
+          '        return ("the family index marks `%s` as done and the forge could not be asked "\n'
+          '                "(gh unreachable or unauthenticated). The count never degrades to \\"trust "\n'
+          '                "me\\" in silence: retry when the forge answers, or assert it on the record "\n'
+          '                "as `done (unverified: <why>)` — a human\'s name on the assertion is the "\n'
+          '                "declared way out." % row["repo"])',
+          "        continue")),
     ("the state's refusal becomes a puzzle again",
      edit("ddw/scripts/validate-transition.py",
           '            raise Block("Edit to the state with no old_string/new_string." + _HELPER)',
@@ -2895,7 +2923,7 @@ MUTATIONS = [
      edit("ddw/rules/validation-rules.instructions.md",
           "| SAST | 19 | 1 | 20 |", "| Static Analysis | 19 | 1 | 20 |")),
     ("the rules README restates a total the catalog does not define",
-     edit("ddw/rules/README.md", "The 90 validation rules", "The 93 validation rules")),
+     edit("ddw/rules/README.md", "The 91 validation rules", "The 93 validation rules")),
     ("a phase cites a validation rule the catalog does not define",
      edit("ddw/rules/define.instructions.md", "(F-PRD-02, F-PRD-07)", "(F-PRD-02, F-PRD-77)")),
     ("a tier stops being documented in the schema of the file it is written into",

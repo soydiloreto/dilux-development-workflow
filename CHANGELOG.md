@@ -19,6 +19,34 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.40.0] — Unreleased
+
+### Added
+
+- **Multirepo, first real slice: the initiative that cannot lie.** A family of
+  repositories coordinates through a **workspace repo** — an ordinary repo of
+  committed documents, never a process, never a writer into other repos. Its
+  parent document is the **multirepo index** (`Status: Multirepo split`): one
+  row per repo — `owner/repo`, child ticket, scope, depends-on, status — with
+  the shape held by a new FAIL rule (**F-PRD-12**) and the ordinary receipt.
+  The enforcement is a **write gate on the document itself**: a row may say
+  `done` only when the forge confirms a MERGED pull request whose branch names
+  that repo's child ticket — asked fresh on every write, in the sanctioned
+  helper's path and the hook's alike. Two declared ways out, neither silent:
+  `dropped: <why>` for a part the initiative gave up, and
+  `done (unverified: <why>)` for the day the forge cannot answer and a human
+  asserts on the record. The count never degrades to "trust me" quietly.
+- **The mono/multi switch is the user's file.** A `## Repo family` section in
+  `AGENTS.md` (spec in `docs/AGENTS-MD.md`) names the family, its workspace
+  and this repo's seams; CLASSIFY Step 1.2 reads it and asks the scope
+  question in the classification box. No section → standalone, zero new
+  questions, identical to today. Works the same under plugin and drop-in —
+  the section lives in the user's own file.
+- **The protocol**: `define.instructions.md` § Multirepo split — children are
+  ordinary tickets run each in its own repository under the same initiative
+  id; the workspace's sessions update the index against the forge's answers;
+  nothing ever writes across repositories.
+
 ## [0.39.0] — Unreleased
 
 ### Added

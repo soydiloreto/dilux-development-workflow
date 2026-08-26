@@ -17,12 +17,29 @@ Exit: 0 = PASSED (warnings allowed) · 2 = FAILED · 3 = cannot read/parse.
 
 import argparse
 import hashlib
+import importlib.util
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ddw_receipt  # noqa: E402 — same directory, resolved above
+
+
+def _family_parser():
+    """`parse_family_rows`, borrowed from the enforcement core.
+
+    One parser for the family table, and it lives where the gate lives: a row
+    this validator blesses under one reading and the write gate judges under
+    another is a receipt for a different document. The filename carries a
+    dash, so it is loaded the way every caller of the validator loads it.
+    """
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "validate-transition.py")
+    spec = importlib.util.spec_from_file_location("ddw_validate_transition", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.parse_family_rows
 
 # Headers as ddw-create-prd emits them (English headers, prose in any language).
 SECTIONS = [
@@ -302,6 +319,59 @@ def main():
             print(row)
         print("─" * 64)
         print(f"Result: {'FAILED' if fails else 'PASSED'}")
+        sys.exit(2 if fails else 0)
+
+    # A multirepo index is the other document that is not a PRD: the parent of
+    # an initiative that spans repositories. One row per repo, and the rows are
+    # everything — the family gate reads them to decide whether the initiative
+    # may claim a repo's part is done, so a row the gate cannot parse is a part
+    # the gate cannot hold, which is why the shape is a FAIL and not a style
+    # note. Judged by these rules alone, like the split index above.
+    if re.search(r"^\|\s*Status\s*\|\s*Multirepo", text, re.MULTILINE | re.IGNORECASE):
+        rows_found = _family_parser()(text)
+        problems = []
+        if len(rows_found) < 2:
+            problems.append(
+                "a multirepo initiative names at least two repos (one repo is an ordinary "
+                "ticket); found %d well-formed row(s)" % len(rows_found))
+        listed = {r["repo"] for r in rows_found} | {r["repo"].rsplit("/", 1)[-1]
+                                                    for r in rows_found}
+        for r in rows_found:
+            if not r["ticket"]:
+                problems.append("row `%s` names no child ticket id" % r["repo"])
+            for dep in r["deps"]:
+                if dep not in listed:
+                    problems.append(
+                        "row `%s` depends on `%s`, which no row lists — a dependency on a "
+                        "repo outside the table is one the order cannot schedule"
+                        % (r["repo"], dep))
+                if dep in (r["repo"], r["repo"].rsplit("/", 1)[-1]):
+                    problems.append("row `%s` depends on itself" % r["repo"])
+            if r["status"].startswith("dropped") and not r["drop_reason"]:
+                problems.append(
+                    "row `%s` is dropped with no reason — the declared way out of the family "
+                    "gate is `dropped: <why>`, because a drop nobody explains is a count "
+                    "that quietly stopped counting" % r["repo"])
+        malformed = [ln for ln in re.findall(r"^\|.*$", text, re.MULTILINE)
+                     if re.match(r"^\|\s*[\w.-]+/[\w.-]+\s*\|", ln)
+                     and not any(r["raw"] == ln for r in rows_found)]
+        if malformed:
+            problems.append("unreadable repo row(s): " + " · ".join(m[:60] for m in malformed))
+        if problems:
+            fail("F-PRD-12", "the family table cannot be held to: " + " · ".join(problems))
+        else:
+            ok("F-PRD-12", "%d repos, every row carrying owner/repo, a child ticket and "
+                           "resolvable dependencies" % len(rows_found))
+        print(f"\n/ddw-validate-prd {args.prd} — {'FAILED' if fails else 'PASSED'} (multirepo index)")
+        print("─" * 64)
+        for row in rows:
+            print(row)
+        print("─" * 64)
+        print(f"Result: {'FAILED' if fails else 'PASSED'}")
+        if not fails:
+            # The receipt, like every artifact that earns a gate: the family
+            # gate trusts rows only from an index a validator vouched for.
+            print("Receipt: .ddw-sessions/" + ddw_receipt.write(args.prd, "prd", text, args.tier))
         sys.exit(2 if fails else 0)
 
     if args.tier == "QUICK-FIX":

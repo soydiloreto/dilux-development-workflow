@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=635
+EXPECT_CHECKS=641
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=719
+EXPECT_MUTATIONS=724
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -3166,6 +3166,88 @@ case "$PGOUT" in
   *) bad "the state's refusal is a puzzle again — the measured six-call bypass hunt starts here" ;;
 esac
 
+# ── The family index: the document that cannot lie ────────────────────────────
+#
+# A multirepo initiative's parent is a committed document whose rows speak for
+# OTHER repositories — the one thing in the method that does. The write gate
+# holds one sentence: a row says `done` only when the forge confirms that
+# repo's child PR merged. Two declared outs, both carrying a reason.
+section "The family index cannot say done without the forge"
+
+FAM="$WORK/family"; mkdir -p "$FAM/docs/ddw/prd" "$FAM/bin"; git -C "$FAM" init -q .
+cat > "$FAM/docs/ddw/prd/prd-CHK-1.md" <<'FAMEOF'
+# Parent PRD: Checkout
+
+| Metric | Value |
+|--------|-------|
+| Ticket | CHK-1 |
+| Status | Multirepo split |
+
+## Repos
+
+| Repo | Ticket | Scope | Depends on | Status |
+|---|---|---|---|---|
+| acme/tienda-back | CHK-1 | api de pagos | none | active |
+| acme/tienda-bff | CHK-1 | exponer pagos | tienda-back | pending |
+FAMEOF
+printf '{"phase": "IDLE", "tier": null, "ticket": null, "gates": {}, "history": []}\n' > "$FAM/.ddw-state.json"
+
+FAMOUT="$(python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM/docs/ddw/prd/prd-CHK-1.md" --tier FEATURE 2>&1)" \
+  && compgen -G "$FAM/.ddw-sessions/prd-validated-*" >/dev/null \
+  && ok "a well-formed family index passes F-PRD-12 and earns the ordinary receipt" \
+  || bad "the healthy multirepo index is refused by its own validator, or earns no receipt: $(echo "$FAMOUT" | tail -2)"
+
+sed 's/| tienda-back | pending |/| tienda-pagos | pending |/' \
+  "$FAM/docs/ddw/prd/prd-CHK-1.md" > "$FAM/docs/ddw/prd/prd-CHK-9.md"
+python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM/docs/ddw/prd/prd-CHK-9.md" --tier FEATURE >/dev/null 2>&1 \
+  && bad "a family row depending on a repo no row lists passed validation" \
+  || ok "and a dependency outside the table is refused — a row the order cannot schedule"
+rm -f "$FAM/docs/ddw/prd/prd-CHK-9.md"
+
+cat > "$FAM/bin/gh" <<'FAMGH'
+#!/bin/bash
+echo "${FAM_GH_OUT:-[]}"; exit "${FAM_GH_RC:-0}"
+FAMGH
+chmod +x "$FAM/bin/gh"
+
+fam_write() {  # $1 = the status cell for tienda-back's row
+  python3 - "$FAM" "$1" > "$FAM/event.json" <<'FAMEV'
+import json, sys
+root, status = sys.argv[1], sys.argv[2]
+idx = open(root + "/docs/ddw/prd/prd-CHK-1.md", encoding="utf-8").read()
+new = idx.replace("| none | active |", "| none | %s |" % status)
+print(json.dumps({"tool_name": "Write",
+                  "tool_input": {"file_path": "docs/ddw/prd/prd-CHK-1.md",
+                                 "content": new}}))
+FAMEV
+  PATH="$FAM/bin:$PATH" python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$FAM/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$FAM" < "$FAM/event.json" 2>&1
+}
+
+FAMOUT="$(FAM_GH_OUT='[{"headRefName":"feat/CHK-1-pagos","state":"OPEN","number":7}]' fam_write done || true)"
+case "$FAMOUT" in
+  *tienda-back*MERGED*|*MERGED*tienda-back*)
+    ok "a row marked done over an OPEN pull request is refused, naming the repo — the epic cannot lie" ;;
+  *) bad "the family index said done over an unmerged PR and the hook let it land" ;;
+esac
+
+FAM_GH_OUT='[{"headRefName":"feat/CHK-1-pagos","state":"MERGED","number":7}]' fam_write done >/dev/null 2>&1 \
+  && ok "and a forge-confirmed merge opens the same row" \
+  || bad "the gate refuses a done the forge confirms — a guard that never lets anything through"
+
+FAMOUT="$(FAM_GH_RC=1 fam_write done || true)"
+case "$FAMOUT" in
+  *unverified*)
+    ok "an unreachable forge refuses AND names the declared way out — the count never degrades in silence" ;;
+  *) bad "with the forge down the index either lied quietly or refused with no way out" ;;
+esac
+
+FAM_GH_RC=1 fam_write "done (unverified: gh caido, PR visto por un humano)" >/dev/null 2>&1 \
+  && FAM_GH_RC=1 fam_write "dropped: esa parte se pospone" >/dev/null 2>&1 \
+  && ok "and both declared outs pass with the forge down — an escape hatch on the record, not a hole" \
+  || bad "a declared out (dropped/unverified with reason) is refused, which teaches people to route around the gate"
+
 # A receipt re-validated with identical bytes is one event, not two journal
 # lines (measured: identical consecutive records, one validator run). And a
 # `spent` record belongs to ITS ticket: a closed ticket's receipts used to read
@@ -6009,19 +6091,19 @@ code, out = lint()
 assert code == 0, "the shipped tree does not lint clean, so nothing below means anything: " + out[-300:]
 
 # One area row overstated by one, exactly the shape the drift took.
-rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 11 | 6 | 17 |", "| PRD | 12 | 6 | 18 |")
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 12 | 6 | 18 |", "| PRD | 13 | 6 | 19 |")
 code, out = lint()
-assert code != 0 and "PRD" in out and "11" in out, \
+assert code != 0 and "PRD" in out and "12" in out, \
     "an area row that overcounts its own rules passed: " + out[-300:]
-rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 12 | 6 | 18 |", "| PRD | 11 | 6 | 17 |")
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 13 | 6 | 19 |", "| PRD | 12 | 6 | 18 |")
 
 # The total alone, with every row correct — the arithmetic nobody redid.
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **72** | **18** | **90** |", "| **Total** | **76** | **18** | **94** |")
+        "| **Total** | **73** | **18** | **91** |", "| **Total** | **77** | **18** | **95** |")
 code, out = lint()
-assert code != 0 and "72" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
+assert code != 0 and "73" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **76** | **18** | **94** |", "| **Total** | **72** | **18** | **90** |")
+        "| **Total** | **77** | **18** | **95** |", "| **Total** | **73** | **18** | **91** |")
 
 # Two more of the linter's checks, driven the same way. Both were added with a
 # mutation and no check: deleting the CALL left the repository linting clean,
@@ -6109,10 +6191,10 @@ assert code == 0, "the tree was not put back the way it was found: " + out[-300:
 
 # And the restatement outside the catalog, which is the line a reader of
 # `ddw/rules/` meets first.
-rewrite("ddw/rules/README.md", "The 90 validation rules", "The 93 validation rules")
+rewrite("ddw/rules/README.md", "The 91 validation rules", "The 94 validation rules")
 code, out = lint()
-assert code != 0 and "90" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
-rewrite("ddw/rules/README.md", "The 93 validation rules", "The 90 validation rules")
+assert code != 0 and "91" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
+rewrite("ddw/rules/README.md", "The 94 validation rules", "The 91 validation rules")
 
 code, out = lint()
 assert code == 0, "the probe was not restored: " + out[-300:]

@@ -2855,6 +2855,9 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
         reason = sealed_artifact_denied(target, root, disk)
         if reason:
             return reason
+        reason = family_index_write_denied(target, root, tool_name, tool_input)
+        if reason:
+            return reason
 
     # The state file keeps failing closed on an unknown verb: reconstructing it
     # is what decides, and `_reconstruct_new_text` refuses anything it cannot
@@ -3219,6 +3222,158 @@ def block_review_missing(root, old_block, new_block):
         "it is written after a block finishes, not before it starts. And if a review agent "
         "died, dispatch it again: your own reading of your own block is not one of the two "
         "verdicts." % (finished, finished))
+
+
+# ── The family index: the document that cannot lie ───────────────────────────
+#
+# A multirepo initiative's parent is a committed document in the family's
+# workspace repo — never a state, because states are one per directory and
+# deliberately unshared. Its rows are one repo each, and the row's `status`
+# column is the one thing in this method that speaks for OTHER repositories.
+# Nothing here ever writes into those repositories (outside the repo is not
+# ours); what is held instead is the sentence: **a row may say `done` only
+# when the forge confirms that repo's child PR merged.** The epic that cannot
+# be dragged to the Done column — which is the whole reason the parent exists.
+FAMILY_MARKER = re.compile(r"^\|\s*Status\s*\|\s*Multirepo", re.MULTILINE | re.IGNORECASE)
+
+_FAMILY_ROW = re.compile(r"^\|\s*(?P<repo>[\w.-]+/[\w.-]+)\s*\|(?P<rest>.*)$")
+
+
+def parse_family_rows(text):
+    """The family table's rows, as dicts — the ONE parser both sides use.
+
+    `validate_prd.py` judges the shape with it (F-PRD-12) and the write gate
+    below reads verdicts through it; two parsers of one table is how a row
+    validates under one reading and slips the gate under another.
+
+    A row is `| owner/repo | TICKET | scope | depends on | status |`. Rows
+    whose first cell is not an owner/repo slug are not family rows (headers,
+    separators, prose tables). Returns dicts with: repo, ticket, scope, deps
+    (list), status (lowercased), drop_reason, unverified_reason, done, raw.
+    """
+    rows = []
+    for line in text.splitlines():
+        m = _FAMILY_ROW.match(line.strip())
+        if not m:
+            continue
+        cells = [c.strip() for c in m.group("rest").strip().strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        ticket_m = re.search(r"\b[A-Z][A-Z0-9]*-\d+\b", cells[0])
+        status = cells[3].strip().lower()
+        deps_raw = cells[2].strip().lower()
+        deps = ([] if deps_raw in ("none", "-", "—", "ninguna", "")
+                else [d.strip() for d in re.split(r"[,;]| y ", cells[2]) if d.strip()])
+        drop = re.match(r"(dropped|descartado)\s*:\s*(.+)$", cells[3].strip(),
+                        re.IGNORECASE)
+        unver = re.match(r"done\s*\(\s*unverified\s*:\s*(.+?)\s*\)\s*$", cells[3].strip(),
+                         re.IGNORECASE)
+        rows.append({
+            "repo": m.group("repo"),
+            "ticket": ticket_m.group(0) if ticket_m else "",
+            "scope": cells[1],
+            "deps": deps,
+            "status": status,
+            "drop_reason": drop.group(2).strip() if drop else "",
+            "unverified_reason": unver.group(1).strip() if unver else "",
+            "done": status == "done" or bool(unver),
+            "raw": line,
+        })
+    return rows
+
+
+def _family_child_merged(root, repo_slug, ticket):
+    """Has this repo's child PR merged, asked at the forge?
+
+    True / False / None-for-unknown, the same three answers the pr gate's own
+    checks distinguish — because "gh fell over" and "no PR exists" must never
+    read the same: one is retried, the other is the finding.
+
+    The convention is the method's own: a branch names the ticket it was
+    opened for, so the child PR is the one whose head carries the child
+    ticket's id. The forge stays the sole authority; nothing local can vouch
+    for another repository.
+    """
+    try:
+        out = subprocess.run(
+            ["gh", "pr", "list", "--repo", repo_slug, "--state", "all",
+             "--limit", "100", "--json", "headRefName,state,number"],
+            cwd=root, capture_output=True, text=True, timeout=20,
+            stdin=subprocess.DEVNULL)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        prs = json.loads(out.stdout or "[]")
+    except ValueError:
+        return None
+    if not isinstance(prs, list):
+        return None
+    mine = [p for p in prs if isinstance(p, dict)
+            and ticket.lower() in str(p.get("headRefName", "")).lower()]
+    if any(str(p.get("state", "")).upper() == "MERGED" for p in mine):
+        return True
+    return False
+
+
+def family_index_write_denied(target, root, tool_name, tool_input):
+    """A write that makes the family index claim `done` it cannot prove.
+
+    Judged on the CONTENT the write would land, not on an edge: the parent of
+    a multirepo initiative has no closing ceremony of its own — its index is
+    maintained row by row, in whatever phase the workspace repo happens to be
+    in — so the document is the only place the promise can be held. Every row
+    the new bytes mark `done` is asked of the forge, every time: a `done` that
+    stops being true (a PR closed after the fact) is refused on the next edit
+    rather than compounding.
+
+    Two declared ways out, both on the record, neither silent:
+    `dropped: <why>` for a part the initiative gave up, and
+    `done (unverified: <why>)` for the day the forge cannot answer and a
+    human decides to assert anyway — Pablo's rule is that the count never
+    degrades to "trust me" QUIETLY; degrading out loud, with a reason in the
+    row, is the difference between an escape hatch and a hole.
+    """
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
+    if not (rel.startswith("docs/ddw/prd/") and rel.endswith(".md")):
+        return None
+    content = tool_input.get("content")
+    if not isinstance(content, str):
+        # An edit: reconstruct the bytes it would land, from the file on disk.
+        try:
+            with open(target, encoding="utf-8") as fh:
+                old_text = fh.read()
+        except OSError:
+            return None                  # a new file arrives as a Write, with content
+        if not FAMILY_MARKER.search(old_text):
+            return None                  # not a family index; not this gate's business
+        try:
+            content = _reconstruct_new_text(tool_name, tool_input, old_text)
+        except Block:
+            return ("this edit of a family index cannot be reconstructed, so what it would "
+                    "make the index say cannot be judged. Write the whole file instead — the "
+                    "index is small on purpose, and its rows are promises a gate reads.")
+    if not FAMILY_MARKER.search(content):
+        return None
+    for row in parse_family_rows(content):
+        if not row["done"] or row["unverified_reason"]:
+            continue
+        merged = _family_child_merged(root, row["repo"], row["ticket"] or "\x00")
+        if merged is True:
+            continue
+        if merged is False:
+            return ("the family index marks `%s` as done, and the forge has no MERGED pull "
+                    "request whose branch names %s in that repo. The row may say `done` only "
+                    "when GitHub confirms it — that is the initiative that cannot lie. Merge "
+                    "the child's PR first, or record the truth: `dropped: <why>` if that part "
+                    "was given up." % (row["repo"], row["ticket"] or "its ticket"))
+        return ("the family index marks `%s` as done and the forge could not be asked "
+                "(gh unreachable or unauthenticated). The count never degrades to \"trust "
+                "me\" in silence: retry when the forge answers, or assert it on the record "
+                "as `done (unverified: <why>)` — a human's name on the assertion is the "
+                "declared way out." % row["repo"])
+    return None
 
 
 def record_notice(state_path, note):

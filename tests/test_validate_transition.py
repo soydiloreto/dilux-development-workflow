@@ -1366,3 +1366,127 @@ def test_discovery_no_debe_context_check(tmp_path):
     old, new = _fresh_edge("CLASSIFY", "DISCOVERY", tier="DISCOVERY", ticket="DISC-1")
     assert vt.context_check_missing(str(tmp_path), old, new) is None, \
         "the discovery lane was asked for a context check it has no use for"
+
+
+# ── The family index: the document that cannot lie ───────────────────────────
+#
+# A multirepo initiative's parent is a committed document, and its rows speak
+# for OTHER repositories — the one thing in the method that does. The write
+# gate holds the sentence: a row says `done` only when the forge confirms that
+# repo's child PR merged. Two declared outs, both with a reason on the record.
+
+FAM_INDEX = """# Parent PRD: Checkout
+
+| Metric | Value |
+|--------|-------|
+| Ticket | CHK-1 |
+| Status | Multirepo split |
+
+## Repos
+
+| Repo | Ticket | Scope | Depends on | Status |
+|---|---|---|---|---|
+| acme/tienda-back | CHK-1 | api de pagos | none | active |
+| acme/tienda-bff | CHK-1 | exponer pagos | tienda-back | pending |
+"""
+
+
+def test_el_parser_de_familia_lee_las_filas():
+    rows = vt.parse_family_rows(FAM_INDEX)
+    assert [r["repo"] for r in rows] == ["acme/tienda-back", "acme/tienda-bff"]
+    assert rows[0]["ticket"] == "CHK-1" and rows[0]["deps"] == []
+    assert rows[1]["deps"] == ["tienda-back"] and not rows[1]["done"]
+
+
+def test_dropped_y_unverified_llevan_su_razon():
+    rows = vt.parse_family_rows(FAM_INDEX.replace(
+        "| none | active |", "| none | dropped: se pospone |").replace(
+        "| tienda-back | pending |", "| tienda-back | done (unverified: forge caido, lo vi yo) |"))
+    assert rows[0]["drop_reason"] == "se pospone" and not rows[0]["done"]
+    assert rows[1]["unverified_reason"].startswith("forge caido") and rows[1]["done"]
+
+
+def _fam_repo(tmp_path):
+    r = str(tmp_path / "fam")
+    os.makedirs(os.path.join(r, "docs", "ddw", "prd"))
+    subprocess.run(["git", "-C", r, "init", "-q"], check=True)
+    idx = os.path.join(r, "docs", "ddw", "prd", "prd-CHK-1.md")
+    open(idx, "w", encoding="utf-8").write(FAM_INDEX)
+    open(os.path.join(r, ".ddw-state.json"), "w", encoding="utf-8").write(
+        json.dumps(state()))
+    return r, idx
+
+
+def _fam_try(repo, idx, content, binpath, **stub_env):
+    old = os.environ.copy()
+    os.environ["PATH"] = binpath + os.pathsep + os.environ["PATH"]
+    for k, v in stub_env.items():
+        os.environ[k] = v
+    try:
+        return vt.family_index_write_denied(
+            idx, repo, "Write",
+            {"file_path": "docs/ddw/prd/prd-CHK-1.md", "content": content})
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+
+
+def test_una_fila_done_con_merge_confirmado_pasa(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace("| none | active |", "| none | done |")
+    why = _fam_try(repo, idx, listo, _gh_stub(tmp_path),
+                   GH_LIST_OUT='[{"headRefName":"feat/CHK-1-pagos","state":"MERGED","number":7}]')
+    assert why is None, "a forge-confirmed done was refused: %r" % why
+
+
+def test_una_fila_done_sin_merge_es_refusada(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace("| none | active |", "| none | done |")
+    why = _fam_try(repo, idx, listo, _gh_stub(tmp_path),
+                   GH_LIST_OUT='[{"headRefName":"feat/CHK-1-pagos","state":"OPEN","number":7}]')
+    assert why and "tienda-back" in why and "MERGED" in why, \
+        "the index said done over an OPEN pull request: %r" % why
+
+
+def test_forge_caido_refusa_y_nombra_la_salida_declarada(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace("| none | active |", "| none | done |")
+    why = _fam_try(repo, idx, listo, _gh_stub(tmp_path), GH_LIST_RC="1")
+    assert why and "unverified" in why, \
+        "with the forge unreachable the count degraded to trust-me in silence: %r" % why
+
+
+def test_las_salidas_declaradas_pasan_sin_forge(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace(
+        "| none | active |", "| none | done (unverified: gh caido, PR #7 visto por Pablo) |"
+    ).replace("| tienda-back | pending |", "| tienda-back | dropped: se pospone |")
+    why = _fam_try(repo, idx, listo, _gh_stub(tmp_path), GH_LIST_RC="1")
+    assert why is None, "a declared out was refused: %r" % why
+
+
+def test_un_documento_comun_no_es_asunto_del_gate(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    why = _fam_try(repo, idx, "# PRD normal\nnada de familia\n", _gh_stub(tmp_path),
+                   GH_LIST_RC="1")
+    assert why is None
+
+
+def test_el_gate_corre_en_decide_pre(tmp_path):
+    """Via the path that actually runs — the function alone going green while
+    nothing consults it is the decoration this repo keeps finding."""
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace("| none | active |", "| none | done |")
+    binpath = _gh_stub(tmp_path)
+    old = os.environ.copy()
+    os.environ["PATH"] = binpath + os.pathsep + os.environ["PATH"]
+    os.environ["GH_LIST_OUT"] = '[{"headRefName":"feat/CHK-1-x","state":"OPEN","number":7}]'
+    try:
+        reason = vt.decide_pre(os.path.join(repo, ".ddw-state.json"), _GRAPH_PATH,
+                               "Write", {"file_path": idx, "content": listo}, [idx],
+                               repo=repo)
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+    assert reason and "tienda-back" in reason, \
+        "decide_pre let the index lie: %r" % reason
