@@ -434,6 +434,14 @@ The index (`docs/ddw/prd/prd-{TICKET}.md`):
 - **Nothing here writes into the other repositories, ever.** The children read this index
   (read-only, from the sibling clone or the forge); their closeouts cannot update it — the update
   happens here, in a workspace session, against the forge's answer.
+- **The pause's closing message prints the launch plan.** The developer walks the family by hand —
+  that is the design — so the message that parks the parent hands them the walk, executable: one
+  line per repo, in dependency order, with the `cd` to the sibling clone and the prompt to give it
+  (`Implementá mi parte de <TICKET>`), marking which child is unblocked NOW and which waits on
+  whose merge. Asked for later ("dame el plan de lanzamiento"), any workspace session rebuilds it
+  from the index and the forge's current answers. A reparto whose next step the developer has to
+  reconstruct from a table is a reparto that stalls at every handoff — the owner asked for this
+  after walking the first live initiative.
 
 
 **4. Close the parent run, then open sub-ticket `a` as its own run:**
