@@ -1432,3 +1432,10 @@ def test_un_dropped_sin_razon_es_refusado(tmp_path):
         "| tienda-bff | pending |", "| tienda-bff | dropped |"))
     assert _refuses(refused, "F-PRD-12"), \
         "a drop nobody explained passed: " + ("\n".join(refused) or "no refusals")
+
+
+def test_un_status_fuera_del_vocabulario_es_refusado_por_f_prd_12(tmp_path):
+    _, refused = _indice(tmp_path, INDICE_FAMILIA.replace(
+        "| tienda-back | pending |", "| tienda-back | merged |"))
+    assert _refuses(refused, "F-PRD-12"), \
+        "a status outside the vocabulary passed validation: " + ("\n".join(refused) or "no refusals")

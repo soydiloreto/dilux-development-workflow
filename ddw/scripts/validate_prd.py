@@ -352,6 +352,12 @@ def main():
                     "row `%s` is dropped with no reason — the declared way out of the family "
                     "gate is `dropped: <why>`, because a drop nobody explains is a count "
                     "that quietly stopped counting" % r["repo"])
+            elif not r.get("status_ok", True):
+                problems.append(
+                    "row `%s` says %r, which is not the fixed vocabulary (`active`, "
+                    "`pending`, `done`, `dropped: <why>`, `done (unverified: <why>)`) — a "
+                    "status in other words asserts a state no gate reads: `merged` sounds "
+                    "like done and is checked by nobody" % (r["repo"], r["status"]))
         malformed = [ln for ln in re.findall(r"^\|.*$", text, re.MULTILINE)
                      if re.match(r"^\|\s*[\w.-]+/[\w.-]+\s*\|", ln)
                      and not any(r["raw"] == ln for r in rows_found)]

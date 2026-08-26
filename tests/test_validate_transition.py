@@ -1466,8 +1466,9 @@ def test_las_salidas_declaradas_pasan_sin_forge(tmp_path):
 
 
 def test_un_documento_comun_no_es_asunto_del_gate(tmp_path):
-    repo, idx = _fam_repo(tmp_path)
-    why = _fam_try(repo, idx, "# PRD normal\nnada de familia\n", _gh_stub(tmp_path),
+    repo, _ = _fam_repo(tmp_path)
+    comun = os.path.join(repo, "docs", "ddw", "prd", "prd-OTRO-1.md")
+    why = _fam_try(repo, comun, "# PRD normal\nnada de familia\n", _gh_stub(tmp_path),
                    GH_LIST_RC="1")
     assert why is None
 
@@ -1490,3 +1491,92 @@ def test_el_gate_corre_en_decide_pre(tmp_path):
         os.environ.update(old)
     assert reason and "tienda-back" in reason, \
         "decide_pre let the index lie: %r" % reason
+
+
+# ── Los tres cierres de la auditoría de determinismo (26-ago) ────────────────
+
+def test_un_status_fuera_del_vocabulario_es_refusado_por_el_gate(tmp_path):
+    """`merged` suena a done y no lo verifica nadie — la promesa sin gate."""
+    repo, idx = _fam_repo(tmp_path)
+    raro = FAM_INDEX.replace("| none | active |", "| none | merged |")
+    why = _fam_try(repo, idx, raro, _gh_stub(tmp_path))
+    assert why and "merged" in why and "vocabulary" in why, \
+        "a status in other words landed unjudged: %r" % why
+
+
+def test_una_fila_borrada_sin_dropped_es_refusada(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    sin_bff = "\n".join(l for l in FAM_INDEX.splitlines() if "tienda-bff" not in l)
+    why = _fam_try(repo, idx, sin_bff, _gh_stub(tmp_path))
+    assert why and "tienda-bff" in why and "dropped" in why, \
+        "a row vanished silently — the count that quietly stopped counting: %r" % why
+
+
+def test_borrar_el_marcador_multirepo_es_refusado(tmp_path):
+    """El mismo write que miente no puede despedir al juez."""
+    repo, idx = _fam_repo(tmp_path)
+    sin_marca = FAM_INDEX.replace("| Status | Multirepo split |", "| Status | done |")
+    why = _fam_try(repo, idx, sin_marca, _gh_stub(tmp_path))
+    assert why and "marker" in why, \
+        "the write dismissed the judge and landed: %r" % why
+
+
+def test_un_indice_nuevo_no_debe_diff_contra_nada(tmp_path):
+    """El primer Write del índice no tiene filas viejas que preservar."""
+    repo, _ = _fam_repo(tmp_path)
+    nuevo = os.path.join(repo, "docs", "ddw", "prd", "prd-NUEVO-1.md")
+    why = _fam_try(repo, nuevo, FAM_INDEX.replace("CHK-1", "NUEVO-1"),
+                   _gh_stub(tmp_path))
+    assert why is None, "a brand-new index was refused for rows it never had: %r" % why
+
+
+def _fam_pause(tmp_path, with_receipt):
+    """DEFINE→IDLE multirepo pause via the helper, with/without the receipt."""
+    d = str(tmp_path / "wsrepo")
+    os.makedirs(os.path.join(d, "docs", "ddw", "prd"))
+    os.makedirs(os.path.join(d, ".ddw-work"))
+    subprocess.run(["git", "-C", d, "init", "-q"], check=True)
+    idx = os.path.join(d, "docs", "ddw", "prd", "prd-CHK-1.md")
+    open(idx, "w", encoding="utf-8").write(FAM_INDEX)
+    hist = [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="CHK-1"),
+            entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="CHK-1")]
+    open(os.path.join(d, ".ddw-state.json"), "w", encoding="utf-8").write(json.dumps(
+        state("DEFINE", "FEATURE", "CHK-1", {}, hist)))
+    if with_receipt:
+        r = subprocess.run([sys.executable,
+                            os.path.join(ROOT, "ddw/scripts/validate_prd.py"),
+                            idx, "--tier", "FEATURE"], capture_output=True, text=True, cwd=d)
+        assert r.returncode == 0, "fixture: the healthy index failed validation: " + r.stdout
+    return subprocess.run([sys.executable, _TRANSITION_PY, "--state",
+                           os.path.join(d, ".ddw-state.json"), "--graph", _GRAPH_PATH,
+                           "--to", "IDLE",
+                           "--action", "pause: multirepo split into back/bff", "--write"],
+                          capture_output=True, text=True, cwd=d)
+
+
+def test_la_pausa_multirepo_sin_recibo_es_refusada(tmp_path):
+    r = _fam_pause(tmp_path, with_receipt=False)
+    assert r.returncode == 2 and "vouched" in r.stderr, \
+        "an unvalidated index went on to govern three repos: " + r.stderr[-200:]
+
+
+def test_la_pausa_multirepo_con_recibo_pasa(tmp_path):
+    r = _fam_pause(tmp_path, with_receipt=True)
+    assert r.returncode == 0, "the validated index's pause was refused: " + r.stderr[-300:]
+
+
+def test_una_pausa_comun_sigue_sin_gates(tmp_path):
+    """El walkaway ordinario no se toca: solo la pausa del split multirepo
+    debe el recibo."""
+    d = str(tmp_path / "plainrepo")
+    os.makedirs(d)
+    subprocess.run(["git", "-C", d, "init", "-q"], check=True)
+    hist = [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-2"),
+            entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-2")]
+    open(os.path.join(d, ".ddw-state.json"), "w", encoding="utf-8").write(json.dumps(
+        state("DEFINE", "FEATURE", "T-2", {}, hist)))
+    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state",
+                        os.path.join(d, ".ddw-state.json"), "--graph", _GRAPH_PATH,
+                        "--to", "IDLE", "--action", "pause: lo retomo mañana", "--write"],
+                       capture_output=True, text=True, cwd=d)
+    assert r.returncode == 0, "an ordinary pause got gated: " + r.stderr[-200:]

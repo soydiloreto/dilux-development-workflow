@@ -30,8 +30,8 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=641
-EXPECT_SKILLS=17
+EXPECT_CHECKS=647
+EXPECT_SKILLS=18
 EXPECT_AGENTS=5
 EXPECT_RULES=14
 EXPECT_ADAPTERS=6
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=724
+EXPECT_MUTATIONS=731
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -3247,6 +3247,76 @@ FAM_GH_RC=1 fam_write "done (unverified: gh caido, PR visto por un humano)" >/de
   && FAM_GH_RC=1 fam_write "dropped: esa parte se pospone" >/dev/null 2>&1 \
   && ok "and both declared outs pass with the forge down — an escape hatch on the record, not a hole" \
   || bad "a declared out (dropped/unverified with reason) is refused, which teaches people to route around the gate"
+
+# The three closures of the layer's own determinism audit (2026-08-26): a
+# status in other words, a silently vanished row, and a dismissed judge —
+# each a failure that would be INVISIBLE afterwards, which is the standard.
+FAMOUT="$(fam_write merged || true)"
+case "$FAMOUT" in
+  *vocabulary*)
+    ok "a status outside the vocabulary is refused — merged sounds like done and is checked by nobody" ;;
+  *) bad "a row saying 'merged' landed unjudged: completion nothing verified" ;;
+esac
+
+python3 - "$FAM" > "$FAM/event.json" <<'FAMDEL'
+import json, sys
+idx = open(sys.argv[1] + "/docs/ddw/prd/prd-CHK-1.md", encoding="utf-8").read()
+new = "\n".join(l for l in idx.splitlines() if "tienda-bff" not in l)
+print(json.dumps({"tool_name": "Write",
+                  "tool_input": {"file_path": "docs/ddw/prd/prd-CHK-1.md",
+                                 "content": new}}))
+FAMDEL
+FAMOUT="$(PATH="$FAM/bin:$PATH" python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$FAM/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$FAM" < "$FAM/event.json" 2>&1 || true)"
+case "$FAMOUT" in
+  *tienda-bff*vanish*|*vanish*tienda-bff*|*tienda-bff*dropped*)
+    ok "a vanished row is refused by name — the count cannot quietly stop counting" ;;
+  *) bad "a row was deleted from the index with no dropped reason and the hook let it land" ;;
+esac
+
+python3 - "$FAM" > "$FAM/event.json" <<'FAMMARK'
+import json, sys
+idx = open(sys.argv[1] + "/docs/ddw/prd/prd-CHK-1.md", encoding="utf-8").read()
+print(json.dumps({"tool_name": "Write",
+                  "tool_input": {"file_path": "docs/ddw/prd/prd-CHK-1.md",
+                                 "content": idx.replace("| Status | Multirepo split |",
+                                                        "| Status | done |")}}))
+FAMMARK
+PATH="$FAM/bin:$PATH" python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$FAM/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$FAM" < "$FAM/event.json" >/dev/null 2>&1 \
+  && bad "the write that removes the Multirepo marker dismissed the judge and landed" \
+  || ok "and removing the marker that makes the document judged is itself refused"
+
+# The multirepo pause spends the index's receipt — the orphaned-receipt hole.
+FPP="$WORK/fam-pause"; mkdir -p "$FPP/docs/ddw/prd"; git -C "$FPP" init -q .
+cp "$FAM/docs/ddw/prd/prd-CHK-1.md" "$FPP/docs/ddw/prd/prd-CHK-1.md"
+python3 - "$FPP" <<'FPPST'
+import json, sys
+h = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t,
+      "action": "x", "tier": "FEATURE", "ticket": "CHK-1"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE")])]
+json.dump({"tier": "FEATURE", "phase": "DEFINE", "ticket": "CHK-1", "title": "x",
+           "tracker": None, "autonomy": "assisted", "gates": {}, "block": None,
+           "discovery": None, "history": h},
+          open(sys.argv[1] + "/.ddw-state.json", "w"), indent=2)
+FPPST
+fpp_pause() {
+  python3 "$SELF/ddw/scripts/transition.py" --state "$FPP/.ddw-state.json" \
+    --graph "$SELF/ddw/rules/transition-graph.json" --to IDLE \
+    --action "pause: multirepo split into back/bff" --write 2>&1
+}
+FAMOUT="$(fpp_pause || true)"
+case "$FAMOUT" in
+  *vouched*)
+    ok "a multirepo pause on an index the validator never vouched for is refused" ;;
+  *) bad "an unvalidated index went on to govern its repos — the receipt nobody consumes" ;;
+esac
+( cd "$FPP" && python3 "$SELF/ddw/scripts/validate_prd.py" docs/ddw/prd/prd-CHK-1.md --tier FEATURE >/dev/null 2>&1 )
+fpp_pause >/dev/null 2>&1 \
+  && ok "and the validated index's pause goes through — the receipt is what was being asked for" \
+  || bad "the pause refuses a receipt that exists, which walls the protocol's own mandated exit"
 
 # A receipt re-validated with identical bytes is one event, not two journal
 # lines (measured: identical consecutive records, one validator run). And a
@@ -11098,6 +11168,7 @@ CLAIMS = {
     "ddw-create-prd":        ["docs/ddw/prd/", "PRD loops"],
     "ddw-create-spec":       ["docs/ddw/specs/", "Spec loops"],
     "ddw-context-check":     ["AGENTS.md", "## Stack"],
+    "ddw-family-catalog":    ["family_catalog.py", "## Repo family", "--write-members"],
     "ddw-eject":             [".ddw/", "The repo wins", "CLAUDE_PLUGIN_ROOT"],
     "ddw-help":              ["/ddw-status", "/ddw-self-check"],
     "ddw-security-sast":     ["validate_sast.py", "docs/ddw/security/sast-"],

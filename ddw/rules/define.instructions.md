@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.7.0
+version: 2.8.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -430,7 +430,10 @@ The index (`docs/ddw/prd/prd-{TICKET}.md`):
 - **Validate the index** with `ddw-validate-prd` like any DEFINE artifact (it is judged by
   F-PRD-12 alone and writes the ordinary receipt), show it, and on approval **pause the parent**
   (`pause: multirepo split into <repos>`) — the work now happens in the children's repositories.
-  This workspace's later sessions update the rows as the forge confirms them.
+  **The pause spends that receipt**: the FSM refuses a `pause: multirepo split` whose index the
+  validator never vouched for, in the helper and the hook alike — an unvalidated table governing
+  several repositories is the document this layer exists to forbid. This workspace's later
+  sessions update the rows as the forge confirms them.
 - **Nothing here writes into the other repositories, ever.** The children read this index
   (read-only, from the sibling clone or the forge); their closeouts cannot update it — the update
   happens here, in a workspace session, against the forge's answer.

@@ -1118,8 +1118,10 @@ MUTATIONS = [
     ("the context-check gate disappears from the sanctioned helper",
      edit("ddw/scripts/transition.py",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
-          "                   or vt.decisions_record_missing(_root, old_state, new_state))",
-          "        _reason = vt.decisions_record_missing(_root, old_state, new_state)")),
+          "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
+          "        _reason = (vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))")),
     ("the context-check gate disappears from the hook's pre path",
      edit("ddw/scripts/validate-transition.py",
           "            reason = context_check_missing(root, old_state, new_state)",
@@ -1131,8 +1133,10 @@ MUTATIONS = [
     ("the decisions gate disappears from the sanctioned helper",
      edit("ddw/scripts/transition.py",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
-          "                   or vt.decisions_record_missing(_root, old_state, new_state))",
-          "        _reason = vt.context_check_missing(_root, old_state, new_state)")),
+          "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
+          "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))")),
     ("the decisions gate disappears from the hook's pre path",
      edit("ddw/scripts/validate-transition.py",
           "            reason = decisions_record_missing(root, old_state, new_state)",
@@ -1192,6 +1196,40 @@ MUTATIONS = [
      edit("ddw/scripts/validate_prd.py",
           '    if re.search(r"^\\|\\s*Status\\s*\\|\\s*Multirepo", text, re.MULTILINE | re.IGNORECASE):',
           "    if False:")),
+    ("a status outside the vocabulary lands unjudged",
+     edit("ddw/scripts/validate-transition.py",
+          '        status_ok = bool(drop or unver\n'
+          '                         or status in ("active", "pending", "done"))',
+          "        status_ok = True")),
+    ("F-PRD-12 stops judging the status vocabulary",
+     edit("ddw/scripts/validate_prd.py",
+          '            elif not r.get("status_ok", True):',
+          "            elif False:")),
+    ("a vanished row goes back to vanishing silently",
+     edit("ddw/scripts/validate-transition.py",
+          '            if old_row["repo"] not in new_names:',
+          "            if False:")),
+    ("dismissing the judge works again",
+     edit("ddw/scripts/validate-transition.py",
+          "    if not FAMILY_MARKER.search(content):\n        if was_index:",
+          "    if not FAMILY_MARKER.search(content):\n        if False:")),
+    ("the multirepo pause stops spending the receipt",
+     edit("ddw/scripts/validate-transition.py",
+          '    if (entry.get("from") != "DEFINE" or entry.get("to") != IDLE\n'
+          '            or not action.startswith("pause") or "multirepo" not in action):\n'
+          "        return None",
+          "    if True:\n        return None")),
+    ("the pause gate disappears from the sanctioned helper",
+     edit("ddw/scripts/transition.py",
+          "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
+          "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.decisions_record_missing(_root, old_state, new_state))")),
+    ("the pause gate disappears from the hook's pre path",
+     edit("ddw/scripts/validate-transition.py",
+          "            reason = family_split_pause_missing(root, old_state, new_state)",
+          "            reason = None")),
     ("an unaskable forge reads as merged",
      edit("ddw/scripts/validate-transition.py",
           '        return ("the family index marks `%s` as done and the forge could not be asked "\n'
