@@ -114,6 +114,20 @@ Keep it to the seams other repos actually touch. It is a declaration, not a cont
 scope question in CLASSIFY, and nothing verifies it — which is why it stays one small table instead
 of a system map that would rot.
 
+**The `## Organizational memory` section** (optional) names where the org's searchable memory
+lives — an MCP server the agent can query during CLASSIFY Step 1.3. The method is
+provider-agnostic on purpose: the section names the tool, the rules never do, so any second brain
+that speaks MCP fits — and with no section the step still runs over the committed record alone.
+
+```markdown
+## Organizational memory
+
+| Field | Value |
+|---|---|
+| MCP server | diluxite |
+| Scope | workspaces por familia; buscar antes de clasificar iniciativas |
+```
+
 **A missing heading fails quietly.** The lookup finds nothing and the phase carries on. Nothing goes
 red. That is the whole hazard of this file, and it is why the installer and `/ddw-context-check` both
 report the ones that are absent.

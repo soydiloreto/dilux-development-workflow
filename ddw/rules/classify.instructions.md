@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.11.0
+version: 2.12.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -140,6 +140,27 @@ reads the parent index from the workspace clone or the forge — **read-only** �
 depends on another repo, asks the forge whether that repo's child PR merged before entering CODE.
 Building on a dependency that is not on main yet is a fact to put in front of the user, not a
 detail to discover in integration.
+
+### Step 1.3: What does the organization already know?
+
+Before classifying a request that **crosses family seams or names an initiative** (and only then —
+a typo fix consults nothing), gather what the organization already knows about it: what each repo
+does, what was decided before, what is open. Two channels, in order, degrading gracefully:
+
+1. **The declared memory.** If `AGENTS.md` carries an `## Organizational memory` section naming an
+   MCP server (any second brain — the section names the tool, the method never does), query it:
+   prior decisions on these seams, the repos involved, open initiatives.
+2. **The committed record, with no memory declared or the memory unreachable.** The family
+   catalog, the workspace's initiative indexes, the sibling repos' `decisions-*.md` and ADRs.
+   Slower than semantic search, same truth — the truth always lived in git; a memory service is
+   the accelerator, never the source.
+
+**Whatever the channel: cite the source of every finding** ("the back decided idempotent-by-key —
+`decisions-TIENDA-88.md`" / "note *Webhook idempotente*, workspace tienda-demo"). A finding with
+no source is not memory, it is a hunch, and it is not used. Surface what was found in the
+classification box; found nothing → say "no relevant prior record" and classify anyway. **Never a
+gate**: an absent section, an unreachable server or an empty answer change nothing about the
+pipeline — this step informs the classification, it does not permit it.
 
 ---
 
