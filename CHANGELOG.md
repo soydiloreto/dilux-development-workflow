@@ -19,6 +19,52 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.39.0] — Unreleased
+
+### Added
+
+- **The steps prose alone could not hold now leave files gates demand.** Three
+  rules the least obedient models skipped on live general runs, each measured,
+  each previously enforced by nothing but a sentence, are now edge gates in the
+  FSM — enforced by the sanctioned helper and the hook alike:
+  - the context check CLASSIFY orders once per ticket lands its findings in
+    `.ddw-work/context-check-<ticket>.md`, and the edge out of CLASSIFY refuses
+    to open without it;
+  - the decisions record CODE's block loop orders per approval must exist as
+    `docs/ddw/specs/decisions-<ticket>.md` before `CODE → VERIFY` (and
+    QUICK-FIX's `CODE → CLOSEOUT`) — a run with nothing to record says so *in*
+    the file, so "nobody wrote it" and "nothing to write" are different states
+    on disk;
+  - advancing the block marker (`--block N/M`) spends that block's two review
+    verdicts, landed in `.ddw-work/review-block-N.md` (`verifier:` + `arch:`)
+    — measured live, the arch-auditor died mid-audit and the orchestrator
+    reviewed its own block, and the record kept no trace.
+- **The landed write prints where the run stands.** `transition.py --write`
+  now emits a status box (phase, ticket, tier, autonomy, block, gates earned,
+  next edges) on stderr — the status line the prose kept asking models to
+  compose and two general runs measured at roughly zero. Printed by the tool,
+  it exists on every harness at zero obedience cost.
+- **The shell-write notice is journalled.** The detection of source written
+  through a shell in a no-source phase used to reach only the tool's context
+  channel — on the tools that swallow it, fired-and-swallowed and never-fired
+  were indistinguishable after the run. It now lands in `.ddw-journal.jsonl`
+  as a `notice` record, once per distinct finding.
+- **F-PRD-11.** AC ids are global across a split: a sub-PRD on disk that never
+  names a criterion its index assigns it is refused. Measured: the index said
+  "b takes AC-09..AC-17" and the sub-PRD restarted at AC-01, so every
+  cross-reference between the two documents had two possible answers.
+
+### Changed
+
+- **The state's refusals name the door.** Every refusal of a hand edit to
+  `.ddw-state.json` now names `transition.py --write` — the bare finding sent
+  a live model on a six-call hunt through the hook's own source for a bypass.
+- **CODE's gate rule says what is enforced, plainly.** The "never run the test
+  runner directly" rule now states its own enforcement reality: no hook can
+  see the difference, and what the FSM actually holds is the validated run
+  report's receipt. The rule stands as protocol discipline; the receipt is the
+  enforcement.
+
 ## [0.38.0] — Unreleased
 
 ### Changed

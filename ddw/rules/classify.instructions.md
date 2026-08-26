@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.9.0
+version: 2.10.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -102,6 +102,15 @@ evidence and the line to add. The user accepts, declines, or ignores it, and the
 so it is not asked again for this ticket. If there is nothing to report it says one line and gets out
 of the way. Do not turn its findings into gates, and do not treat a decline as a reason to stop:
 whether a project should run a linter is not DDW's call.
+
+**What IS gated is that it ran.** Land what the skill found — or the line
+`Nothing to report: the context file matches the repo.` — in
+`.ddw-work/context-check-<ID>.md`, where `<ID>` is the ticket this classification names. The
+`CLASSIFY → DEFINE` edge refuses to open without that file (DISCOVERY and FREE are exempt — neither
+runs stack commands, so there is nothing for the comparison to protect): this step was skipped, silently, on two
+measured general runs, and a step only prose orders is a step the least obedient model decides
+about. The file does not prove the comparison was good — it makes skipping it a deliberate act
+that leaves no file where the record demands one.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.3.0
+version: 2.4.0
 ---
 
 # Phase 3: CODE (Implementation)
@@ -29,6 +29,15 @@ internally, that is the skill's business — the main agent invokes the skill, n
 
 **Single exception:** the project's type checker / linter (closeout step #2) IS run with Bash
 directly, because no skill encapsulates it. Everything else goes through the Skill tool.
+
+**What is enforced, said plainly.** No hook can tell a test run inside the skill's protocol from
+one outside it, and a measured run acknowledged this rule and then ran the runner directly six
+times — so pretending the sentence above is a gate would be the gap that reads as coverage. What
+the FSM actually holds is downstream and cannot be talked past: `gates.tests` opens only on the
+validated run report's receipt (`validate_tests.py`), and the block marker only on the reviews.
+A direct runner invocation earns nothing and its numbers are not the record — the run that counts
+is the one the report describes. The rule stands as the protocol's discipline; the receipt is its
+enforcement.
 
 ---
 
@@ -116,6 +125,15 @@ start):
    violations pointed out. Maximum **3 rounds** per block; if it still fails on the third, stop and
    raise it with the user: the problem is probably in the spec, not in the code.
 
+   **Land both verdicts on disk**: write `.ddw-work/review-block-N.md` with a `verifier:` line
+   (the module-verifier's verdict — spec compliance and the TDD evidence) and an `arch:` line
+   (the arch-auditor's — conventions against `AGENTS.md`). Step 8's marker update refuses to
+   advance without this file, because a measured run watched the auditor die mid-audit and the
+   orchestrator review its own block "quickly, myself" — and the record kept no trace that the
+   independent review had collapsed into self-judgement. If a review agent died, dispatch it
+   again: your own reading of your own block is not one of the two verdicts, and writing it into
+   the file as if it were is a false record, not a workaround.
+
 5. **Mechanical gates for the block:** `Skill(skill="ddw-test")` for the block's tests. **ALWAYS, in
    EVERY block** — do not assume that because you invoked it in the previous one you can run
    `jest`/`npm test` directly. See the self-check before running tests.
@@ -160,6 +178,12 @@ start):
    this step used to say "update the state" with no sanctioned way to do it — the paths left were
    a hand Edit the reconstruction guard fails closed on, or the shell the method forbids, and a
    live run took each once.
+
+   `--block N/M` means **block N is FINISHED** — reviews included. The helper and the hook both
+   refuse the update while `.ddw-work/review-block-N.md` (step 4) is missing its two verdicts.
+   Do not set the marker on entering the phase: it is written after a block finishes, never
+   before one starts. (A live run set `1/5` on arrival, which reads as "block 1 done" with no
+   block implemented.)
 
 9. **Report progress:** "Block N completed (N/M)."
 
@@ -296,7 +320,23 @@ Invoke `Skill(skill="ddw-security-sast")`.
 If it finds no vulnerabilities:
 - `gates.sast` = `true`.
 
-### 4. Transition
+### 4. The decisions record
+
+**Before the edge out of CODE, `docs/ddw/specs/decisions-{ticket}.md` must exist** — the FSM
+refuses `CODE → VERIFY` (and QUICK-FIX's `CODE → CLOSEOUT`) without it. Step 6 has been appending
+to it block by block; if this ticket genuinely decided nothing outside its approved documents, the
+file says exactly that:
+
+```
+No decisions were approved outside the spec during this ticket.
+```
+
+That sentence is not bureaucracy: it turns "nobody wrote the decisions down" and "there were no
+decisions" into different states on disk. Measured on a general run, a ticket closed CODE carrying
+a stack decision, two accepted risks and an approved split — every one approved in a picker, none
+anywhere a reader of the artifacts could find. Commit the file with the closeout.
+
+### 5. Transition
 
 Only if `gates.tests` AND `gates.sast` are `true`:
 

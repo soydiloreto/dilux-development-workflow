@@ -741,6 +741,32 @@ def test_un_indice_que_no_declara_ni_reparte_nada_es_rechazado(tmp_path):
         ("an index that declares nothing and hands out nothing passed with a green receipt:\n" + r.stdout)
 
 
+def test_un_sub_prd_que_renumera_sus_criterios_es_rechazado(tmp_path):
+    """F-PRD-11. Measured on a live split: the index said «b takes
+    AC-09..AC-17» and prd-FEAT-001b.md restarted at AC-01, so every
+    cross-reference between the two documents had two possible answers."""
+    (tmp_path / "prd-FEAT-001b.md").write_text(
+        "# PRD FEAT-001b\n- AC-01: renumbered\n- AC-02: renumbered\n", encoding="utf-8")
+    _, refused = _indice(tmp_path, INDICE)
+    assert _refuses(refused, "F-PRD-11"), \
+        "a sub-PRD that renumbers its assigned ACs passed: " + ("\n".join(refused) or "no refusals")
+
+
+def test_un_sub_prd_con_los_numeros_del_indice_pasa(tmp_path):
+    (tmp_path / "prd-FEAT-001b.md").write_text(
+        "# PRD FEAT-001b\n- AC-04: as assigned\n- AC-05: as assigned\n", encoding="utf-8")
+    r, refused = _indice(tmp_path, INDICE)
+    assert r.returncode == 0, \
+        "a sub-PRD carrying exactly its assigned ids was refused: " + "\n".join(refused)
+
+
+def test_un_indice_sin_partes_en_disco_no_es_juzgado_por_ellas(tmp_path):
+    """The index legitimately lands first; F-PRD-11 reads only what exists."""
+    r, refused = _indice(tmp_path, INDICE)
+    assert r.returncode == 0 and not _refuses(refused, "F-PRD-11"), \
+        "an index was refused for parts that do not exist yet: " + "\n".join(refused)
+
+
 def test_un_sub_prd_mas_grande_que_el_umbral_avisa(tmp_path):
     """W-PRD-06. The split that shrank nothing: a warning, never a block —
     keeping the whole ticket is the user's decision, but the number is not

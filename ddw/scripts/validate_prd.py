@@ -261,6 +261,41 @@ def main():
                 ok("F-PRD-10", f"the {len(taken)} acceptance criteria the index puts up are "
                                f"taken by exactly one sub-ticket each "
                                f"({len(set(taken.values()))} sub-tickets)")
+            # …and the parts speak the same numbers the index hands out. The AC
+            # ids are GLOBAL across a split: measured on a live one, the index
+            # said "b takes AC-09..AC-17" while prd-FEAT-001b.md restarted at
+            # AC-01 — so every cross-reference between the two documents was a
+            # translation exercise nobody performs, and "which AC-04?" had two
+            # answers. The validator forced the global partition onto the index
+            # and nothing held the sub-PRDs to it: a seam between two rules is
+            # where this class of defect lives. Checked only where the sibling
+            # file already exists — the index legitimately lands first.
+            here = os.path.dirname(os.path.abspath(args.prd))
+            renumbered = []
+            for sub in sorted(set(taken.values())):
+                try:
+                    sib_text = open(os.path.join(here, "prd-%s.md" % sub),
+                                    encoding="utf-8").read()
+                except OSError:
+                    continue
+                have = set(re.findall(r"\bAC-\d+\b", sib_text))
+                if not have:
+                    continue
+                missing = sorted(ac for ac, s in taken.items() if s == sub and ac not in have)
+                if missing:
+                    renumbered.append("%s is assigned %s and its file never names %s"
+                                      % (sub, ", ".join(sorted(ac for ac, s in taken.items()
+                                                               if s == sub)),
+                                         ", ".join(missing)))
+            if renumbered:
+                fail("F-PRD-11", "a sub-PRD renumbers the criteria its index assigns it: "
+                                 + " · ".join(renumbered)
+                                 + ". AC ids are global across a split — a part carries the ids "
+                                   "the index hands it (AC-09..AC-17 stays AC-09..AC-17), it "
+                                   "does not restart at AC-01.")
+            elif any(os.path.isfile(os.path.join(here, "prd-%s.md" % sub))
+                     for sub in set(taken.values())):
+                ok("F-PRD-11", "every sub-PRD on disk carries the AC ids its index assigns it")
         print(f"\n/ddw-validate-prd {args.prd} — {'FAILED' if fails else 'PASSED'} (split index)")
         print("─" * 64)
         for row in rows:

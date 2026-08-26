@@ -25,7 +25,7 @@ gaps get resolved before the PRD is approved.
 ## The rules live in the catalog, not here
 
 **`.ddw/rules/validation-rules.instructions.md` §1 is the single source of truth**: F-PRD-01 to
-F-PRD-10 (FAIL) and W-PRD-01 to W-PRD-06 (WARNING). Do not re-derive criteria from memory and do not
+F-PRD-11 (FAIL) and W-PRD-01 to W-PRD-06 (WARNING). Do not re-derive criteria from memory and do not
 duplicate them in this file — read the catalog and evaluate its rules mechanically, citing each
 rule's ID in the report.
 

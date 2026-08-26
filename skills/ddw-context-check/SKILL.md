@@ -144,6 +144,16 @@ useful check gets turned off.
 Never write to `pyproject.toml`, `.pre-commit-config.yaml`, CI workflows or any other configuration.
 This skill teaches DDW what your repo already says; it does not change what your repo says.
 
+## The record the classify edge reads
+
+Whatever the outcome — gaps found, gaps declined, nothing to report — land it in
+`.ddw-work/context-check-<ticket>.md` (one file per ticket; `context-check.md` when the work has
+no ticket yet). The findings as shown, or the single line
+`Nothing to report: the context file matches the repo.` The edge out of CLASSIFY refuses to open
+without this file, because on two measured general runs this skill was simply never invoked and
+nothing anywhere could tell. The file is the proof the step happened; the panel above stays the
+proof of what it said.
+
 ## PASS/FAIL criteria
 
 - N/A. This skill has findings, not a verdict. **It never sets a gate and never blocks a

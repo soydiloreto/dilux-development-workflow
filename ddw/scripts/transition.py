@@ -306,7 +306,51 @@ def _take_state_lock(state_path, vt):
         _LOCK_FH = None
 
 
-def _emit(args, state, seen=None):
+def _status_box(state, vt, graph):
+    """Where the run stands, printed by the tool that just moved it.
+
+    The status line lived in prose — the orchestrator was to compose it after
+    every transition — and two general runs measured it at roughly zero: the
+    least obedient models are exactly the ones that skip decoration, and the
+    users of those models are exactly the ones who most need to know where the
+    pipeline stands. A line the TOOLING prints appears on every transition, on
+    every harness, at zero obedience cost — the model can relay it or not, but
+    it is in the transcript either way. The prose keeps asking for the richer
+    version; this is the floor, not the ceiling.
+    """
+    phase = state.get("phase", "IDLE")
+    ticket = state.get("ticket")
+    title = state.get("title")
+    who = (" · %s" % ticket if ticket else "") + (" — %s" % title if title else "")
+    gates = state.get("gates") or {}
+    earned = " ".join(sorted(g for g, v in gates.items() if v is True)) or "none yet"
+    nxt = []
+    try:
+        edges = vt._effective_edges(graph, state.get("tier"))
+        for key in sorted(edges):
+            cfg = edges.get(key)
+            frm, to = key.split("->", 1)
+            if frm != phase:
+                continue
+            need = (cfg or {}).get("gates") if isinstance(cfg, dict) else None
+            back = isinstance(cfg, dict) and cfg.get("clears")
+            label = to + (" (needs %s)" % ", ".join(need) if need else "") \
+                       + (" (back)" if back else "")
+            nxt.append(label)
+    except Exception:                    # a status line never breaks a write
+        pass
+    lines = ["── DDW ─ %s%s" % (phase, who),
+             "   tier %s · autonomy %s · block %s" % (
+                 state.get("tier") or "—",
+                 state.get("autonomy") or "assisted",
+                 state.get("block") or "—"),
+             "   gates earned: %s" % earned]
+    if nxt:
+        lines.append("   next: %s" % " · ".join(nxt))
+    return "\n".join(lines)
+
+
+def _emit(args, state, seen=None, vt=None, graph=None):
     """Print the state, and land it when asked. One writer, so `--claim` and a
     transition cannot drift on atomicity."""
     emitted = json.dumps(state, indent=2, ensure_ascii=False)
@@ -343,6 +387,11 @@ def _emit(args, state, seen=None):
                 pass
             raise
     print(emitted)
+    if args.write and vt is not None:
+        # On stderr, like every note here: stdout is the state, and the box is
+        # for whoever is reading the run — printed by the tool so it exists on
+        # every harness, whatever the model does with its prose.
+        print(_status_box(state, vt, graph), file=sys.stderr)
     if not args.write:
         # The helper PRINTS by design: the state has to land through a `Write`,
         # because that is the door PreToolUse guards. What it did not do was say
@@ -473,6 +522,13 @@ def main():
             sys.exit(2)
         claimed = json.loads(json.dumps(old_state))
         if block_given:
+            if args.write:
+                _reason = vt.block_review_missing(
+                    os.path.dirname(os.path.abspath(args.state)),
+                    old_state.get("block"), block_val)
+                if _reason:
+                    print("ddw-transition: " + _reason, file=sys.stderr)
+                    sys.exit(2)
             claimed["block"] = block_val
         gates = dict(claimed.get("gates") or {})
         gates.update({g: True for g in args.claim})
@@ -487,7 +543,7 @@ def main():
         except vt.Block as exc:
             print("ddw-transition: %s" % exc, file=sys.stderr)
             sys.exit(2)
-        _emit(args, claimed, seen=old_text)
+        _emit(args, claimed, seen=old_text, vt=vt, graph=graph)
         return
 
     if block_given and not args.to:
@@ -498,13 +554,23 @@ def main():
                   "something while the blocks are being implemented."
                   % updated.get("phase", "IDLE"), file=sys.stderr)
             sys.exit(2)
+        if args.write:
+            # The marker means block N FINISHED, and finishing includes the two
+            # reviews on disk — the same check the hook runs on a hand-written
+            # state, at the entry the measured runs actually use.
+            _reason = vt.block_review_missing(
+                os.path.dirname(os.path.abspath(args.state)),
+                old_state.get("block"), block_val)
+            if _reason:
+                print("ddw-transition: " + _reason, file=sys.stderr)
+                sys.exit(2)
         updated["block"] = block_val
         try:
             vt.validate(old_state, updated, graph, state_path=args.state)
         except vt.Block as exc:
             print("ddw-transition: %s" % exc, file=sys.stderr)
             sys.exit(2)
-        _emit(args, updated, seen=old_text)
+        _emit(args, updated, seen=old_text, vt=vt, graph=graph)
         return
 
     if not args.to or not args.action:
@@ -585,9 +651,16 @@ def main():
     if args.write:
         # The go-back gate, at the sanctioned entry too: the hook judges Write
         # and Edit, and every measured run takes its edges through THIS command
-        # — a gate only the unused path enforces is decoration.
+        # — a gate only the unused path enforces is decoration. The context
+        # check and the decisions record ride the same reasoning: they are
+        # edge gates, and the edges land here.
         _root = os.path.dirname(os.path.abspath(args.state))
         _reason = vt.goback_gate(_root, old_state, new_state, graph)
+        if _reason:
+            print("ddw-transition: " + _reason, file=sys.stderr)
+            sys.exit(2)
+        _reason = (vt.context_check_missing(_root, old_state, new_state)
+                   or vt.decisions_record_missing(_root, old_state, new_state))
         if _reason:
             print("ddw-transition: " + _reason, file=sys.stderr)
             sys.exit(2)
@@ -690,7 +763,7 @@ def main():
         print(f"ddw-transition: illegal transition, nothing emitted: {joined}", file=sys.stderr)
         sys.exit(2)
 
-    _emit(args, new_state, seen=old_text)
+    _emit(args, new_state, seen=old_text, vt=vt, graph=graph)
 
 
 if __name__ == "__main__":
