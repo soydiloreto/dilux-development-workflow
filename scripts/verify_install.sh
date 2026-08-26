@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=622
+EXPECT_CHECKS=635
 EXPECT_SKILLS=17
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=704
+EXPECT_MUTATIONS=719
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1872,7 +1872,9 @@ PYSB
 # STRING was refused and a ticket of the wrong TYPE was accepted, because every
 # downstream comparison filters with `isinstance(t, str)` first — so the guards
 # written to keep the checks from crashing were doubling as escape hatches.
-TKS="$WORK/ticket-shape"; mkdir -p "$TKS"; git -C "$TKS" init -q .
+TKS="$WORK/ticket-shape"; mkdir -p "$TKS/.ddw-work"; git -C "$TKS" init -q .
+# The classify edge's context check — a different gate than the one under test.
+printf 'Nothing to report.\n' > "$TKS/.ddw-work/context-check-T-1.md"
 python3 - "$SELF" "$TKS" <<'PYTICKET' && ok "a `ticket` of the wrong TYPE is refused, like every other header field" || bad "the state header takes a ticket of any type — the one field whose shape nothing checks"
 import json, os, subprocess, sys
 src, repo = sys.argv[1], sys.argv[2]
@@ -2805,6 +2807,9 @@ json.dump({"tier": "FEATURE", "phase": "CODE", "ticket": "FEAT-001", "title": "x
            "threat": True}, "block": None, "discovery": None, "history": h},
           open(sys.argv[1] + "/.ddw-state.json", "w"), indent=2)
 PYBST
+# The reviews the marker now spends — a different gate than the one under test.
+mkdir -p "$BLK/.ddw-work"
+printf 'verifier: PASSED\narch: PASSED\n' > "$BLK/.ddw-work/review-block-2.md"
 python3 "$SELF/ddw/scripts/transition.py" --block 2/5 --state "$BLK/.ddw-state.json" \
     --graph "$SELF/ddw/rules/transition-graph.json" --write >/dev/null 2>&1 \
   && python3 -c "import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s['block']=='2/5' and len(s['history'])==4 else 1)" "$BLK/.ddw-state.json" \
@@ -2977,6 +2982,189 @@ python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
     --repo "$GBK" < "$GBK/event.json" >/dev/null 2>&1 \
   && bad "a Write-tool backward edge sailed past the hook with no reason on disk" \
   || ok "and the Write-tool path is held to the same gate as the helper"
+
+# ── The steps prose alone could not hold ──────────────────────────────────────
+#
+# Three rules the least obedient models skipped on live general runs, measured
+# twice each, previously enforced by nothing: the context check CLASSIFY orders
+# once per ticket, the decisions record CODE's block loop orders per approval,
+# and the two-stage review each block-marker advance spends. Each now leaves a
+# file a gate can ask for. The files are model-written — the receipt's honest
+# bargain, stated in ddw_receipt.py — so what these checks prove is that
+# skipping the step is no longer SILENT, never that it was done well.
+section "The steps prose alone could not hold now leave files gates demand"
+
+PG="$WORK/prose-gates"; mkdir -p "$PG/.ddw-work" "$PG/docs/ddw/specs"; git -C "$PG" init -q .
+pg_tr() {
+  python3 "$SELF/ddw/scripts/transition.py" --state "$PG/.ddw-state.json" \
+    --graph "$SELF/ddw/rules/transition-graph.json" "$@" 2>&1
+}
+
+printf '{"phase": "IDLE", "tier": null, "ticket": null, "title": null, "gates": {}, "history": []}\n' > "$PG/.ddw-state.json"
+pg_tr --to CLASSIFY --ticket F-9 --title "prose gates" --action "clasificar" --write >/dev/null \
+  || bad "fixture: IDLE->CLASSIFY failed and the three checks below measure nothing"
+PGOUT="$(pg_tr --to DEFINE --tier FEATURE --ticket F-9 --title "prose gates" --action "definir" --write || true)"
+case "$PGOUT" in
+  *ddw-context-check*)
+    ok "CLASSIFY does not close without the context check's file — the step prose lost twice" ;;
+  *) bad "the classify edge opened with no context check on disk — the twice-measured skip is silent again" ;;
+esac
+printf 'Nothing to report: the context file matches the repo.\n' > "$PG/.ddw-work/context-check-F-9.md"
+PGOUT="$(pg_tr --to DEFINE --tier FEATURE --ticket F-9 --title "prose gates" --action "definir" --write 2>&1)" \
+  && ok "and opens the moment the file exists" \
+  || bad "the context-check gate refuses the edge even with the file on disk"
+case "$PGOUT" in
+  *"── DDW ─ DEFINE"*)
+    ok "and the landed write prints where the run stands — the status line models kept skipping, now printed by the tool" ;;
+  *) bad "the write lands silently; where-are-we is prose again, and prose measured near zero" ;;
+esac
+
+# The block marker spends the block's reviews. Setting it on ENTERING the phase
+# — the misreading every live run makes — is refused with the semantics named.
+python3 - "$PG" <<'PYPGC'
+import json, sys
+h = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t,
+      "action": "x", "tier": "FEATURE", "ticket": "F-9"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"),
+                                 ("DEFINE", "PLAN"), ("PLAN", "CODE")])]
+json.dump({"tier": "FEATURE", "phase": "CODE", "ticket": "F-9", "title": "prose gates",
+           "tracker": None, "autonomy": "assisted", "gates": {"define": True,
+           "spec": True, "threat": True}, "block": None, "discovery": None,
+           "history": h}, open(sys.argv[1] + "/.ddw-state.json", "w"), indent=2)
+PYPGC
+PGOUT="$(pg_tr --block 1/5 --write || true)"
+case "$PGOUT" in
+  *FINISHED*)
+    ok "--block N/M means block N FINISHED, and without its two review verdicts on disk it is refused" ;;
+  *) bad "the marker advanced with no review on disk — the measured self-audit collapse is silent again" ;;
+esac
+printf 'verifier: PASSED — matches the spec, TDD evidence shown\narch: PASSED — conventions hold\n' > "$PG/.ddw-work/review-block-1.md"
+pg_tr --block 1/5 --write >/dev/null 2>&1 \
+  && ok "and advances once both verdicts are on file" \
+  || bad "the review gate refuses the marker even with both verdicts on disk"
+
+# CODE does not close without the decisions record — even when the record says
+# there was nothing to record, because \"nobody wrote it\" and \"nothing to
+# write\" have to be different states on disk.
+ddw_earn "$PG" tests F-9
+ddw_earn "$PG" sast F-9
+python3 - "$PG" <<'PYPGD'
+import json, sys
+s = json.load(open(sys.argv[1] + "/.ddw-state.json"))
+s["gates"].update({"tests": True, "sast": True}); s["block"] = None
+json.dump(s, open(sys.argv[1] + "/.ddw-state.json", "w"), indent=2)
+PYPGD
+PGOUT="$(pg_tr --to VERIFY --action "code cerrado" --write || true)"
+case "$PGOUT" in
+  *decisions-F-9.md*)
+    ok "CODE does not close without docs/ddw/specs/decisions-F-9.md — approvals leave the conversation" ;;
+  *) bad "CODE closed with every picker-approval unrecorded — the measured hole is open again" ;;
+esac
+printf 'No decisions were approved outside the spec during this ticket.\n' > "$PG/docs/ddw/specs/decisions-F-9.md"
+pg_tr --to VERIFY --action "code cerrado" --write >/dev/null 2>&1 \
+  && ok "and closes with the record on disk, 'nothing' spelled out included" \
+  || bad "the decisions gate refuses the edge even with the record on disk"
+
+# The hook path judges the same three for a state written with the Write tool —
+# a gate only the sanctioned helper enforces is decoration.
+python3 - "$PG" <<'PYPGE'
+import json, sys
+root = sys.argv[1]
+h = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t,
+      "action": "x", "tier": "FEATURE", "ticket": "F-8"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY")])]
+state = {"tier": "FEATURE", "phase": "CLASSIFY", "ticket": "F-8", "title": "x",
+         "tracker": None, "autonomy": "assisted", "gates": {}, "block": None,
+         "discovery": None, "history": h}
+json.dump(state, open(root + "/.ddw-state.json", "w"), indent=2)
+new = json.loads(json.dumps(state))
+new["phase"] = "DEFINE"
+new["history"].append({"timestamp": "2026-01-01T00:05:00Z", "from": "CLASSIFY",
+                       "to": "DEFINE", "action": "x", "tier": "FEATURE", "ticket": "F-8"})
+open(root + "/event.json", "w").write(json.dumps(
+    {"tool_name": "Write", "tool_input": {"file_path": ".ddw-state.json",
+                                          "content": json.dumps(new)}}))
+PYPGE
+PGOUT="$(python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$PG/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$PG" < "$PG/event.json" 2>&1 || true)"
+case "$PGOUT" in
+  *ddw-context-check*)
+    ok "and the Write-tool path demands the context check like the helper does" ;;
+  *) bad "a Write-tool classify edge sailed past the hook with no context check on disk" ;;
+esac
+
+# CODE closing by hand-written Write is held to the decisions record too.
+ddw_earn "$PG" tests F-8
+ddw_earn "$PG" sast F-8
+python3 - "$PG" <<'PYPGG'
+import json, sys
+root = sys.argv[1]
+h = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t,
+      "action": "x", "tier": "FEATURE", "ticket": "F-8"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"),
+                                 ("DEFINE", "PLAN"), ("PLAN", "CODE")])]
+state = {"tier": "FEATURE", "phase": "CODE", "ticket": "F-8", "title": "x",
+         "tracker": None, "autonomy": "assisted", "gates": {"define": True,
+         "spec": True, "threat": True, "tests": True, "sast": True},
+         "block": None, "discovery": None, "history": h}
+json.dump(state, open(root + "/.ddw-state.json", "w"), indent=2)
+new = json.loads(json.dumps(state))
+new["phase"] = "VERIFY"
+new["history"].append({"timestamp": "2026-01-01T00:07:00Z", "from": "CODE",
+                       "to": "VERIFY", "action": "x", "tier": "FEATURE", "ticket": "F-8"})
+open(root + "/event.json", "w").write(json.dumps(
+    {"tool_name": "Write", "tool_input": {"file_path": ".ddw-state.json",
+                                          "content": json.dumps(new)}}))
+PYPGG
+PGOUT="$(python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$PG/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$PG" < "$PG/event.json" 2>&1 || true)"
+case "$PGOUT" in
+  *decisions-F-8.md*)
+    ok "and a hand-written CODE close is held to the decisions record" ;;
+  *) bad "a Write-tool CODE close sailed past the hook with no decisions record on disk" ;;
+esac
+
+python3 - "$PG" <<'PYPGF'
+import json, sys
+root = sys.argv[1]
+s = json.load(open(root + "/.ddw-state.json"))
+new = json.loads(json.dumps(s))
+new["phase"] = "CODE"; new["block"] = "3/5"
+new["gates"] = {"define": True, "spec": True, "threat": True}
+s["phase"] = "CODE"; s["gates"] = {"define": True, "spec": True, "threat": True}
+s["history"] = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t,
+                 "action": "x", "tier": "FEATURE", "ticket": "F-8"}
+                for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE"),
+                                            ("DEFINE", "PLAN"), ("PLAN", "CODE")])]
+new["history"] = list(s["history"])
+json.dump(s, open(root + "/.ddw-state.json", "w"), indent=2)
+open(root + "/event.json", "w").write(json.dumps(
+    {"tool_name": "Write", "tool_input": {"file_path": ".ddw-state.json",
+                                          "content": json.dumps(new)}}))
+PYPGF
+PGOUT="$(python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$PG/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$PG" < "$PG/event.json" 2>&1 || true)"
+case "$PGOUT" in
+  *FINISHED*)
+    ok "and a hand-written block advance is held to the same reviews" ;;
+  *) bad "a Write-tool block advance sailed past the hook with no reviews on disk" ;;
+esac
+
+# The state's refusals name the door. The bare finding sent a live model on a
+# six-call hunt through the hook's own source for a way around it; a refusal
+# that names `transition.py --write` is answered with one command instead.
+printf '{"tool_name": "Edit", "tool_input": {"file_path": ".ddw-state.json"}}' > "$PG/event.json"
+PGOUT="$(python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$PG/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$PG" < "$PG/event.json" 2>&1 || true)"
+case "$PGOUT" in
+  *transition.py*)
+    ok "a hand edit of the state is refused WITH the sanctioned command in the refusal" ;;
+  *) bad "the state's refusal is a puzzle again — the measured six-call bypass hunt starts here" ;;
+esac
 
 # A receipt re-validated with identical bytes is one event, not two journal
 # lines (measured: identical consecutive records, one validator run). And a
@@ -3476,6 +3664,10 @@ PYRULES
 # graph path and the hook path — and a bare `for G in …` here silently rebound
 # both for every check that came after, which is a whole class of green turning
 # red for reasons that have nothing to do with the code under test.
+# The CODE->VERIFY rows land that edge, which now also demands the decisions
+# record — a different gate than the one under test here, satisfied up front.
+printf 'No decisions were approved outside the spec during this ticket.\n' \
+  > "$VP/docs/ddw/specs/decisions-FEAT-001.md"
 for RCP_ROW in spec:specs:spec:PLAN:CODE threat:security:threat:PLAN:CODE sast:security:sast:CODE:VERIFY tests:reports:tests:CODE:VERIFY verify:reports:verify:VERIFY:CLOSEOUT; do
   RCP_GATE="${RCP_ROW%%:*}"; RCP_REST="${RCP_ROW#*:}"
   RCP_DIR="${RCP_REST%%:*}"; RCP_REST="${RCP_REST#*:}"
@@ -3749,6 +3941,13 @@ for cmd in cmds:
         r = subprocess.run([sys.executable, helper, *seed, "--state", state, "--graph", graph,
                             "--write"], capture_output=True, text=True, cwd=d)
         assert r.returncode == 0, "the fixture for %r could not be built: %s" % (cmd, r.stdout + r.stderr)
+        # The context check the classify edge demands. The rules order it
+        # written before the edge is taken; seeding it is standing where the
+        # command starts, for a ticketed arrow and a ticketless one alike.
+        os.makedirs(os.path.join(d, ".ddw-work"), exist_ok=True)
+        for name in ("context-check-T-1.md", "context-check.md"):
+            open(os.path.join(d, ".ddw-work", name), "w", encoding="utf-8").write(
+                "Nothing to report.\n")
     r = subprocess.run([sys.executable, helper, *argv, "--state", state, "--graph", graph,
                         "--write"], capture_output=True, text=True, cwd=d)
     assert r.returncode == 0, \
@@ -5257,6 +5456,31 @@ assert "product source has changed" in d["additionalContext"], d
 ' && ok "and reaches Copilot as additionalContext — the one channel its non-blocking hooks have" \
   || bad "the note dies on stderr for Copilot — logged and skipped, never shown to the model"
 
+# The notice, KEPT. On the tools that swallow the context channel the journal
+# is all that remains, and the question the notice exists for — did the
+# detection fire? — must have an answer after the run. Measured on a general
+# run (Copilot, 2026-08-25): shell writes in the transcript, an empty journal,
+# and no way to tell fired-and-swallowed from never-fired.
+python3 - "$SH" <<'PYNJ' && ok "the notice lands in the journal, so fired-and-swallowed and never-fired are different states" || bad "the notice leaves no record — the run over, nobody can say whether detection fired"
+import json, sys
+recs = [json.loads(l) for l in open(sys.argv[1] + "/.ddw-journal.jsonl", encoding="utf-8")
+        if l.strip()]
+notes = [r for r in recs if isinstance(r, dict) and r.get("record") == "notice"]
+assert notes, "no notice record in the journal"
+assert "product source has changed" in notes[-1].get("note", ""), notes[-1]
+PYNJ
+
+# …and lands ONCE per distinct finding: the post matcher fires on every tool
+# call, and the same dirty file must not write the same sentence forty times.
+post_note >/dev/null; post_note >/dev/null
+python3 - "$SH" <<'PYND' && ok "and an unchanged finding is one journal line, not one per tool call" || bad "the journal repeats the same notice on every Bash — noise the audit then has to explain"
+import json, sys
+recs = [json.loads(l) for l in open(sys.argv[1] + "/.ddw-journal.jsonl", encoding="utf-8")
+        if l.strip()]
+notes = [r for r in recs if isinstance(r, dict) and r.get("record") == "notice"]
+assert len(notes) == 1, "expected one notice record, got %d" % len(notes)
+PYND
+
 echo '{}' | python3 "$SH/.ddw/scripts/hook-gate.py" --dialect standard --mode post \
   --state "$SH/.ddw-state.json" --graph "$SH/.ddw/rules/transition-graph.json" \
   --repo "$SH" >/dev/null 2>&1 \
@@ -5604,6 +5828,14 @@ def step(*args):
     assert r.returncode == 0, "%s refused: %s" % (" ".join(args), r.stderr.strip()[:200])
 
 
+# The classify edge's context check and CODE's decisions record — other gates
+# than the ones under test here, satisfied the way a real run leaves them.
+os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+open(os.path.join(repo, ".ddw-work", "context-check-T-1.md"), "w", encoding="utf-8").write(
+    "Nothing to report.\n")
+open(os.path.join(repo, "docs", "ddw", "specs", "decisions-T-1.md"), "w", encoding="utf-8").write(
+    "No decisions were approved outside the spec during this ticket.\n")
+
 step("--to", "CLASSIFY", "--action", "c", "--tier", "FEATURE", "--ticket", "T-1")
 step("--to", "DEFINE", "--action", "d", "--title", "the fixture ticket")
 step("--to", "PLAN", "--action", "p", "--gate", "define")
@@ -5777,19 +6009,19 @@ code, out = lint()
 assert code == 0, "the shipped tree does not lint clean, so nothing below means anything: " + out[-300:]
 
 # One area row overstated by one, exactly the shape the drift took.
-rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 10 | 6 | 16 |", "| PRD | 11 | 6 | 17 |")
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 11 | 6 | 17 |", "| PRD | 12 | 6 | 18 |")
 code, out = lint()
-assert code != 0 and "PRD" in out and "10" in out, \
+assert code != 0 and "PRD" in out and "11" in out, \
     "an area row that overcounts its own rules passed: " + out[-300:]
-rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 11 | 6 | 17 |", "| PRD | 10 | 6 | 16 |")
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 12 | 6 | 18 |", "| PRD | 11 | 6 | 17 |")
 
 # The total alone, with every row correct — the arithmetic nobody redid.
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **71** | **18** | **89** |", "| **Total** | **75** | **18** | **93** |")
+        "| **Total** | **72** | **18** | **90** |", "| **Total** | **76** | **18** | **94** |")
 code, out = lint()
-assert code != 0 and "71" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
+assert code != 0 and "72" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **75** | **18** | **93** |", "| **Total** | **71** | **18** | **89** |")
+        "| **Total** | **76** | **18** | **94** |", "| **Total** | **72** | **18** | **90** |")
 
 # Two more of the linter's checks, driven the same way. Both were added with a
 # mutation and no check: deleting the CALL left the repository linting clean,
@@ -5877,10 +6109,10 @@ assert code == 0, "the tree was not put back the way it was found: " + out[-300:
 
 # And the restatement outside the catalog, which is the line a reader of
 # `ddw/rules/` meets first.
-rewrite("ddw/rules/README.md", "The 89 validation rules", "The 93 validation rules")
+rewrite("ddw/rules/README.md", "The 90 validation rules", "The 93 validation rules")
 code, out = lint()
-assert code != 0 and "89" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
-rewrite("ddw/rules/README.md", "The 93 validation rules", "The 89 validation rules")
+assert code != 0 and "90" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
+rewrite("ddw/rules/README.md", "The 93 validation rules", "The 90 validation rules")
 
 code, out = lint()
 assert code == 0, "the probe was not restored: " + out[-300:]
@@ -7465,6 +7697,12 @@ repo = sys.argv[1]
 gate = os.path.join(repo, ".ddw", "scripts", "hook-gate.py")
 graph = os.path.join(repo, ".ddw", "rules", "transition-graph.json")
 state = os.path.join(repo, ".ddw-state.json")
+
+# The classify edge's context check — a different gate than the lock under
+# test, satisfied so the legal-move assertions below measure the lock alone.
+os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+open(os.path.join(repo, ".ddw-work", "context-check.md"), "w", encoding="utf-8").write(
+    "Nothing to report.\n")
 
 def h(f, t, tier=None):
     e = {"timestamp": "2026-01-01T00:00:00Z", "from": f, "to": t, "action": "a"}
@@ -9233,6 +9471,12 @@ tr = os.path.join(repo, ".ddw", "scripts", "transition.py")
 graph = os.path.join(repo, ".ddw", "rules", "transition-graph.json")
 state = os.path.join(repo, ".ddw-state.json")
 
+# The classify edge's context check — a different gate than the receipts under
+# test, satisfied so every refusal below is about the missing artifact alone.
+os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+open(os.path.join(repo, ".ddw-work", "context-check-T-1.md"), "w", encoding="utf-8").write(
+    "Nothing to report.\n")
+
 
 def step(*args):
     return subprocess.run([sys.executable, tr, "--state", state, "--graph", graph, "--write",
@@ -9312,6 +9556,10 @@ prd_dir = os.path.join(repo, "docs", "ddw", "prd")
 os.makedirs(prd_dir)
 prd = os.path.join(prd_dir, "prd-T-1.md")
 open(prd, "w", encoding="utf-8").write("# PRD\n")
+# The classify edge's context check — not the witness rule under test.
+os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+open(os.path.join(repo, ".ddw-work", "context-check-T-1.md"), "w", encoding="utf-8").write(
+    "Nothing to report.\n")
 
 
 def step(*args):
@@ -9717,6 +9965,10 @@ for tier, (subdir, stem, receipt) in WRITES.items():
         "ddw_receipt", os.path.join(repo, ".ddw/scripts/ddw_receipt.py"))
     rmod = importlib.util.module_from_spec(rspec); rspec.loader.exec_module(rmod)
     rmod.write(doc, receipt, open(doc, encoding="utf-8").read())
+    # The classify edge's context check — a different gate than the one under test.
+    os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+    open(os.path.join(repo, ".ddw-work", "context-check-T-1.md"), "w", encoding="utf-8").write(
+        "Nothing to report.\n")
 
     def step(*args):
         return subprocess.run([sys.executable, tr, "--state", state, "--graph", graph,
@@ -11063,6 +11315,13 @@ def step(*args):
 receipt("prd", "docs/ddw/prd/prd-T-9.md")
 receipt("spec", "docs/ddw/specs/spec-T-9.md")
 receipt("threat", "docs/ddw/security/threat-T-9.md")
+# The classify edge's context check and CODE's decisions record — other gates
+# than the spent-receipt rule under test.
+os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+open(os.path.join(repo, ".ddw-work", "context-check-T-9.md"), "w", encoding="utf-8").write(
+    "Nothing to report.\n")
+open(os.path.join(repo, "docs", "ddw", "specs", "decisions-T-9.md"), "w", encoding="utf-8").write(
+    "No decisions were approved outside the spec during this ticket.\n")
 for args in (("--to", "CLASSIFY", "--action", "classify: a feature",
               "--tier", "FEATURE", "--ticket", "T-9"),
              ("--to", "DEFINE", "--action", "write the PRD", "--title", "the fixture ticket"),
@@ -12157,6 +12416,14 @@ def step(label, *args):
 receipt("prd", "docs/ddw/prd/prd-T-1.md")
 receipt("spec", "docs/ddw/specs/spec-T-1.md")
 receipt("threat", "docs/ddw/security/threat-T-1.md")
+# What CLASSIFY and CODE leave behind on a real run — the context check and the
+# decisions record — created where a real run creates them, so the walk is the
+# walk a compliant ticket takes.
+os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+open(os.path.join(repo, ".ddw-work", "context-check-T-1.md"), "w", encoding="utf-8").write(
+    "Nothing to report.\n")
+open(os.path.join(repo, "docs", "ddw", "specs", "decisions-T-1.md"), "w", encoding="utf-8").write(
+    "No decisions were approved outside the spec during this ticket.\n")
 step("classify", "--to", "CLASSIFY", "--action", "classify: a feature",
      "--tier", "FEATURE", "--ticket", "T-1", "--autonomy", "minimal")
 step("define", "--to", "DEFINE", "--action", "write the PRD", "--title", "the fixture ticket")

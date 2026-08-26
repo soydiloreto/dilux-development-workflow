@@ -764,6 +764,11 @@ def test_the_helper_never_stamps_an_entry_before_the_one_it_follows(tmp_path):
         json.dump(state("CLASSIFY", "FEATURE", "T-1", {},
                         [dict(entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-1"),
                               timestamp=ahead)]), fh)
+    # This test measures the clock, not the classify edge's context-check gate.
+    os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+    with open(os.path.join(repo, ".ddw-work", "context-check-T-1.md"), "w",
+              encoding="utf-8") as fh:
+        fh.write("Nothing to report: the context file matches the repo.\n")
     # An explicit `CLAUDE_PROJECT_DIR`: the helper resolves the repo through
     # that variable BEFORE the cwd, and the suite exports it and does not
     # clean it up. Inherited, this subprocess worked on another section's
@@ -851,6 +856,11 @@ def _split_upto_pause(tmp_path):
     open(p, "w", encoding="utf-8").write(json.dumps(state()))
     assert _step(p, "--to", "CLASSIFY", "--tier", "FEATURE", "--ticket", "F-1",
                  "--action", "clasificar").returncode == 0
+    # The context check the classify edge now demands — these steps measure
+    # the pause/resume arc, not that gate, which has its own tests below.
+    (tmp_path / ".ddw-work").mkdir(exist_ok=True)
+    (tmp_path / ".ddw-work" / "context-check-F-1.md").write_text(
+        "Nothing to report: the context file matches the repo.\n", encoding="utf-8")
     assert _step(p, "--to", "DEFINE", "--tier", "FEATURE", "--ticket", "F-1",
                  "--action", "definir").returncode == 0
     assert _step(p, "--to", "IDLE", "--action", "pause: split into F-1a/F-1b").returncode == 0
@@ -1193,3 +1203,166 @@ def test_un_gh_roto_con_receipt_sigue_sin_ser_un_veredicto(tmp_path):
         json.dump({"number": 7, "head": "feat/T-1-x"}, fh)
     assert _ask_pr(repo, binpath, GH_VIEW_RC="1", GH_LIST_RC="1") is None, \
         "a fallen-over gh was read as a verdict"
+
+
+# ── The steps prose alone could not hold ─────────────────────────────────────
+#
+# Three rules the least obedient models skipped on live general runs, each
+# measured, each previously enforced by nothing but a sentence: the context
+# check CLASSIFY orders once per ticket, the decisions record CODE's block loop
+# orders per approval, and the two-stage review each block-marker advance
+# spends. Each now leaves a file a gate can ask for. The files are
+# model-written — the receipt's honest bargain — so what these tests prove is
+# that skipping the step is no longer silent, never that it was done well.
+
+def _fresh_edge(frm, to, tier="FEATURE", ticket="T-9"):
+    """(old_state, new_state) one legal-looking entry apart."""
+    old = state(frm, tier, ticket, {}, [entry("IDLE", frm, tier=tier, ticket=ticket)])
+    new = json.loads(json.dumps(old))
+    new["phase"] = to
+    new["history"].append(entry(frm, to, tier=tier, ticket=ticket))
+    return old, new
+
+
+def test_classify_no_cierra_sin_context_check(tmp_path):
+    old, new = _fresh_edge("CLASSIFY", "DEFINE")
+    why = vt.context_check_missing(str(tmp_path), old, new)
+    assert why and "ddw-context-check" in why and "context-check-T-9.md" in why, \
+        "the classify edge opened with no context check on disk: %r" % why
+
+
+def test_el_context_check_en_disco_abre_la_arista(tmp_path):
+    old, new = _fresh_edge("CLASSIFY", "DEFINE")
+    os.makedirs(str(tmp_path / ".ddw-work"))
+    (tmp_path / ".ddw-work" / "context-check-T-9.md").write_text(
+        "Nothing to report.\n", encoding="utf-8")
+    assert vt.context_check_missing(str(tmp_path), old, new) is None
+
+
+def test_un_context_check_vacio_no_es_un_context_check(tmp_path):
+    old, new = _fresh_edge("CLASSIFY", "DEFINE")
+    os.makedirs(str(tmp_path / ".ddw-work"))
+    (tmp_path / ".ddw-work" / "context-check-T-9.md").write_text("", encoding="utf-8")
+    assert vt.context_check_missing(str(tmp_path), old, new), \
+        "an empty file counted as a run context check"
+
+
+def test_el_context_check_es_del_ticket_no_del_repo(tmp_path):
+    """A split's sibling must not open on the parent's file — per ticket is the rule."""
+    old, new = _fresh_edge("CLASSIFY", "DEFINE", ticket="T-9b")
+    os.makedirs(str(tmp_path / ".ddw-work"))
+    (tmp_path / ".ddw-work" / "context-check-T-9.md").write_text("x\n", encoding="utf-8")
+    assert vt.context_check_missing(str(tmp_path), old, new), \
+        "another ticket's context check opened this ticket's edge"
+
+
+def test_las_demas_aristas_no_deben_context_check(tmp_path):
+    for frm, to in (("DEFINE", "PLAN"), ("PLAN", "CODE"), ("CODE", "VERIFY")):
+        old, new = _fresh_edge(frm, to)
+        assert vt.context_check_missing(str(tmp_path), old, new) is None, \
+            "%s->%s was asked for a context check it does not owe" % (frm, to)
+
+
+def test_code_no_cierra_sin_decisions(tmp_path):
+    old, new = _fresh_edge("CODE", "VERIFY")
+    why = vt.decisions_record_missing(str(tmp_path), old, new)
+    assert why and "decisions-T-9.md" in why and "No decisions were approved" in why, \
+        "CODE closed with every picker-approval unrecorded: %r" % why
+
+
+def test_el_decisions_en_disco_cierra_code(tmp_path):
+    old, new = _fresh_edge("CODE", "VERIFY")
+    d = tmp_path / "docs" / "ddw" / "specs"
+    os.makedirs(str(d))
+    (d / "decisions-T-9.md").write_text(
+        "No decisions were approved outside the spec during this ticket.\n", encoding="utf-8")
+    assert vt.decisions_record_missing(str(tmp_path), old, new) is None
+
+
+def test_quickfix_cierra_code_por_closeout_y_tambien_debe_decisions(tmp_path):
+    old, new = _fresh_edge("CODE", "CLOSEOUT", tier="QUICK-FIX")
+    assert vt.decisions_record_missing(str(tmp_path), old, new), \
+        "the short lane closed CODE without the record the long one owes"
+
+
+def test_avanzar_el_block_gasta_las_dos_reviews(tmp_path):
+    why = vt.block_review_missing(str(tmp_path), None, "1/5")
+    assert why and "FINISHED" in why and "review-block-1.md" in why, \
+        "the marker advanced with no review on disk: %r" % why
+
+
+def test_con_ambos_veredictos_el_block_avanza(tmp_path):
+    os.makedirs(str(tmp_path / ".ddw-work"))
+    (tmp_path / ".ddw-work" / "review-block-2.md").write_text(
+        "verifier: PASSED — matches the spec, TDD evidence shown\n"
+        "arch: PASSED — conventions hold\n", encoding="utf-8")
+    assert vt.block_review_missing(str(tmp_path), "1/5", "2/5") is None
+
+
+def test_un_solo_veredicto_no_es_la_review_de_dos_etapas(tmp_path):
+    """The measured collapse: the auditor died and the orchestrator judged its
+    own block. One line is one reviewer."""
+    os.makedirs(str(tmp_path / ".ddw-work"))
+    (tmp_path / ".ddw-work" / "review-block-2.md").write_text(
+        "verifier: PASSED\n", encoding="utf-8")
+    assert vt.block_review_missing(str(tmp_path), "1/5", "2/5"), \
+        "one verdict opened a gate that spends two"
+
+
+def test_cerrar_el_marker_debe_la_review_del_ultimo_block(tmp_path):
+    why = vt.block_review_missing(str(tmp_path), "4/5", None)
+    assert why and "review-block-5.md" in why, \
+        "--block none spent no review for the last block: %r" % why
+
+
+def test_reescribir_el_mismo_block_no_debe_nada(tmp_path):
+    assert vt.block_review_missing(str(tmp_path), "2/5", "2/5") is None
+    assert vt.block_review_missing(str(tmp_path), None, None) is None
+
+
+def test_el_notice_queda_en_el_journal_y_no_se_repite(tmp_path):
+    p = str(tmp_path / ".ddw-state.json")
+    open(p, "w", encoding="utf-8").write(json.dumps(state()))
+    vt.record_notice(p, "product source has changed while the pipeline is in PLAN: app/x.py")
+    vt.record_notice(p, "product source has changed while the pipeline is in PLAN: app/x.py")
+    lines = [json.loads(l) for l in open(str(tmp_path / ".ddw-journal.jsonl"), encoding="utf-8")
+             if l.strip()]
+    notes = [l for l in lines if l.get("record") == "notice"]
+    assert len(notes) == 1, "an unchanged finding wrote %d journal lines" % len(notes)
+    vt.record_notice(p, "product source has changed while the pipeline is in PLAN: app/y.py")
+    lines = [json.loads(l) for l in open(str(tmp_path / ".ddw-journal.jsonl"), encoding="utf-8")
+             if l.strip()]
+    notes = [l for l in lines if l.get("record") == "notice"]
+    assert len(notes) == 2, "a NEW finding was deduplicated away"
+
+
+def test_el_notice_no_desplaza_las_transiciones_del_journal(tmp_path):
+    """`_journal_entries` indexes the blessed history; a notice line counted as
+    a transition would slide that index — the exact defect snapshots had."""
+    p = str(tmp_path / ".ddw-state.json")
+    open(p, "w", encoding="utf-8").write(json.dumps(state()))
+    vt._journal_append(p, [entry("IDLE", "CLASSIFY")])
+    before = len(vt._journal_entries(p))
+    vt.record_notice(p, "product source has changed: app/x.py")
+    assert len(vt._journal_entries(p)) == before, \
+        "a notice record slid the journal's transition index"
+
+
+def test_el_rechazo_del_estado_nombra_la_puerta(tmp_path):
+    """The bare finding sent a live model hunting the hook's source for a
+    bypass; a refusal that names the sanctioned command is answered with it."""
+    for tool, args in (("Edit", {}), ("bash", {})):
+        try:
+            vt._reconstruct_new_text(tool, args, "{}")
+            raise AssertionError("an unreconstructable %s write was allowed" % tool)
+        except vt.Block as exc:
+            assert "transition.py" in str(exc), \
+                "the %s refusal does not name the sanctioned helper: %s" % (tool, exc)
+
+
+def test_discovery_no_debe_context_check(tmp_path):
+    """DISCOVERY explores and runs no stack commands — a gate wider than its
+    reason is noise, and noise is how gates get routed around."""
+    old, new = _fresh_edge("CLASSIFY", "DISCOVERY", tier="DISCOVERY", ticket="DISC-1")
+    assert vt.context_check_missing(str(tmp_path), old, new) is None, \
+        "the discovery lane was asked for a context check it has no use for"

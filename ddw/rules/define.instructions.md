@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.5.0
+version: 2.6.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -122,7 +122,7 @@ encapsulates the template, naming, file location, `PRD loops` handling and outpu
 5. **ONLY when the PRD file is written to disk and complete** — never before,
    never in parallel with `ddw-create-prd` — invoke `ddw-validate-prd`, which
    RUNS `.ddw/scripts/validate_prd.py <prd> --tier <tier>`. The script applies
-   the catalog's mechanical rules (F-PRD-01 to F-PRD-10, W-PRD-01 to W-PRD-06)
+   the catalog's mechanical rules (F-PRD-01 to F-PRD-11, W-PRD-01 to W-PRD-06)
    and writes the receipt the `define` gate demands; the MANUAL rules
    (F-PRD-02, F-PRD-07) you judge yourself and state explicitly. Loading both
    skill files together as reading material is not a sequence: create
@@ -371,12 +371,21 @@ a → b → c
 Create a complete PRD for each sub-ticket: `prd-{TICKET}a.md`, `prd-{TICKET}b.md`, etc. Each follows
 the standard PRD template with its own ticket, title, FRs, ACs, and so on.
 
+**AC ids are GLOBAL across the split — a sub-PRD carries the ids the index assigns it.** The part
+that takes AC-09..AC-17 writes its criteria as AC-09..AC-17; it does NOT restart at AC-01.
+Measured on a live split: the index said "b takes AC-09..AC-17", the sub-PRD numbered them
+AC-01..AC-09, and every cross-reference between the two documents had two possible answers.
+`validate_prd.py` refuses an index whose on-disk parts never name the criteria it assigns them
+(F-PRD-11). FR ids stay local to each sub-PRD — nothing cross-references those between documents.
+
 **3. Validate ALL the sub-PRDs:**
 
 Run `ddw-validate-prd` on EACH sub-PRD **and on the index**. They all have to pass BEFORE
-continuing. If any fails, iterate until it passes. The index is judged by F-PRD-10 alone — it is not
-a PRD and is not held to a PRD's sections — and that rule is the only thing standing between a split
-and an acceptance criterion nobody noticed was dropped.
+continuing. If any fails, iterate until it passes. The index is judged by F-PRD-10 and F-PRD-11
+alone — it is not a PRD and is not held to a PRD's sections — and those two are the only thing
+standing between a split and an acceptance criterion nobody noticed was dropped or renamed.
+Re-validate the index LAST, after the sub-PRDs exist: F-PRD-11 reads the parts off the disk, so an
+index validated before its parts has been asked only half the question.
 
 **4. Close the parent run, then open sub-ticket `a` as its own run:**
 

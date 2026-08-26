@@ -98,20 +98,31 @@ def _reconstruct_new_text(tool_name, tool_input, old_text):
                 "validates and writes the state atomically itself."
             )
         return content
+    # Every refusal in this branch names the sanctioned path. The bare finding
+    # ("Edit to the state with no old_string/new_string") was measured sending a
+    # live model on a six-call hunt through this file's own source for a way
+    # around the hook — it read the denial as "wrong arguments", fixed the
+    # arguments, and only found `transition.py --write` by accident. A refusal
+    # that does not name the door it is pointing at is a puzzle, and the least
+    # obedient models solve puzzles by looking for the wall's weakest brick.
+    _HELPER = (" The state is not edited by hand: run `.ddw/scripts/transition.py --to <phase> "
+               "--action \"…\" --write` (or `--claim <gate>` / `--block N/M`), which validates "
+               "and writes it atomically itself.")
     if tool_name == "Edit":
         old_s = tool_input.get("old_string")
         new_s = tool_input.get("new_string")
         if old_s is None or new_s is None:
-            raise Block("Edit to the state with no old_string/new_string")
+            raise Block("Edit to the state with no old_string/new_string." + _HELPER)
         n = old_text.count(old_s)
         if n == 0:
-            raise Block("Edit to the state: old_string not found (cannot reconstruct)")
+            raise Block("Edit to the state: old_string not found (cannot reconstruct)." + _HELPER)
         if n > 1 and not bool(tool_input.get("replace_all", False)):
-            raise Block("Edit to the state: ambiguous old_string (multiple matches) without replace_all")
+            raise Block("Edit to the state: ambiguous old_string (multiple matches) without "
+                        "replace_all." + _HELPER)
         if bool(tool_input.get("replace_all", False)):
             return old_text.replace(old_s, new_s)
         return old_text.replace(old_s, new_s, 1)
-    raise Block(f"tool {tool_name!r} is not supported for the state file; use Write")
+    raise Block(f"tool {tool_name!r} is not supported for the state file." + _HELPER)
 
 
 def _parse_new_state(new_text):
@@ -2890,7 +2901,21 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
             reason = goback_gate(root, old_state, new_state, graph)
             if reason:
                 return reason
+            reason = context_check_missing(root, old_state, new_state)
+            if reason:
+                return reason
+            reason = decisions_record_missing(root, old_state, new_state)
+            if reason:
+                return reason
             _record_arrow(root)
+        else:
+            # No fresh edge: an in-phase update. The only field one of those
+            # may move that a gate cares about is `block`, and moving it is
+            # what spends the finished block's reviews.
+            reason = block_review_missing(root, old_state.get("block"),
+                                          new_state.get("block"))
+            if reason:
+                return reason
     return None
 
 
@@ -3054,6 +3079,174 @@ def goback_gate(root, old_state, new_state, graph):
         "'ask'. A correction is a defect a validator or review named (announce and go); a "
         "question is the user's (show it and wait). Pick the one that is true — a mislabelled "
         "question stays on disk, in a file the audit reads." % lane)
+
+
+def context_check_missing(root, old_state, new_state):
+    """The classify edge carries proof the repo's own config was compared to
+    what the context file tells DDW — or it does not leave CLASSIFY.
+
+    `ddw-context-check` is the step the rules order once per ticket, in
+    CLASSIFY, and the rules were where it lived: prose. Measured twice, on two
+    general runs two weeks apart, the same model skipped it both times and
+    nothing anywhere could tell — the skill is read-only, so no write existed
+    for a hook to judge, and no artifact existed for an audit to miss. A rule
+    only prose enforces is a rule the least obedient model in the fleet
+    decides about, and that model is the one the rule was written for.
+
+    So the step now leaves the one thing a gate can ask for: a file. The skill
+    lands its findings — or the sentence that there were none — at
+    `.ddw-work/context-check-{ticket}.md`, and the edge out of CLASSIFY does
+    not open without it. The file is model-written, so this is the receipt's
+    honest bargain (`ddw_receipt.py` says it plainly): it does not prove the
+    comparison was good, it makes skipping it a deliberate act that leaves no
+    file where the record demands one.
+    """
+    old_h = old_state.get("history") or []
+    new_h = new_state.get("history") or []
+    if len(new_h) != len(old_h) + 1:
+        return None                     # not a single fresh edge; validate() owns the rest
+    entry = new_h[-1] if isinstance(new_h[-1], dict) else {}
+    if entry.get("from") != "CLASSIFY" or entry.get("to") != "DEFINE":
+        # Only the edge into the building lane. DISCOVERY explores and runs no
+        # stack commands, so it has nothing for the comparison to protect; FREE
+        # never takes this edge at all. A gate wider than its reason is noise,
+        # and noise is how gates get routed around.
+        return None
+    ticket = new_state.get("ticket") or entry.get("ticket")
+    names = ["context-check-%s.md" % ticket] if ticket else []
+    names.append("context-check.md")
+    for name in names:
+        path = os.path.join(root, ".ddw-work", name)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                if fh.read().strip():
+                    return None
+        except OSError:
+            continue
+    return (
+        "CLASSIFY ends with the context check, and nothing on disk shows it ran. Run "
+        "`Skill(ddw-context-check)` — it compares what this repo's own config declares "
+        "(linters, type checkers, CI, pre-commit) against what the context file tells DDW — "
+        "and write its findings, or the line 'Nothing to report: the context file matches "
+        "the repo.', to `.ddw-work/%s`. Then take this edge again." % names[0])
+
+
+def decisions_record_missing(root, old_state, new_state):
+    """CODE does not close without `docs/ddw/specs/decisions-{ticket}.md` on disk.
+
+    The rule that approved assumptions land in that file — decision, who
+    approved it, date, which block — shipped as prose in the block loop, and
+    the first general run after it shipped produced a ticket with a stack
+    decision, two accepted risks and an approved split, and no decisions file
+    anywhere: every approval lived in a picker the record cannot see. The
+    phase's own exit is the one place a file can be demanded, so it is
+    demanded here — and a run with nothing to record says so IN the file,
+    which turns \"nobody wrote it\" and \"there was nothing to write\" into
+    different states on disk. They were indistinguishable, and the difference
+    is what an audit is.
+    """
+    old_h = old_state.get("history") or []
+    new_h = new_state.get("history") or []
+    if len(new_h) != len(old_h) + 1:
+        return None
+    entry = new_h[-1] if isinstance(new_h[-1], dict) else {}
+    if entry.get("from") != "CODE" or entry.get("to") not in ("VERIFY", "CLOSEOUT"):
+        return None
+    ticket = new_state.get("ticket") or old_state.get("ticket") or entry.get("ticket")
+    if not ticket:
+        return None                     # an unnamed run is refused elsewhere, with its own reason
+    path = os.path.join(root, "docs", "ddw", "specs", "decisions-%s.md" % ticket)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            if fh.read().strip():
+                return None
+    except OSError:
+        pass
+    return (
+        "CODE is closing and `docs/ddw/specs/decisions-%s.md` does not exist. Every decision "
+        "the user approved during implementation — an assumption reviewed, a risk accepted, a "
+        "threshold chosen — belongs in that file (`decision — who approved it — date — which "
+        "block`), because an approval that lives only in the conversation is a decision the "
+        "record denies. If genuinely nothing was decided outside the approved documents, the "
+        "file says that: 'No decisions were approved outside the spec during this ticket.' "
+        "Write it, commit it with the closeout, and take this edge again." % ticket)
+
+
+def block_review_missing(root, old_block, new_block):
+    """Advancing the block marker spends that block's two reviews — on disk.
+
+    The block loop's two-stage review (module-verifier, then arch-auditor) is
+    what makes \"whoever reviews is not whoever wrote\" true, and it lived in
+    prose. Measured on a general run: the arch-auditor died mid-audit and the
+    orchestrator reviewed its own block \"quickly, myself\"; one block earlier
+    it had overridden the module-verifier's FAIL with its own recount. Both
+    times the marker advanced and the record kept no trace that the
+    independent review had collapsed into self-judgement.
+
+    So the marker is now the gate: `--block N/M` means block N is FINISHED,
+    and finishing includes landing both verdicts at
+    `.ddw-work/review-block-N.md` — a `verifier:` line and an `arch:` line.
+    Model-written, like every receipt in `.ddw-work/` (the bargain is stated
+    in `ddw_receipt.py`): it does not prove the reviews were independent, it
+    makes their absence a fact on disk instead of a gap in a conversation.
+    A side effect that is not an accident: setting `1/M` on ENTERING the
+    phase — the misreading every live run makes — is refused with the
+    semantics spelled out.
+    """
+    if new_block == old_block:
+        return None                     # rewriting the same value decides nothing
+    if new_block is None:
+        if not old_block:
+            return None                 # clearing a marker that was never set
+        finished = old_block.split("/", 1)[1]     # "K/M" -> the last block, M
+    else:
+        finished = new_block.split("/", 1)[0]     # "N/M" -> the block being declared done
+    path = os.path.join(root, ".ddw-work", "review-block-%s.md" % finished)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        text = ""
+    low = text.lower()
+    if "verifier:" in low and "arch:" in low:
+        return None
+    return (
+        "the block marker means block %s is FINISHED — reviews included — and "
+        "`.ddw-work/review-block-%s.md` does not carry both verdicts. Land the two reviews "
+        "there first: a `verifier:` line with the module-verifier's verdict (spec compliance "
+        "and the TDD evidence) and an `arch:` line with the arch-auditor's (conventions "
+        "against AGENTS.md). If you are ENTERING the phase, do not set the marker at all — "
+        "it is written after a block finishes, not before it starts. And if a review agent "
+        "died, dispatch it again: your own reading of your own block is not one of the two "
+        "verdicts." % (finished, finished))
+
+
+def record_notice(state_path, note):
+    """The shell-write notice, kept where the audit can find it.
+
+    The notice is detection where prevention cannot reach (decision 11): a
+    shell write to product source in a no-source phase. It was composed,
+    handed to the tool's context channel — and kept nowhere. So a run that
+    ended could not answer the only question the notice exists for: did the
+    detection fire and the tool swallow it, or did it never fire? Measured on
+    a general run whose transcript showed shell writes and whose journal
+    showed nothing: the two cases were indistinguishable, which is the state
+    this project keeps refusing to leave things in.
+
+    Best effort like every journal write, and deduplicated against the LAST
+    notice on record: the post matcher fires on every tool call, and the same
+    dirty file would otherwise write the same sentence forty times. A new
+    note — a different set of files — is a new event and is kept.
+    """
+    try:
+        for entry in reversed(_journal_lines(state_path)):
+            if isinstance(entry, dict) and entry.get("record") == "notice":
+                if entry.get("note") == note:
+                    return
+                break
+        _journal_append(state_path, [{"record": "notice", "note": note}])
+    except Exception:
+        pass                            # a record that cannot be kept must not stop the report
 
 
 # DDW's own footprint, which is not product source and is not the agent going

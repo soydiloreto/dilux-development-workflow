@@ -760,6 +760,10 @@ def main():
             if phase:
                 note = vt.source_changed_in_no_source_phase(args.repo, phase)
                 if note:
+                    # Journal first, then say it: on the tools that swallow the
+                    # context channel the record is all that remains, and "did
+                    # the detection fire?" has to have an answer after the run.
+                    vt.record_notice(args.state, note)
                     notice_post(args.dialect, f"DDW notices: {note}")
         allow(args.dialect)
 
