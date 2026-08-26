@@ -9827,6 +9827,11 @@ for _ in range(TRIALS):
                     "--to", "CLASSIFY", "--action", "c", "--tier", "FEATURE", "--ticket", "T-1"],
                    capture_output=True)
     post().wait()
+    # The classify edge's context check — without it the DEFINE below fails
+    # silently and the race is measured over one transition instead of two.
+    os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+    open(os.path.join(repo, ".ddw-work", "context-check-T-1.md"), "w", encoding="utf-8").write(
+        "Nothing to report.\n")
     subprocess.run([sys.executable, tr, "--state", state, "--graph", graph, "--write",
                     "--to", "DEFINE", "--action", "d", "--title", "the fixture ticket"], capture_output=True)
     a, b = post(), post()
@@ -10514,7 +10519,19 @@ def step(*args):
 
 assert step("--to", "CLASSIFY", "--action", "c", "--tier", "FEATURE",
             "--ticket", "T-1").returncode == 0
+# The classify edge's context check — a different gate than the replay window
+# under test. Without it the DEFINE step below fails SILENTLY (step() reads
+# post's exit, not the helper's), the graph-change scenario never gets built,
+# and the fault this check exists to catch survives on a fixture that broke.
+# Measured: exactly that, on the first CI run after the gate shipped.
+os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+open(os.path.join(repo, ".ddw-work", "context-check-T-1.md"), "w", encoding="utf-8").write(
+    "Nothing to report.\n")
 assert step("--to", "DEFINE", "--action", "d", "--title", "the fixture ticket").returncode == 0
+# …and the edge has to have LANDED, or everything after this line measures a
+# repo standing somewhere else than the scenario says.
+assert json.load(open(state, encoding="utf-8"))["phase"] == "DEFINE", \
+    "the fixture's DEFINE step did not land, so the graph change would move under nothing"
 # The graph moves under the open ticket, exactly as an upgrade does.
 g = json.load(open(graph, encoding="utf-8"))
 g["tiers"]["FEATURE"].pop("CLASSIFY->DEFINE", None)
