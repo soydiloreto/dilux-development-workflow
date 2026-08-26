@@ -16,7 +16,7 @@ support` — is the whole of `scripts/lint_method.py` seen from here, and its
 thirty-odd checks collapse into it. The same question, asked one level down, is
 in [LINT-CHECKS-THAT-CANNOT-FAIL.md](LINT-CHECKS-THAT-CANNOT-FAIL.md).
 
-<!-- 541 fault(s) across 25 shard(s) -->
+<!-- 719 fault(s) across 24 shard(s) -->
 - [ ] `$TOOL is missing — the checks that need it would skip, and a skip reads as a pass`
       **Environment.** It only fails when the tool is missing from the machine, and no mutation of the tree can provoke that. Its value lives in CI, which installs the tool on purpose — and there a skip is counted apart and never adds to a green.
 - [ ] `node is missing — ${f#$SELF/} was NOT parsed; that is a gap, not a pass`
@@ -27,3 +27,7 @@ in [LINT-CHECKS-THAT-CANNOT-FAIL.md](LINT-CHECKS-THAT-CANNOT-FAIL.md).
       **Environment.** It only fails when the tool is missing from the machine, and no mutation of the tree can provoke that. Its value lives in CI, which installs the tool on purpose — and there a skip is counted apart and never adds to a green.
 - [ ] `the commit-gate fixture never committed: the three checks below measure the fixture, not the gate`
       **Fixture guard.** The two conditions that make it fail — `commit.gpgsign` and the git identity — are neutralised by the fixture itself two lines earlier, and nothing in this repo installs git hooks. No product path can light it.
+- [ ] `fixture: IDLE->CLASSIFY failed and the three checks below measure nothing`
+      **Fixture guard.** It fires only when the prose-gates fixture cannot take the one edge the graph always allows (IDLE→CLASSIFY, no gates, no receipts) — a broken helper, not a weakened gate. Every fault that breaks the helper that broadly is already killed by the FSM section's own checks before this line runs, so no fault reaches it with anything left to say.
+- [ ] `the review gate refuses the marker even with both verdicts on disk`
+      **Inverse guard.** It fails only if `block_review_missing` starts refusing a review file that carries both a `verifier:` and an `arch:` line — over-refusal, the direction no fault in the list pushes: every mutation of that gate removes a refusal rather than inventing one. Its value is catching a future edit that tightens the parse (a stricter regex, a case-sensitivity slip) and quietly turns the mandatory advance into a wall people route around.
