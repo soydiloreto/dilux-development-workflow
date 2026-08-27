@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.6.0
+version: 2.7.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`

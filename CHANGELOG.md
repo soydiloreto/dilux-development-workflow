@@ -19,7 +19,7 @@ move at different speeds. So the promise is specific:
 
 ---
 
-## [0.41.0] - 2026-08-27
+## [0.42.0] - 2026-08-27
 
 ### Fixed
 
@@ -33,7 +33,7 @@ move at different speeds. So the promise is specific:
   "claim: <gates>"`) that the replay reads instead, held to an edge's
   standard: outside the journal-blessed window every named gate must have
   its receipt, so a hand-written history cannot launder a gate through a
-  fake claim. `state.instructions.md` (2.6.0) documents the event; the
+  fake claim. `state.instructions.md` (2.7.0) documents the event; the
   end-to-end corrective loop, the forged-claim refusal and the malformed
   self-edge are pinned by tests and mutations.
 
