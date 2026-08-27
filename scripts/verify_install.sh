@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=647
+EXPECT_CHECKS=648
 EXPECT_SKILLS=18
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -1250,6 +1250,41 @@ python3 "$SELF/ddw/scripts/validate-transition.py" --mode post --state "$VP/.ddw
   && ok "and a state written through the shell is caught by the post net for the same missing receipt" \
   || bad "jq/sed writes the state, the define gate opens with no receipt, and nothing objects"
 
+# A claim EVENT is an audit record, and an audit record nothing backs is the
+# laundering it exists to prevent: a hand-written history that appends
+# `claim: define` and flips the gate, with no receipt on disk and no journal
+# blessing, must be refused by the post net — that demand lives in the claim
+# branch of the replay itself, and a fault that silences it (mutation: "a claim
+# event stops owing its receipt") has to turn THIS check red.
+FC="$WORK/forged-claim"; mkdir -p "$FC"
+python3 - "$FC" "$SELF" <<'PYFORGEDCLAIM' && ok "a forged claim event with no receipt behind it is refused by the post net" || bad "a hand-written 'claim: define' entry opens the gate with no receipt — history can launder gates"
+import json, os, subprocess, sys
+repo = sys.argv[1]
+self_dir = sys.argv[2]
+e = lambda f, t, a: {"timestamp": "2026-01-01T00:00:00Z", "from": f, "to": t,
+                     "action": a, "tier": "FEATURE", "ticket": "T-1"}
+# CLASSIFY only, then the forged claim: this history has NO edge that owes
+# `define`, so the ONLY net that can refuse it is the claim branch itself —
+# which is exactly what makes this check able to kill the mutation. A longer
+# history (with DEFINE->PLAN in it) is refused by the edge-owed arm too, and
+# a check two nets protect cannot tell when one of them dies.
+h = [e("IDLE", "CLASSIFY", "clasificar: probar"),
+     e("CLASSIFY", "CLASSIFY", "claim: define")]
+st = {"tier": "FEATURE", "phase": "CLASSIFY", "ticket": "T-1", "title": "t",
+      "autonomy": None, "gates": {"define": True}, "block": None,
+      "discovery": None, "tracker": None, "history": h}
+with open(os.path.join(repo, ".ddw-state.json"), "w", encoding="utf-8") as fh:
+    json.dump(st, fh)
+r = subprocess.run([sys.executable, os.path.join(self_dir, "ddw/scripts/validate-transition.py"),
+                    "--mode", "post", "--state", os.path.join(repo, ".ddw-state.json"),
+                    "--graph", os.path.join(self_dir, "ddw/rules/transition-graph.json")],
+                   capture_output=True, text=True)
+assert r.returncode == 2, "the forged claim passed the post net: " + (r.stdout + r.stderr)[:220]
+said = (r.stdout + r.stderr).lower()
+assert "evidence" in said or "receipt" in said, \
+    "the refusal does not say what the claim is missing: " + (r.stdout + r.stderr)[:220]
+PYFORGEDCLAIM
+
 # The receipt has to OPEN the gate, or the check above proves only that the gate
 # is shut. A guard that never lets anything through is not a guard.
 #
@@ -1948,7 +1983,7 @@ assert "validate_prd.py" in said and "--claim define" in said, \
 same = refusal(st("DEFINE", H), st("DEFINE", H + [{"timestamp": "2026-01-01T00:02:00Z",
                                                    "from": "DEFINE", "to": "DEFINE", "action": "c",
                                                    "tier": "FEATURE", "ticket": "T-1"}]))
-assert "claim" in same.lower() and "--claim" in same, \
+assert "one in-phase entry" in same.lower() and "--claim" in same, \
     "a self-edge refusal does not teach the claim event that passes: " + same[:200]
 
 # History appended from a phase the disk is not at: re-read and append from there.
