@@ -520,6 +520,13 @@ def main():
             print("ddw-transition: unknown gate(s) %s. Known: %s"
                   % (", ".join(bad), ", ".join(sorted(vt.GATE_EVIDENCE))), file=sys.stderr)
             sys.exit(2)
+        # The wedge two live runs found: claiming a gate the LAST edge cleared
+        # writes a state the post replay must condemn. Refuse here, with the
+        # forward-edge path that works, instead of letting the state brick.
+        wedge = vt.claim_after_corrective_edge(old_state, graph, args.claim)
+        if wedge:
+            print("ddw-transition: " + wedge, file=sys.stderr)
+            sys.exit(2)
         claimed = json.loads(json.dumps(old_state))
         if block_given:
             if args.write:

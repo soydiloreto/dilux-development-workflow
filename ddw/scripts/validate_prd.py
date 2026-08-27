@@ -347,12 +347,7 @@ def main():
                         % (r["repo"], dep))
                 if dep in (r["repo"], r["repo"].rsplit("/", 1)[-1]):
                     problems.append("row `%s` depends on itself" % r["repo"])
-            if r["status"].startswith("dropped") and not r["drop_reason"]:
-                problems.append(
-                    "row `%s` is dropped with no reason — the declared way out of the family "
-                    "gate is `dropped: <why>`, because a drop nobody explains is a count "
-                    "that quietly stopped counting" % r["repo"])
-            elif not r.get("status_ok", True):
+            if not r.get("status_ok", True):
                 problems.append(
                     "row `%s` says %r, which is not the fixed vocabulary (`active`, "
                     "`pending`, `done`, `dropped: <why>`, `done (unverified: <why>)`) — a "

@@ -47,16 +47,19 @@ move at different speeds. So the promise is specific:
   id; the workspace's sessions update the index against the forge's answers;
   nothing ever writes across repositories.
 
-### Known issue (found live, fix queued)
+### Fixed
 
-- **Re-claiming gates after a corrective loop wedges the run.** `VERIFY → CODE`
-  clears `tests`+`sast`; re-claiming them with `--claim` — what the helper's
-  own help teaches — makes the post net condemn the state: the replay
-  re-litigates the backward edge's clears against the re-earned gates, because
-  the in-phase claim appends no history entry and the backward edge is still
-  the newest one. The path that works is claiming ON the forward edge
-  (`--to VERIFY --gate tests --gate sast`), which is what the suite's own
-  corrective-loop check exercises. Caught by a live minimal run that did
+- **Re-claiming a gate after a corrective loop no longer wedges the run.**
+  Found live twice (`VERIFY→CODE` re-claiming `tests`+`sast`; `PLAN→DEFINE`
+  re-claiming `define`), both through the sanctioned helper: an in-phase
+  `--claim` writes gates but no history entry, so the post replay still read
+  the backward edge as the newest step, saw the gate held, and condemned the
+  state — the repository wedged until the operator hand-restored it. The
+  helper now refuses that exact claim at the door and teaches the edge that
+  works: re-earning the gate ON the forward transition (`--to <next>
+  --gate <gate>`), whose write carries the history entry the replay reads.
+  `state.instructions.md` (2.6.0) says it in prose too, and the refusal is
+  pinned by a test and its own mutation. Caught by a live minimal run that did
   exactly the right thing: stopped, reported, repaired nothing.
 
 ## [0.39.0] — Unreleased

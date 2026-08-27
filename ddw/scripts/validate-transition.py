@@ -3178,6 +3178,49 @@ def decisions_record_missing(root, old_state, new_state):
         "Write it, commit it with the closeout, and take this edge again." % ticket)
 
 
+def claim_after_corrective_edge(state, graph, claims):
+    """An in-phase `--claim` writes gates but no history entry. After a
+    corrective (backward) edge that is a trap: the last step in history is
+    still the backward edge, and the post-write replay re-litigates it against
+    the CURRENT gates — so the re-earned gate reads as "never given up" and
+    the state bricks. Found live twice (VERIFY→CODE re-claiming tests+sast;
+    PLAN→DEFINE re-claiming define), both through the sanctioned helper,
+    following what the docs then taught. The fix is not to loosen the replay —
+    it is to refuse THIS claim at the door and teach the edge that re-earns
+    the gate WITH a history entry: the forward edge, the path the replay
+    accepts. Returns the refusal, or None when the claim is safe."""
+    history = state.get("history") or []
+    last = (history[-1] or {}) if history else {}
+    src, dst = last.get("from"), last.get("to")
+    if not src or not dst:
+        return None
+    edges = _effective_edges(graph, state.get("tier"))
+    cfg = edges.get("%s->%s" % (src, dst)) or {}
+    offenders = sorted(set(claims) & set(cfg.get("clears") or []))
+    if not offenders:
+        return None
+    phase = state.get("phase")
+    forward = None
+    for key, e in edges.items():
+        f, _, t = key.partition("->")
+        if f == phase and set(offenders) <= set((e or {}).get("gates") or []):
+            forward = t
+            break
+    flags = "".join(" --gate %s" % g for g in offenders)
+    teach = (
+        (" Re-earn it on the forward edge instead: `transition.py --to %s%s` — that "
+         "write carries a history entry, which is what the replay reads." % (forward, flags))
+        if forward else
+        (" Re-earn it on the forward edge out of %s — the edge write carries the "
+         "history entry the replay reads." % phase))
+    return (
+        "the last step in history is the corrective edge %s->%s, which gave up %s. "
+        "An in-phase --claim leaves no history entry, so the post-write replay would "
+        "still see that edge as the last step, read the gate as never surrendered, "
+        "and condemn the state on the next write."
+        % (src, dst, ", ".join(offenders))) + teach
+
+
 def block_review_missing(root, old_block, new_block):
     """Advancing the block marker spends that block's two reviews — on disk.
 

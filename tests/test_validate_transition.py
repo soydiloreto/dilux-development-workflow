@@ -1605,3 +1605,54 @@ def test_la_pausa_multirepo_por_el_hook_tambien_debe_el_recibo(tmp_path):
                            {"file_path": p, "content": json.dumps(new)}, [p], repo=d)
     assert reason and "vouched" in reason, \
         "a hand-written multirepo pause slipped the hook with no receipt: %r" % reason
+
+
+# ── The claim that bricks the state after a corrective edge ──────────────────
+#
+# Found live twice, through the sanctioned helper, following what the docs
+# taught: take the corrective edge (it clears the gate — correct), fix the
+# artifact, revalidate, re-earn the gate with `--claim`. The claim writes
+# gates but no history entry, so the post replay still reads the backward
+# edge as the last step, sees the gate held, and condemns the state — the
+# repository wedges until the operator hand-restores it. The helper now
+# refuses that claim at the door and teaches the forward edge, whose write
+# carries the history entry the replay reads.
+
+def test_el_claim_tras_la_arista_correctiva_rechaza_y_ensena_la_de_avance(tmp_path):
+    p = str(tmp_path / ".ddw-state.json")
+    st = state(phase="DEFINE", tier="FEATURE", ticket="T-1",
+               history=[entry("IDLE", "CLASSIFY"),
+                        entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-1"),
+                        entry("DEFINE", "PLAN", tier="FEATURE", ticket="T-1"),
+                        entry("PLAN", "DEFINE",
+                              action="loop correctivo: la spec no introduce requerimientos",
+                              tier="FEATURE", ticket="T-1")])
+    open(p, "w", encoding="utf-8").write(json.dumps(st))
+    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p, "--graph", _GRAPH_PATH,
+                        "--claim", "define"],
+                       capture_output=True, text=True, cwd=str(tmp_path))
+    assert r.returncode == 2, \
+        "the claim that bricks the state on the next write was accepted: " + r.stdout[-200:]
+    assert "PLAN->DEFINE" in r.stderr, \
+        "the refusal does not name the corrective edge that makes the claim lethal: " + r.stderr[-300:]
+    assert "--to PLAN --gate define" in r.stderr, \
+        "the refusal does not teach the forward edge that works: " + r.stderr[-300:]
+    # And nothing moved: the door refused, it did not half-write.
+    on_disk = json.load(open(p, encoding="utf-8"))
+    assert on_disk["gates"] == {}, "the refused claim still landed a gate"
+
+
+def test_el_claim_tras_una_arista_de_avance_no_dispara_el_guard(tmp_path):
+    # Same claim, but the last step is FORWARD (CLASSIFY->DEFINE): the guard
+    # must stay silent and let the ordinary evidence check speak — a guard
+    # that fires on every claim is a net that cries wolf.
+    p = str(tmp_path / ".ddw-state.json")
+    st = state(phase="DEFINE", tier="FEATURE", ticket="T-1",
+               history=[entry("IDLE", "CLASSIFY"),
+                        entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-1")])
+    open(p, "w", encoding="utf-8").write(json.dumps(st))
+    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p, "--graph", _GRAPH_PATH,
+                        "--claim", "define"],
+                       capture_output=True, text=True, cwd=str(tmp_path))
+    assert "corrective edge" not in r.stderr, \
+        "the guard fired on a claim that does not brick anything: " + r.stderr[-300:]

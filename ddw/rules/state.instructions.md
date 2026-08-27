@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.5.0
+version: 2.6.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`
@@ -145,6 +145,13 @@ says so here rather than reading as coverage. In both modes what waits at the fa
 the corrected artifact re-earning the gate the edge just cleared, from a banner that says where it
 came back from — an approval
 that does not know it is a re-approval is the same rubber stamp one document later.
+
+**Re-earn on the forward edge, never with `--claim`.** After a corrective edge, the gate comes back
+as part of the forward transition (`transition.py --to <next> --gate <the gate>`), whose write
+carries a history entry. An in-phase `--claim` of that same gate is refused by the helper: it
+writes gates but no history, so the replay would still read the backward edge as the last step and
+condemn the state on the next write. Two live runs wedged exactly there, following what an earlier
+version of these lines allowed; the refusal now names the forward edge to take.
 
 Stepping out of CODE backwards also clears `block` — you are not implementing one any more.
 
