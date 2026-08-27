@@ -19,6 +19,53 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.42.0] - 2026-08-27
+
+### Fixed
+
+- **A claim is an event, and the corrective-loop wedge dies by design.**
+  Found live twice (`VERIFY→CODE` re-claiming `tests`+`sast`; `PLAN→DEFINE`
+  re-claiming `define`): an in-phase `--claim` mutated gates while leaving no
+  history entry, so the post replay still read the backward edge as the
+  newest step and condemned the re-earned gate — the repository wedged until
+  the operator hand-restored it. The root defect was state changing without
+  an event. Now `--claim` appends a claim event (`from == to`, `action:
+  "claim: <gates>"`) that the replay reads instead, held to an edge's
+  standard: outside the journal-blessed window every named gate must have
+  its receipt, so a hand-written history cannot launder a gate through a
+  fake claim. `state.instructions.md` (2.7.0) documents the event; the
+  end-to-end corrective loop, the forged-claim refusal and the malformed
+  self-edge are pinned by tests and mutations.
+
+
+## [0.40.0] — Unreleased
+
+### Added
+
+- **Multirepo, first real slice: the initiative that cannot lie.** A family of
+  repositories coordinates through a **workspace repo** — an ordinary repo of
+  committed documents, never a process, never a writer into other repos. Its
+  parent document is the **multirepo index** (`Status: Multirepo split`): one
+  row per repo — `owner/repo`, child ticket, scope, depends-on, status — with
+  the shape held by a new FAIL rule (**F-PRD-12**) and the ordinary receipt.
+  The enforcement is a **write gate on the document itself**: a row may say
+  `done` only when the forge confirms a MERGED pull request whose branch names
+  that repo's child ticket — asked fresh on every write, in the sanctioned
+  helper's path and the hook's alike. Two declared ways out, neither silent:
+  `dropped: <why>` for a part the initiative gave up, and
+  `done (unverified: <why>)` for the day the forge cannot answer and a human
+  asserts on the record. The count never degrades to "trust me" quietly.
+- **The mono/multi switch is the user's file.** A `## Repo family` section in
+  `AGENTS.md` (spec in `docs/AGENTS-MD.md`) names the family, its workspace
+  and this repo's seams; CLASSIFY Step 1.2 reads it and asks the scope
+  question in the classification box. No section → standalone, zero new
+  questions, identical to today. Works the same under plugin and drop-in —
+  the section lives in the user's own file.
+- **The protocol**: `define.instructions.md` § Multirepo split — children are
+  ordinary tickets run each in its own repository under the same initiative
+  id; the workspace's sessions update the index against the forge's answers;
+  nothing ever writes across repositories.
+
 ## [0.39.0] — Unreleased
 
 ### Added
@@ -2222,7 +2269,7 @@ in, with the tool-specific wiring generalised from one agent to six.
   a content-hashed receipt, the commit gate asks git, and the rest are the model's
   record. `tests` and `sast` stay self-declared deliberately — see RATIONALE 16.
 - An artifact per phase, under `docs/ddw/`, committed as that phase closes.
-- Seventeen skills and five subagents, including auditors that did not write the
+- Eighteen skills and five subagents, including auditors that did not write the
   code they review.
 - Security as two phases of the pipeline rather than a review afterwards: threat
   modeling in PLAN, SAST in CODE. Deliberately no dynamic scan — see the README

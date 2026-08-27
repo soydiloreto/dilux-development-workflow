@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.6.0
+version: 2.8.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -122,7 +122,7 @@ encapsulates the template, naming, file location, `PRD loops` handling and outpu
 5. **ONLY when the PRD file is written to disk and complete** — never before,
    never in parallel with `ddw-create-prd` — invoke `ddw-validate-prd`, which
    RUNS `.ddw/scripts/validate_prd.py <prd> --tier <tier>`. The script applies
-   the catalog's mechanical rules (F-PRD-01 to F-PRD-11, W-PRD-01 to W-PRD-06)
+   the catalog's mechanical rules (F-PRD-01 to F-PRD-12, W-PRD-01 to W-PRD-06)
    and writes the receipt the `define` gate demands; the MANUAL rules
    (F-PRD-02, F-PRD-07) you judge yourself and state explicitly. Loading both
    skill files together as reading material is not a sequence: create
@@ -386,6 +386,66 @@ alone — it is not a PRD and is not held to a PRD's sections — and those two 
 standing between a split and an acceptance criterion nobody noticed was dropped or renamed.
 Re-validate the index LAST, after the sub-PRDs exist: F-PRD-11 reads the parts off the disk, so an
 index validated before its parts has been asked only half the question.
+
+### Multirepo split — an initiative that spans repositories
+
+When CLASSIFY set the scope to **multi-repo** (see `classify.instructions.md` § Repo family), this
+repo is the family's **workspace** and the DEFINE artifact is a **multirepo index**, not a PRD with
+ACs. The children are not sub-tickets of this repo — they are ordinary tickets each run IN its own
+repository, by whoever stands there, with the full pipeline of that repo's tier.
+
+The index (`docs/ddw/prd/prd-{TICKET}.md`):
+
+```markdown
+# Parent PRD: [Initiative title]
+
+| Metric | Value |
+|--------|-------|
+| Ticket | [TICKET] |
+| Date | [timestamp] |
+| Status | Multirepo split |
+
+## Repos
+
+| Repo | Ticket | Scope | Depends on | Status |
+|---|---|---|---|---|
+| owner/repo-back | [TICKET] | [what that repo builds] | none | active |
+| owner/repo-bff | [TICKET] | [what that repo builds] | repo-back | pending |
+| owner/repo-front | [TICKET] | [what that repo builds] | repo-bff | pending |
+
+## Original context
+[The problem/opportunity, and where the source PRD came from]
+```
+
+- **Every child carries the SAME initiative id** — the branch each repo opens names it, and that
+  name is how the forge is asked about that repo's part.
+- **`Status` speaks a fixed vocabulary**: `active`, `pending`, `done`, `dropped: <why>`, and
+  `done (unverified: <why>)`. The last two are the DECLARED ways out — a part the initiative gave
+  up, and a human asserting a merge the forge could not confirm. Free prose in that column is a row
+  the gate cannot hold (F-PRD-12).
+- **`done` is not yours to write.** The family write gate asks the forge before letting a row say
+  `done`: no MERGED pull request whose branch names the child ticket in that repo → the write is
+  refused. This is the initiative that cannot lie — its one enforcement point, and the reason the
+  index's shape is a FAIL rule rather than a convention.
+- **Validate the index** with `ddw-validate-prd` like any DEFINE artifact (it is judged by
+  F-PRD-12 alone and writes the ordinary receipt), show it, and on approval **pause the parent**
+  (`pause: multirepo split into <repos>`) — the work now happens in the children's repositories.
+  **The pause spends that receipt**: the FSM refuses a `pause: multirepo split` whose index the
+  validator never vouched for, in the helper and the hook alike — an unvalidated table governing
+  several repositories is the document this layer exists to forbid. This workspace's later
+  sessions update the rows as the forge confirms them.
+- **Nothing here writes into the other repositories, ever.** The children read this index
+  (read-only, from the sibling clone or the forge); their closeouts cannot update it — the update
+  happens here, in a workspace session, against the forge's answer.
+- **The pause's closing message prints the launch plan.** The developer walks the family by hand —
+  that is the design — so the message that parks the parent hands them the walk, executable: one
+  line per repo, in dependency order, with the `cd` to the sibling clone and the prompt to give it
+  (`Implementá mi parte de <TICKET>`), marking which child is unblocked NOW and which waits on
+  whose merge. Asked for later ("dame el plan de lanzamiento"), any workspace session rebuilds it
+  from the index and the forge's current answers. A reparto whose next step the developer has to
+  reconstruct from a table is a reparto that stalls at every handoff — the owner asked for this
+  after walking the first live initiative.
+
 
 **4. Close the parent run, then open sub-ticket `a` as its own run:**
 

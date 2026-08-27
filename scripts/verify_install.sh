@@ -30,8 +30,8 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=635
-EXPECT_SKILLS=17
+EXPECT_CHECKS=648
+EXPECT_SKILLS=18
 EXPECT_AGENTS=5
 EXPECT_RULES=14
 EXPECT_ADAPTERS=6
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=719
+EXPECT_MUTATIONS=739
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1250,6 +1250,41 @@ python3 "$SELF/ddw/scripts/validate-transition.py" --mode post --state "$VP/.ddw
   && ok "and a state written through the shell is caught by the post net for the same missing receipt" \
   || bad "jq/sed writes the state, the define gate opens with no receipt, and nothing objects"
 
+# A claim EVENT is an audit record, and an audit record nothing backs is the
+# laundering it exists to prevent: a hand-written history that appends
+# `claim: define` and flips the gate, with no receipt on disk and no journal
+# blessing, must be refused by the post net — that demand lives in the claim
+# branch of the replay itself, and a fault that silences it (mutation: "a claim
+# event stops owing its receipt") has to turn THIS check red.
+FC="$WORK/forged-claim"; mkdir -p "$FC"
+python3 - "$FC" "$SELF" <<'PYFORGEDCLAIM' && ok "a forged claim event with no receipt behind it is refused by the post net" || bad "a hand-written 'claim: define' entry opens the gate with no receipt — history can launder gates"
+import json, os, subprocess, sys
+repo = sys.argv[1]
+self_dir = sys.argv[2]
+e = lambda f, t, a: {"timestamp": "2026-01-01T00:00:00Z", "from": f, "to": t,
+                     "action": a, "tier": "FEATURE", "ticket": "T-1"}
+# CLASSIFY only, then the forged claim: this history has NO edge that owes
+# `define`, so the ONLY net that can refuse it is the claim branch itself —
+# which is exactly what makes this check able to kill the mutation. A longer
+# history (with DEFINE->PLAN in it) is refused by the edge-owed arm too, and
+# a check two nets protect cannot tell when one of them dies.
+h = [e("IDLE", "CLASSIFY", "clasificar: probar"),
+     e("CLASSIFY", "CLASSIFY", "claim: define")]
+st = {"tier": "FEATURE", "phase": "CLASSIFY", "ticket": "T-1", "title": "t",
+      "autonomy": None, "gates": {"define": True}, "block": None,
+      "discovery": None, "tracker": None, "history": h}
+with open(os.path.join(repo, ".ddw-state.json"), "w", encoding="utf-8") as fh:
+    json.dump(st, fh)
+r = subprocess.run([sys.executable, os.path.join(self_dir, "ddw/scripts/validate-transition.py"),
+                    "--mode", "post", "--state", os.path.join(repo, ".ddw-state.json"),
+                    "--graph", os.path.join(self_dir, "ddw/rules/transition-graph.json")],
+                   capture_output=True, text=True)
+assert r.returncode == 2, "the forged claim passed the post net: " + (r.stdout + r.stderr)[:220]
+said = (r.stdout + r.stderr).lower()
+assert "evidence" in said or "receipt" in said, \
+    "the refusal does not say what the claim is missing: " + (r.stdout + r.stderr)[:220]
+PYFORGEDCLAIM
+
 # The receipt has to OPEN the gate, or the check above proves only that the gate
 # is shut. A guard that never lets anything through is not a guard.
 #
@@ -1941,15 +1976,15 @@ said = refusal(st("DEFINE", H), st("PLAN", H + [{"timestamp": "2026-01-01T00:02:
 assert "validate_prd.py" in said and "--claim define" in said, \
     "the gate refusal names neither the validator that earns it nor the claim: " + said[:200]
 
-# A write that appends an entry going nowhere: the move is an in-phase write.
-# `or` was too loose to hold this: the message keeps `--claim` while losing the
-# clause that says WHAT carries no entry, and a refusal that names a flag
-# without naming the situation it is for is the one a model works around.
+# A self-edge that is not a claim event: the one in-phase entry the history
+# accepts is `action: "claim: <gates>"` — anything else at `from == to` is the
+# malformed history it always was, and the refusal has to teach the one shape
+# that passes, or a model pokes at the wall until it invents a worse one.
 same = refusal(st("DEFINE", H), st("DEFINE", H + [{"timestamp": "2026-01-01T00:02:00Z",
                                                    "from": "DEFINE", "to": "DEFINE", "action": "c",
                                                    "tier": "FEATURE", "ticket": "T-1"}]))
-assert "in-phase" in same.lower() and "no history entry" in same.lower() and "--claim" in same, \
-    "a self-edge says only that it goes nowhere: " + same[:200]
+assert "one in-phase entry" in same.lower() and "--claim" in same, \
+    "a self-edge refusal does not teach the claim event that passes: " + same[:200]
 
 # History appended from a phase the disk is not at: re-read and append from there.
 apart = refusal(st("DEFINE", H), st("CODE", H + [{"timestamp": "2026-01-01T00:02:00Z",
@@ -3165,6 +3200,158 @@ case "$PGOUT" in
     ok "a hand edit of the state is refused WITH the sanctioned command in the refusal" ;;
   *) bad "the state's refusal is a puzzle again — the measured six-call bypass hunt starts here" ;;
 esac
+
+# ── The family index: the document that cannot lie ────────────────────────────
+#
+# A multirepo initiative's parent is a committed document whose rows speak for
+# OTHER repositories — the one thing in the method that does. The write gate
+# holds one sentence: a row says `done` only when the forge confirms that
+# repo's child PR merged. Two declared outs, both carrying a reason.
+section "The family index cannot say done without the forge"
+
+FAM="$WORK/family"; mkdir -p "$FAM/docs/ddw/prd" "$FAM/bin"; git -C "$FAM" init -q .
+cat > "$FAM/docs/ddw/prd/prd-CHK-1.md" <<'FAMEOF'
+# Parent PRD: Checkout
+
+| Metric | Value |
+|--------|-------|
+| Ticket | CHK-1 |
+| Status | Multirepo split |
+
+## Repos
+
+| Repo | Ticket | Scope | Depends on | Status |
+|---|---|---|---|---|
+| acme/tienda-back | CHK-1 | api de pagos | none | active |
+| acme/tienda-bff | CHK-1 | exponer pagos | tienda-back | pending |
+FAMEOF
+printf '{"phase": "IDLE", "tier": null, "ticket": null, "gates": {}, "history": []}\n' > "$FAM/.ddw-state.json"
+
+FAMOUT="$(python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM/docs/ddw/prd/prd-CHK-1.md" --tier FEATURE 2>&1)" \
+  && compgen -G "$FAM/.ddw-sessions/prd-validated-*" >/dev/null \
+  && ok "a well-formed family index passes F-PRD-12 and earns the ordinary receipt" \
+  || bad "the healthy multirepo index is refused by its own validator, or earns no receipt: $(echo "$FAMOUT" | tail -2)"
+
+sed 's/| tienda-back | pending |/| tienda-pagos | pending |/' \
+  "$FAM/docs/ddw/prd/prd-CHK-1.md" > "$FAM/docs/ddw/prd/prd-CHK-9.md"
+python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM/docs/ddw/prd/prd-CHK-9.md" --tier FEATURE >/dev/null 2>&1 \
+  && bad "a family row depending on a repo no row lists passed validation" \
+  || ok "and a dependency outside the table is refused — a row the order cannot schedule"
+rm -f "$FAM/docs/ddw/prd/prd-CHK-9.md"
+
+cat > "$FAM/bin/gh" <<'FAMGH'
+#!/bin/bash
+echo "${FAM_GH_OUT:-[]}"; exit "${FAM_GH_RC:-0}"
+FAMGH
+chmod +x "$FAM/bin/gh"
+
+fam_write() {  # $1 = the status cell for tienda-back's row
+  python3 - "$FAM" "$1" > "$FAM/event.json" <<'FAMEV'
+import json, sys
+root, status = sys.argv[1], sys.argv[2]
+idx = open(root + "/docs/ddw/prd/prd-CHK-1.md", encoding="utf-8").read()
+new = idx.replace("| none | active |", "| none | %s |" % status)
+print(json.dumps({"tool_name": "Write",
+                  "tool_input": {"file_path": "docs/ddw/prd/prd-CHK-1.md",
+                                 "content": new}}))
+FAMEV
+  PATH="$FAM/bin:$PATH" python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$FAM/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$FAM" < "$FAM/event.json" 2>&1
+}
+
+FAMOUT="$(FAM_GH_OUT='[{"headRefName":"feat/CHK-1-pagos","state":"OPEN","number":7}]' fam_write done || true)"
+case "$FAMOUT" in
+  *tienda-back*MERGED*|*MERGED*tienda-back*)
+    ok "a row marked done over an OPEN pull request is refused, naming the repo — the epic cannot lie" ;;
+  *) bad "the family index said done over an unmerged PR and the hook let it land" ;;
+esac
+
+FAM_GH_OUT='[{"headRefName":"feat/CHK-1-pagos","state":"MERGED","number":7}]' fam_write done >/dev/null 2>&1 \
+  && ok "and a forge-confirmed merge opens the same row" \
+  || bad "the gate refuses a done the forge confirms — a guard that never lets anything through"
+
+FAMOUT="$(FAM_GH_RC=1 fam_write done || true)"
+case "$FAMOUT" in
+  *unverified*)
+    ok "an unreachable forge refuses AND names the declared way out — the count never degrades in silence" ;;
+  *) bad "with the forge down the index either lied quietly or refused with no way out" ;;
+esac
+
+FAM_GH_RC=1 fam_write "done (unverified: gh caido, PR visto por un humano)" >/dev/null 2>&1 \
+  && FAM_GH_RC=1 fam_write "dropped: esa parte se pospone" >/dev/null 2>&1 \
+  && ok "and both declared outs pass with the forge down — an escape hatch on the record, not a hole" \
+  || bad "a declared out (dropped/unverified with reason) is refused, which teaches people to route around the gate"
+
+# The three closures of the layer's own determinism audit (2026-08-26): a
+# status in other words, a silently vanished row, and a dismissed judge —
+# each a failure that would be INVISIBLE afterwards, which is the standard.
+FAMOUT="$(fam_write merged || true)"
+case "$FAMOUT" in
+  *vocabulary*)
+    ok "a status outside the vocabulary is refused — merged sounds like done and is checked by nobody" ;;
+  *) bad "a row saying 'merged' landed unjudged: completion nothing verified" ;;
+esac
+
+python3 - "$FAM" > "$FAM/event.json" <<'FAMDEL'
+import json, sys
+idx = open(sys.argv[1] + "/docs/ddw/prd/prd-CHK-1.md", encoding="utf-8").read()
+new = "\n".join(l for l in idx.splitlines() if "tienda-bff" not in l)
+print(json.dumps({"tool_name": "Write",
+                  "tool_input": {"file_path": "docs/ddw/prd/prd-CHK-1.md",
+                                 "content": new}}))
+FAMDEL
+FAMOUT="$(PATH="$FAM/bin:$PATH" python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$FAM/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$FAM" < "$FAM/event.json" 2>&1 || true)"
+case "$FAMOUT" in
+  *tienda-bff*vanish*|*vanish*tienda-bff*|*tienda-bff*dropped*)
+    ok "a vanished row is refused by name — the count cannot quietly stop counting" ;;
+  *) bad "a row was deleted from the index with no dropped reason and the hook let it land" ;;
+esac
+
+python3 - "$FAM" > "$FAM/event.json" <<'FAMMARK'
+import json, sys
+idx = open(sys.argv[1] + "/docs/ddw/prd/prd-CHK-1.md", encoding="utf-8").read()
+print(json.dumps({"tool_name": "Write",
+                  "tool_input": {"file_path": "docs/ddw/prd/prd-CHK-1.md",
+                                 "content": idx.replace("| Status | Multirepo split |",
+                                                        "| Status | done |")}}))
+FAMMARK
+PATH="$FAM/bin:$PATH" python3 "$SELF/ddw/scripts/hook-gate.py" --mode pre --dialect standard \
+    --state "$FAM/.ddw-state.json" --graph "$SELF/ddw/rules/transition-graph.json" \
+    --repo "$FAM" < "$FAM/event.json" >/dev/null 2>&1 \
+  && bad "the write that removes the Multirepo marker dismissed the judge and landed" \
+  || ok "and removing the marker that makes the document judged is itself refused"
+
+# The multirepo pause spends the index's receipt — the orphaned-receipt hole.
+FPP="$WORK/fam-pause"; mkdir -p "$FPP/docs/ddw/prd"; git -C "$FPP" init -q .
+cp "$FAM/docs/ddw/prd/prd-CHK-1.md" "$FPP/docs/ddw/prd/prd-CHK-1.md"
+python3 - "$FPP" <<'FPPST'
+import json, sys
+h = [{"timestamp": "2026-01-01T00:0%d:00Z" % i, "from": f, "to": t,
+      "action": "x", "tier": "FEATURE", "ticket": "CHK-1"}
+     for i, (f, t) in enumerate([("IDLE", "CLASSIFY"), ("CLASSIFY", "DEFINE")])]
+json.dump({"tier": "FEATURE", "phase": "DEFINE", "ticket": "CHK-1", "title": "x",
+           "tracker": None, "autonomy": "assisted", "gates": {}, "block": None,
+           "discovery": None, "history": h},
+          open(sys.argv[1] + "/.ddw-state.json", "w"), indent=2)
+FPPST
+fpp_pause() {
+  python3 "$SELF/ddw/scripts/transition.py" --state "$FPP/.ddw-state.json" \
+    --graph "$SELF/ddw/rules/transition-graph.json" --to IDLE \
+    --action "pause: multirepo split into back/bff" --write 2>&1
+}
+FAMOUT="$(fpp_pause || true)"
+case "$FAMOUT" in
+  *vouched*)
+    ok "a multirepo pause on an index the validator never vouched for is refused" ;;
+  *) bad "an unvalidated index went on to govern its repos — the receipt nobody consumes" ;;
+esac
+( cd "$FPP" && python3 "$SELF/ddw/scripts/validate_prd.py" docs/ddw/prd/prd-CHK-1.md --tier FEATURE >/dev/null 2>&1 )
+fpp_pause >/dev/null 2>&1 \
+  && ok "and the validated index's pause goes through — the receipt is what was being asked for" \
+  || bad "the pause refuses a receipt that exists, which walls the protocol's own mandated exit"
 
 # A receipt re-validated with identical bytes is one event, not two journal
 # lines (measured: identical consecutive records, one validator run). And a
@@ -5871,8 +6058,10 @@ subprocess.run(["git", "-C", repo, "commit", "-qm", "the rest"], capture_output=
 step("--claim", "commit")
 assert json.load(open(state, encoding="utf-8"))["gates"].get("commit") is True, \
     "--claim did not mark the gate"
-assert len(json.load(open(state, encoding="utf-8"))["history"]) == 6, \
-    "--claim appended a history entry; it takes no edge"
+claim_events = [e for e in json.load(open(state, encoding="utf-8"))["history"]
+                if e.get("from") == e.get("to")]
+assert len(claim_events) >= 1 and claim_events[-1]["action"].startswith("claim:"), \
+    "--claim left no claim event — the audit trail lost where the gate was earned"
 r = run("--claim", "banana")
 assert r.returncode == 2, "--claim accepted a gate that does not exist"
 r = run("--claim", "commit", "--to", "IDLE", "--action", "x")
@@ -6009,19 +6198,19 @@ code, out = lint()
 assert code == 0, "the shipped tree does not lint clean, so nothing below means anything: " + out[-300:]
 
 # One area row overstated by one, exactly the shape the drift took.
-rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 11 | 6 | 17 |", "| PRD | 12 | 6 | 18 |")
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 12 | 6 | 18 |", "| PRD | 13 | 6 | 19 |")
 code, out = lint()
-assert code != 0 and "PRD" in out and "11" in out, \
+assert code != 0 and "PRD" in out and "12" in out, \
     "an area row that overcounts its own rules passed: " + out[-300:]
-rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 12 | 6 | 18 |", "| PRD | 11 | 6 | 17 |")
+rewrite("ddw/rules/validation-rules.instructions.md", "| PRD | 13 | 6 | 19 |", "| PRD | 12 | 6 | 18 |")
 
 # The total alone, with every row correct — the arithmetic nobody redid.
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **72** | **18** | **90** |", "| **Total** | **76** | **18** | **94** |")
+        "| **Total** | **73** | **18** | **91** |", "| **Total** | **77** | **18** | **95** |")
 code, out = lint()
-assert code != 0 and "72" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
+assert code != 0 and "73" in out, "a summary whose total contradicts its own rows passed: " + out[-300:]
 rewrite("ddw/rules/validation-rules.instructions.md",
-        "| **Total** | **76** | **18** | **94** |", "| **Total** | **72** | **18** | **90** |")
+        "| **Total** | **77** | **18** | **95** |", "| **Total** | **73** | **18** | **91** |")
 
 # Two more of the linter's checks, driven the same way. Both were added with a
 # mutation and no check: deleting the CALL left the repository linting clean,
@@ -6109,10 +6298,10 @@ assert code == 0, "the tree was not put back the way it was found: " + out[-300:
 
 # And the restatement outside the catalog, which is the line a reader of
 # `ddw/rules/` meets first.
-rewrite("ddw/rules/README.md", "The 90 validation rules", "The 93 validation rules")
+rewrite("ddw/rules/README.md", "The 91 validation rules", "The 94 validation rules")
 code, out = lint()
-assert code != 0 and "90" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
-rewrite("ddw/rules/README.md", "The 93 validation rules", "The 90 validation rules")
+assert code != 0 and "91" in out, "the README's rule count drifted from the catalog unchecked: " + out[-300:]
+rewrite("ddw/rules/README.md", "The 94 validation rules", "The 91 validation rules")
 
 code, out = lint()
 assert code == 0, "the probe was not restored: " + out[-300:]
@@ -11016,6 +11205,7 @@ CLAIMS = {
     "ddw-create-prd":        ["docs/ddw/prd/", "PRD loops"],
     "ddw-create-spec":       ["docs/ddw/specs/", "Spec loops"],
     "ddw-context-check":     ["AGENTS.md", "## Stack"],
+    "ddw-family-catalog":    ["family_catalog.py", "## Repo family", "--write-members"],
     "ddw-eject":             [".ddw/", "The repo wins", "CLAUDE_PLUGIN_ROOT"],
     "ddw-help":              ["/ddw-status", "/ddw-self-check"],
     "ddw-security-sast":     ["validate_sast.py", "docs/ddw/security/sast-"],
@@ -12493,16 +12683,24 @@ PYE2E
 # project-scope install records the activation in the repo's own settings file.
 # This is not a check for a sentence — it compares two facts inside the file, so
 # rewording the promise keeps it honest and reverting the behaviour trips it.
-python3 - "$SELF" <<'PYCHK' && ok "the plugin banner names the file a project-scope install leaves behind" || bad "the installer claims a plugin writes nothing while installing at project scope"
+python3 - "$SELF" <<'PYCHK' && ok "the plugin banner tells the truth about its scope — user-wide, with the per-repo off switch named" || bad "the plugin's scope and its banner disagree, or the user-wide install hides its reach"
 import sys
 src = open(f"{sys.argv[1]}/install.sh", encoding="utf-8").read()
-if "--scope project" not in src:
-    sys.exit(0)                      # nothing lands in the repo: nothing to disclose
 start = src.index('MODE" = "plugin"')
-banner = src[start:start + 2000]
-assert ".claude/settings.json" in banner, (
-    "install.sh installs at --scope project but its plugin banner never names "
-    ".claude/settings.json, so the user is told nothing lands in the repo")
+banner = src[start:start + 2200]
+if "--scope user" in src:
+    # A user-scope install reaches every repo the user opens. A banner that
+    # does not say so is the measured defect inverted: one repo of a family
+    # got project scope, the sibling ran naked, and nothing warned. Whole
+    # profile, said out loud, and the way to switch one repo off named.
+    assert "YOUR profile" in banner and "plugin disable" in banner, (
+        "install.sh installs at --scope user but its banner does not say the "
+        "install covers the whole profile, or does not name the per-repo off "
+        "switch — reach that is not disclosed reads as a repo-local install")
+elif "--scope project" in src:
+    assert ".claude/settings.json" in banner, (
+        "install.sh installs at --scope project but its plugin banner never names "
+        ".claude/settings.json, so the user is told nothing lands in the repo")
 PYCHK
 
 # ── The two writers of .gitignore write the same list ──────────────────

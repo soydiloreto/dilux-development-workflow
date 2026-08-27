@@ -1385,3 +1385,57 @@ def test_un_shard_sin_mutaciones_del_diff_contesta_vacio_y_no_muere(tmp_path):
         "the shard with no work died in red again: " + (r.stdout + r.stderr)[-300:]
     assert "holds none of the" in r.stdout, \
         "the empty shard did not say why it injected nothing: " + r.stdout[-300:]
+
+
+# ── The multirepo index (F-PRD-12) ──────────────────────────────────────────
+
+INDICE_FAMILIA = """# Parent PRD: Checkout
+
+| Metric | Value |
+|--------|-------|
+| Ticket | CHK-1 |
+| Status | Multirepo split |
+
+## Repos
+
+| Repo | Ticket | Scope | Depends on | Status |
+|---|---|---|---|---|
+| acme/tienda-back | CHK-1 | api de pagos | none | active |
+| acme/tienda-bff | CHK-1 | exponer pagos | tienda-back | pending |
+| acme/tienda-front | CHK-1 | boton pagar | tienda-bff | pending |
+"""
+
+
+def test_un_indice_multirepo_sano_pasa_y_deja_recibo(tmp_path):
+    r, refused = _indice(tmp_path, INDICE_FAMILIA)
+    assert r.returncode == 0, "the healthy family index was refused: " + "\n".join(refused)
+    assert "Receipt:" in r.stdout, "a PASSED family index earned no receipt"
+
+
+def test_una_familia_de_un_solo_repo_es_un_ticket_comun(tmp_path):
+    solo = "\n".join(l for l in INDICE_FAMILIA.splitlines()
+                     if "tienda-bff" not in l and "tienda-front" not in l)
+    _, refused = _indice(tmp_path, solo)
+    assert _refuses(refused, "F-PRD-12"), \
+        "a one-repo initiative passed as multirepo: " + ("\n".join(refused) or "no refusals")
+
+
+def test_una_dependencia_fuera_de_la_tabla_es_refusada(tmp_path):
+    _, refused = _indice(tmp_path, INDICE_FAMILIA.replace(
+        "| tienda-back | pending |", "| tienda-pagos | pending |"))
+    assert _refuses(refused, "F-PRD-12"), \
+        "a dependency no row lists passed: " + ("\n".join(refused) or "no refusals")
+
+
+def test_un_dropped_sin_razon_es_refusado(tmp_path):
+    _, refused = _indice(tmp_path, INDICE_FAMILIA.replace(
+        "| tienda-bff | pending |", "| tienda-bff | dropped |"))
+    assert _refuses(refused, "F-PRD-12"), \
+        "a drop nobody explained passed: " + ("\n".join(refused) or "no refusals")
+
+
+def test_un_status_fuera_del_vocabulario_es_refusado_por_f_prd_12(tmp_path):
+    _, refused = _indice(tmp_path, INDICE_FAMILIA.replace(
+        "| tienda-back | pending |", "| tienda-back | merged |"))
+    assert _refuses(refused, "F-PRD-12"), \
+        "a status outside the vocabulary passed validation: " + ("\n".join(refused) or "no refusals")

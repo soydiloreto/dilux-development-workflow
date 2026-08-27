@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.14.0
+version: 1.16.0
 ---
 
 # Validation Rules — Central Catalog
@@ -84,6 +84,7 @@ Valuable, Estimable, Small, Testable), EARS (Easy Approach to Requirements Synta
 | F-PRD-08 | Missing structural section | The PRD must contain ALL of these sections: Context and Problem, Goals, Functional Requirements, Non-Functional Requirements, Acceptance Criteria, Out of Scope (FEATURE), Dependencies. If any is missing → FAIL. | A structurally incomplete PRD cannot be validated. Missing sections are requirements nobody thought about. |
 | F-PRD-LOOP | Corrective loop at its ceiling | The PRD header's `Loops since last human decision` reached 3 (falling back to `PRD loops` when a document predates the second counter). **Two numbers on purpose:** `PRD loops` is the running total, never reset, so six months on the document can say what it cost; the ceiling measures rounds since a person last decided something, because a round the model drove and a round a reviewer asked for are not the same event — and a review comment is already the decision this ceiling exists to provoke. The loop is mandatory while it converges; three rounds without converging means what is missing is a decision nobody wrote down, not another pass. → FAIL, and the way past it is a human answering, with the counter reset and their answer recorded. | Under `autonomy: minimal` this is one of the three stops that have no mode. A counter incremented and compared to nothing is a tally, not a stop. |
 | F-PRD-10 | Split that does not partition the original | **Only for a split index** (`Status: Split`). The index must declare `Acceptance criteria to cover` and each sub-ticket row must list the ACs it takes. An AC taken by nobody, by two, or handed out above the declared count, → FAIL. The count is everything the parts must cover — the source document's criteria plus whatever DEFINE added with the user — and it is checked against the rows beneath it, which is what it was not: an index declared 22 where its source had 17 and the receipt vouched for "the 22 of the original". The index is judged by this rule alone. | The split protocol REPLACES the parent with the index, so the original AC list is gone the moment it lands and "did the parts cover the whole?" stops being answerable from anything. This is the only place it can be asked. |
+| F-PRD-12 | Family table that cannot be held to | **Only for a multirepo index** (`Status: Multirepo split`). Every row is `\| owner/repo \| TICKET \| scope \| depends on \| status \|`: at least two well-formed rows, every row naming a full `owner/repo` slug and a child ticket id, every dependency resolving to another listed repo, every `Status` cell speaking the fixed vocabulary (`active`, `pending`, `done`, `dropped: <why>`, `done (unverified: <why>)`), and a `dropped:` carrying its reason. A row the parser cannot read → FAIL, quoted. | The rows are promises the family write gate reads — a row may say `done` only when the forge confirms that repo's child PR merged. A row the gate cannot parse is a part of the initiative the gate cannot hold, so shape is coverage here, not style. |
 | F-PRD-11 | Sub-PRD renumbers its index's criteria | **Only for a split index**, and only for sub-PRD files that already exist next to it. AC ids are global across a split: a part assigned AC-09..AC-17 carries those ids, it does not restart at AC-01. A sub-PRD on disk that never names an AC its index assigns it → FAIL, naming both numberings. | Measured on a live split: the index said "b takes AC-09..AC-17", the sub-PRD restarted at AC-01, and every cross-reference between the two documents had two possible answers. F-PRD-10 forces the partition onto the index; this holds the parts to the same names, because a convention enforced on one side of a seam is a defect factory on the other. |
 | F-PRD-09 | AC not in EARS form | Every acceptance criterion must match one of the five EARS patterns (see below). An AC that matches none → FAIL, quoting it and naming the pattern it most likely wants. **Does not apply to DISCOVERY**, whose PRDs are exploratory, or to QUICK-FIX, whose artifact is the 4-line fix-brief. | EARS (Easy Approach to Requirements Syntax, Rolls-Royce) turns a criterion into a shape a reader can check rather than a sentence they have to interpret. It is what AWS's Kiro adopted for spec-driven work with agents, for the same reason: a template makes an *absent* case visible, and free prose does not. |
 
@@ -397,14 +398,14 @@ orders instead — a document no gate reads, competing with the spec for authori
 
 | Area | FAIL rules | WARNING rules | Total |
 |---|---|---|---|
-| PRD | 11 | 6 | 17 |
+| PRD | 12 | 6 | 18 |
 | Spec / Fix-Plan | 16 | 3 | 19 |
 | Threat Model | 7 | 2 | 9 |
 | SAST | 19 | 1 | 20 |
 | Test Run Report | 8 | 1 | 9 |
 | Module Verify | 6 | 3 | 9 |
 | ADR | 5 | 2 | 7 |
-| **Total** | **72** | **18** | **90** |
+| **Total** | **73** | **18** | **91** |
 
 ---
 

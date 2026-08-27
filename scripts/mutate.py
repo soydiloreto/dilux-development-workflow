@@ -1118,8 +1118,10 @@ MUTATIONS = [
     ("the context-check gate disappears from the sanctioned helper",
      edit("ddw/scripts/transition.py",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
-          "                   or vt.decisions_record_missing(_root, old_state, new_state))",
-          "        _reason = vt.decisions_record_missing(_root, old_state, new_state)")),
+          "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
+          "        _reason = (vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))")),
     ("the context-check gate disappears from the hook's pre path",
      edit("ddw/scripts/validate-transition.py",
           "            reason = context_check_missing(root, old_state, new_state)",
@@ -1131,8 +1133,10 @@ MUTATIONS = [
     ("the decisions gate disappears from the sanctioned helper",
      edit("ddw/scripts/transition.py",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
-          "                   or vt.decisions_record_missing(_root, old_state, new_state))",
-          "        _reason = vt.context_check_missing(_root, old_state, new_state)")),
+          "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
+          "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))")),
     ("the decisions gate disappears from the hook's pre path",
      edit("ddw/scripts/validate-transition.py",
           "            reason = decisions_record_missing(root, old_state, new_state)",
@@ -1172,6 +1176,110 @@ MUTATIONS = [
      edit("ddw/scripts/validate_prd.py",
           "            if renumbered:",
           "            if False:")),
+    ("the family index gets its gate taken away",
+     edit("ddw/scripts/validate-transition.py",
+          '    rel = os.path.relpath(target, root).replace(os.sep, "/")\n'
+          '    if not (rel.startswith("docs/ddw/prd/") and rel.endswith(".md")):\n'
+          "        return None",
+          '    rel = os.path.relpath(target, root).replace(os.sep, "/")\n'
+          "    if True:\n"
+          "        return None")),
+    ("the family gate disappears from the hook's pre path",
+     edit("ddw/scripts/validate-transition.py",
+          "        reason = family_index_write_denied(target, root, tool_name, tool_input)",
+          "        reason = None")),
+    ("a claim event stops owing its receipt",
+     edit("ddw/scripts/validate-transition.py",
+          "    if not blessed and state_path:",
+          "    if False:")),
+    ("a dropped row stops needing its reason",
+     edit("ddw/scripts/validate-transition.py",
+          '        status_ok = bool(drop or unver\n'
+          '                         or status in ("active", "pending", "done"))',
+          '        status_ok = bool(drop or unver\n'
+          '                         or status in ("active", "pending", "done", "dropped"))')),
+    ("a dependency on a repo outside the table stops being an error",
+     edit("ddw/scripts/validate_prd.py",
+          "                if dep not in listed:",
+          "                if False:")),
+    ("the multirepo index stops being judged as one",
+     edit("ddw/scripts/validate_prd.py",
+          '    if re.search(r"^\\|\\s*Status\\s*\\|\\s*Multirepo", text, re.MULTILINE | re.IGNORECASE):',
+          "    if False:")),
+    ("a departure vanishes from the catalog silently",
+     edit("ddw/scripts/family_catalog.py",
+          '                gone.append((name, "no longer declares this family"))',
+          "                pass")),
+    ("the regenerated catalog eats the prose outside its markers",
+     edit("ddw/scripts/family_catalog.py",
+          "    if BEGIN in current:\n"
+          "        head = current.split(BEGIN, 1)[0]\n"
+          '        tail = current.split(END, 1)[1] if END in current else "\\n"\n'
+          "        new_text = head + block + tail",
+          "    if BEGIN in current:\n"
+          '        new_text = block + "\\n"')),
+    ("an unchanged family rewrites the catalog anyway",
+     edit("ddw/scripts/family_catalog.py",
+          "    if strip_stamp(current) == strip_stamp(new_text):\n"
+          '        print("family_catalog: no changes — %d repo(s), catalog already current." % len(rows))',
+          "    if False:\n"
+          '        print("family_catalog: no changes — %d repo(s), catalog already current." % len(rows))')),
+    ("--check calls a stale catalog fresh",
+     edit("ddw/scripts/family_catalog.py",
+          "        if strip_stamp(current) == strip_stamp(new_text):\n"
+          '            print("family_catalog: fresh — every row matches its repo\'s AGENTS.md.")',
+          "        if True:\n"
+          '            print("family_catalog: fresh — every row matches its repo\'s AGENTS.md.")')),
+    ("the sync lands on a ticket branch again",
+     edit("ddw/scripts/family_catalog.py",
+          '        if head not in ("", default) or mid_ticket:',
+          "        if False:")),
+    ("the member sync eats the rest of the AGENTS.md",
+     edit("ddw/scripts/family_catalog.py",
+          "            new_text = text[:m.start()] + section + chr(10) + text[end:].lstrip(chr(10))",
+          "            new_text = section")),
+    ("a status outside the vocabulary lands unjudged",
+     edit("ddw/scripts/validate-transition.py",
+          '        status_ok = bool(drop or unver\n'
+          '                         or status in ("active", "pending", "done"))',
+          "        status_ok = True")),
+    ("F-PRD-12 stops judging the status vocabulary",
+     edit("ddw/scripts/validate_prd.py",
+          '            if not r.get("status_ok", True):',
+          "            if False:")),
+    ("a vanished row goes back to vanishing silently",
+     edit("ddw/scripts/validate-transition.py",
+          '            if old_row["repo"] not in new_names:',
+          "            if False:")),
+    ("dismissing the judge works again",
+     edit("ddw/scripts/validate-transition.py",
+          "    if not FAMILY_MARKER.search(content):\n        if was_index:",
+          "    if not FAMILY_MARKER.search(content):\n        if False:")),
+    ("the multirepo pause stops spending the receipt",
+     edit("ddw/scripts/validate-transition.py",
+          '    if (entry.get("from") != "DEFINE" or entry.get("to") != IDLE\n'
+          '            or not action.startswith("pause") or "multirepo" not in action):\n'
+          "        return None",
+          "    if True:\n        return None")),
+    ("the pause gate disappears from the sanctioned helper",
+     edit("ddw/scripts/transition.py",
+          "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
+          "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.decisions_record_missing(_root, old_state, new_state))")),
+    ("the pause gate disappears from the hook's pre path",
+     edit("ddw/scripts/validate-transition.py",
+          "            reason = family_split_pause_missing(root, old_state, new_state)",
+          "            reason = None")),
+    ("an unaskable forge reads as merged",
+     edit("ddw/scripts/validate-transition.py",
+          '        return ("the family index marks `%s` as done and the forge could not be asked "\n'
+          '                "(gh unreachable or unauthenticated). The count never degrades to \\"trust "\n'
+          '                "me\\" in silence: retry when the forge answers, or assert it on the record "\n'
+          '                "as `done (unverified: <why>)` — a human\'s name on the assertion is the "\n'
+          '                "declared way out." % row["repo"])',
+          "        continue")),
     ("the state's refusal becomes a puzzle again",
      edit("ddw/scripts/validate-transition.py",
           '            raise Block("Edit to the state with no old_string/new_string." + _HELPER)',
@@ -2064,9 +2172,9 @@ MUTATIONS = [
     ("the gate refusal goes back to naming the fact and not the move",
      edit("ddw/scripts/validate-transition.py",
           "is not true.{how}", "is not true")),
-    ("a self-edge is refused without saying an in-phase write carries no entry",
+    ("a malformed self-edge stops naming the one entry the history accepts",
      edit("ddw/scripts/validate-transition.py",
-          "An in-phase change — claiming a gate, ", "")),
+          "The one in-phase entry the history ", "")),
     ("the phase mismatch names two phases and no way back",
      edit("ddw/scripts/validate-transition.py",
           "History is appended to what is ON DISK: re-read ", "")),
@@ -2895,7 +3003,7 @@ MUTATIONS = [
      edit("ddw/rules/validation-rules.instructions.md",
           "| SAST | 19 | 1 | 20 |", "| Static Analysis | 19 | 1 | 20 |")),
     ("the rules README restates a total the catalog does not define",
-     edit("ddw/rules/README.md", "The 90 validation rules", "The 93 validation rules")),
+     edit("ddw/rules/README.md", "The 91 validation rules", "The 93 validation rules")),
     ("a phase cites a validation rule the catalog does not define",
      edit("ddw/rules/define.instructions.md", "(F-PRD-02, F-PRD-07)", "(F-PRD-02, F-PRD-77)")),
     ("a tier stops being documented in the schema of the file it is written into",
@@ -3295,10 +3403,10 @@ MUTATIONS = [
     # Four of them were found by reading the code against what it printed, and
     # one by running it: a plugin install at project scope leaves a file in the
     # repo the banner swore was untouched.
-    ("the plugin banner goes back to naming nothing that a project-scope install leaves in the repo",
+    ("the plugin banner stops saying the install covers the whole profile",
      edit("install.sh",
-          '  echo "  (Claude Code records it in .claude/settings.json, which is how a"',
-          '  echo "  (nothing of it is recorded anywhere in your tree, which is how a"')),
+          '  echo "  plugin store, installed to YOUR profile: every repo you open gets the"',
+          '  echo "  plugin store, for the repos where you activate it, one at a time, and"')),
     ("the runtime's gitignore list drops the scratch directory again, so a plugin-only install leaks the drafted commit message",
      edit("ddw/scripts/session-boot.py",
           '                     ".ddw-work/", ".ddw-journal.jsonl", ".ddw/**/__pycache__/")',

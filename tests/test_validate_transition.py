@@ -1366,3 +1366,348 @@ def test_discovery_no_debe_context_check(tmp_path):
     old, new = _fresh_edge("CLASSIFY", "DISCOVERY", tier="DISCOVERY", ticket="DISC-1")
     assert vt.context_check_missing(str(tmp_path), old, new) is None, \
         "the discovery lane was asked for a context check it has no use for"
+
+
+# ── The family index: the document that cannot lie ───────────────────────────
+#
+# A multirepo initiative's parent is a committed document, and its rows speak
+# for OTHER repositories — the one thing in the method that does. The write
+# gate holds the sentence: a row says `done` only when the forge confirms that
+# repo's child PR merged. Two declared outs, both with a reason on the record.
+
+FAM_INDEX = """# Parent PRD: Checkout
+
+| Metric | Value |
+|--------|-------|
+| Ticket | CHK-1 |
+| Status | Multirepo split |
+
+## Repos
+
+| Repo | Ticket | Scope | Depends on | Status |
+|---|---|---|---|---|
+| acme/tienda-back | CHK-1 | api de pagos | none | active |
+| acme/tienda-bff | CHK-1 | exponer pagos | tienda-back | pending |
+"""
+
+
+def test_el_parser_de_familia_lee_las_filas():
+    rows = vt.parse_family_rows(FAM_INDEX)
+    assert [r["repo"] for r in rows] == ["acme/tienda-back", "acme/tienda-bff"]
+    assert rows[0]["ticket"] == "CHK-1" and rows[0]["deps"] == []
+    assert rows[1]["deps"] == ["tienda-back"] and not rows[1]["done"]
+
+
+def test_dropped_y_unverified_llevan_su_razon():
+    rows = vt.parse_family_rows(FAM_INDEX.replace(
+        "| none | active |", "| none | dropped: se pospone |").replace(
+        "| tienda-back | pending |", "| tienda-back | done (unverified: forge caido, lo vi yo) |"))
+    assert rows[0]["drop_reason"] == "se pospone" and not rows[0]["done"]
+    assert rows[1]["unverified_reason"].startswith("forge caido") and rows[1]["done"]
+
+
+def _fam_repo(tmp_path):
+    r = str(tmp_path / "fam")
+    os.makedirs(os.path.join(r, "docs", "ddw", "prd"))
+    subprocess.run(["git", "-C", r, "init", "-q"], check=True)
+    idx = os.path.join(r, "docs", "ddw", "prd", "prd-CHK-1.md")
+    open(idx, "w", encoding="utf-8").write(FAM_INDEX)
+    open(os.path.join(r, ".ddw-state.json"), "w", encoding="utf-8").write(
+        json.dumps(state()))
+    return r, idx
+
+
+def _fam_try(repo, idx, content, binpath, **stub_env):
+    old = os.environ.copy()
+    os.environ["PATH"] = binpath + os.pathsep + os.environ["PATH"]
+    for k, v in stub_env.items():
+        os.environ[k] = v
+    try:
+        return vt.family_index_write_denied(
+            idx, repo, "Write",
+            {"file_path": "docs/ddw/prd/prd-CHK-1.md", "content": content})
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+
+
+def test_una_fila_done_con_merge_confirmado_pasa(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace("| none | active |", "| none | done |")
+    why = _fam_try(repo, idx, listo, _gh_stub(tmp_path),
+                   GH_LIST_OUT='[{"headRefName":"feat/CHK-1-pagos","state":"MERGED","number":7}]')
+    assert why is None, "a forge-confirmed done was refused: %r" % why
+
+
+def test_una_fila_done_sin_merge_es_refusada(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace("| none | active |", "| none | done |")
+    why = _fam_try(repo, idx, listo, _gh_stub(tmp_path),
+                   GH_LIST_OUT='[{"headRefName":"feat/CHK-1-pagos","state":"OPEN","number":7}]')
+    assert why and "tienda-back" in why and "MERGED" in why, \
+        "the index said done over an OPEN pull request: %r" % why
+
+
+def test_forge_caido_refusa_y_nombra_la_salida_declarada(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace("| none | active |", "| none | done |")
+    why = _fam_try(repo, idx, listo, _gh_stub(tmp_path), GH_LIST_RC="1")
+    assert why and "unverified" in why, \
+        "with the forge unreachable the count degraded to trust-me in silence: %r" % why
+
+
+def test_las_salidas_declaradas_pasan_sin_forge(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace(
+        "| none | active |", "| none | done (unverified: gh caido, PR #7 visto por Pablo) |"
+    ).replace("| tienda-back | pending |", "| tienda-back | dropped: se pospone |")
+    why = _fam_try(repo, idx, listo, _gh_stub(tmp_path), GH_LIST_RC="1")
+    assert why is None, "a declared out was refused: %r" % why
+
+
+def test_un_documento_comun_no_es_asunto_del_gate(tmp_path):
+    repo, _ = _fam_repo(tmp_path)
+    comun = os.path.join(repo, "docs", "ddw", "prd", "prd-OTRO-1.md")
+    why = _fam_try(repo, comun, "# PRD normal\nnada de familia\n", _gh_stub(tmp_path),
+                   GH_LIST_RC="1")
+    assert why is None
+
+
+def test_el_gate_corre_en_decide_pre(tmp_path):
+    """Via the path that actually runs — the function alone going green while
+    nothing consults it is the decoration this repo keeps finding."""
+    repo, idx = _fam_repo(tmp_path)
+    listo = FAM_INDEX.replace("| none | active |", "| none | done |")
+    binpath = _gh_stub(tmp_path)
+    old = os.environ.copy()
+    os.environ["PATH"] = binpath + os.pathsep + os.environ["PATH"]
+    os.environ["GH_LIST_OUT"] = '[{"headRefName":"feat/CHK-1-x","state":"OPEN","number":7}]'
+    try:
+        reason = vt.decide_pre(os.path.join(repo, ".ddw-state.json"), _GRAPH_PATH,
+                               "Write", {"file_path": idx, "content": listo}, [idx],
+                               repo=repo)
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+    assert reason and "tienda-back" in reason, \
+        "decide_pre let the index lie: %r" % reason
+
+
+# ── Los tres cierres de la auditoría de determinismo (26-ago) ────────────────
+
+def test_un_status_fuera_del_vocabulario_es_refusado_por_el_gate(tmp_path):
+    """`merged` suena a done y no lo verifica nadie — la promesa sin gate."""
+    repo, idx = _fam_repo(tmp_path)
+    raro = FAM_INDEX.replace("| none | active |", "| none | merged |")
+    why = _fam_try(repo, idx, raro, _gh_stub(tmp_path))
+    assert why and "merged" in why and "vocabulary" in why, \
+        "a status in other words landed unjudged: %r" % why
+
+
+def test_una_fila_borrada_sin_dropped_es_refusada(tmp_path):
+    repo, idx = _fam_repo(tmp_path)
+    sin_bff = "\n".join(l for l in FAM_INDEX.splitlines() if "tienda-bff" not in l)
+    why = _fam_try(repo, idx, sin_bff, _gh_stub(tmp_path))
+    assert why and "tienda-bff" in why and "dropped" in why, \
+        "a row vanished silently — the count that quietly stopped counting: %r" % why
+
+
+def test_borrar_el_marcador_multirepo_es_refusado(tmp_path):
+    """El mismo write que miente no puede despedir al juez."""
+    repo, idx = _fam_repo(tmp_path)
+    sin_marca = FAM_INDEX.replace("| Status | Multirepo split |", "| Status | done |")
+    why = _fam_try(repo, idx, sin_marca, _gh_stub(tmp_path))
+    assert why and "marker" in why, \
+        "the write dismissed the judge and landed: %r" % why
+
+
+def test_un_indice_nuevo_no_debe_diff_contra_nada(tmp_path):
+    """El primer Write del índice no tiene filas viejas que preservar."""
+    repo, _ = _fam_repo(tmp_path)
+    nuevo = os.path.join(repo, "docs", "ddw", "prd", "prd-NUEVO-1.md")
+    why = _fam_try(repo, nuevo, FAM_INDEX.replace("CHK-1", "NUEVO-1"),
+                   _gh_stub(tmp_path))
+    assert why is None, "a brand-new index was refused for rows it never had: %r" % why
+
+
+def _fam_pause(tmp_path, with_receipt):
+    """DEFINE→IDLE multirepo pause via the helper, with/without the receipt."""
+    d = str(tmp_path / "wsrepo")
+    os.makedirs(os.path.join(d, "docs", "ddw", "prd"))
+    os.makedirs(os.path.join(d, ".ddw-work"))
+    subprocess.run(["git", "-C", d, "init", "-q"], check=True)
+    idx = os.path.join(d, "docs", "ddw", "prd", "prd-CHK-1.md")
+    open(idx, "w", encoding="utf-8").write(FAM_INDEX)
+    hist = [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="CHK-1"),
+            entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="CHK-1")]
+    open(os.path.join(d, ".ddw-state.json"), "w", encoding="utf-8").write(json.dumps(
+        state("DEFINE", "FEATURE", "CHK-1", {}, hist)))
+    if with_receipt:
+        r = subprocess.run([sys.executable,
+                            os.path.join(ROOT, "ddw/scripts/validate_prd.py"),
+                            idx, "--tier", "FEATURE"], capture_output=True, text=True, cwd=d)
+        assert r.returncode == 0, "fixture: the healthy index failed validation: " + r.stdout
+    return subprocess.run([sys.executable, _TRANSITION_PY, "--state",
+                           os.path.join(d, ".ddw-state.json"), "--graph", _GRAPH_PATH,
+                           "--to", "IDLE",
+                           "--action", "pause: multirepo split into back/bff", "--write"],
+                          capture_output=True, text=True, cwd=d)
+
+
+def test_la_pausa_multirepo_sin_recibo_es_refusada(tmp_path):
+    r = _fam_pause(tmp_path, with_receipt=False)
+    assert r.returncode == 2 and "vouched" in r.stderr, \
+        "an unvalidated index went on to govern three repos: " + r.stderr[-200:]
+
+
+def test_la_pausa_multirepo_con_recibo_pasa(tmp_path):
+    r = _fam_pause(tmp_path, with_receipt=True)
+    assert r.returncode == 0, "the validated index's pause was refused: " + r.stderr[-300:]
+
+
+def test_una_pausa_comun_sigue_sin_gates(tmp_path):
+    """El walkaway ordinario no se toca: solo la pausa del split multirepo
+    debe el recibo."""
+    d = str(tmp_path / "plainrepo")
+    os.makedirs(d)
+    subprocess.run(["git", "-C", d, "init", "-q"], check=True)
+    hist = [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-2"),
+            entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-2")]
+    open(os.path.join(d, ".ddw-state.json"), "w", encoding="utf-8").write(json.dumps(
+        state("DEFINE", "FEATURE", "T-2", {}, hist)))
+    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state",
+                        os.path.join(d, ".ddw-state.json"), "--graph", _GRAPH_PATH,
+                        "--to", "IDLE", "--action", "pause: lo retomo mañana", "--write"],
+                       capture_output=True, text=True, cwd=d)
+    assert r.returncode == 0, "an ordinary pause got gated: " + r.stderr[-200:]
+
+
+def test_la_pausa_multirepo_por_el_hook_tambien_debe_el_recibo(tmp_path):
+    """Mutation 230 survived: the helper's path was checked and the hook's was
+    not — a gate only one door enforces is decoration at the other."""
+    d = str(tmp_path / "wshook")
+    os.makedirs(os.path.join(d, "docs", "ddw", "prd"))
+    subprocess.run(["git", "-C", d, "init", "-q"], check=True)
+    open(os.path.join(d, "docs", "ddw", "prd", "prd-CHK-1.md"), "w",
+         encoding="utf-8").write(FAM_INDEX)
+    hist = [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="CHK-1"),
+            entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="CHK-1")]
+    old = state("DEFINE", "FEATURE", "CHK-1", {}, hist)
+    p = os.path.join(d, ".ddw-state.json")
+    open(p, "w", encoding="utf-8").write(json.dumps(old))
+    new = json.loads(json.dumps(old))
+    new.update({"tier": None, "phase": "IDLE", "ticket": None, "title": None,
+                "autonomy": None, "gates": {}})
+    new["history"] = hist + [entry("DEFINE", "IDLE",
+                                   "pause: multirepo split into back/bff",
+                                   tier="FEATURE", ticket="CHK-1")]
+    reason = vt.decide_pre(p, _GRAPH_PATH, "Write",
+                           {"file_path": p, "content": json.dumps(new)}, [p], repo=d)
+    assert reason and "vouched" in reason, \
+        "a hand-written multirepo pause slipped the hook with no receipt: %r" % reason
+
+
+# ── The claim is an EVENT: audited, evidenced, and the wedge is dead ─────────
+#
+# Two live runs wedged the same way: corrective edge, artifact fixed and
+# revalidated, gate re-claimed with `--claim` — and the post replay, seeing
+# the backward edge as the newest step, condemned the re-earned gate. The
+# root defect was that an in-phase claim mutated gates while leaving no
+# history: state changed without an event. Now `--claim` appends a claim
+# event (`from == to`, `action: "claim: <gates>"`), the replay reads THAT,
+# and a claim nothing backs — no receipt — is refused as the laundering it
+# would be.
+
+def _define_receipt(repo, body):
+    receipt = _load("ddw_receipt", "ddw/scripts/ddw_receipt.py")
+    name = "prd-validated-" + receipt.digest_of(body)
+    os.makedirs(os.path.join(repo, ".ddw-sessions"), exist_ok=True)
+    with open(os.path.join(repo, ".ddw-sessions", name), "w", encoding="utf-8") as fh:
+        fh.write("prd-T-1.md\n")
+    with open(os.path.join(repo, ".ddw-journal.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"record": "receipt", "name": name, "file": "prd-T-1.md"}) + "\n")
+
+
+def _corrective_history():
+    return [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-1"),
+            entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-1"),
+            entry("DEFINE", "PLAN", tier="FEATURE", ticket="T-1"),
+            entry("PLAN", "DEFINE",
+                  action="correction: la spec no introduce requerimientos",
+                  tier="FEATURE", ticket="T-1")]
+
+
+def test_el_claim_tras_el_ciclo_correctivo_emite_su_evento_y_el_post_lo_bendice(tmp_path):
+    """End to end through the REAL gates: the exact sequence that bricked two
+    live repositories, now walking clean — helper claim, event appended,
+    post replay green."""
+    repo = _repo_at(tmp_path, phase="DEFINE", gates={})
+    sp = os.path.join(repo, ".ddw-state.json")
+    prd_dir = os.path.join(repo, "docs/ddw/prd")
+    os.makedirs(prd_dir, exist_ok=True)
+    body = "# PRD T-1\n\n| Field | Value |\n|---|---|\n| Ticket | T-1 |\n"
+    with open(os.path.join(prd_dir, "prd-T-1.md"), "w", encoding="utf-8") as fh:
+        fh.write(body)
+    _define_receipt(repo, body)
+    with open(sp, "w", encoding="utf-8") as fh:
+        json.dump(state("DEFINE", "FEATURE", "T-1", {}, _corrective_history()), fh)
+
+    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state", sp, "--graph", _GRAPH_PATH,
+                        "--claim", "define", "--write"],
+                       capture_output=True, text=True, cwd=repo,
+                       env=dict(os.environ, CLAUDE_PROJECT_DIR=repo))
+    assert r.returncode == 0, "the sanctioned recovery path is refused again: " + r.stderr[-300:]
+
+    on_disk = json.load(open(sp, encoding="utf-8"))
+    last = on_disk["history"][-1]
+    assert last["from"] == last["to"] == "DEFINE" and last["action"].startswith("claim:"), \
+        f"the claim left no event in the history: {last}"
+    assert last.get("ticket") == "T-1" and last.get("tier") == "FEATURE", \
+        "the claim event is missing the stamps every entry carries"
+    assert on_disk["gates"] == {"define": True}
+
+    why = None
+    try:
+        why = vt.decide_post(sp, _GRAPH_PATH)
+    except vt.Block as exc:
+        why = str(exc)
+    assert why is None, "the post replay still condemns the completed corrective loop: " + str(why)[:300]
+
+
+def test_un_evento_de_claim_inventado_sin_recibo_es_refusado(tmp_path):
+    """The other half of the design: a history entry is an audit record, and
+    an audit record nothing backs is laundering. A hand-written claim event
+    with no receipt on disk must not open the gate."""
+    repo = _repo_at(tmp_path, phase="DEFINE", gates={})
+    sp = os.path.join(repo, ".ddw-state.json")
+    h = _corrective_history() + [entry("DEFINE", "DEFINE", action="claim: define",
+                                       tier="FEATURE", ticket="T-1")]
+    with open(sp, "w", encoding="utf-8") as fh:
+        json.dump(state("DEFINE", "FEATURE", "T-1", {"define": True}, h), fh)
+    why = None
+    try:
+        why = vt.decide_post(sp, _GRAPH_PATH)
+    except vt.Block as exc:
+        why = str(exc)
+    assert why, "a claim event with no receipt behind it opened the gate"
+    assert "evidence" in str(why).lower() or "receipt" in str(why).lower(), \
+        f"the refusal does not say what is missing: {str(why)[:200]}"
+
+
+def test_un_evento_en_fase_que_no_es_claim_sigue_refusado(tmp_path):
+    """`from == to` opens exactly one door — a well-formed claim. Anything
+    else in-phase is still the malformed history it always was."""
+    old = state("DEFINE", "FEATURE", "T-1", {},
+                [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-1"),
+                 entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-1")])
+    bad = json.loads(json.dumps(old))
+    bad["history"].append(entry("DEFINE", "DEFINE", action="just visiting",
+                                tier="FEATURE", ticket="T-1"))
+    why = refusal(old, bad)
+    assert why and "claim" in why, f"an in-phase non-claim entry passed: {why}"
+
+    worse = json.loads(json.dumps(old))
+    worse["history"].append(entry("DEFINE", "DEFINE", action="claim: nonsense",
+                                  tier="FEATURE", ticket="T-1"))
+    why2 = refusal(old, worse)
+    assert why2 and "unknown" in why2, f"a claim naming a gate that does not exist passed: {why2}"

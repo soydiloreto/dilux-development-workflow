@@ -141,7 +141,7 @@ every new install.
 ```
 
 > The `FR-`/`NFR-`/`AC-` prefixes and the section names are what `ddw-validate-prd` matches on
-> (rules F-PRD-01 to F-PRD-11). Write the *content* in the user's language, but keep the identifiers
+> (rules F-PRD-01 to F-PRD-12). Write the *content* in the user's language, but keep the identifiers
 > and the structure as written here — **including the EARS keywords** (`WHEN`, `WHILE`, `WHERE`,
 > `IF … THEN`, `SHALL`), which stay in English in every language, exactly as the section headings do.
 > They are the shape the validator matches on; translated, the criterion still reads fine to a human

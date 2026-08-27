@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.5.0
+version: 2.7.0
 ---
 
 # State — Schema and Management of `.ddw-state.json`
@@ -39,7 +39,7 @@ version: 2.5.0
 | `gates` | `object` | `{"spec": true, …}` | The gates earned in the current phase. A transition reads them; it never trusts a promise. |
 | `block` | `string \| null` | Free text | Which block of the spec is being implemented (CODE phase). |
 | `discovery` | `object \| null` | Free object | DISCOVERY's working notes. |
-| `history` | `array` | Append-only | One entry per transition: `{timestamp, from, to, action, ticket, tier}`. Entries are **only ever appended at the end** — editing or reordering one invalidates the whole chain. |
+| `history` | `array` | Append-only | One entry per transition — plus claim events (`from == to`, `action: "claim: <gates>"`) recording gates earned in phase: `{timestamp, from, to, action, ticket, tier}`. Entries are **only ever appended at the end** — editing or reordering one invalidates the whole chain. |
 
 ### The history entry
 
@@ -145,6 +145,15 @@ says so here rather than reading as coverage. In both modes what waits at the fa
 the corrected artifact re-earning the gate the edge just cleared, from a banner that says where it
 came back from — an approval
 that does not know it is a re-approval is the same rubber stamp one document later.
+
+**A claim is an event.** `--claim` appends its own history entry — `from == to`, `action:
+"claim: <gates>"` — so the audit trail records where every gate was (re-)earned, and after a
+corrective edge the replay reads the claim event instead of re-litigating the backward edge. Two
+live runs wedged before this existed: the in-phase claim was invisible to history, the backward
+edge stayed newest, and the post net condemned the re-earned gate. State that changes without an
+event was the defect; the event is the fix. A claim entry in the history is held to the same
+standard as an edge — outside the journal-blessed window, every gate it names must have its
+receipt on disk, or a hand-written history could launder a gate no validator ever saw.
 
 Stepping out of CODE backwards also clears `block` — you are not implementing one any more.
 

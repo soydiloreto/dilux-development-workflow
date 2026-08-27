@@ -1072,11 +1072,17 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
         # it illegal now. `skip_edges` is that window, and it is only ever
         # non-zero in post mode's replay.
         if src == dst:
-            raise Block(
-                f"a transition must go somewhere: {key}. An in-phase change — claiming a gate, "
-                "filling in the title — carries NO history entry: write the new state without "
-                "appending one, or use `.ddw/scripts/transition.py --claim <gate>`, which builds "
-                "exactly that write.")
+            # A claim EVENT: `--claim` appends one so the audit trail records
+            # where a gate was (re-)earned. Before this existed, an in-phase
+            # claim was invisible to history — and after a corrective edge the
+            # replay still read that edge as the newest step, saw the gate
+            # held, and condemned the state. Two live runs wedged exactly
+            # there, through the sanctioned helper. The event is what the
+            # replay reads instead; anything at `src == dst` that is NOT a
+            # well-formed claim is still refused.
+            _claim_event_ok(entry, key, blessed=idx < skip_edges,
+                            state_path=state_path, new_state=new_state)
+            continue
         if src == IDLE and dst != CLASSIFY and _is_resume(entry):
             # Coming back to a ticket that was paused. It owes no gates — pausing
             # owed none either, and the gates it had earned come back with it.
@@ -2855,6 +2861,9 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
         reason = sealed_artifact_denied(target, root, disk)
         if reason:
             return reason
+        reason = family_index_write_denied(target, root, tool_name, tool_input)
+        if reason:
+            return reason
 
     # The state file keeps failing closed on an unknown verb: reconstructing it
     # is what decides, and `_reconstruct_new_text` refuses anything it cannot
@@ -2905,6 +2914,9 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
             if reason:
                 return reason
             reason = decisions_record_missing(root, old_state, new_state)
+            if reason:
+                return reason
+            reason = family_split_pause_missing(root, old_state, new_state)
             if reason:
                 return reason
             _record_arrow(root)
@@ -3172,6 +3184,38 @@ def decisions_record_missing(root, old_state, new_state):
         "Write it, commit it with the closeout, and take this edge again." % ticket)
 
 
+def _claim_event_ok(entry, key, blessed, state_path, new_state):
+    """A `src == dst` history entry is a claim EVENT — the audit record of a
+    gate (re-)earned in phase. It is held to the same standard as an edge:
+    its action names the gates (`claim: <gate>[, <gate>…]`), the names are
+    real, and — outside the journal-blessed window — every named gate has its
+    receipt on disk. Without the receipt demand, a hand-written history could
+    append `claim: define` and launder a gate no validator ever saw; measured
+    nowhere yet, refused before it can be."""
+    action = entry.get("action")
+    m = re.match(r"claim:\s*(.+)$", action.strip()) if isinstance(action, str) else None
+    if not m:
+        raise Block(
+            f"a transition must go somewhere: {key}. The one in-phase entry the history "
+            "accepts is a claim event — `action: \"claim: <gate>[, <gate>…]\"` — which is "
+            "what `.ddw/scripts/transition.py --claim <gate>` writes.")
+    names = [g.strip() for g in m.group(1).split(",") if g.strip()]
+    unknown = [g for g in names if g not in GATE_EVIDENCE]
+    if not names or unknown:
+        raise Block(
+            f"the claim event at {key} names "
+            + (f"unknown gate(s) {', '.join(unknown)}" if unknown else "no gate")
+            + ". Known: " + ", ".join(sorted(GATE_EVIDENCE)))
+    if not blessed and state_path:
+        reason = gate_evidence_missing(os.path.dirname(os.path.abspath(state_path)),
+                                       new_state, names)
+        if reason:
+            raise Block(
+                "the claim event for %s carries no evidence: %s A claim in the history "
+                "is an audit record, and an audit record nothing backs is exactly the "
+                "laundering it exists to prevent." % (", ".join(names), reason))
+
+
 def block_review_missing(root, old_block, new_block):
     """Advancing the block marker spends that block's two reviews — on disk.
 
@@ -3219,6 +3263,234 @@ def block_review_missing(root, old_block, new_block):
         "it is written after a block finishes, not before it starts. And if a review agent "
         "died, dispatch it again: your own reading of your own block is not one of the two "
         "verdicts." % (finished, finished))
+
+
+# ── The family index: the document that cannot lie ───────────────────────────
+#
+# A multirepo initiative's parent is a committed document in the family's
+# workspace repo — never a state, because states are one per directory and
+# deliberately unshared. Its rows are one repo each, and the row's `status`
+# column is the one thing in this method that speaks for OTHER repositories.
+# Nothing here ever writes into those repositories (outside the repo is not
+# ours); what is held instead is the sentence: **a row may say `done` only
+# when the forge confirms that repo's child PR merged.** The epic that cannot
+# be dragged to the Done column — which is the whole reason the parent exists.
+FAMILY_MARKER = re.compile(r"^\|\s*Status\s*\|\s*Multirepo", re.MULTILINE | re.IGNORECASE)
+
+_FAMILY_ROW = re.compile(r"^\|\s*(?P<repo>[\w.-]+/[\w.-]+)\s*\|(?P<rest>.*)$")
+
+
+def parse_family_rows(text):
+    """The family table's rows, as dicts — the ONE parser both sides use.
+
+    `validate_prd.py` judges the shape with it (F-PRD-12) and the write gate
+    below reads verdicts through it; two parsers of one table is how a row
+    validates under one reading and slips the gate under another.
+
+    A row is `| owner/repo | TICKET | scope | depends on | status |`. Rows
+    whose first cell is not an owner/repo slug are not family rows (headers,
+    separators, prose tables). Returns dicts with: repo, ticket, scope, deps
+    (list), status (lowercased), drop_reason, unverified_reason, done, raw.
+    """
+    rows = []
+    for line in text.splitlines():
+        m = _FAMILY_ROW.match(line.strip())
+        if not m:
+            continue
+        cells = [c.strip() for c in m.group("rest").strip().strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        ticket_m = re.search(r"\b[A-Z][A-Z0-9]*-\d+\b", cells[0])
+        status = cells[3].strip().lower()
+        deps_raw = cells[2].strip().lower()
+        deps = ([] if deps_raw in ("none", "-", "—", "ninguna", "")
+                else [d.strip() for d in re.split(r"[,;]| y ", cells[2]) if d.strip()])
+        drop = re.match(r"(dropped|descartado)\s*:\s*(.+)$", cells[3].strip(),
+                        re.IGNORECASE)
+        unver = re.match(r"done\s*\(\s*unverified\s*:\s*(.+?)\s*\)\s*$", cells[3].strip(),
+                         re.IGNORECASE)
+        # The status column speaks a FIXED vocabulary, and speaking it is what
+        # makes a row judgeable: `merged`, `listo`, `done — PR #7` all assert
+        # completion in words the forge gate never looks at, so they were
+        # completion nobody verified — found by the layer's own determinism
+        # audit, the promise-without-a-gate defect in its inverse form.
+        status_ok = bool(drop or unver
+                         or status in ("active", "pending", "done"))
+        rows.append({
+            "repo": m.group("repo"),
+            "ticket": ticket_m.group(0) if ticket_m else "",
+            "scope": cells[1],
+            "deps": deps,
+            "status": status,
+            "status_ok": status_ok,
+            "drop_reason": drop.group(2).strip() if drop else "",
+            "unverified_reason": unver.group(1).strip() if unver else "",
+            "done": status == "done" or bool(unver),
+            "raw": line,
+        })
+    return rows
+
+
+def _family_child_merged(root, repo_slug, ticket):
+    """Has this repo's child PR merged, asked at the forge?
+
+    True / False / None-for-unknown, the same three answers the pr gate's own
+    checks distinguish — because "gh fell over" and "no PR exists" must never
+    read the same: one is retried, the other is the finding.
+
+    The convention is the method's own: a branch names the ticket it was
+    opened for, so the child PR is the one whose head carries the child
+    ticket's id. The forge stays the sole authority; nothing local can vouch
+    for another repository.
+    """
+    try:
+        out = subprocess.run(
+            ["gh", "pr", "list", "--repo", repo_slug, "--state", "all",
+             "--limit", "100", "--json", "headRefName,state,number"],
+            cwd=root, capture_output=True, text=True, timeout=20,
+            stdin=subprocess.DEVNULL)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        prs = json.loads(out.stdout or "[]")
+    except ValueError:
+        return None
+    if not isinstance(prs, list):
+        return None
+    mine = [p for p in prs if isinstance(p, dict)
+            and ticket.lower() in str(p.get("headRefName", "")).lower()]
+    if any(str(p.get("state", "")).upper() == "MERGED" for p in mine):
+        return True
+    return False
+
+
+def family_index_write_denied(target, root, tool_name, tool_input):
+    """A write that makes the family index claim `done` it cannot prove.
+
+    Judged on the CONTENT the write would land, not on an edge: the parent of
+    a multirepo initiative has no closing ceremony of its own — its index is
+    maintained row by row, in whatever phase the workspace repo happens to be
+    in — so the document is the only place the promise can be held. Every row
+    the new bytes mark `done` is asked of the forge, every time: a `done` that
+    stops being true (a PR closed after the fact) is refused on the next edit
+    rather than compounding.
+
+    Two declared ways out, both on the record, neither silent:
+    `dropped: <why>` for a part the initiative gave up, and
+    `done (unverified: <why>)` for the day the forge cannot answer and a
+    human decides to assert anyway — Pablo's rule is that the count never
+    degrades to "trust me" QUIETLY; degrading out loud, with a reason in the
+    row, is the difference between an escape hatch and a hole.
+    """
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
+    if not (rel.startswith("docs/ddw/prd/") and rel.endswith(".md")):
+        return None
+    # The disk is read for EVERY write, not only for Edits: the audit found
+    # two holes in the write-only-judges-new-bytes shape, both the kind whose
+    # failure is invisible afterwards. A Write that drops a row makes a repo
+    # leave the initiative with no reason on record — the count that quietly
+    # stopped counting. And a Write that removes the `Status: Multirepo`
+    # marker dismisses the judge with the same pen the judge was watching.
+    try:
+        with open(target, encoding="utf-8") as fh:
+            old_text = fh.read()
+    except OSError:
+        old_text = ""
+    was_index = bool(old_text) and bool(FAMILY_MARKER.search(old_text))
+    content = tool_input.get("content")
+    if not isinstance(content, str):
+        # An edit: reconstruct the bytes it would land, from the file on disk.
+        if not old_text or not was_index:
+            return None                  # a new file arrives as a Write, with content
+        try:
+            content = _reconstruct_new_text(tool_name, tool_input, old_text)
+        except Block:
+            return ("this edit of a family index cannot be reconstructed, so what it would "
+                    "make the index say cannot be judged. Write the whole file instead — the "
+                    "index is small on purpose, and its rows are promises a gate reads.")
+    if not FAMILY_MARKER.search(content):
+        if was_index:
+            return ("this write removes the `Status | Multirepo` marker from an existing "
+                    "family index — the line that makes this document judged. An initiative "
+                    "is not retired by dismissing its judge: drop its rows one by one "
+                    "(`dropped: <why>`) so every departure carries its reason, and the "
+                    "document keeps being the one that cannot lie.")
+        return None
+    new_rows = parse_family_rows(content)
+    if was_index:
+        new_names = {r["repo"] for r in new_rows}
+        for old_row in parse_family_rows(old_text):
+            if old_row["repo"] not in new_names:
+                return ("row `%s` disappears from the family index in this write. A repo "
+                        "leaves an initiative as `dropped: <why>` — a reason on the record "
+                        "— never by silently vanishing from the table: a deleted row is "
+                        "the count that quietly stopped counting." % old_row["repo"])
+    for row in new_rows:
+        if not row["status_ok"]:
+            return ("row `%s` carries the status %r, which is not in the vocabulary the "
+                    "gates read (`active`, `pending`, `done`, `dropped: <why>`, "
+                    "`done (unverified: <why>)`). A status in other words asserts a state "
+                    "nothing verifies — `merged` sounds like done and is checked by "
+                    "nobody. Say it in the vocabulary, and the right gate will hold it."
+                    % (row["repo"], row["status"]))
+        if not row["done"] or row["unverified_reason"]:
+            continue
+        merged = _family_child_merged(root, row["repo"], row["ticket"] or "\x00")
+        if merged is True:
+            continue
+        if merged is False:
+            return ("the family index marks `%s` as done, and the forge has no MERGED pull "
+                    "request whose branch names %s in that repo. The row may say `done` only "
+                    "when GitHub confirms it — that is the initiative that cannot lie. Merge "
+                    "the child's PR first, or record the truth: `dropped: <why>` if that part "
+                    "was given up." % (row["repo"], row["ticket"] or "its ticket"))
+        return ("the family index marks `%s` as done and the forge could not be asked "
+                "(gh unreachable or unauthenticated). The count never degrades to \"trust "
+                "me\" in silence: retry when the forge answers, or assert it on the record "
+                "as `done (unverified: <why>)` — a human's name on the assertion is the "
+                "declared way out." % row["repo"])
+    return None
+
+
+def family_split_pause_missing(root, old_state, new_state):
+    """The multirepo pause spends the index's receipt — or does not happen.
+
+    The parent of a multirepo initiative leaves DEFINE by a pause, and a pause
+    is gated by nothing — which left the one receipt this layer writes
+    (F-PRD-12's) consumed by no edge at all: an index nobody ever validated
+    governed the initiative exactly like a validated one, and
+    `validate_prd.py`'s own comment claimed otherwise. Found by the layer's
+    determinism audit; this is the edge gate that makes the claim true, in
+    the exact shape `context_check_missing` and `decisions_record_missing`
+    already have.
+
+    Fires only on the edge the multirepo protocol itself mandates —
+    `DEFINE → IDLE` with `pause: multirepo split into <repos>` — so an
+    ordinary pause ("lo retomo mañana") stays gated by nothing, as every
+    walkaway is.
+    """
+    old_h = old_state.get("history") or []
+    new_h = new_state.get("history") or []
+    if len(new_h) != len(old_h) + 1:
+        return None
+    entry = new_h[-1] if isinstance(new_h[-1], dict) else {}
+    action = (entry.get("action") or "").strip().lower()
+    if (entry.get("from") != "DEFINE" or entry.get("to") != IDLE
+            or not action.startswith("pause") or "multirepo" not in action):
+        return None
+    ticket = entry.get("ticket") or old_state.get("ticket")
+    tier = entry.get("tier") or old_state.get("tier")
+    if not ticket:
+        return None                     # an unnamed pause is refused elsewhere, with its reason
+    reason = _prd_receipt_missing(root, {"ticket": ticket, "tier": tier})
+    if reason:
+        return ("a multirepo split is pausing on an index the validator never vouched for: "
+                + reason + " The rows of that index are promises the family gate reads — "
+                "an unvalidated table governing three repositories is the exact document "
+                "this layer exists to forbid.")
+    return None
 
 
 def record_notice(state_path, note):
