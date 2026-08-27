@@ -1941,15 +1941,15 @@ said = refusal(st("DEFINE", H), st("PLAN", H + [{"timestamp": "2026-01-01T00:02:
 assert "validate_prd.py" in said and "--claim define" in said, \
     "the gate refusal names neither the validator that earns it nor the claim: " + said[:200]
 
-# A write that appends an entry going nowhere: the move is an in-phase write.
-# `or` was too loose to hold this: the message keeps `--claim` while losing the
-# clause that says WHAT carries no entry, and a refusal that names a flag
-# without naming the situation it is for is the one a model works around.
+# A self-edge that is not a claim event: the one in-phase entry the history
+# accepts is `action: "claim: <gates>"` — anything else at `from == to` is the
+# malformed history it always was, and the refusal has to teach the one shape
+# that passes, or a model pokes at the wall until it invents a worse one.
 same = refusal(st("DEFINE", H), st("DEFINE", H + [{"timestamp": "2026-01-01T00:02:00Z",
                                                    "from": "DEFINE", "to": "DEFINE", "action": "c",
                                                    "tier": "FEATURE", "ticket": "T-1"}]))
-assert "in-phase" in same.lower() and "no history entry" in same.lower() and "--claim" in same, \
-    "a self-edge says only that it goes nowhere: " + same[:200]
+assert "claim" in same.lower() and "--claim" in same, \
+    "a self-edge refusal does not teach the claim event that passes: " + same[:200]
 
 # History appended from a phase the disk is not at: re-read and append from there.
 apart = refusal(st("DEFINE", H), st("CODE", H + [{"timestamp": "2026-01-01T00:02:00Z",
@@ -6023,8 +6023,10 @@ subprocess.run(["git", "-C", repo, "commit", "-qm", "the rest"], capture_output=
 step("--claim", "commit")
 assert json.load(open(state, encoding="utf-8"))["gates"].get("commit") is True, \
     "--claim did not mark the gate"
-assert len(json.load(open(state, encoding="utf-8"))["history"]) == 6, \
-    "--claim appended a history entry; it takes no edge"
+claim_events = [e for e in json.load(open(state, encoding="utf-8"))["history"]
+                if e.get("from") == e.get("to")]
+assert len(claim_events) >= 1 and claim_events[-1]["action"].startswith("claim:"), \
+    "--claim left no claim event — the audit trail lost where the gate was earned"
 r = run("--claim", "banana")
 assert r.returncode == 2, "--claim accepted a gate that does not exist"
 r = run("--claim", "commit", "--to", "IDLE", "--action", "x")

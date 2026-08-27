@@ -23,18 +23,20 @@ move at different speeds. So the promise is specific:
 
 ### Fixed
 
-- **Re-claiming a gate after a corrective loop no longer wedges the run.**
+- **A claim is an event, and the corrective-loop wedge dies by design.**
   Found live twice (`VERIFY→CODE` re-claiming `tests`+`sast`; `PLAN→DEFINE`
-  re-claiming `define`), both through the sanctioned helper: an in-phase
-  `--claim` writes gates but no history entry, so the post replay still read
-  the backward edge as the newest step, saw the gate held, and condemned the
-  state — the repository wedged until the operator hand-restored it. The
-  helper now refuses that exact claim at the door and teaches the edge that
-  works: re-earning the gate ON the forward transition (`--to <next>
-  --gate <gate>`), whose write carries the history entry the replay reads.
-  `state.instructions.md` (2.6.0) says it in prose too, and the refusal is
-  pinned by a test and its own mutation. Caught by a live minimal run that did
-  exactly the right thing: stopped, reported, repaired nothing.
+  re-claiming `define`): an in-phase `--claim` mutated gates while leaving no
+  history entry, so the post replay still read the backward edge as the
+  newest step and condemned the re-earned gate — the repository wedged until
+  the operator hand-restored it. The root defect was state changing without
+  an event. Now `--claim` appends a claim event (`from == to`, `action:
+  "claim: <gates>"`) that the replay reads instead, held to an edge's
+  standard: outside the journal-blessed window every named gate must have
+  its receipt, so a hand-written history cannot launder a gate through a
+  fake claim. `state.instructions.md` (2.6.0) documents the event; the
+  end-to-end corrective loop, the forged-claim refusal and the malformed
+  self-edge are pinned by tests and mutations.
+
 
 ## [0.40.0] — Unreleased
 

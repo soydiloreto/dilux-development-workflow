@@ -1072,11 +1072,17 @@ def validate(old_state, new_state, graph, tool_name=None, max_appended=1,
         # it illegal now. `skip_edges` is that window, and it is only ever
         # non-zero in post mode's replay.
         if src == dst:
-            raise Block(
-                f"a transition must go somewhere: {key}. An in-phase change — claiming a gate, "
-                "filling in the title — carries NO history entry: write the new state without "
-                "appending one, or use `.ddw/scripts/transition.py --claim <gate>`, which builds "
-                "exactly that write.")
+            # A claim EVENT: `--claim` appends one so the audit trail records
+            # where a gate was (re-)earned. Before this existed, an in-phase
+            # claim was invisible to history — and after a corrective edge the
+            # replay still read that edge as the newest step, saw the gate
+            # held, and condemned the state. Two live runs wedged exactly
+            # there, through the sanctioned helper. The event is what the
+            # replay reads instead; anything at `src == dst` that is NOT a
+            # well-formed claim is still refused.
+            _claim_event_ok(entry, key, blessed=idx < skip_edges,
+                            state_path=state_path, new_state=new_state)
+            continue
         if src == IDLE and dst != CLASSIFY and _is_resume(entry):
             # Coming back to a ticket that was paused. It owes no gates — pausing
             # owed none either, and the gates it had earned come back with it.
@@ -3178,47 +3184,36 @@ def decisions_record_missing(root, old_state, new_state):
         "Write it, commit it with the closeout, and take this edge again." % ticket)
 
 
-def claim_after_corrective_edge(state, graph, claims):
-    """An in-phase `--claim` writes gates but no history entry. After a
-    corrective (backward) edge that is a trap: the last step in history is
-    still the backward edge, and the post-write replay re-litigates it against
-    the CURRENT gates — so the re-earned gate reads as "never given up" and
-    the state bricks. Found live twice (VERIFY→CODE re-claiming tests+sast;
-    PLAN→DEFINE re-claiming define), both through the sanctioned helper,
-    following what the docs then taught. The fix is not to loosen the replay —
-    it is to refuse THIS claim at the door and teach the edge that re-earns
-    the gate WITH a history entry: the forward edge, the path the replay
-    accepts. Returns the refusal, or None when the claim is safe."""
-    history = state.get("history") or []
-    last = (history[-1] or {}) if history else {}
-    src, dst = last.get("from"), last.get("to")
-    if not src or not dst:
-        return None
-    edges = _effective_edges(graph, state.get("tier"))
-    cfg = edges.get("%s->%s" % (src, dst)) or {}
-    offenders = sorted(set(claims) & set(cfg.get("clears") or []))
-    if not offenders:
-        return None
-    phase = state.get("phase")
-    forward = None
-    for key, e in edges.items():
-        f, _, t = key.partition("->")
-        if f == phase and set(offenders) <= set((e or {}).get("gates") or []):
-            forward = t
-            break
-    flags = "".join(" --gate %s" % g for g in offenders)
-    teach = (
-        (" Re-earn it on the forward edge instead: `transition.py --to %s%s` — that "
-         "write carries a history entry, which is what the replay reads." % (forward, flags))
-        if forward else
-        (" Re-earn it on the forward edge out of %s — the edge write carries the "
-         "history entry the replay reads." % phase))
-    return (
-        "the last step in history is the corrective edge %s->%s, which gave up %s. "
-        "An in-phase --claim leaves no history entry, so the post-write replay would "
-        "still see that edge as the last step, read the gate as never surrendered, "
-        "and condemn the state on the next write."
-        % (src, dst, ", ".join(offenders))) + teach
+def _claim_event_ok(entry, key, blessed, state_path, new_state):
+    """A `src == dst` history entry is a claim EVENT — the audit record of a
+    gate (re-)earned in phase. It is held to the same standard as an edge:
+    its action names the gates (`claim: <gate>[, <gate>…]`), the names are
+    real, and — outside the journal-blessed window — every named gate has its
+    receipt on disk. Without the receipt demand, a hand-written history could
+    append `claim: define` and launder a gate no validator ever saw; measured
+    nowhere yet, refused before it can be."""
+    action = entry.get("action")
+    m = re.match(r"claim:\s*(.+)$", action.strip()) if isinstance(action, str) else None
+    if not m:
+        raise Block(
+            f"a transition must go somewhere: {key}. The one in-phase entry the history "
+            "accepts is a claim event — `action: \"claim: <gate>[, <gate>…]\"` — which is "
+            "what `.ddw/scripts/transition.py --claim <gate>` writes.")
+    names = [g.strip() for g in m.group(1).split(",") if g.strip()]
+    unknown = [g for g in names if g not in GATE_EVIDENCE]
+    if not names or unknown:
+        raise Block(
+            f"the claim event at {key} names "
+            + (f"unknown gate(s) {', '.join(unknown)}" if unknown else "no gate")
+            + ". Known: " + ", ".join(sorted(GATE_EVIDENCE)))
+    if not blessed and state_path:
+        reason = gate_evidence_missing(os.path.dirname(os.path.abspath(state_path)),
+                                       new_state, names)
+        if reason:
+            raise Block(
+                "the claim event for %s carries no evidence: %s A claim in the history "
+                "is an audit record, and an audit record nothing backs is exactly the "
+                "laundering it exists to prevent." % (", ".join(names), reason))
 
 
 def block_review_missing(root, old_block, new_block):

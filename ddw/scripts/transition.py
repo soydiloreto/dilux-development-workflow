@@ -520,13 +520,6 @@ def main():
             print("ddw-transition: unknown gate(s) %s. Known: %s"
                   % (", ".join(bad), ", ".join(sorted(vt.GATE_EVIDENCE))), file=sys.stderr)
             sys.exit(2)
-        # The wedge two live runs found: claiming a gate the LAST edge cleared
-        # writes a state the post replay must condemn. Refuse here, with the
-        # forward-edge path that works, instead of letting the state brick.
-        wedge = vt.claim_after_corrective_edge(old_state, graph, args.claim)
-        if wedge:
-            print("ddw-transition: " + wedge, file=sys.stderr)
-            sys.exit(2)
         claimed = json.loads(json.dumps(old_state))
         if block_given:
             if args.write:
@@ -540,6 +533,27 @@ def main():
         gates = dict(claimed.get("gates") or {})
         gates.update({g: True for g in args.claim})
         claimed["gates"] = gates
+        # The claim is an EVENT: it appends its own history entry, so the audit
+        # trail records where the gate was (re-)earned and the post replay reads
+        # THAT instead of re-litigating whatever edge happened to be newest.
+        # Before this, an in-phase claim was invisible — and after a corrective
+        # edge the replay condemned the re-earned gate; two live runs wedged
+        # exactly there, through this very branch.
+        phase = old_state.get("phase", "IDLE")
+        stamp = _now_iso()
+        hist = list(claimed.get("history") or [])
+        last_ts = next((e.get("timestamp") for e in reversed(hist)
+                        if isinstance(e, dict) and isinstance(e.get("timestamp"), str)), None)
+        if last_ts and stamp < last_ts:
+            stamp = last_ts
+        event = {"timestamp": stamp, "from": phase, "to": phase,
+                 "action": "claim: " + ", ".join(sorted(set(args.claim)))}
+        if old_state.get("tier"):
+            event["tier"] = old_state["tier"]
+        if old_state.get("ticket"):
+            event["ticket"] = old_state["ticket"]
+        hist.append(event)
+        claimed["history"] = hist
         reason = vt.gate_evidence_missing(os.path.dirname(os.path.abspath(args.state)),
                                           claimed, args.claim)
         if reason:

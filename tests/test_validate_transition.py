@@ -1607,52 +1607,107 @@ def test_la_pausa_multirepo_por_el_hook_tambien_debe_el_recibo(tmp_path):
         "a hand-written multirepo pause slipped the hook with no receipt: %r" % reason
 
 
-# ── The claim that bricks the state after a corrective edge ──────────────────
+# ── The claim is an EVENT: audited, evidenced, and the wedge is dead ─────────
 #
-# Found live twice, through the sanctioned helper, following what the docs
-# taught: take the corrective edge (it clears the gate — correct), fix the
-# artifact, revalidate, re-earn the gate with `--claim`. The claim writes
-# gates but no history entry, so the post replay still reads the backward
-# edge as the last step, sees the gate held, and condemns the state — the
-# repository wedges until the operator hand-restores it. The helper now
-# refuses that claim at the door and teaches the forward edge, whose write
-# carries the history entry the replay reads.
+# Two live runs wedged the same way: corrective edge, artifact fixed and
+# revalidated, gate re-claimed with `--claim` — and the post replay, seeing
+# the backward edge as the newest step, condemned the re-earned gate. The
+# root defect was that an in-phase claim mutated gates while leaving no
+# history: state changed without an event. Now `--claim` appends a claim
+# event (`from == to`, `action: "claim: <gates>"`), the replay reads THAT,
+# and a claim nothing backs — no receipt — is refused as the laundering it
+# would be.
 
-def test_el_claim_tras_la_arista_correctiva_rechaza_y_ensena_la_de_avance(tmp_path):
-    p = str(tmp_path / ".ddw-state.json")
-    st = state(phase="DEFINE", tier="FEATURE", ticket="T-1",
-               history=[entry("IDLE", "CLASSIFY"),
-                        entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-1"),
-                        entry("DEFINE", "PLAN", tier="FEATURE", ticket="T-1"),
-                        entry("PLAN", "DEFINE",
-                              action="loop correctivo: la spec no introduce requerimientos",
-                              tier="FEATURE", ticket="T-1")])
-    open(p, "w", encoding="utf-8").write(json.dumps(st))
-    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p, "--graph", _GRAPH_PATH,
-                        "--claim", "define"],
-                       capture_output=True, text=True, cwd=str(tmp_path))
-    assert r.returncode == 2, \
-        "the claim that bricks the state on the next write was accepted: " + r.stdout[-200:]
-    assert "PLAN->DEFINE" in r.stderr, \
-        "the refusal does not name the corrective edge that makes the claim lethal: " + r.stderr[-300:]
-    assert "--to PLAN --gate define" in r.stderr, \
-        "the refusal does not teach the forward edge that works: " + r.stderr[-300:]
-    # And nothing moved: the door refused, it did not half-write.
-    on_disk = json.load(open(p, encoding="utf-8"))
-    assert on_disk["gates"] == {}, "the refused claim still landed a gate"
+def _define_receipt(repo, body):
+    receipt = _load("ddw_receipt", "ddw/scripts/ddw_receipt.py")
+    name = "prd-validated-" + receipt.digest_of(body)
+    os.makedirs(os.path.join(repo, ".ddw-sessions"), exist_ok=True)
+    with open(os.path.join(repo, ".ddw-sessions", name), "w", encoding="utf-8") as fh:
+        fh.write("prd-T-1.md\n")
+    with open(os.path.join(repo, ".ddw-journal.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"record": "receipt", "name": name, "file": "prd-T-1.md"}) + "\n")
 
 
-def test_el_claim_tras_una_arista_de_avance_no_dispara_el_guard(tmp_path):
-    # Same claim, but the last step is FORWARD (CLASSIFY->DEFINE): the guard
-    # must stay silent and let the ordinary evidence check speak — a guard
-    # that fires on every claim is a net that cries wolf.
-    p = str(tmp_path / ".ddw-state.json")
-    st = state(phase="DEFINE", tier="FEATURE", ticket="T-1",
-               history=[entry("IDLE", "CLASSIFY"),
-                        entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-1")])
-    open(p, "w", encoding="utf-8").write(json.dumps(st))
-    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state", p, "--graph", _GRAPH_PATH,
-                        "--claim", "define"],
-                       capture_output=True, text=True, cwd=str(tmp_path))
-    assert "corrective edge" not in r.stderr, \
-        "the guard fired on a claim that does not brick anything: " + r.stderr[-300:]
+def _corrective_history():
+    return [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-1"),
+            entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-1"),
+            entry("DEFINE", "PLAN", tier="FEATURE", ticket="T-1"),
+            entry("PLAN", "DEFINE",
+                  action="correction: la spec no introduce requerimientos",
+                  tier="FEATURE", ticket="T-1")]
+
+
+def test_el_claim_tras_el_ciclo_correctivo_emite_su_evento_y_el_post_lo_bendice(tmp_path):
+    """End to end through the REAL gates: the exact sequence that bricked two
+    live repositories, now walking clean — helper claim, event appended,
+    post replay green."""
+    repo = _repo_at(tmp_path, phase="DEFINE", gates={})
+    sp = os.path.join(repo, ".ddw-state.json")
+    prd_dir = os.path.join(repo, "docs/ddw/prd")
+    os.makedirs(prd_dir, exist_ok=True)
+    body = "# PRD T-1\n\n| Field | Value |\n|---|---|\n| Ticket | T-1 |\n"
+    with open(os.path.join(prd_dir, "prd-T-1.md"), "w", encoding="utf-8") as fh:
+        fh.write(body)
+    _define_receipt(repo, body)
+    with open(sp, "w", encoding="utf-8") as fh:
+        json.dump(state("DEFINE", "FEATURE", "T-1", {}, _corrective_history()), fh)
+
+    r = subprocess.run([sys.executable, _TRANSITION_PY, "--state", sp, "--graph", _GRAPH_PATH,
+                        "--claim", "define", "--write"],
+                       capture_output=True, text=True, cwd=repo,
+                       env=dict(os.environ, CLAUDE_PROJECT_DIR=repo))
+    assert r.returncode == 0, "the sanctioned recovery path is refused again: " + r.stderr[-300:]
+
+    on_disk = json.load(open(sp, encoding="utf-8"))
+    last = on_disk["history"][-1]
+    assert last["from"] == last["to"] == "DEFINE" and last["action"].startswith("claim:"), \
+        f"the claim left no event in the history: {last}"
+    assert last.get("ticket") == "T-1" and last.get("tier") == "FEATURE", \
+        "the claim event is missing the stamps every entry carries"
+    assert on_disk["gates"] == {"define": True}
+
+    why = None
+    try:
+        why = vt.decide_post(sp, _GRAPH_PATH)
+    except vt.Block as exc:
+        why = str(exc)
+    assert why is None, "the post replay still condemns the completed corrective loop: " + str(why)[:300]
+
+
+def test_un_evento_de_claim_inventado_sin_recibo_es_refusado(tmp_path):
+    """The other half of the design: a history entry is an audit record, and
+    an audit record nothing backs is laundering. A hand-written claim event
+    with no receipt on disk must not open the gate."""
+    repo = _repo_at(tmp_path, phase="DEFINE", gates={})
+    sp = os.path.join(repo, ".ddw-state.json")
+    h = _corrective_history() + [entry("DEFINE", "DEFINE", action="claim: define",
+                                       tier="FEATURE", ticket="T-1")]
+    with open(sp, "w", encoding="utf-8") as fh:
+        json.dump(state("DEFINE", "FEATURE", "T-1", {"define": True}, h), fh)
+    why = None
+    try:
+        why = vt.decide_post(sp, _GRAPH_PATH)
+    except vt.Block as exc:
+        why = str(exc)
+    assert why, "a claim event with no receipt behind it opened the gate"
+    assert "evidence" in str(why).lower() or "receipt" in str(why).lower(), \
+        f"the refusal does not say what is missing: {str(why)[:200]}"
+
+
+def test_un_evento_en_fase_que_no_es_claim_sigue_refusado(tmp_path):
+    """`from == to` opens exactly one door — a well-formed claim. Anything
+    else in-phase is still the malformed history it always was."""
+    old = state("DEFINE", "FEATURE", "T-1", {},
+                [entry("IDLE", "CLASSIFY", tier="FEATURE", ticket="T-1"),
+                 entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket="T-1")])
+    bad = json.loads(json.dumps(old))
+    bad["history"].append(entry("DEFINE", "DEFINE", action="just visiting",
+                                tier="FEATURE", ticket="T-1"))
+    why = refusal(old, bad)
+    assert why and "claim" in why, f"an in-phase non-claim entry passed: {why}"
+
+    worse = json.loads(json.dumps(old))
+    worse["history"].append(entry("DEFINE", "DEFINE", action="claim: nonsense",
+                                  tier="FEATURE", ticket="T-1"))
+    why2 = refusal(old, worse)
+    assert why2 and "unknown" in why2, f"a claim naming a gate that does not exist passed: {why2}"
