@@ -1198,6 +1198,10 @@ MUTATIONS = [
           '                         or status in ("active", "pending", "done"))',
           '        status_ok = bool(drop or unver\n'
           '                         or status in ("active", "pending", "done", "dropped"))')),
+    ("a dependency on a repo outside the table stops being an error",
+     edit("ddw/scripts/validate_prd.py",
+          "                if dep not in listed:",
+          "                if False:")),
     ("the multirepo index stops being judged as one",
      edit("ddw/scripts/validate_prd.py",
           '    if re.search(r"^\\|\\s*Status\\s*\\|\\s*Multirepo", text, re.MULTILINE | re.IGNORECASE):',
