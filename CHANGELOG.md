@@ -19,6 +19,26 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.44.0] - 2026-08-28
+
+### Added — the one-approve index (M2)
+
+- **`family_index_pr.py`**: the index's ceremony collapses to one human word
+  per direction. `publish` pushes the ticket branch and opens the PR in one
+  stop; `merge` lands it **on a leash** — any PR touching a file outside
+  `docs/ddw/**` and `.gitignore` is refused BEFORE the forge is asked, so
+  the worst a runaway approval can do is land a document. CODE keeps its
+  human merge at the forge, always.
+- **The row's way back, from anywhere**: `update-row` asks the forge for the
+  MERGED child PR first (`done` is not anyone's to write — the family write
+  gate's law, enforced in the script because the throwaway clone it edits
+  has no hooks), changes exactly one row, and publishes the update as a
+  workspace PR merged by the same leash. Every write to the workspace
+  travels through the forge.
+- `define.instructions.md` 2.9.0 rewrites the split's closing ceremony
+  around both flows. Measured: 655 install checks · 744 mutations (both
+  leash faults provably killed by the new forge-shim fixtures) · 210 pytest.
+
 ## [0.43.0] - 2026-08-28
 
 ### Added — the impact analysis becomes classification's first duty (M1)

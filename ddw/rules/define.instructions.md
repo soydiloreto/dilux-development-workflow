@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.8.0
+version: 2.9.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -428,15 +428,23 @@ The index (`docs/ddw/prd/prd-{TICKET}.md`):
   refused. This is the initiative that cannot lie — its one enforcement point, and the reason the
   index's shape is a FAIL rule rather than a convention.
 - **Validate the index** with `ddw-validate-prd` like any DEFINE artifact (it is judged by
-  F-PRD-12 alone and writes the ordinary receipt), show it, and on approval **pause the parent**
+  F-PRD-12 alone and writes the ordinary receipt), show it, and on approval **publish it with one
+  word**: commit, then `python3 .ddw/scripts/family_index_pr.py publish --ticket <TICKET>` — it
+  pushes the branch and opens the PR in one stop. With the user's **"aprobado" ON SCREEN**, merge
+  it: `family_index_pr.py merge --pr <N>`. The merge runs **on a leash**: the script refuses any
+  PR touching a file outside `docs/ddw/**` and `.gitignore` — the index is a document and one
+  approval lands it; CODE keeps its human merge at the forge, always. Then **pause the parent**
   (`pause: multirepo split into <repos>`) — the work now happens in the children's repositories.
   **The pause spends that receipt**: the FSM refuses a `pause: multirepo split` whose index the
   validator never vouched for, in the helper and the hook alike — an unvalidated table governing
-  several repositories is the document this layer exists to forbid. This workspace's later
-  sessions update the rows as the forge confirms them.
-- **Nothing here writes into the other repositories, ever.** The children read this index
-  (read-only, from the sibling clone or the forge); their closeouts cannot update it — the update
-  happens here, in a workspace session, against the forge's answer.
+  several repositories is the document this layer exists to forbid.
+- **Nothing writes into another repository's WORKING TREE, ever** — but the index has a way
+  back from anywhere: when a child's PR merges, any session of the family runs
+  `family_index_pr.py update-row --ticket <TICKET> --repo-row <repo> --status done` — the script
+  asks the forge for the MERGED child PR first (`done` is not anyone's to write; without the
+  merge, the declared out is `done (unverified: <why>)`), edits the one row in a throwaway clone,
+  and publishes the update as a workspace PR merged by the same one-approve leash. Every write to
+  the workspace travels through the forge — the audit trail nothing skips.
 - **The pause's closing message prints the launch plan.** The developer walks the family by hand —
   that is the design — so the message that parks the parent hands them the walk, executable: one
   line per repo, in dependency order, with the `cd` to the sibling clone and the prompt to give it

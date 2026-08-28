@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=652
+EXPECT_CHECKS=655
 EXPECT_SKILLS=19
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=742
+EXPECT_MUTATIONS=744
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1914,6 +1914,48 @@ PYSB
 # family's classify edge"), opened by a validated verdict, and shut again by
 # one appended byte (kills "an impact verdict edited after validation keeps
 # its dead receipt").
+# The one-approve index's two safety properties, against a forge shim.
+# Door one — the LEASH: a PR touching code is refused BEFORE the forge is
+# asked to merge (kills "the leash stops reading the diff"). Door two — the
+# LAW: `done` without a MERGED child PR is refused naming the declared out
+# (kills "a row says done on anyone's word").
+LSH="$WORK/leash"; mkdir -p "$LSH/ws" "$LSH/bin"; git -C "$LSH/ws" init -q .
+git -C "$LSH/ws" remote add origin https://github.com/acme/ws.git
+printf '# familia\n' > "$LSH/ws/familia.md"
+cat > "$LSH/bin/gh" <<'LSHGH'
+#!/usr/bin/env python3
+import json, os, sys
+open(os.environ["LSH_LOG"], "a").write(json.dumps(sys.argv[1:]) + "\n")
+a = sys.argv[1:]
+if a[:2] == ["pr", "view"]:
+    print(json.dumps({"state": "OPEN", "baseRefName": "main",
+                      "files": [{"path": "docs/ddw/prd/prd-T-1.md"},
+                                {"path": "app/main.py"}]})); sys.exit(0)
+if a[:2] == ["pr", "list"]:
+    print("[]"); sys.exit(0)
+print("{}"); sys.exit(0)
+LSHGH
+chmod +x "$LSH/bin/gh"
+: > "$LSH/calls.log"
+if LSH_LOG="$LSH/calls.log" PATH="$LSH/bin:$PATH" \
+   python3 "$SELF/ddw/scripts/family_index_pr.py" merge --pr 7 --root "$LSH/ws" >/dev/null 2>"$LSH/err"; then
+  bad "a PR with app/main.py in it was merged by the one-approve leash"
+else
+  grep -q "app/main.py" "$LSH/err" && ! grep -q '"pr", "merge"' "$LSH/calls.log" \
+    && ok "the leash refuses a PR that touches code, before the forge is ever asked to merge" \
+    || bad "the leash refused without naming the file, or refused after asking the forge: $(tail -1 "$LSH/err")"
+fi
+: > "$LSH/calls.log"
+if LSH_LOG="$LSH/calls.log" PATH="$LSH/bin:$PATH" \
+   python3 "$SELF/ddw/scripts/family_index_pr.py" update-row --ticket T-1 \
+     --repo-row acme/child --status done --root "$LSH/ws" >/dev/null 2>"$LSH/err"; then
+  bad "a row said done with no MERGED child PR at the forge"
+else
+  grep -q "MERGED" "$LSH/err" && grep -q "unverified" "$LSH/err" \
+    && ok "done is not anyone's to write: no merged child PR, no row — and the declared out is taught" \
+    || bad "the done refusal neither names the missing merge nor teaches the declared out: $(tail -1 "$LSH/err")"
+fi
+
 IMP="$WORK/impact-gate"; mkdir -p "$IMP/.ddw-work" "$IMP/.ddw-sessions"; git -C "$IMP" init -q .
 printf 'Nothing to report.\n' > "$IMP/.ddw-work/context-check-T-1.md"
 python3 - "$SELF" "$IMP" <<'PYIMPACT' && ok "a family repo owes the impact verdict to leave CLASSIFY, honours its receipt, and shuts on a post-validation edit" || bad "a family repo left CLASSIFY with no impact analysis, or with a verdict its receipt no longer matches"
