@@ -3307,7 +3307,10 @@ printf '\n## Sin impacto\n- tienda-worker: Sin impacto — no consume nada de es
 python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM2/docs/ddw/prd/prd-CHK-1.md" --tier FEATURE >/dev/null 2>&1 \
   && ok "an index that accounts for every member of familia.md passes the map's double close" \
   || bad "the honest index was refused the moment familia.md appeared beside it"
-sed 's#| acme/tienda-back |#| acme/tienda-ghost |#' "$FAM2/docs/ddw/prd/prd-CHK-1.md" \
+# Ghost the BFF row (its dependency on tienda-back stays satisfiable), so the
+# ONLY rule that can refuse this index is the map's double close — under the
+# "index stops checking the map" fault it passes, and the bad below fires.
+sed 's#| acme/tienda-bff |#| acme/tienda-ghost |#' "$FAM2/docs/ddw/prd/prd-CHK-1.md" \
   > "$FAM2/docs/ddw/prd/prd-CHK-7.md"
 if MAPOUT="$(python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM2/docs/ddw/prd/prd-CHK-7.md" --tier FEATURE 2>&1)"; then
   bad "an index scheduling a repo familia.md never heard of passed validation: $(echo "$MAPOUT" | tail -1)"
