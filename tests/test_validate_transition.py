@@ -1711,3 +1711,66 @@ def test_un_evento_en_fase_que_no_es_claim_sigue_refusado(tmp_path):
                                   tier="FEATURE", ticket="T-1"))
     why2 = refusal(old, worse)
     assert why2 and "unknown" in why2, f"a claim naming a gate that does not exist passed: {why2}"
+
+
+# ── The impact gate: a family repo does not leave CLASSIFY unanalysed ────────
+#
+# Multirepo v1 shipped the impact question as workspace prose — binding one
+# repo, not the method. The gate binds the method: on CLASSIFY→DEFINE, a repo
+# that declares `## Repo family` owes the verdict file AND its content-hashed
+# receipt (family_impact.py --validate writes it over facts gathered fresh
+# from every member's origin). No family section → the gate never speaks.
+
+def _familia_repo(tmp_path, with_family=True):
+    repo = str(tmp_path / "repo")
+    os.makedirs(os.path.join(repo, ".ddw-work"), exist_ok=True)
+    agents = "# repo\n\n## Stack\n\n| Campo | Valor |\n|---|---|\n| Lenguaje | Python |\n"
+    if with_family:
+        agents += ("\n## Repo family\n\n| Field | Value |\n|---|---|\n"
+                   "| Family | tienda |\n| Workspace | acme/ws |\n"
+                   "| Provides | api |\n| Consumed by | none |\n| Consumes | none |\n")
+    open(os.path.join(repo, "AGENTS.md"), "w", encoding="utf-8").write(agents)
+    return repo
+
+
+def _classify_to_define(ticket="T-1"):
+    old = state("CLASSIFY", "FEATURE", ticket,
+                history=[entry("IDLE", "CLASSIFY", tier="FEATURE", ticket=ticket)])
+    new = json.loads(json.dumps(old))
+    new["phase"] = "DEFINE"
+    new["history"].append(entry("CLASSIFY", "DEFINE", tier="FEATURE", ticket=ticket))
+    return old, new
+
+
+def test_una_familia_sin_veredicto_de_impacto_no_sale_de_classify(tmp_path):
+    repo = _familia_repo(tmp_path)
+    old, new = _classify_to_define()
+    why = vt.impact_receipt_missing(repo, old, new)
+    assert why, "the edge opened with no impact verdict on disk"
+    assert "family_impact.py" in why and "impact-T-1.md" in why, \
+        "the refusal does not teach the exact command and file: " + why[:200]
+
+
+def test_el_veredicto_validado_abre_la_puerta_y_editarlo_despues_la_cierra(tmp_path):
+    repo = _familia_repo(tmp_path)
+    old, new = _classify_to_define()
+    verdict = "impacta: este repo. Sin impacto: el resto — razones."
+    open(os.path.join(repo, ".ddw-work", "impact-T-1.md"), "w", encoding="utf-8").write(verdict)
+    import hashlib as _h
+    digest = _h.sha256(verdict.encode()).hexdigest()[:12]
+    os.makedirs(os.path.join(repo, ".ddw-sessions"), exist_ok=True)
+    open(os.path.join(repo, ".ddw-sessions", "impact-validated-" + digest), "w").write("x")
+    assert vt.impact_receipt_missing(repo, old, new) is None, \
+        "a validated verdict was refused — the gate cannot be satisfied"
+    # One byte after validation: the receipt no longer matches, the door shuts.
+    open(os.path.join(repo, ".ddw-work", "impact-T-1.md"), "a", encoding="utf-8").write("!")
+    why = vt.impact_receipt_missing(repo, old, new)
+    assert why and "edited after" in why, \
+        "an edited-after-validation verdict still opened the edge: " + str(why)[:200]
+
+
+def test_sin_familia_el_gate_de_impacto_no_existe(tmp_path):
+    repo = _familia_repo(tmp_path, with_family=False)
+    old, new = _classify_to_define()
+    assert vt.impact_receipt_missing(repo, old, new) is None, \
+        "a single-repo flow was charged the family toll"

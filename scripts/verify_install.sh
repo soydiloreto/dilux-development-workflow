@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=648
+EXPECT_CHECKS=649
 EXPECT_SKILLS=18
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=739
+EXPECT_MUTATIONS=741
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1907,6 +1907,55 @@ PYSB
 # STRING was refused and a ticket of the wrong TYPE was accepted, because every
 # downstream comparison filters with `isinstance(t, str)` first — so the guards
 # written to keep the checks from crashing were doubling as escape hatches.
+# A family repo does not leave CLASSIFY unanalysed. The impact gate on
+# CLASSIFY->DEFINE demands the verdict file AND its content-hashed receipt;
+# a verdict edited after validation is a dead receipt. Three doors in one
+# fixture: refused empty-handed (kills "the impact gate vanishes from the
+# family's classify edge"), opened by a validated verdict, and shut again by
+# one appended byte (kills "an impact verdict edited after validation keeps
+# its dead receipt").
+IMP="$WORK/impact-gate"; mkdir -p "$IMP/.ddw-work" "$IMP/.ddw-sessions"; git -C "$IMP" init -q .
+printf 'Nothing to report.\n' > "$IMP/.ddw-work/context-check-T-1.md"
+python3 - "$SELF" "$IMP" <<'PYIMPACT' && ok "a family repo owes the impact verdict to leave CLASSIFY, honours its receipt, and shuts on a post-validation edit" || bad "a family repo left CLASSIFY with no impact analysis, or with a verdict its receipt no longer matches"
+import hashlib, json, os, subprocess, sys
+self_dir, repo = sys.argv[1], sys.argv[2]
+open(os.path.join(repo, "AGENTS.md"), "w", encoding="utf-8").write(
+    "# r\n\n## Repo family\n\n| Field | Value |\n|---|---|\n"
+    "| Family | tienda |\n| Workspace | acme/ws |\n| Provides | api |\n"
+    "| Consumed by | none |\n| Consumes | none |\n")
+state = os.path.join(repo, ".ddw-state.json")
+open(state, "w", encoding="utf-8").write(json.dumps({
+    "tier": "FEATURE", "phase": "CLASSIFY", "ticket": "T-1", "title": "t",
+    "tracker": None, "autonomy": None, "gates": {}, "block": None,
+    "discovery": None,
+    "history": [{"timestamp": "2026-01-01T00:00:00Z", "from": "IDLE",
+                 "to": "CLASSIFY", "action": "c", "tier": "FEATURE",
+                 "ticket": "T-1"}]}))
+START = open(state, encoding="utf-8").read()
+def helper():
+    return subprocess.run(
+        [sys.executable, os.path.join(self_dir, "ddw/scripts/transition.py"),
+         "--state", state, "--graph",
+         os.path.join(self_dir, "ddw/rules/transition-graph.json"),
+         "--to", "DEFINE", "--action", "definir", "--write"],
+        capture_output=True, text=True, cwd=repo,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=repo))
+r = helper()
+assert r.returncode == 2 and "family_impact.py" in r.stderr, \
+    "no verdict on disk and the edge opened anyway: " + (r.stderr or r.stdout)[:200]
+verdict = "impacta: este repo. Sin impacto: el resto, porque nadie consume lo nuevo."
+open(os.path.join(repo, ".ddw-work", "impact-T-1.md"), "w", encoding="utf-8").write(verdict)
+digest = hashlib.sha256(verdict.encode("utf-8")).hexdigest()[:12]
+open(os.path.join(repo, ".ddw-sessions", "impact-validated-" + digest), "w").write("x")
+r = helper()
+assert r.returncode == 0, "a validated verdict was refused: " + (r.stderr or r.stdout)[:200]
+open(state, "w", encoding="utf-8").write(START)   # back to CLASSIFY for door three
+open(os.path.join(repo, ".ddw-work", "impact-T-1.md"), "a", encoding="utf-8").write("!")
+r = helper()
+assert r.returncode == 2 and "edited after" in r.stderr, \
+    "one byte after validation and the edge still opened: " + (r.stderr or r.stdout)[:200]
+PYIMPACT
+
 TKS="$WORK/ticket-shape"; mkdir -p "$TKS/.ddw-work"; git -C "$TKS" init -q .
 # The classify edge's context check — a different gate than the one under test.
 printf 'Nothing to report.\n' > "$TKS/.ddw-work/context-check-T-1.md"
