@@ -681,6 +681,7 @@ def main():
             print("ddw-transition: " + _reason, file=sys.stderr)
             sys.exit(2)
         _reason = (vt.context_check_missing(_root, old_state, new_state)
+                   or vt.impact_receipt_missing(_root, old_state, new_state)
                    or vt.decisions_record_missing(_root, old_state, new_state)
                    or vt.family_split_pause_missing(_root, old_state, new_state))
         if _reason:

@@ -1118,9 +1118,11 @@ MUTATIONS = [
     ("the context-check gate disappears from the sanctioned helper",
      edit("ddw/scripts/transition.py",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.impact_receipt_missing(_root, old_state, new_state)\n"
           "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
           "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
-          "        _reason = (vt.decisions_record_missing(_root, old_state, new_state)\n"
+          "        _reason = (vt.impact_receipt_missing(_root, old_state, new_state)\n"
+          "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
           "                   or vt.family_split_pause_missing(_root, old_state, new_state))")),
     ("the context-check gate disappears from the hook's pre path",
      edit("ddw/scripts/validate-transition.py",
@@ -1133,9 +1135,11 @@ MUTATIONS = [
     ("the decisions gate disappears from the sanctioned helper",
      edit("ddw/scripts/transition.py",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.impact_receipt_missing(_root, old_state, new_state)\n"
           "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
           "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.impact_receipt_missing(_root, old_state, new_state)\n"
           "                   or vt.family_split_pause_missing(_root, old_state, new_state))")),
     ("the decisions gate disappears from the hook's pre path",
      edit("ddw/scripts/validate-transition.py",
@@ -1198,6 +1202,18 @@ MUTATIONS = [
           '                         or status in ("active", "pending", "done"))',
           '        status_ok = bool(drop or unver\n'
           '                         or status in ("active", "pending", "done", "dropped"))')),
+    ("the impact gate vanishes from the family's classify edge",
+     edit("ddw/scripts/validate-transition.py",
+          '    if not re.search(r"^##\\s+Repo family\\s*$", agents, re.MULTILINE | re.IGNORECASE):',
+          "    if True:")),
+    ("an impact verdict edited after validation keeps its dead receipt",
+     edit("ddw/scripts/validate-transition.py",
+          '    if not os.path.exists(receipt):',
+          "    if False:")),
+    ("the index stops checking the map",
+     edit("ddw/scripts/validate_prd.py",
+          '        mapa_path = ddw_receipt.find_upward(args.prd, "familia.md")',
+          "        mapa_path = None")),
     ("a dependency on a repo outside the table stops being an error",
      edit("ddw/scripts/validate_prd.py",
           "                if dep not in listed:",
@@ -1264,9 +1280,11 @@ MUTATIONS = [
     ("the pause gate disappears from the sanctioned helper",
      edit("ddw/scripts/transition.py",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.impact_receipt_missing(_root, old_state, new_state)\n"
           "                   or vt.decisions_record_missing(_root, old_state, new_state)\n"
           "                   or vt.family_split_pause_missing(_root, old_state, new_state))",
           "        _reason = (vt.context_check_missing(_root, old_state, new_state)\n"
+          "                   or vt.impact_receipt_missing(_root, old_state, new_state)\n"
           "                   or vt.decisions_record_missing(_root, old_state, new_state))")),
     ("the pause gate disappears from the hook's pre path",
      edit("ddw/scripts/validate-transition.py",

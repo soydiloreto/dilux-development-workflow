@@ -2913,6 +2913,9 @@ def decide_pre(state_path, graph_path, tool_name, tool_input, paths, repo=None, 
             reason = context_check_missing(root, old_state, new_state)
             if reason:
                 return reason
+            reason = impact_receipt_missing(root, old_state, new_state)
+            if reason:
+                return reason
             reason = decisions_record_missing(root, old_state, new_state)
             if reason:
                 return reason
@@ -3141,6 +3144,63 @@ def context_check_missing(root, old_state, new_state):
         "(linters, type checkers, CI, pre-commit) against what the context file tells DDW — "
         "and write its findings, or the line 'Nothing to report: the context file matches "
         "the repo.', to `.ddw-work/%s`. Then take this edge again." % names[0])
+
+
+def impact_receipt_missing(root, old_state, new_state):
+    """In a family repo, CLASSIFY does not end until the whole family was
+    looked at — and the edge out carries the proof.
+
+    The multirepo v1 shipped the impact question as workspace prose, and the
+    prose survived exactly as long as the demo that showcased it: a rule only
+    a repo's AGENTS.md carries binds one repo, not the method. This gate binds
+    the method: on CLASSIFY→DEFINE, when the repo declares `## Repo family`,
+    the edge demands the verdict file (`.ddw-work/impact-<ticket>.md`) AND its
+    receipt — which `family_impact.py --validate` writes only after checking
+    the verdict against family facts gathered fresh from every member's
+    origin (missing clones cloned, everything fetched, each repo recorded at
+    its SHA). Every member accounted for — impacted, or excluded with a
+    reason — or no DEFINE.
+
+    Repos with no family section never see this gate: single-repo flow,
+    untouched. The receipt is content-hashed, so editing the verdict after
+    validating it kills the receipt — the same bargain every gate here makes.
+    """
+    old_h = old_state.get("history") or []
+    new_h = new_state.get("history") or []
+    if len(new_h) != len(old_h) + 1:
+        return None
+    entry = new_h[-1] if isinstance(new_h[-1], dict) else {}
+    if entry.get("from") != "CLASSIFY" or entry.get("to") != "DEFINE":
+        return None
+    try:
+        agents = open(os.path.join(root, "AGENTS.md"), encoding="utf-8").read()
+    except OSError:
+        return None
+    if not re.search(r"^##\s+Repo family\s*$", agents, re.MULTILINE | re.IGNORECASE):
+        return None                     # no family — the single-repo flow owns this edge
+    ticket = new_state.get("ticket") or entry.get("ticket")
+    name = "impact-%s.md" % ticket if ticket else "impact.md"
+    path = os.path.join(root, ".ddw-work", name)
+    try:
+        content = open(path, encoding="utf-8").read()
+    except OSError:
+        content = ""
+    ask = (
+        "this repo belongs to a family, and CLASSIFY ends with the impact analysis. "
+        "Run `python3 .ddw/scripts/family_impact.py --ticket %s` (it clones what is "
+        "missing and reads every member fresh), write the verdict — every member "
+        "impacted or `Sin impacto: <reason>` — to `.ddw-work/%s`, validate it with "
+        "`--validate .ddw-work/%s`, then take this edge again."
+        % (ticket or "<ticket>", name, name))
+    if not content.strip():
+        return "no impact verdict is on disk: " + ask
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
+    receipt = os.path.join(root, ".ddw-sessions", "impact-validated-%s" % digest)
+    if not os.path.exists(receipt):
+        return (
+            "the impact verdict at .ddw-work/%s has no receipt for its CURRENT "
+            "content — it was never validated, or it was edited after. " % name) + ask
+    return None
 
 
 def decisions_record_missing(root, old_state, new_state):

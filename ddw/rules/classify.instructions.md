@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.12.0
+version: 2.13.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -118,22 +118,36 @@ Read the **`## Repo family`** section of `AGENTS.md`. No section → the repo is
 this step entirely, ask nothing, change nothing. That absence IS the mono/multi switch, and it is
 the user's file that flips it — never the installation.
 
-When the section exists, it names the family's **workspace** (the coordination repo, all documents)
-and this repo's seams — what it provides, what consumes it, what it consumes. Then:
+When the section exists, **the impact analysis is classification's first duty — from ANY repo of
+the family, this one included**. It is a gate, not a suggestion: CLASSIFY→DEFINE refuses without
+the validated verdict's receipt. The step (`/ddw-family-impact` is the full protocol):
 
-1. **Judge the request against the seams.** A change that stays inside this repo's own walls is an
-   ordinary ticket — say nothing. A change that touches a declared seam (the API another repo
-   consumes, the contract this repo reads) gets the question **in the classification box, with the
-   tier and the autonomy — one ok**: "this touches `<seam>`, which `<repo>` consumes — is the
-   scope this repo alone, or the family?"
-2. **Scope = this repo** → classify normally; record the seam warning with the decision.
-3. **Scope = the family, and this repo is NOT the workspace** → do not classify here. The
-   initiative's parent is a committed document and it lives in the workspace — this session cannot
-   write it (nothing writes outside its own repo, ever). Name the move and stop:
-   `cd <workspace clone>` and open the initiative there.
-4. **This repo IS the workspace** → classify the initiative as a FEATURE whose DEFINE writes the
-   **multirepo index** (`define.instructions.md` § Multirepo split): one row per repo, the order
-   from the family's dependency chain, the children run in their own repositories.
+1. **Gather the facts by script**: `python3 .ddw/scripts/family_impact.py --ticket <TICKET>`. It
+   finds the workspace and every member as sibling clones — **cloning the missing ones via
+   `gh`** — fetches them all, and reads the map and every seam at `origin/<default>`: freshness
+   by construction, each repo recorded at the SHA it was read. The standing repo is
+   fast-forwarded only when clean and on its default branch; a diverged tree is reported, never
+   merged over.
+2. **Write the verdict** to `.ddw-work/impact-<TICKET>.md`: EVERY member, impacted (with what
+   part hits it) or `Sin impacto: <reason>` — the reason names the contract that stays intact.
+   Walk `Consumed by` of everything the work touches: a consumer of a changing seam missing from
+   the impacted list is the analysis failing at its one job.
+3. **Validate it**: `family_impact.py --validate .ddw-work/impact-<TICKET>.md` — every member
+   accounted for, no invented repos. The PASS writes the content-hashed receipt the edge
+   demands; editing the verdict afterwards kills the receipt.
+4. **Classify with the verdict in hand:**
+   - **Only this repo impacted** → an ordinary local ticket: classify normally, pipeline
+     unchanged. Belonging to a family is not a toll on local work.
+   - **Several repos impacted, and this repo is NOT the workspace** → the initiative's parent is
+     a committed document and it lives in the workspace — this session cannot write it (nothing
+     writes outside its own repo, ever). Name the move and stop: `cd <workspace clone>` and open
+     the initiative there — the verdict travels with you (paste it; the workspace re-earns its
+     own receipt).
+   - **This repo IS the workspace** → classify the initiative as a FEATURE whose DEFINE writes
+     the **multirepo index** (`define.instructions.md` § Multirepo split): one row per impacted
+     repo, the order from the dependency chain, the children run in their own repositories —
+     and the index must agree with the verdict: same impacted set, the excluded members carried
+     with their reasons.
 
 A child ticket opened FROM a parent initiative (the request names it, or the PRD parent's row does)
 reads the parent index from the workspace clone or the forge — **read-only** — and, when its row
