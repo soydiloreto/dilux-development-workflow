@@ -30,8 +30,8 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=649
-EXPECT_SKILLS=18
+EXPECT_CHECKS=651
+EXPECT_SKILLS=19
 EXPECT_AGENTS=5
 EXPECT_RULES=14
 EXPECT_ADAPTERS=6
@@ -3287,6 +3287,35 @@ python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM/docs/ddw/prd/prd-CHK-9.md" --t
   && bad "a family row depending on a repo no row lists passed validation" \
   || ok "and a dependency outside the table is refused — a row the order cannot schedule"
 rm -f "$FAM/docs/ddw/prd/prd-CHK-9.md"
+
+# The map's double close. With familia.md beside the index, F-PRD-12 also
+# holds the split to the FAMILY: a row the map does not know cannot be
+# scheduled, and a member the index forgets — neither row nor exclusion — is
+# the impact analysis failing at DEFINE after passing at CLASSIFY. On a copy,
+# so the fixtures above stay exactly what later checks expect.
+FAM2="$WORK/family-map"; rm -rf "$FAM2"; cp -r "$FAM" "$FAM2"
+cat > "$FAM2/familia.md" <<'MAPEOF'
+# Familia
+| Repo | Qué hace | Expone | Consumed by | Consume |
+|---|---|---|---|---|
+| acme/tienda-back | api | api | tienda-bff | none |
+| acme/tienda-bff | bff | ui | none | tienda-back |
+| acme/tienda-worker | worker | jobs | none | none |
+MAPEOF
+printf '\n## Sin impacto\n- tienda-worker: Sin impacto — no consume nada de esto\n' \
+  >> "$FAM2/docs/ddw/prd/prd-CHK-1.md"
+python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM2/docs/ddw/prd/prd-CHK-1.md" --tier FEATURE >/dev/null 2>&1 \
+  && ok "an index that accounts for every member of familia.md passes the map's double close" \
+  || bad "the honest index was refused the moment familia.md appeared beside it"
+sed 's#| acme/tienda-back |#| acme/tienda-ghost |#' "$FAM2/docs/ddw/prd/prd-CHK-1.md" \
+  > "$FAM2/docs/ddw/prd/prd-CHK-7.md"
+if MAPOUT="$(python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM2/docs/ddw/prd/prd-CHK-7.md" --tier FEATURE 2>&1)"; then
+  bad "an index scheduling a repo familia.md never heard of passed validation: $(echo "$MAPOUT" | tail -1)"
+else
+  echo "$MAPOUT" | grep -q "familia.md" \
+    && ok "and a row the map does not know — plus the member it displaced — is refused naming familia.md" \
+    || bad "the phantom row is refused without naming familia.md — the message teaches nothing: $(echo "$MAPOUT" | tail -1)"
+fi
 
 cat > "$FAM/bin/gh" <<'FAMGH'
 #!/bin/bash
@@ -11255,6 +11284,7 @@ CLAIMS = {
     "ddw-create-spec":       ["docs/ddw/specs/", "Spec loops"],
     "ddw-context-check":     ["AGENTS.md", "## Stack"],
     "ddw-family-catalog":    ["family_catalog.py", "## Repo family", "--write-members"],
+    "ddw-family-impact":     ["family_impact.py", "impact-data-", "--validate", "Sin impacto"],
     "ddw-eject":             [".ddw/", "The repo wins", "CLAUDE_PLUGIN_ROOT"],
     "ddw-help":              ["/ddw-status", "/ddw-self-check"],
     "ddw-security-sast":     ["validate_sast.py", "docs/ddw/security/sast-"],

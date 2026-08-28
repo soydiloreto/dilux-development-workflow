@@ -2269,7 +2269,7 @@ in, with the tool-specific wiring generalised from one agent to six.
   a content-hashed receipt, the commit gate asks git, and the rest are the model's
   record. `tests` and `sast` stay self-declared deliberately — see RATIONALE 16.
 - An artifact per phase, under `docs/ddw/`, committed as that phase closes.
-- Eighteen skills and five subagents, including auditors that did not write the
+- Nineteen skills and five subagents, including auditors that did not write the
   code they review.
 - Security as two phases of the pipeline rather than a review afterwards: threat
   modeling in PLAN, SAST in CODE. Deliberately no dynamic scan — see the README

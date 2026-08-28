@@ -26,6 +26,33 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ddw_receipt  # noqa: E402 — same directory, resolved above
 
 
+def _familia_members(mapa_path):
+    """The member names familia.md's table declares — short names, or None."""
+    try:
+        text = open(mapa_path, encoding="utf-8").read()
+    except OSError:
+        return None
+    names, headers = set(), None
+    for line in text.splitlines():
+        if not line.strip().startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        low = [c.lower() for c in cells]
+        if headers is None:
+            if any("repo" in c for c in low):
+                headers = low
+            continue
+        if set(c.strip("-: ") for c in low) <= {""}:
+            continue
+        idx = next((i for i, h in enumerate(headers) if "repo" in h), None)
+        if idx is None or idx >= len(cells):
+            continue
+        name = re.sub(r"[`*]", "", cells[idx]).strip().rsplit("/", 1)[-1]
+        if name:
+            names.add(name)
+    return names or None
+
+
 def _family_parser():
     """`parse_family_rows`, borrowed from the enforcement core.
 
@@ -336,6 +363,31 @@ def main():
                 "ticket); found %d well-formed row(s)" % len(rows_found))
         listed = {r["repo"] for r in rows_found} | {r["repo"].rsplit("/", 1)[-1]
                                                     for r in rows_found}
+        # The double close with the family map: when familia.md sits in this
+        # repository (the index lives in the workspace, and the map is the
+        # workspace's one job), every row must be a member the map knows, and
+        # every member the map knows must appear in the index — impacted as a
+        # row, or excluded in words. An index that schedules a repo the map
+        # never heard of, or silently forgets a member, is the impact analysis
+        # failing at DEFINE after passing at CLASSIFY.
+        mapa_path = ddw_receipt.find_upward(args.prd, "familia.md")
+        if mapa_path:
+            mapa = _familia_members(mapa_path)
+            if mapa:
+                cortos = {r["repo"].rsplit("/", 1)[-1] for r in rows_found}
+                fuera = sorted(c for c in cortos if c not in mapa)
+                if fuera:
+                    problems.append(
+                        "row(s) %s are not in familia.md — the split cannot schedule a "
+                        "repo the map does not know" % ", ".join("`%s`" % f for f in fuera))
+                perdidos = sorted(
+                    m for m in mapa
+                    if not re.search(r"\b%s\b" % re.escape(m), text))
+                if perdidos:
+                    problems.append(
+                        "familia.md member(s) %s appear nowhere in the index — impacted "
+                        "as a row or excluded with a reason, every member of the map "
+                        "gets a line" % ", ".join("`%s`" % m for m in perdidos))
         for r in rows_found:
             if not r["ticket"]:
                 problems.append("row `%s` names no child ticket id" % r["repo"])
