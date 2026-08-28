@@ -1439,3 +1439,39 @@ def test_un_status_fuera_del_vocabulario_es_refusado_por_f_prd_12(tmp_path):
         "| tienda-back | pending |", "| tienda-back | merged |"))
     assert _refuses(refused, "F-PRD-12"), \
         "a status outside the vocabulary passed validation: " + ("\n".join(refused) or "no refusals")
+
+
+def test_el_indice_no_puede_agendar_un_repo_que_el_mapa_no_conoce(tmp_path):
+    """The map's double close (F-PRD-12): with familia.md beside the index, a
+    phantom row and a forgotten member are both refused BY NAME, and the
+    honest index — every member a row or an exclusion in words — passes."""
+    root = tmp_path
+    (root / "docs/ddw/prd").mkdir(parents=True)
+    (root / "familia.md").write_text(
+        "# Familia\n| Repo | Qué hace | Expone | Consumed by | Consume |\n"
+        "|---|---|---|---|---|\n"
+        "| acme/uno | a | api | dos | none |\n"
+        "| acme/dos | b | ui | none | uno |\n"
+        "| acme/tres | c | worker | none | none |\n", encoding="utf-8")
+    prd = root / "docs/ddw/prd/prd-T-9.md"
+    tramposo = (
+        "# Parent PRD: x\n| Metric | Value |\n|--------|-------|\n"
+        "| Ticket | T-9 |\n| Status | Multirepo split |\n\n## Repos\n"
+        "| Repo | Ticket | Scope | Depends on | Status |\n|---|---|---|---|---|\n"
+        "| acme/uno | T-9 | parte uno | none | active |\n"
+        "| acme/cuatro | T-9 | fantasma | none | pending |\n")
+    prd.write_text(tramposo, encoding="utf-8")
+    out = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts/validate_prd.py"),
+                          str(prd), "--tier", "FEATURE"], capture_output=True, text=True)
+    assert out.returncode != 0
+    assert "cuatro" in out.stdout and "familia.md" in out.stdout, out.stdout[-400:]
+    assert "tres" in out.stdout, "the forgotten member was not named: " + out.stdout[-400:]
+
+    honesto = tramposo.replace(
+        "| acme/cuatro | T-9 | fantasma | none | pending |",
+        "| acme/dos | T-9 | parte dos | uno | pending |",
+    ) + "\n## Sin impacto\n- tres: Sin impacto — el worker no consume nada de esto\n"
+    prd.write_text(honesto, encoding="utf-8")
+    out = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts/validate_prd.py"),
+                          str(prd), "--tier", "FEATURE"], capture_output=True, text=True)
+    assert out.returncode == 0, "the honest index was refused: " + out.stdout[-400:]

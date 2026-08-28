@@ -290,8 +290,13 @@ def validate(root, verdict_path):
             problems.append("member `%s` is 'Sin impacto' with no real reason — "
                             "an unexplained exclusion is a member nobody analysed"
                             % name)
-    impacted = re.findall(r"^\s*[|\-*]?\s*`?([A-Za-z0-9._\-]+)`?\s*(?:\||—|:).*impact",
-                          body, re.MULTILINE | re.IGNORECASE)
+    impacted = []
+    for ln in body.splitlines():
+        if not re.search(r"impact", ln, re.IGNORECASE):
+            continue
+        m2 = re.match(r"[ \t|*`-]{0,8}([A-Za-z0-9._\-]+)`?[ \t]*(?:\||—|:)", ln)
+        if m2:
+            impacted.append(m2.group(1))
     known = set(members)
     for cand in impacted:
         if cand not in known and re.match(r"^[a-z0-9][a-z0-9._\-]+$", cand) \

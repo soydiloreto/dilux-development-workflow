@@ -19,6 +19,32 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.43.0] - 2026-08-28
+
+### Added — the impact analysis becomes classification's first duty (M1)
+
+- **`family_impact.py`**: standing in ANY family repo, the deterministic half
+  of the impact question — resolves the family from the standing repo's own
+  declaration, finds workspace and members as sibling clones **cloning the
+  missing ones via `gh`**, fetches everything and reads the map and every
+  seam at `origin/<default>`: freshness by construction, each repo recorded
+  at the SHA it was read. The standing repo is fast-forwarded only when
+  clean and on its default branch — a diverged tree is reported, never
+  merged over. `--validate` holds the model-written verdict to the gathered
+  facts (every member impacted or `Sin impacto` with a real reason, no
+  invented repos) and writes the content-hashed receipt.
+- **The impact gate**: CLASSIFY→DEFINE, in a repo that declares
+  `## Repo family`, refuses without the verdict's receipt — and a verdict
+  edited after validation is a dead receipt. Repos without a family never
+  see the toll: the single-repo flow is untouched.
+- **F-PRD-12 closes the loop with the map**: with `familia.md` beside the
+  index, a row the map does not know and a member the index forgets (neither
+  row nor exclusion) are refused by name.
+- **`/ddw-family-impact`** (skill 19) carries the protocol;
+  `classify.instructions.md` 2.13.0 rewrites Step 1.2 impact-first.
+- Measured: 652 install checks · 742 mutations · 206 pytest — each new gate
+  with the suite fixture that provably kills its faults.
+
 ## [0.42.0] - 2026-08-27
 
 ### Fixed
