@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.3.0
+version: 2.4.0
 ---
 
 # Phase 5: CLOSEOUT (Commit, PR and Closeout)
@@ -136,6 +136,12 @@ Then resolve, out loud:
 index.** Recording it is the whole point: no gate can verify WHO merged at the forge, but the hook
 above does verify that a person saw and answered for this merge — and nobody should have to guess
 afterwards whether anyone did.
+
+**If this tree is a ticket worktree** (its directory name carries `--wt-`), the merge is also the
+moment to offer its removal: `python3 .ddw/scripts/ticket_worktree.py close --ticket <TICKET>` —
+it asks the forge for the MERGED PR itself and refuses on anyone's word alone, and it never
+removes a tree with uncommitted work. Offer, not execute: deleting a working directory is the
+user's call.
 
 ---
 
