@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.15.0
+version: 2.16.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -25,6 +25,17 @@ command and moving on leaves the phase where it was: measured live, a model read
 saying `"phase": "CLASSIFY"`, announced the pipeline had advanced, and on disk the phase was still
 IDLE with an empty history. The helper now says so on stderr; this line is here because the phase
 rule is what gets loaded, and a warning only reaches whoever runs the command.
+
+**A second ticket while one is in flight opens its own worktree, not a negotiation.** When the
+state already carries a mid-phase ticket and the new request is not about it, the choice is never
+"abandon or mix": run `python3 .ddw/scripts/ticket_worktree.py open --ticket <NEW>` — a sibling
+working tree, detached at the freshly fetched origin default, inheriting NO state (the standing
+tree's half-done work is exactly what the new ticket must not build on) — and work the new ticket
+THERE, where its own CLASSIFY starts from IDLE and names its branch as always. One state per
+directory is the law that makes this safe, and the worktree is how the law scales to two tickets.
+Consolidation needs no machinery: the parallel branches land as pull requests IN ORDER against
+main. Closing the worktree obeys the same law as every close — the forge's MERGED PR, or a
+declared `--drop "<why>"`; a dirty worktree is never removed.
 
 Nothing here waits, in either autonomy mode: the user just spoke, and this arrow is what their
 message asked for. What waits under `assisted` is the NEXT one — the ok that closes this phase pays

@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=657
+EXPECT_CHECKS=662
 EXPECT_SKILLS=20
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=747
+EXPECT_MUTATIONS=749
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1984,6 +1984,60 @@ else
   grep -q "MERGED" "$LSH/err" && grep -q "unverified" "$LSH/err" \
     && ok "done is not anyone's to write: no merged child PR, no row — and the declared out is taught" \
     || bad "the done refusal neither names the missing merge nor teaches the declared out: $(tail -1 "$LSH/err")"
+fi
+
+# Parallel tickets ride one worktree each, and `close` carries the guards the
+# install must prove where it stands: a DIRTY worktree stands whatever the
+# forge says (kills "a dirty worktree is removed anyway, work and all"), and a
+# clean one still needs the forge's MERGED word or an explicit drop (kills
+# "a worktree closes on anyone's word").
+WTR="$WORK/worktree"; mkdir -p "$WTR/bin" "$WTR/seed"; git -C "$WTR/seed" init -q .
+git -C "$WTR/seed" -c user.email=t@t -c user.name=t commit -q --allow-empty -m seed
+git clone -q --bare "$WTR/seed" "$WTR/origin.git" 2>/dev/null
+git clone -q "$WTR/origin.git" "$WTR/repo" 2>/dev/null
+printf '{"ticket": "OLD-1"}\n' > "$WTR/repo/.ddw-state.json"
+WTT="$WTR/repo--wt-t-9"
+if python3 "$SELF/ddw/scripts/ticket_worktree.py" open --ticket T-9 --root "$WTR/repo" >/dev/null 2>"$WTR/err"; then
+  [ -d "$WTT" ] && [ ! -f "$WTT/.ddw-state.json" ] \
+    && [ "$(git -C "$WTT" rev-parse HEAD)" = "$(git -C "$WTR/repo" rev-parse origin/HEAD)" ] \
+    && ok "a ticket opens its own worktree — fresh at origin's default, no state inherited" \
+    || bad "the worktree is missing, inherited the standing state, or did not start at origin"
+else
+  bad "ticket_worktree open failed on a plain repo: $(tail -1 "$WTR/err")"
+fi
+git -C "$WTR/repo" remote set-url origin https://github.com/acme/child.git
+cat > "$WTR/bin/gh" <<'WTGH'
+#!/usr/bin/env python3
+print('[{"number": 7, "headRefName": "feat/T-9-x"}]')
+WTGH
+chmod +x "$WTR/bin/gh"
+echo "x = 1" > "$WTT/avance.py"
+if PATH="$WTR/bin:$PATH" python3 "$SELF/ddw/scripts/ticket_worktree.py" close --ticket T-9 --root "$WTR/repo" >/dev/null 2>"$WTR/err"; then
+  bad "a DIRTY worktree was closed — uncommitted work removed with the forge's blessing"
+else
+  grep -q "avance.py" "$WTR/err" && [ -d "$WTT" ] \
+    && ok "a dirty worktree stands, whatever the forge says, and the refusal names the file" \
+    || bad "the dirty refusal lost the worktree or does not name the file: $(tail -1 "$WTR/err")"
+fi
+rm -f "$WTT/avance.py"
+cat > "$WTR/bin/gh" <<'WTGH2'
+#!/usr/bin/env python3
+print("[]")
+WTGH2
+chmod +x "$WTR/bin/gh"
+if PATH="$WTR/bin:$PATH" python3 "$SELF/ddw/scripts/ticket_worktree.py" close --ticket T-9 --root "$WTR/repo" >/dev/null 2>"$WTR/err"; then
+  bad "a clean worktree closed on nobody's word — no merged PR, no drop"
+else
+  grep -q "MERGED" "$WTR/err" && grep -q "drop" "$WTR/err" \
+    && ok "a worktree does not close on anyone's word: no merged PR, no removal — and the declared out is taught" \
+    || bad "the close refusal neither names the missing merge nor teaches the drop: $(tail -1 "$WTR/err")"
+fi
+if PATH="$WTR/bin:$PATH" python3 "$SELF/ddw/scripts/ticket_worktree.py" close --ticket T-9 --drop "se descartó" --root "$WTR/repo" >/dev/null 2>"$WTR/err"; then
+  [ ! -d "$WTT" ] \
+    && ok "the declared drop, with its reason, is what removes an unmerged worktree" \
+    || bad "the drop said yes but the worktree is still there"
+else
+  bad "the declared drop was refused on a clean worktree: $(tail -1 "$WTR/err")"
 fi
 
 IMP="$WORK/impact-gate"; mkdir -p "$IMP/.ddw-work" "$IMP/.ddw-sessions"; git -C "$IMP" init -q .

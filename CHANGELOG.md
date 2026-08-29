@@ -19,6 +19,28 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.47.0] - 2026-08-29
+
+### Added — parallel tickets, one worktree each (M5)
+
+- **`ticket_worktree.py`**: a second ticket while one is in flight opens
+  its own git worktree — a sibling tree, detached at the freshly fetched
+  origin default, inheriting NO state: one state per directory was already
+  the law, and the worktree is how the law scales to two tickets. `open`
+  is idempotent; `list` reads each tree's own state; `close` obeys the
+  same law as every close — the forge's MERGED PR naming the ticket, or a
+  declared `--drop "<why>"` — and a DIRTY worktree is never removed, not
+  even dropped: uncommitted work is named file by file and left standing.
+- **Consolidation is nothing new**: the parallel branches land as pull
+  requests IN ORDER against the base (branches 2.2.0) — no merge between
+  worktrees, ever. The offer to open lives where the second ticket
+  arrives (classify 2.16.0); the offer to close lives where the merge
+  lands (closeout 2.4.0) — offer, not execute: removing a working
+  directory is the user's call.
+- Two faults the suite provably kills: a dirty worktree removed anyway,
+  and a worktree closed on anyone's word.
+- Measured: 662 install checks · 749 mutations · 220 pytest.
+
 ## [0.46.0] - 2026-08-29
 
 ### Added — the conductor becomes a word (M4)

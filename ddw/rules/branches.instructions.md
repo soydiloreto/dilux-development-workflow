@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.1.0
+version: 2.2.0
 ---
 
 # Branch Conventions
@@ -232,3 +232,7 @@ it.
 - If the branch already exists (resuming a session), check it out instead of creating a new one —
   **and measure the drift**, checkpoint 2 above.
 - In the CLOSEOUT phase, the `ddw-create-pr` skill derives the branch name from the ticket.
+- **Parallel tickets, parallel worktrees** (`ticket_worktree.py open`): each ticket's branch is
+  born in its own working tree, from the same fetched `origin/{base}` as any other. Consolidation
+  is nothing new — the branches land as pull requests IN ORDER against the base, and the second
+  PR rebases onto the first merge like any branch that aged. No merge between worktrees, ever.
