@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.13.0
+version: 2.14.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -154,6 +154,15 @@ reads the parent index from the workspace clone or the forge — **read-only** �
 depends on another repo, asks the forge whether that repo's child PR merged before entering CODE.
 Building on a dependency that is not on main yet is a fact to put in front of the user, not a
 detail to discover in integration.
+
+**The walk continues from the session you are in.** When a child's closeout ends (its PR open or
+merged), offer the initiative's next step instead of parking the user at a table: run
+`python3 .ddw/scripts/family_next.py --ticket <TICKET>` and put its one verdict on screen — the
+stale row to correct, the next repo to walk to, the blockers by name, or all-done. With the
+user's ok, MOVE to the next child's sibling clone and open its run THERE: each repository's own
+state, hooks and gates rule in its own directory, and the session carries nothing across but the
+initiative's id. The pilgrimage was the design's cost, not its point — the conductor is how one
+session walks the whole family without ever writing outside the repo it stands in.
 
 ### Step 1.3: What does the organization already know?
 

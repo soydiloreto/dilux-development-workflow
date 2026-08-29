@@ -19,6 +19,25 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.45.0] - 2026-08-29
+
+### Added — the walk gets its conductor (M3a)
+
+- **`family_next.py`**: one fresh verdict on the initiative's next step —
+  the index read at the workspace's origin, every child's MERGED PR asked
+  of the forge, and exactly one answer: the stale row to correct FIRST (an
+  index behind the forge poisons every later answer), else the next repo
+  whose dependencies are all MERGED (a dependency is satisfied by a merge,
+  never by another row's recorded status), else the blockers by name, else
+  all-done. `decide()` is a pure function, pinned by tests and two faults
+  the suite provably kills.
+- **The walk in the method's prose**: a child's closeout now offers the
+  next step (classify 2.14.0), and "dame el plan / ¿cómo sigo?" is answered
+  by the conductor from ANY repo of the family (define 2.10.0) — one
+  session walks the whole family, each repository's own state and gates
+  ruling in its own directory, nothing written across. The pilgrimage dies.
+- Measured: 657 install checks · 747 mutations · 215 pytest.
+
 ## [0.44.0] - 2026-08-28
 
 ### Added — the one-approve index (M2)

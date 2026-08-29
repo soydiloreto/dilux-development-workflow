@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=655
+EXPECT_CHECKS=657
 EXPECT_SKILLS=19
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=745
+EXPECT_MUTATIONS=747
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1919,6 +1919,36 @@ PYSB
 # asked to merge (kills "the leash stops reading the diff"). Door two — the
 # LAW: `done` without a MERGED child PR is refused naming the declared out
 # (kills "a row says done on anyone's word").
+# The walk's conductor decides over the FORGE, in the order that cannot
+# mislead: a stale row (child merged, row not done) outranks the walk, and a
+# dependency is satisfied only by a MERGE — never by another row's recorded
+# status. Pure function, no forge needed; kills "the stale index stops
+# outranking the walk" and "dependencies become satisfied by the index's word".
+python3 - "$SELF" <<'PYWALK' && ok "the conductor corrects the stale row first, and only a MERGE unblocks a dependency" || bad "the walk trusts the index over the forge — a recorded status unblocked a child, or a stale row was walked past"
+import importlib.util, os, sys
+src = sys.argv[1]
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(src, path))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+vt = load("vt", "ddw/scripts/validate-transition.py")
+fnx = load("fnx", "ddw/scripts/family_next.py")
+def rows(*specs):
+    lines = ["| Repo | Ticket | Scope | Depends on | Status |", "|---|---|---|---|---|"]
+    for repo, deps, status in specs:
+        lines.append("| acme/%s | T-1 | parte %s | %s | %s |" % (repo, repo, deps, status))
+    return vt.parse_family_rows("\n".join(lines) + "\n")
+# Door one: index SAYS done, forge shows no merge -> nothing unblocks.
+v = fnx.decide(rows(("pagos", "none", "done"), ("back", "pagos", "pending")),
+               {"pagos": None, "back": None})
+assert v["kind"] == "waiting" and v["waits"][0]["on"] == ["pagos"], \
+    "a recorded `done` with no merge at the forge unblocked a dependent: %r" % v
+# Door two: child merged, row still active -> the update outranks the walk.
+v = fnx.decide(rows(("pagos", "none", "active"), ("back", "pagos", "pending")),
+               {"pagos": 7, "back": None})
+assert v["kind"] == "update" and v["pr"] == 7, \
+    "a merged child with a stale row was walked past instead of corrected: %r" % v
+PYWALK
+
 LSH="$WORK/leash"; mkdir -p "$LSH/ws" "$LSH/bin"; git -C "$LSH/ws" init -q .
 git -C "$LSH/ws" remote add origin https://github.com/acme/ws.git
 printf '# familia\n' > "$LSH/ws/familia.md"

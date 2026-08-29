@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.9.0
+version: 2.10.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -449,8 +449,12 @@ The index (`docs/ddw/prd/prd-{TICKET}.md`):
   that is the design — so the message that parks the parent hands them the walk, executable: one
   line per repo, in dependency order, with the `cd` to the sibling clone and the prompt to give it
   (`Implementá mi parte de <TICKET>`), marking which child is unblocked NOW and which waits on
-  whose merge. Asked for later ("dame el plan de lanzamiento"), any workspace session rebuilds it
-  from the index and the forge's current answers. A reparto whose next step the developer has to
+  whose merge. Asked for later ("dame el plan de lanzamiento" / "¿cómo sigo?"), ANY session of
+  the family answers with the conductor: `python3 .ddw/scripts/family_next.py --ticket <TICKET>`
+  — the index read fresh at the workspace's origin, every child's merge asked of the forge, and
+  exactly one verdict: the stale row to correct FIRST (an index behind the forge poisons every
+  later answer), else the next repo whose dependencies are all MERGED (a dependency is satisfied
+  by a merge, never by another row's recorded status), else the blockers by name, else all-done. A reparto whose next step the developer has to
   reconstruct from a table is a reparto that stalls at every handoff — the owner asked for this
   after walking the first live initiative.
 
