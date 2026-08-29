@@ -66,6 +66,20 @@ def test_dropped_esta_fuera_de_juego_y_todo_cerrado_es_all_done():
     assert v["kind"] == "all-done"
 
 
+def test_el_set_paralelo_es_solo_lo_que_el_forge_desbloqueo():
+    # Two independents plus one blocked: the parallel set carries exactly the
+    # two whose dependencies are ALL merged — a blocked row never rides along,
+    # and a recorded status buys nothing here either.
+    rs = rows(("pagos", "none", "active"), ("catalogo", "none", "pending"),
+              ("back", "pagos", "pending"))
+    listos = fnx.ready(rs, {"pagos": None, "catalogo": None, "back": None})
+    assert [r["repo"] for r in listos] == ["acme/pagos", "acme/catalogo"], listos
+    # pagos merges (row now stale): it leaves the set — the stale row is
+    # decide()'s business — and its merge is what lets back enter.
+    listos = fnx.ready(rs, {"pagos": 3, "catalogo": None, "back": None})
+    assert [r["repo"] for r in listos] == ["acme/catalogo", "acme/back"], listos
+
+
 def test_esperando_nombra_a_cada_bloqueador():
     rs = rows(("pagos", "none", "done"), ("back", "pagos", "pending"),
               ("bff", "back", "pending"))

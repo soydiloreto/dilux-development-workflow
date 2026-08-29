@@ -93,6 +93,29 @@ def decide(rows, merged):
     return {"kind": "waiting", "waits": waits}
 
 
+def ready(rows, merged):
+    """The PARALLEL set: every row that may run right now, in index order.
+
+    A row is ready when it is still in play, its own child has not merged
+    (a merged child is a stale row — decide() answers that first), and every
+    dependency is MERGED at the forge. Two ready rows are independent by
+    construction — each child runs standing in its OWN clone, so the only
+    thing they could ever share is the workspace index, and every write to
+    that travels through the forge. Ready-ness is the forge's word, never
+    the index's: same law as decide(), stated twice because this set is what
+    a parallel launch trusts."""
+    out = []
+    for r in rows:
+        if r["done"] or r["status"].startswith(("dropped", "descartado")):
+            continue
+        if merged.get(r["repo"].rsplit("/", 1)[-1]):
+            continue
+        deps_short = [d.rsplit("/", 1)[-1] for d in r["deps"]]
+        if all(merged.get(d2) for d2 in deps_short):
+            out.append(r)
+    return out
+
+
 def _read_index(root, ticket):
     """The index at the workspace's origin — fetched, then read from the ref."""
     slug = _fip._ws_slug(root)
@@ -160,6 +183,18 @@ def main():
               % (short, verdict["scope"]))
         print("  cd %s   →   Implementá mi parte de %s"
               % (os.path.join(siblings, short), verdict["ticket"] or args.ticket))
+        listos = ready(rows, merged)
+        if len(listos) > 1:
+            print("\n∥ EN PARALELO — %d partes tienen todas sus dependencias "
+                  "mergeadas y pueden correr a la vez, cada una PARADA en su "
+                  "propio clon:" % len(listos))
+            for r in listos:
+                s = r["repo"].rsplit("/", 1)[-1]
+                print("  · cd %s   →   Implementá mi parte de %s"
+                      % (os.path.join(siblings, s), r["ticket"] or args.ticket))
+            print("  (en paralelo solo si tu herramienta orquesta subprocesos; "
+                  "si no, en este orden — el conductor re-consultado tras cada "
+                  "merge da lo mismo)")
     elif verdict["kind"] == "waiting":
         print("\n⏳ Nada desbloqueado:")
         for w in verdict["waits"]:

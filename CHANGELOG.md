@@ -19,6 +19,28 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.48.0] - 2026-08-29
+
+### Added — the walk may fork (M3b)
+
+- **`family_next.ready()`**: the conductor now also computes the PARALLEL
+  set — every part whose dependencies are ALL merged at the forge and
+  whose own child has not merged. Ready-ness is the forge's word, never
+  the index's: a blocked child never rides the set, a merged child never
+  rides it twice — two faults the suite provably kills. When more than
+  one part is ready, the verdict prints the `∥ EN PARALELO` block with
+  each part's clone and prompt.
+- **The fork in the method's prose** (classify 2.17.0, define 2.12.0,
+  skill 20): in a tool that can orchestrate subprocesses, the ready
+  children may run AT THE SAME TIME — each launched as its own agent
+  session standing in its own sibling clone, its own hooks and gates
+  ruling its run; the orchestrating session launches, watches and relays,
+  and never edits a sibling's tree. Only the user's questions surface;
+  a stopped child is reported, never answered for; every child ends at
+  its own OPEN pull request, because merging asks a human, always. Where
+  no such orchestration exists, the sequential walk IS the flow.
+- Measured: 662 install checks · 754 mutations · 221 pytest.
+
 ## [0.47.0] - 2026-08-29
 
 ### Added — parallel tickets, one worktree each (M5)

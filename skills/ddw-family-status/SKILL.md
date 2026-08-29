@@ -43,7 +43,9 @@ It writes NOTHING, in this repo or any other. When the verdict is a row update, 
      workspace PR merged by the one-approve leash.
    - **next** — name the repo and its scope, and offer the move: `cd` to the sibling clone and
      open the child's run THERE (`Implementá mi parte de <TICKET>`). Each repository's own
-     state, hooks and gates rule in its own directory.
+     state, hooks and gates rule in its own directory. When the conductor also prints the
+     `∥ EN PARALELO` block, relay it: those parts may run at the same time, each in its own
+     clone — in a tool that cannot orchestrate subprocesses, walk them in the printed order.
    - **waiting** — every blocker by name, and whose merge each part waits on. Nothing to force;
      the answer is a fact.
    - **all-done** — the initiative is ready to close in the workspace.

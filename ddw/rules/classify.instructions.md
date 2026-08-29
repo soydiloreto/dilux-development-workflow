@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.16.0
+version: 2.17.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -175,6 +175,18 @@ user's ok, MOVE to the next child's sibling clone and open its run THERE: each r
 state, hooks and gates rule in its own directory, and the session carries nothing across but the
 initiative's id. The pilgrimage was the design's cost, not its point — the conductor is how one
 session walks the whole family without ever writing outside the repo it stands in.
+
+**When the conductor prints more than one ready part, the walk may fork.** In a tool that can
+orchestrate subprocesses (Claude Code: background tasks, subagents), offer — with the user's ok,
+once — to run the ready children IN PARALLEL: each child launched as its OWN agent session
+standing in its own sibling clone, so each repository's hooks, gates and state rule its run
+exactly as in the sequential walk. The orchestrating session never edits a sibling's tree itself
+— it launches, watches, and relays. Only the user's questions surface to the main screen
+(approvals, disambiguations); a child that stops — an undocumented decision, a corrective
+ceiling — is reported, never answered for. Each child ends at its own OPEN pull request, because
+merging asks a human, always. As merges land: update-row through the forge, ask the conductor
+again, launch what the merges unblocked. In a tool with no such orchestration the parallel offer
+simply does not exist — the sequential walk IS the flow there, not a degraded copy of this one.
 
 ### Step 1.3: What does the organization already know?
 
