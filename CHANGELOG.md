@@ -39,7 +39,7 @@ move at different speeds. So the promise is specific:
   directory is the user's call.
 - Two faults the suite provably kills: a dirty worktree removed anyway,
   and a worktree closed on anyone's word.
-- Measured: 662 install checks · 749 mutations · 220 pytest.
+- Measured: 662 install checks · 752 mutations · 220 pytest.
 
 ## [0.46.0] - 2026-08-29
 

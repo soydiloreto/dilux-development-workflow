@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=749
+EXPECT_MUTATIONS=752
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1996,6 +1996,10 @@ git -C "$WTR/seed" -c user.email=t@t -c user.name=t commit -q --allow-empty -m s
 git clone -q --bare "$WTR/seed" "$WTR/origin.git" 2>/dev/null
 git clone -q "$WTR/origin.git" "$WTR/repo" 2>/dev/null
 printf '{"ticket": "OLD-1"}\n' > "$WTR/repo/.ddw-state.json"
+# The standing tree is mid-ticket: a local commit ahead of origin. The new
+# worktree must NOT start there — origin's default is the only honest base
+# (kills "the new worktree starts where the standing tree stands").
+git -C "$WTR/repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m half-done
 WTT="$WTR/repo--wt-t-9"
 if python3 "$SELF/ddw/scripts/ticket_worktree.py" open --ticket T-9 --root "$WTR/repo" >/dev/null 2>"$WTR/err"; then
   [ -d "$WTT" ] && [ ! -f "$WTT/.ddw-state.json" ] \

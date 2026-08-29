@@ -1238,6 +1238,21 @@ MUTATIONS = [
      edit("ddw/scripts/ticket_worktree.py",
           "        if pr is None:",
           "        if False:")),
+    ("the close refusal stops teaching the law",
+     edit("ddw/scripts/ticket_worktree.py",
+          '            return _fail("no MERGED pull request names %s at the forge — a worktree "\n'
+          '                         "does not close on anyone\'s word. If the work is being "\n'
+          '                         "abandoned, say so: `close --ticket %s --drop \\"<why>\\"`."\n'
+          '                         % (ticket, ticket))',
+          '            return _fail("refused (%s %s)" % (ticket, ticket))')),
+    ("the removal is announced but never performed",
+     edit("ddw/scripts/ticket_worktree.py",
+          '    code, _, err = _run(["git", "-C", top, "worktree", "remove", path], timeout=120)',
+          '    code, _, err = 0, "", ""')),
+    ("the new worktree starts where the standing tree stands",
+     edit("ddw/scripts/ticket_worktree.py",
+          '    code, _, err = _run(["git", "-C", top, "worktree", "add", "--detach", path, ref],',
+          '    code, _, err = _run(["git", "-C", top, "worktree", "add", "--detach", path],')),
     ("the index stops checking the map",
      edit("ddw/scripts/validate_prd.py",
           '        mapa_path = ddw_receipt.find_upward(args.prd, "familia.md")',

@@ -76,6 +76,7 @@ def test_open_nace_fresco_en_el_origin_y_sin_estado(tmp_path):
     # The standing tree has half-done work — a branch and a state file —
     # that must NOT travel into the new worktree.
     _git(repo, "checkout", "-q", "-b", "feat/OLD-1-algo")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "half-done")
     (repo / ".ddw-state.json").write_text('{"ticket": "OLD-1"}', encoding="utf-8")
     r = _run(["open", "--ticket", "NEW-2"], repo)
     assert r.returncode == 0, r.stderr
