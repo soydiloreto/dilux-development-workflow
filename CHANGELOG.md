@@ -19,6 +19,25 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.46.0] - 2026-08-29
+
+### Added — the conductor becomes a word (M4)
+
+- **`/ddw-family-status`** (skill 20): "¿cómo sigo?" answered from ANY repo
+  of the family. The skill's engine is `family_next.py` unchanged — the
+  index read at the workspace's origin/main, every child's merge asked of
+  the forge — and the skill adds only what a script cannot: resolving the
+  ticket the user did not name, and walking to the repo the verdict points
+  at. Read-only everywhere; a row update still travels as a workspace PR
+  through `family_index_pr.py update-row`.
+- The trigger named where the walk already lived: classify 2.15.0 (the
+  closeout's next-step offer), define 2.11.0 (the launch plan's "asked for
+  later" line), and `/ddw-help`'s day-to-day commands.
+- The skill's load-bearing claims join the suite's bidirectional CLAIMS
+  table — a gutted protocol, or a skill added without a claim, fails the
+  same check.
+- Measured: 657 install checks · 747 mutations · 215 pytest.
+
 ## [0.45.0] - 2026-08-29
 
 ### Added — the walk gets its conductor (M3a)
@@ -2334,7 +2353,7 @@ in, with the tool-specific wiring generalised from one agent to six.
   a content-hashed receipt, the commit gate asks git, and the rest are the model's
   record. `tests` and `sast` stay self-declared deliberately — see RATIONALE 16.
 - An artifact per phase, under `docs/ddw/`, committed as that phase closes.
-- Nineteen skills and five subagents, including auditors that did not write the
+- Twenty skills and five subagents, including auditors that did not write the
   code they review.
 - Security as two phases of the pipeline rather than a review afterwards: threat
   modeling in PLAN, SAST in CODE. Deliberately no dynamic scan — see the README

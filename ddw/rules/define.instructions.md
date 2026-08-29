@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.10.0
+version: 2.11.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -450,7 +450,8 @@ The index (`docs/ddw/prd/prd-{TICKET}.md`):
   line per repo, in dependency order, with the `cd` to the sibling clone and the prompt to give it
   (`Implementá mi parte de <TICKET>`), marking which child is unblocked NOW and which waits on
   whose merge. Asked for later ("dame el plan de lanzamiento" / "¿cómo sigo?"), ANY session of
-  the family answers with the conductor: `python3 .ddw/scripts/family_next.py --ticket <TICKET>`
+  the family answers with the conductor (`/ddw-family-status`, or directly:
+  `python3 .ddw/scripts/family_next.py --ticket <TICKET>`)
   — the index read fresh at the workspace's origin, every child's merge asked of the forge, and
   exactly one verdict: the stale row to correct FIRST (an index behind the forge poisons every
   later answer), else the next repo whose dependencies are all MERGED (a dependency is satisfied

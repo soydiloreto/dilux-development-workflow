@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.14.0
+version: 2.15.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -158,7 +158,8 @@ detail to discover in integration.
 **The walk continues from the session you are in.** When a child's closeout ends (its PR open or
 merged), offer the initiative's next step instead of parking the user at a table: run
 `python3 .ddw/scripts/family_next.py --ticket <TICKET>` and put its one verdict on screen — the
-stale row to correct, the next repo to walk to, the blockers by name, or all-done. With the
+stale row to correct, the next repo to walk to, the blockers by name, or all-done
+(`/ddw-family-status` is this step as a skill, callable from any member at any time). With the
 user's ok, MOVE to the next child's sibling clone and open its run THERE: each repository's own
 state, hooks and gates rule in its own directory, and the session carries nothing across but the
 initiative's id. The pilgrimage was the design's cost, not its point — the conductor is how one
