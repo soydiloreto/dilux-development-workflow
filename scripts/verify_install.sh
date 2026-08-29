@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=752
+EXPECT_MUTATIONS=754
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1947,6 +1947,19 @@ v = fnx.decide(rows(("pagos", "none", "active"), ("back", "pagos", "pending")),
                {"pagos": 7, "back": None})
 assert v["kind"] == "update" and v["pr"] == 7, \
     "a merged child with a stale row was walked past instead of corrected: %r" % v
+# Door three — the PARALLEL set: only forge-unblocked, never-merged rows ride
+# (kills "a blocked child rides the parallel set" and "a merged child is
+# launched again by the parallel set").
+three = rows(("pagos", "none", "active"), ("catalogo", "none", "pending"),
+             ("back", "pagos", "pending"))
+listos = [r["repo"] for r in fnx.ready(three, {"pagos": None, "catalogo": None,
+                                               "back": None})]
+assert listos == ["acme/pagos", "acme/catalogo"], \
+    "the parallel set carries a child whose dependency never merged: %r" % listos
+listos = [r["repo"] for r in fnx.ready(three, {"pagos": 3, "catalogo": None,
+                                               "back": None})]
+assert listos == ["acme/catalogo", "acme/back"], \
+    "a merged child stayed in the parallel set, or its merge unblocked nobody: %r" % listos
 PYWALK
 
 LSH="$WORK/leash"; mkdir -p "$LSH/ws" "$LSH/bin"; git -C "$LSH/ws" init -q .

@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.11.0
+version: 2.12.0
 ---
 
 # Phase 1: DEFINE (Requirements Definition)
@@ -455,7 +455,10 @@ The index (`docs/ddw/prd/prd-{TICKET}.md`):
   — the index read fresh at the workspace's origin, every child's merge asked of the forge, and
   exactly one verdict: the stale row to correct FIRST (an index behind the forge poisons every
   later answer), else the next repo whose dependencies are all MERGED (a dependency is satisfied
-  by a merge, never by another row's recorded status), else the blockers by name, else all-done. A reparto whose next step the developer has to
+  by a merge, never by another row's recorded status), else the blockers by name, else all-done.
+  When several parts are unblocked at once the conductor also prints the parallel set, and a tool
+  that can orchestrate subprocesses may offer to run them at the same time — each child standing
+  in its own clone, per classify's walk. A reparto whose next step the developer has to
   reconstruct from a table is a reparto that stalls at every handoff — the owner asked for this
   after walking the first live initiative.
 
