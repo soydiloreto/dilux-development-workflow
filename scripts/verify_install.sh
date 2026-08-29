@@ -31,7 +31,7 @@ set -uo pipefail
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
 EXPECT_CHECKS=657
-EXPECT_SKILLS=19
+EXPECT_SKILLS=20
 EXPECT_AGENTS=5
 EXPECT_RULES=14
 EXPECT_ADAPTERS=6
@@ -11360,6 +11360,7 @@ CLAIMS = {
     "ddw-context-check":     ["AGENTS.md", "## Stack"],
     "ddw-family-catalog":    ["family_catalog.py", "## Repo family", "--write-members"],
     "ddw-family-impact":     ["family_impact.py", "impact-data-", "--validate", "Sin impacto"],
+    "ddw-family-status":     ["family_next.py", "origin/main", "update-row", "Never improvise"],
     "ddw-eject":             [".ddw/", "The repo wins", "CLAUDE_PLUGIN_ROOT"],
     "ddw-help":              ["/ddw-status", "/ddw-self-check"],
     "ddw-security-sast":     ["validate_sast.py", "docs/ddw/security/sast-"],

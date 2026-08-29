@@ -53,6 +53,7 @@ Open your agent in the repo and ask for a code change: the pipeline starts by it
 invoke phases by hand. Day-to-day commands:
 
 - `/ddw-status` — which phase the pipeline is in for this repo.
+- `/ddw-family-status` — the initiative's next step across the family, answered by the forge.
 - `/ddw-self-check` — check the installation and the state are sound.
 
 Each phase's skills (`ddw-create-prd`, `ddw-create-spec`, `ddw-test`, `ddw-commit`, `ddw-create-pr`,

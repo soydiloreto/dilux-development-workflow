@@ -1,6 +1,6 @@
 # Adapter recipe — adding support for a new tool
 
-DDW keeps **one copy of everything**. The orchestrator, the rules, the 19 skills and the 5 agents
+DDW keeps **one copy of everything**. The orchestrator, the rules, the 20 skills and the 5 agents
 live once, under `ddw/`, written in no tool's dialect. An adapter is not a copy of the framework —
 it is a **recipe** that says where this particular tool looks for things and what frontmatter it
 speaks. The installer transpiles at install time.
