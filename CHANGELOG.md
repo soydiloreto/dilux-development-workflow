@@ -19,6 +19,31 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.49.0] - 2026-08-30
+
+### Added — the whole organization in one auditable pass
+
+- **`family_catalog.py --org <X>`**: the bootstrap a 1000-repo company
+  needs, with no clone anywhere — the forge lists EVERY repo, each
+  AGENTS.md is read by API, and the report buckets every single one:
+  families with their members and seams, standalones counted,
+  unreachables NAMED with their reason (a truncated pass must be visible,
+  never a smaller green total). Membership stays what each repo DECLARES —
+  the user's file flips the switch, never the sweep. Re-running it IS the
+  refresh. With `--write`, each family with no map yet gets a seed
+  `ddw-family.md` published as a one-approve PR; an existing map is never
+  rewritten — its drift is reported for its owner.
+- **The family map grows a professional name**: `ddw-family.md` (now also
+  leash territory). The deprecated `familia.md` is still read everywhere —
+  existing families keep working; anything that CREATES a map writes the
+  new name.
+- **A truncated audit can no longer pass as finished**: the auditors'
+  reports end with `HALLAZGOS: <N> — lista completa` and every caller
+  refuses a report without it (agents ×2, code 2.5.0, plan 1.13.0) —
+  measured live: thirteen findings, five delivered, and the user decided
+  over five.
+- Measured: 665 install checks · 758 mutations · 224 pytest.
+
 ## [0.48.0] - 2026-08-29
 
 ### Added — the walk may fork (M3b)

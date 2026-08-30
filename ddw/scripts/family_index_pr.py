@@ -49,7 +49,20 @@ _spec = _ilu.spec_from_file_location(
 _catalog = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(_catalog)
 
-ALLOWED = re.compile(r"^(docs/ddw/.*|\.gitignore)$")
+ALLOWED = re.compile(r"^(docs/ddw/.*|\.gitignore|ddw-family\.md)$")
+
+_MAP_NAMES = ("ddw-family.md", "familia.md")
+
+
+def _ws_map(root):
+    """The family map inside `root` — `ddw-family.md`, or the deprecated
+    `familia.md` (read, never written). Its presence is what makes a repo
+    THE workspace."""
+    for name in _MAP_NAMES:
+        p = os.path.join(root, name)
+        if os.path.isfile(p):
+            return p
+    return None
 STATUS_OK = re.compile(
     r"^(active|pending|done|dropped:\s*\S.*|done \(unverified:\s*\S.*\))$",
     re.IGNORECASE)
@@ -67,8 +80,8 @@ def _fail(msg):
 
 def _ws_slug(root):
     """The workspace this repo belongs to — its own remote when the repo IS
-    the workspace (familia.md on disk), the family section's slug otherwise."""
-    if os.path.exists(os.path.join(root, "familia.md")):
+    the workspace (the family map on disk), the family section's slug otherwise."""
+    if _ws_map(root):
         code, out, _ = _run(["git", "-C", root, "remote", "get-url", "origin"])
         if code == 0:
             m = re.search(r"github\.com[:/]([^/]+/[^/.]+)", out)
@@ -134,7 +147,7 @@ def _leash(slug, pr):
 def merge(root, pr, slug=None):
     slug = slug or _ws_slug(root)
     if not slug:
-        return _fail("cannot resolve the workspace repository (no familia.md here "
+        return _fail("cannot resolve the workspace repository (no ddw-family.md here "
                      "and no `## Repo family` section).")
     reason = _leash(slug, pr)
     if reason:
@@ -144,7 +157,7 @@ def merge(root, pr, slug=None):
     if code != 0:
         return _fail("gh pr merge failed: " + (err or out)[:300])
     print("family_index_pr: PR #%s mergeado (squash) en %s." % (pr, slug))
-    if os.path.exists(os.path.join(root, "familia.md")):
+    if _ws_map(root):
         _run(["git", "-C", root, "checkout", "main"])
         _run(["git", "-C", root, "pull", "--ff-only", "origin", "main"], timeout=300)
         print("El clon local del workspace quedó en main, actualizado.")

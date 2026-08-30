@@ -32,7 +32,7 @@ Credentials: none stored, ever. Every remote read is the user's own `gh`, the
 same authority the pr gate already leans on.
 
 `--write-members` is the owner's decision, taken out loud (2026-08-26): the
-family's map is AUTHORED once, centrally, in the workspace's `familia.md`, and
+family's map is AUTHORED once, centrally, in the workspace's `ddw-family.md`, and
 this routine PROPAGATES it — creating or updating each member clone's
 `## Repo family` section and committing in that clone under the user's own
 git identity. This is the user administering their own repositories with
@@ -45,11 +45,18 @@ them, for terminals where the user's SSH agent is live.
     python3 family_catalog.py                  # derive, write the block, report
     python3 family_catalog.py --check          # is it fresh? exit 0/3, write nothing
     python3 family_catalog.py --write-members --local DIR
-        # the other direction: propagate the map in familia.md into each
+        # the other direction: propagate the map in ddw-family.md into each
         # member clone's AGENTS.md `## Repo family` section, and commit there
     python3 family_catalog.py --owner NAME     # who to enumerate (default: the workspace's owner)
     python3 family_catalog.py --repos a,b,c    # explicit list instead of enumeration
     python3 family_catalog.py --local DIR      # read sibling clones under DIR, no forge
+    python3 family_catalog.py --org ACME [--write]
+        # the ORGANIZATION sweep, from anywhere, no clones: the forge lists
+        # every repo, each AGENTS.md is read by API, and the report buckets
+        # every single one — families with members, standalones counted,
+        # unreachables NAMED. Re-running it is the refresh. --write publishes
+        # a seed ddw-family.md as a one-approve PR per family with no map;
+        # an existing map is never rewritten — its drift is reported.
 
 Exit: 0 = fresh / regenerated · 2 = cannot run (no workspace section, no gh) ·
 3 = --check found it stale.
@@ -172,15 +179,21 @@ def build_block(rows, gone, owner, source):
 
 
 def familia_map(root):
-    """The authored map: familia.md's table, one row per member.
+    """The authored map: the family map's table, one row per member — read
+    from `ddw-family.md`, or the deprecated `familia.md`.
 
     Loose on headers on purpose — the columns are recognised by name
     (repo / qué hace|what / expone|provides / consume) wherever they sit, so
     the owner's own table survives translation and reordering.
     """
-    try:
-        text = open(os.path.join(root, "familia.md"), encoding="utf-8").read()
-    except OSError:
+    text = None
+    for name in ("ddw-family.md", "familia.md"):
+        try:
+            text = open(os.path.join(root, name), encoding="utf-8").read()
+            break
+        except OSError:
+            continue
+    if text is None:
         return None
     rows, headers = [], None
     for line in text.splitlines():
@@ -235,7 +248,7 @@ def write_members(root, local, ws_slug, push=False):
     """
     rows = familia_map(root)
     if rows is None:
-        print("family_catalog: --write-members reads the authored map from familia.md "
+        print("family_catalog: --write-members reads the authored map from ddw-family.md "
               "in the workspace, and there is none (or it has no table).", file=sys.stderr)
         return -1
     own = family_section(open(os.path.join(root, "AGENTS.md"), encoding="utf-8").read())
@@ -319,8 +332,159 @@ def write_members(root, local, ws_slug, push=False):
                       "git -C %s push" % (r["name"], clone))
         else:
             print("  ⚠ %s: no se pudo commitear (%s)" % (r["name"], c.stderr.strip()[:80]))
-    print("family_catalog: %d miembro(s) sincronizados desde familia.md." % changed)
+    print("family_catalog: %d miembro(s) sincronizados desde el mapa de familia." % changed)
     return changed
+
+
+def _org_repos(org):
+    """EVERY repository of `org`, from the forge's own paginated listing.
+
+    The completeness of the whole sweep rests on this list being the forge's,
+    not anyone's memory — 200-repo pages walked to the end. Returns (names,
+    None) or (None, why)."""
+    raw = _gh("api", "orgs/%s/repos" % org, "--paginate", "--jq", ".[].name",
+              timeout=300)
+    if raw is None:
+        raw = _gh("api", "users/%s/repos" % org, "--paginate", "--jq", ".[].name",
+                  timeout=300)
+    if raw is None:
+        return None, "gh could not list %s's repositories" % org
+    return sorted({n.strip() for n in raw.splitlines() if n.strip()}), None
+
+
+MAP_BEGIN = "<!-- BEGIN DDW FAMILY MAP -->"
+MAP_END = "<!-- END DDW FAMILY MAP -->"
+
+
+def _seed_map(family, ws_slug, members):
+    """A ddw-family.md born from the declarations — a SEED for the owner to
+    grow (descriptions, decisions), with the member table in a managed block."""
+    lines = ["# Familia %s" % family,
+             "",
+             "Mapa de la familia. El bloque entre marcadores se regenera con "
+             "`family_catalog.py`; todo lo demás es tuyo.",
+             "",
+             MAP_BEGIN,
+             "| Repo | Provides | Consumed by | Consumes |",
+             "|---|---|---|---|"]
+    for m in members:
+        lines.append("| %s | %s | %s | %s |"
+                     % (m["name"], m["provides"], m["consumed by"], m["consumes"]))
+    lines += [MAP_END, ""]
+    return "\n".join(lines)
+
+
+def bootstrap(org, write=False):
+    """The whole organization in one auditable pass, no clone anywhere.
+
+    The forge lists every repo; each repo's AGENTS.md is read by API (one
+    small file, not a checkout); membership is what each repo DECLARES —
+    the user's file flips the switch, never this sweep. Every repo lands in
+    exactly one bucket and every bucket is printed: members by family,
+    standalones counted, unreachables NAMED with their reason — a truncated
+    or partial pass must be visible, never a smaller total in green.
+
+    Without --write this is a preview. With it, each family whose workspace
+    has no map yet gets a seed `ddw-family.md` published as a one-approve PR
+    (index territory — the leash merges it on the user's word); a workspace
+    that already has a map is never rewritten: drift is reported for its
+    owner to fold in."""
+    names, err = _org_repos(org)
+    if err:
+        print("family_catalog: " + err, file=sys.stderr)
+        return 2
+    families, standalone, unreachable = {}, [], []
+    for name in names:
+        text, sha = fetch_remote("%s/%s" % (org, name))
+        if text is None:
+            unreachable.append((name, sha))
+            continue
+        fields = family_section(text)
+        if not fields or "workspace" not in fields:
+            standalone.append(name)
+            continue
+        ws = re.sub(r"\s*\(.*\)$", "", fields["workspace"]).strip()
+        families.setdefault(ws, []).append({
+            "name": name,
+            "family": fields.get("family", "?"),
+            "provides": fields.get("provides", "none"),
+            "consumed by": fields.get("consumed by", "none"),
+            "consumes": fields.get("consumes", "none")})
+
+    print("family_catalog: %d repos listados por el forge · %d leídos · "
+          "%d sin sección de familia (standalone) · %d inalcanzables."
+          % (len(names), len(names) - len(unreachable), len(standalone),
+             len(unreachable)))
+    for name, why in unreachable:
+        print("  ✗ %s — inalcanzable: %s (reintentá; no es lo mismo que "
+              "'sin familia')" % (name, why))
+    for ws in sorted(families):
+        members = families[ws]
+        fam = members[0]["family"]
+        print("\nFamilia %s — workspace %s, %d miembro(s):" % (fam, ws, len(members)))
+        for m in members:
+            print("  · %-24s provee: %s" % (m["name"], m["provides"]))
+        ws_name = ws.rsplit("/", 1)[-1]
+        if ws_name not in names:
+            print("  ⚠ el workspace %s no es un repo de %s — la familia declara "
+                  "un centro que el forge no lista" % (ws, org))
+        if len(members) == 1:
+            print("  ⚠ familia de un solo miembro — ¿seam real o sección huérfana?")
+    if not families:
+        print("\nNingún repo declara `## Repo family` — no hay familias que mapear.")
+
+    if not write:
+        print("\n(preview — nada escrito. Con --write, cada familia sin mapa "
+              "recibe su ddw-family.md como PR de un solo aprobado.)")
+        return 0
+
+    import tempfile
+    for ws in sorted(families):
+        members = families[ws]
+        tmp = tempfile.mkdtemp(prefix="ddw-bootstrap-")
+        r = subprocess.run(["gh", "repo", "clone", ws, tmp, "--", "--depth", "5"],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            print("  ✗ %s: clone falló — %s" % (ws, (r.stderr or "")[:150]))
+            continue
+        existing = next((n for n in ("ddw-family.md", "familia.md")
+                         if os.path.isfile(os.path.join(tmp, n))), None)
+        if existing:
+            have = {r2["name"] for r2 in (familia_map(tmp) or [])}
+            declared = {m["name"] for m in members}
+            missing, extra = sorted(declared - have), sorted(have - declared)
+            if missing or extra:
+                print("  ⚠ %s ya tiene %s — DERIVA (no lo reescribo): faltan %s · "
+                      "sobran %s" % (ws, existing, missing or "-", extra or "-"))
+            else:
+                print("  ✓ %s: %s al día." % (ws, existing))
+            continue
+        path = os.path.join(tmp, "ddw-family.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(_seed_map(members[0]["family"], ws, members))
+        branch = "chore/ddw-family-bootstrap"
+        for cmd in (["git", "-C", tmp, "checkout", "-b", branch],
+                    ["git", "-C", tmp, "add", "ddw-family.md"],
+                    ["git", "-C", tmp, "commit", "-m",
+                     "docs: ddw-family.md — mapa semilla del bootstrap"],
+                    ["git", "-C", tmp, "push", "-u", "origin", branch]):
+            c = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if c.returncode != 0:
+                print("  ✗ %s: %s falló — %s" % (ws, " ".join(cmd[3:4]),
+                                                 (c.stderr or "")[:150]))
+                break
+        else:
+            pr = subprocess.run(["gh", "pr", "create", "--repo", ws, "--head", branch,
+                                 "--title", "🗺️ ddw-family.md: mapa semilla",
+                                 "--body", "Seed map from the org bootstrap. "
+                                 "Documents only — mergeable by the one-approve "
+                                 "leash (family_index_pr.py merge)."],
+                                capture_output=True, text=True, cwd=tmp, timeout=300)
+            m2 = re.search(r"/pull/(\d+)", (pr.stdout or "") + (pr.stderr or ""))
+            print("  ✓ %s: PR #%s abierto — con tu 'aprobado': family_index_pr.py "
+                  "merge --pr %s" % (ws, m2.group(1) if m2 else "?",
+                                     m2.group(1) if m2 else "?"))
+    return 0
 
 
 def main():
@@ -332,11 +496,22 @@ def main():
                     help="directory holding sibling clones; no forge reads")
     ap.add_argument("--root", default=".", help="the workspace repo root")
     ap.add_argument("--write-members", action="store_true",
-                    help="propagate familia.md into each member clone's AGENTS.md "
+                    help="propagate ddw-family.md into each member clone's AGENTS.md "
                          "(requires --local), committing in each clone")
     ap.add_argument("--push", action="store_true",
                     help="with --write-members: also push each member commit")
+    ap.add_argument("--org", default=None,
+                    help="organization sweep: list EVERY repo at the forge, read "
+                         "each AGENTS.md by API (no clones), report families / "
+                         "standalones / unreachables — re-run any time; that IS "
+                         "the refresh")
+    ap.add_argument("--write", action="store_true",
+                    help="with --org: publish a seed ddw-family.md as a "
+                         "one-approve PR for each family that has no map yet")
     args = ap.parse_args()
+
+    if args.org:
+        sys.exit(bootstrap(args.org, write=args.write))
 
     root = os.path.abspath(args.root)
     try:

@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.4.0
+version: 2.5.0
 ---
 
 # Phase 3: CODE (Implementation)
@@ -120,6 +120,12 @@ start):
      code looks. A test that never failed proves nothing.
    - **(b) Is it well built?** → `Agent(subagent_type="ddw-arch-auditor")` over the files it
      touched. Verifies conventions and architecture against `AGENTS.md`.
+
+   **An auditor's report is only a report with its closing line** — `HALLAZGOS: <N> — lista
+   completa`, with `<N>` matching what it lists. A report without the line, or whose count does
+   not match, is a report cut mid-write (measured live: thirteen findings, five delivered, and
+   the user decided over five): relaunch the agent; never accept it, and never fill the gap
+   yourself.
 
    If (a) fails → dispatch the implementer again with the correction. If (b) fails → same, with the
    violations pointed out. Maximum **3 rounds** per block; if it still fails on the third, stop and
@@ -312,7 +318,9 @@ Invoke `Skill(skill="ddw-security-sast")`.
 **BLOCKING GATE.** If it finds vulnerabilities:
 - Show the report to the user.
 - Spawn an agent via the Agent tool with `subagent_type="ddw-sec-auditor"` for triage (true positive
-  vs false positive). Do NOT read AGENT.md as a file.
+  vs false positive). Do NOT read AGENT.md as a file. Its report must end with the closing line
+  (`HALLAZGOS: <N> — lista completa`, count matching) — without it, relaunch: a cut report and a
+  finished one look identical, and that is exactly the trap.
 - Fix the vulnerabilities confirmed as true positives.
 - Re-invoke `Skill(skill="ddw-security-sast")`. Max 3 attempts.
 - Only when it PASSES: add `"sast": true` to `gates`.

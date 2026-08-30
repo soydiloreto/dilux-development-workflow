@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 1.12.0
+version: 1.13.0
 ---
 
 # Phase 2: PLAN (Technical Planning)
@@ -133,7 +133,9 @@ because:
 5. **Impact check against the codebase (MANDATORY before presenting).**
 6. Present the plan to the user for iteration (include the impact report).
 7. Spawn an agent via the Agent tool with `subagent_type="ddw-arch-auditor"` to validate the
-   proposed architecture (do NOT read AGENT.md as a file).
+   proposed architecture (do NOT read AGENT.md as a file). Accept its report only with its
+   closing line (`HALLAZGOS: <N> — lista completa`, count matching what it lists) — a report
+   without it was cut mid-write: relaunch, never fill the gap yourself.
 
 ### Impact Check (Step 5 — mandatory)
 

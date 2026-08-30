@@ -56,13 +56,13 @@ print("{{}}"); sys.exit(0)
 
 
 def _ws_repo(tmp_path):
-    """A minimal workspace clone: familia.md + a git remote pointing at acme/ws."""
+    """A minimal workspace clone: ddw-family.md + a git remote pointing at acme/ws."""
     repo = tmp_path / "ws"
     repo.mkdir()
     subprocess.run(["git", "-C", str(repo), "init", "-q", "."], check=True)
     subprocess.run(["git", "-C", str(repo), "remote", "add", "origin",
                     "https://github.com/acme/ws.git"], check=True)
-    (repo / "familia.md").write_text("# familia\n", encoding="utf-8")
+    (repo / "ddw-family.md").write_text("# familia\n", encoding="utf-8")
     return str(repo)
 
 

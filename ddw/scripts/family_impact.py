@@ -10,7 +10,7 @@ memory and goodwill:
   gather (default)   Resolve the family from this repo's `## Repo family`,
                      find the workspace and every member as sibling clones —
                      CLONING the missing ones via `gh` — fetch them all, and
-                     read the map (familia.md) and each member's seams from
+                     read the map (ddw-family.md) and each member's seams from
                      `origin/<default>`: freshness by construction, no
                      working tree is ever touched. The facts land in
                      `.ddw-work/impact-data-<ticket>.json`, each repo with
@@ -163,15 +163,16 @@ def gather(root, ticket, siblings=None):
               file=sys.stderr)
         return 2
     ws_branch = _default_branch(ws_dir)
-    familia_text = _read_at_origin(ws_dir, ws_branch, "familia.md")
+    familia_text = (_read_at_origin(ws_dir, ws_branch, "ddw-family.md")
+                    or _read_at_origin(ws_dir, ws_branch, "familia.md"))
     if not familia_text:
-        print("family_impact: %s has no familia.md at origin/%s — the map is "
+        print("family_impact: %s has no ddw-family.md at origin/%s — the map is "
               "the workspace's one job." % (ws_slug, ws_branch), file=sys.stderr)
         return 2
     rows = _parse_familia(familia_text)
     if not rows:
-        print("family_impact: familia.md at origin/%s has no member table." % ws_branch,
-              file=sys.stderr)
+        print("family_impact: the family map at origin/%s has no member table."
+              % ws_branch, file=sys.stderr)
         return 2
 
     owner = ws_slug.split("/", 1)[0]
@@ -221,7 +222,7 @@ def gather(root, ticket, siblings=None):
 
 
 def _parse_familia(text):
-    """familia.md's member table, standalone (same tolerance as familia_map)."""
+    """The family map's member table, standalone (same tolerance as familia_map)."""
     rows, headers = [], None
     for line in text.splitlines():
         if not line.strip().startswith("|"):

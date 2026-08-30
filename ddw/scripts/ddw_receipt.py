@@ -57,6 +57,29 @@ TIERS = _tiers()
 
 
 
+FAMILY_MAP_NAMES = ("ddw-family.md", "familia.md")
+
+
+def find_family_map(start, limit=6):
+    """The family map at or above `start`: `ddw-family.md`, or the deprecated
+    `familia.md` (still read so existing families keep working; anything that
+    CREATES a map writes the new name)."""
+    for name in FAMILY_MAP_NAMES:
+        p = find_upward(start, name, limit)
+        if p:
+            return p
+    return None
+
+
+def family_map_in(root):
+    """The family map directly inside `root`, preferring the new name."""
+    for name in FAMILY_MAP_NAMES:
+        p = os.path.join(root, name)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def find_upward(start, name, limit=6):
     """The nearest `name` walking up from `start`'s directory; None past `limit` levels.
 

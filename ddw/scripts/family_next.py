@@ -123,8 +123,7 @@ def _read_index(root, ticket):
         return None, None, "cannot resolve the workspace repository from here"
     name = slug.rsplit("/", 1)[-1]
     siblings = os.path.dirname(os.path.abspath(root))
-    ws = root if os.path.exists(os.path.join(root, "familia.md")) \
-        else os.path.join(siblings, name)
+    ws = root if _fip._ws_map(root) else os.path.join(siblings, name)
     if not os.path.isdir(os.path.join(ws, ".git")):
         return None, None, ("the workspace clone %s is not there — "
                             "family_impact.py clones it" % ws)
