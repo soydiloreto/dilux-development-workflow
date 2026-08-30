@@ -116,6 +116,25 @@ def ready(rows, merged):
     return out
 
 
+def parallel_block(listos, siblings, ticket):
+    """The `∥ EN PARALELO` offer as text, or None when only one part is
+    ready — pure, so the offer's existence and its per-clone lines are
+    pinned by tests instead of trusted."""
+    if len(listos) < 2:
+        return None
+    out = ["\n∥ EN PARALELO — %d partes tienen todas sus dependencias "
+           "mergeadas y pueden correr a la vez, cada una PARADA en su "
+           "propio clon:" % len(listos)]
+    for r in listos:
+        s = r["repo"].rsplit("/", 1)[-1]
+        out.append("  · cd %s   →   Implementá mi parte de %s"
+                   % (os.path.join(siblings, s), r["ticket"] or ticket))
+    out.append("  (en paralelo solo si tu herramienta orquesta subprocesos; "
+               "si no, en este orden — el conductor re-consultado tras cada "
+               "merge da lo mismo)")
+    return "\n".join(out)
+
+
 def _dup_shorts(rows):
     """Short names two rows share — the collision that would cross their
     forge answers, refused before any verdict is computed over it."""
@@ -213,18 +232,9 @@ def main():
               % (short, verdict["scope"]))
         print("  cd %s   →   Implementá mi parte de %s"
               % (os.path.join(siblings, short), verdict["ticket"] or args.ticket))
-        listos = ready(rows, merged)
-        if len(listos) > 1:
-            print("\n∥ EN PARALELO — %d partes tienen todas sus dependencias "
-                  "mergeadas y pueden correr a la vez, cada una PARADA en su "
-                  "propio clon:" % len(listos))
-            for r in listos:
-                s = r["repo"].rsplit("/", 1)[-1]
-                print("  · cd %s   →   Implementá mi parte de %s"
-                      % (os.path.join(siblings, s), r["ticket"] or args.ticket))
-            print("  (en paralelo solo si tu herramienta orquesta subprocesos; "
-                  "si no, en este orden — el conductor re-consultado tras cada "
-                  "merge da lo mismo)")
+        block = parallel_block(ready(rows, merged), siblings, args.ticket)
+        if block:
+            print(block)
     elif verdict["kind"] == "waiting":
         print("\n⏳ Nada desbloqueado:")
         for w in verdict["waits"]:

@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=670
+EXPECT_CHECKS=671
 EXPECT_SKILLS=20
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=766
+EXPECT_MUTATIONS=768
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1947,6 +1947,17 @@ v = fnx.decide(rows(("pagos", "none", "active"), ("back", "pagos", "pending")),
                {"pagos": 7, "back": None})
 assert v["kind"] == "update" and v["pr"] == 7, \
     "a merged child with a stale row was walked past instead of corrected: %r" % v
+# Door four — the parallel OFFER: two ready parts produce the block, each
+# with its clone; one ready part produces none (kills "the parallel offer
+# quietly vanishes").
+three = rows(("pagos", "none", "active"), ("catalogo", "none", "pending"),
+             ("back", "pagos", "pending"))
+listos = fnx.ready(three, {"pagos": None, "catalogo": None, "back": None})
+blk = fnx.parallel_block(listos, "/sib", "T-1")
+assert blk and "EN PARALELO" in blk and "/sib/pagos" in blk and "/sib/catalogo" in blk \
+    and "back" not in blk, "the parallel offer is wrong or gone: %r" % blk
+assert fnx.parallel_block(listos[:1], "/sib", "T-1") is None, \
+    "a single ready part produced a parallel offer"
 # Door three — the PARALLEL set: only forge-unblocked, never-merged rows ride
 # (kills "a blocked child rides the parallel set" and "a merged child is
 # launched again by the parallel set").
@@ -2195,6 +2206,17 @@ if python3 "$SELF/ddw/scripts/ticket_worktree.py" open --ticket T-9 --root "$WTR
 else
   bad "the stale registration was believed: 'seguí ahí' with no directory there"
 fi
+# `list` reads each tree's OWN state — the panel is only worth reading if
+# it does (kills "the list stops reading each tree's own state").
+printf '{"ticket": "T-9", "phase": "CODE"}\n' > "$WTT/.ddw-state.json"
+if LOUT="$(python3 "$SELF/ddw/scripts/ticket_worktree.py" list --root "$WTR/repo" 2>&1)"; then
+  echo "$LOUT" | grep -q "repo--wt-t-9" && echo "$LOUT" | grep -q "T-9" && echo "$LOUT" | grep -q "CODE" \
+    && ok "list names every worktree with the ticket and phase its own state declares" \
+    || bad "list lost a worktree, or stopped reading its state: $(echo "$LOUT" | tail -1)"
+else
+  bad "list failed on a healthy pair of trees: $(echo "$LOUT" | tail -1)"
+fi
+rm -f "$WTT/.ddw-state.json"
 git -C "$WTR/repo" remote set-url origin https://github.com/acme/child.git
 cat > "$WTR/bin/gh" <<'WTGH'
 #!/usr/bin/env python3

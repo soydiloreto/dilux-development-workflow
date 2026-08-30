@@ -19,6 +19,24 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.52.0] - 2026-08-30
+
+### Added — the audit's third wave (every gap gets its test)
+
+- **`list` is measured**: pytest, a suite door, and a fault — the panel
+  reads each tree's OWN state or the run goes red. **The `∥ EN PARALELO`
+  offer is a pure function now** (`parallel_block`), pinned by tests and
+  a fault: two ready parts produce the block, one produces none.
+- **`publish` and `update-row` run END TO END in tests** against a real
+  local origin: the branch lands at the bare, exactly one row changes,
+  and the PR is asked of the forge. **`bootstrap --write` too**: the seed
+  `ddw-family.md` lands on its branch WITHOUT the workspace as its own
+  row. **`gather` too**: map and seams read at origin over real remotes.
+- `find_family_map` / `family_map_in` pinned directly (new name outranks,
+  deprecated name still read); `open` pinned against adopting or
+  clobbering a foreign directory that merely shares the name.
+- Measured: 671 install checks · 768 mutations · 247 pytest.
+
 ## [0.51.0] - 2026-08-30
 
 ### Fixed — the audit's second wave (robustness under real conditions)

@@ -178,3 +178,27 @@ def test_gh_ausente_habla_no_estalla():
     spec.loader.exec_module(tw)
     code, _, err = tw._run(["ddw-binario-que-no-existe"])
     assert code == 127 and "command not found" in err, (code, err)
+
+
+def test_list_muestra_cada_arbol_con_su_ticket_y_fase(tmp_path):
+    repo = _repo_with_origin(tmp_path)
+    _run(["open", "--ticket", "T-9"], repo)
+    wt = tmp_path / "repo--wt-t-9"
+    (wt / ".ddw-state.json").write_text(
+        json.dumps({"ticket": "T-9", "phase": "CODE"}), encoding="utf-8")
+    r = _run(["list"], repo)
+    assert r.returncode == 0, r.stderr
+    assert "repo--wt-t-9" in r.stdout and "T-9" in r.stdout and "CODE" in r.stdout, \
+        "list does not read each tree's own state: " + r.stdout
+
+
+def test_open_no_pisa_un_directorio_ajeno_que_ya_existe(tmp_path):
+    # An unregistered sibling dir with someone's files: open must refuse and
+    # the files must survive — pinned so a future -f/--force cannot slip in.
+    repo = _repo_with_origin(tmp_path)
+    foreign = tmp_path / "repo--wt-t-30"
+    foreign.mkdir()
+    (foreign / "importante.txt").write_text("mio\n", encoding="utf-8")
+    r = _run(["open", "--ticket", "T-30"], repo)
+    assert r.returncode == 2, "open adopted or clobbered a foreign directory"
+    assert (foreign / "importante.txt").read_text() == "mio\n"

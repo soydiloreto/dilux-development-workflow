@@ -330,3 +330,51 @@ def test_sin_agents_md_es_standalone_no_caida(tmp_path):
     assert "1 sin sección" in r.stdout and "1 inalcanzables" in r.stdout, r.stdout
     assert "ghost" in r.stdout and "✗ vacio" not in r.stdout, \
         "a plain repo without AGENTS.md was named unreachable: " + r.stdout
+
+
+def test_bootstrap_write_publica_la_semilla_sin_el_workspace(tmp_path):
+    # --write end to end against a REAL local bare: the seed ddw-family.md
+    # lands on a branch at the workspace's origin, WITHOUT the workspace as
+    # its own row, and the PR is asked of the forge.
+    import base64
+    import stat
+    bare = tmp_path / "ws-origin.git"
+    seed = tmp_path / "ws-seed"
+    seed.mkdir()
+    for cmd in (["git", "-C", str(seed), "init", "-q", "-b", "main", "."],
+                ["git", "-C", str(seed), "-c", "user.email=t@t", "-c", "user.name=t",
+                 "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty",
+                 "-m", "seed"]):
+        subprocess.run(cmd, check=True, capture_output=True)
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True)
+
+    bin_dir = _org_gh_shim(tmp_path, {
+        "ws": _agents_for("tienda", "acme/ws"),
+        "api": _agents_for("tienda", "acme/ws"),
+        "web": _agents_for("tienda", "acme/ws"),
+    })
+    gh = tmp_path / "orgbin" / "gh"
+    shim = gh.read_text()
+    assert shim.rstrip().endswith("sys.exit(1)")
+    shim = shim.rstrip()[: -len("sys.exit(1)")] + f"""if a[:2] == ["repo", "clone"]:
+    import subprocess as sp
+    sp.run(["git", "clone", "-q", {str(bare)!r}, a[3]], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
+        sp.run(["git", "-C", a[3], "config", k, v])
+    sys.exit(0)
+if a[:2] == ["pr", "create"]:
+    print("https://github.com/acme/ws/pull/3"); sys.exit(0)
+sys.exit(1)
+"""
+    gh.write_text(shim)
+    env = dict(os.environ, PATH=str(tmp_path / "orgbin") + os.pathsep + os.environ["PATH"])
+    r = subprocess.run([sys.executable, SCRIPT, "--org", "acme", "--write"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "PR #3" in r.stdout and "--repo acme/ws" in r.stdout, r.stdout
+    show = subprocess.run(["git", "-C", str(bare), "show",
+                           "chore/ddw-family-bootstrap:ddw-family.md"],
+                          capture_output=True, text=True).stdout
+    assert "| api |" in show and "| web |" in show, show
+    assert "| ws |" not in show, \
+        "the workspace rode its own seed map (perpetual drift): " + show
