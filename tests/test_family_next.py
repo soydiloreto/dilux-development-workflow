@@ -91,3 +91,10 @@ def test_esperando_nombra_a_cada_bloqueador():
     rs2 = rows(("pagos", "none", "done"), ("back", "pagos, extra", "pending"))
     v = fnx.decide(rs2, {"pagos": 4, "back": None})
     assert v["kind"] == "waiting" and v["waits"][0]["on"] == ["extra"]
+
+
+def test_dos_filas_con_el_mismo_nombre_corto_se_rechazan():
+    rs = rows(("pagos", "none", "active"), ("pagos", "none", "pending"))
+    assert fnx._dup_shorts(rs) == ["pagos"]
+    assert fnx._dup_shorts(rows(("pagos", "none", "active"),
+                                ("back", "pagos", "pending"))) == []

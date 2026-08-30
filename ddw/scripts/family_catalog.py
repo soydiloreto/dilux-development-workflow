@@ -143,10 +143,21 @@ def candidate_repos(owner, explicit, prior_names):
     if explicit:
         return [r.strip() for r in explicit.split(",") if r.strip()]
     names = set(prior_names)
-    raw = _gh("repo", "list", owner, "--limit", "200", "--json", "name",
-              "--jq", ".[].name")
-    if raw:
-        names.update(n.strip() for n in raw.splitlines() if n.strip())
+    listed, err = _org_repos(owner)
+    if listed is None:
+        # The paginated listing failed; the flat call is better than nothing,
+        # but its 200-repo page is a known cap — say so where it happens.
+        raw = _gh("repo", "list", owner, "--limit", "200", "--json", "name",
+                  "--jq", ".[].name")
+        if raw:
+            page = [n.strip() for n in raw.splitlines() if n.strip()]
+            names.update(page)
+            if len(page) >= 200:
+                print("  ⚠ la lista plana de %s tocó su tope de 200 — puede "
+                      "faltar gente; reintentá cuando el forge conteste la "
+                      "paginada." % owner)
+    else:
+        names.update(listed)
     return sorted(names)
 
 
@@ -364,8 +375,9 @@ def _seed_map(family, ws_slug, members):
     grow (descriptions, decisions), with the member table in a managed block."""
     lines = ["# Familia %s" % family,
              "",
-             "Mapa de la familia. El bloque entre marcadores se regenera con "
-             "`family_catalog.py`; todo lo demás es tuyo.",
+             "Mapa de la familia, nacido del bootstrap. Editalo libremente — "
+             "el barrido (`family_catalog.py --org`) REPORTA la deriva contra "
+             "lo declarado, nunca lo reescribe.",
              "",
              MAP_BEGIN,
              "| Repo | Provides | Consumed by | Consumes |",
@@ -400,7 +412,12 @@ def bootstrap(org, write=False):
     for name in names:
         text, sha = fetch_remote("%s/%s" % (org, name))
         if text is None:
-            unreachable.append((name, sha))
+            # "The repo has no AGENTS.md" and "the forge fell over" must
+            # never read the same: one is a standalone, the other a retry.
+            if _gh("api", "repos/%s/%s" % (org, name), "--jq", ".name") is not None:
+                standalone.append(name)
+            else:
+                unreachable.append((name, sha))
             continue
         fields = family_section(text)
         if not fields or "workspace" not in fields:
@@ -452,9 +469,14 @@ def bootstrap(org, write=False):
             continue
         existing = next((n for n in ("ddw-family.md", "familia.md")
                          if os.path.isfile(os.path.join(tmp, n))), None)
+        ws_short = ws.rsplit("/", 1)[-1]
         if existing:
             have = {r2["name"] for r2 in (familia_map(tmp) or [])}
-            declared = {m["name"] for m in members}
+            # The workspace declares itself, but authored maps list the
+            # CHILDREN — counting the center as a member made every healthy
+            # family read as drifted forever.
+            declared = {m["name"] for m in members} - {ws_short}
+            have -= {ws_short}
             missing, extra = sorted(declared - have), sorted(have - declared)
             if missing or extra:
                 print("  ⚠ %s ya tiene %s — DERIVA (no lo reescribo): faltan %s · "
@@ -464,7 +486,8 @@ def bootstrap(org, write=False):
             continue
         path = os.path.join(tmp, "ddw-family.md")
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(_seed_map(members[0]["family"], ws, members))
+            fh.write(_seed_map(members[0]["family"], ws,
+                               [m for m in members if m["name"] != ws_short]))
         branch = "chore/ddw-family-bootstrap"
         for cmd in (["git", "-C", tmp, "checkout", "-b", branch],
                     ["git", "-C", tmp, "add", "ddw-family.md"],
@@ -485,8 +508,8 @@ def bootstrap(org, write=False):
                                 capture_output=True, text=True, cwd=tmp, timeout=300)
             m2 = re.search(r"/pull/(\d+)", (pr.stdout or "") + (pr.stderr or ""))
             print("  ✓ %s: PR #%s abierto — con tu 'aprobado': family_index_pr.py "
-                  "merge --pr %s" % (ws, m2.group(1) if m2 else "?",
-                                     m2.group(1) if m2 else "?"))
+                  "merge --pr %s --repo %s" % (ws, m2.group(1) if m2 else "?",
+                                               m2.group(1) if m2 else "?", ws))
     return 0
 
 
@@ -592,7 +615,11 @@ def main():
                     "is yours; everything inside is regenerated.\n\n" + block + "\n")
 
     def strip_stamp(t):
-        return re.sub(r"generated-at: [^ ]+", "generated-at: *", t)
+        # The stamp AND the departure annotations: an annotated removal
+        # carries its date and reappears in no later derivation, so leaving
+        # it in the comparison made --check cry STALE right after a regen.
+        t = re.sub(r"generated-at: [^ ]+", "generated-at: *", t)
+        return re.sub(r"^\| ~~.*$", "", t, flags=re.MULTILINE)
 
     if args.check:
         if strip_stamp(current) == strip_stamp(new_text):

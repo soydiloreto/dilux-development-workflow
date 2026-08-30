@@ -100,7 +100,12 @@ STATUS_OK = re.compile(
 
 
 def _run(cmd, cwd=None, timeout=120):
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd,
+                           timeout=timeout)
+    except FileNotFoundError:
+        # A missing binary (gh on a fresh machine) spoke in raw traceback.
+        return 127, "", "command not found: %s" % cmd[0]
     return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
 
 
@@ -211,7 +216,7 @@ def _merged_child_pr(child_slug, ticket):
     """The forge's answer: a MERGED PR in the child whose branch names the
     ticket. Returns its number, or None."""
     code, out, _ = _run(["gh", "pr", "list", "--repo", child_slug, "--state", "merged",
-                         "--json", "number,headRefName", "--limit", "50"])
+                         "--json", "number,headRefName", "--limit", "200"])
     if code != 0:
         return None
     for row in json.loads(out or "[]"):
@@ -225,6 +230,11 @@ def update_row(root, ticket, row_repo, status):
     if not STATUS_OK.match(status.strip()):
         return _fail("status %r is not the fixed vocabulary (`active`, `pending`, "
                      "`done`, `dropped: <why>`, `done (unverified: <why>)`)." % status)
+    if "|" in status or "\n" in status:
+        # A pipe in the reason splits the markdown row it lands in — the
+        # cell would leak into the Status column's neighbours.
+        return _fail("the status text cannot carry `|` or newlines — it becomes "
+                     "a table cell.")
     slug = _ws_slug(root)
     if not slug:
         return _fail("cannot resolve the workspace repository from here.")
@@ -234,13 +244,33 @@ def update_row(root, ticket, row_repo, status):
     # `done` is not yours to write — same law as the family write gate,
     # enforced HERE because a throwaway clone has no hooks watching it.
     if status.strip().lower() == "done":
+        # The forge question must carry the ROW's OWN ticket: a sub-ticket
+        # row (T-1a) merges under a branch naming T-1a, and asking for the
+        # initiative's id refuses a genuinely merged child forever. Read the
+        # index at the forge (an API read, not a clone — the law that no
+        # clone happens before the forge says yes stands).
+        row_ticket = ticket
+        rcode, rout, _ = _run(["gh", "api",
+                               "repos/%s/contents/docs/ddw/prd/prd-%s.md" % (slug, ticket),
+                               "--jq", ".content"])
+        if rcode == 0 and rout:
+            try:
+                import base64
+                m0 = _row_pattern(short).search(
+                    base64.b64decode(rout).decode("utf-8"))
+                if m0:
+                    cells = [c.strip() for c in m0.group(1).strip("|").split("|")]
+                    if len(cells) >= 2:
+                        row_ticket = re.sub(r"[`*]", "", cells[1]).strip() or ticket
+            except Exception:
+                pass
         child_slug = row_repo if "/" in row_repo else "%s/%s" % (owner, short)
-        pr = _merged_child_pr(child_slug, ticket)
+        pr = _merged_child_pr(child_slug, row_ticket)
         if pr is None:
             return _fail("no MERGED pull request in %s names ticket %s — a row does "
                          "not say `done` on anyone's word. If the merge truly cannot "
                          "be confirmed, the declared out is "
-                         "`done (unverified: <why>)`." % (child_slug, ticket))
+                         "`done (unverified: <why>)`." % (child_slug, row_ticket))
         print("family_index_pr: forge confirms %s PR #%s merged." % (child_slug, pr))
 
     tmp = tempfile.mkdtemp(prefix="ddw-index-")

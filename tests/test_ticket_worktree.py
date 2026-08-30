@@ -135,3 +135,46 @@ def test_close_con_pr_mergeado_remueve(tmp_path):
     r = _run(["close", "--ticket", "T-5"], repo, gh_bin)
     assert r.returncode == 0 and "#12" in r.stdout, r.stderr
     assert not wt.is_dir()
+
+
+def test_un_ticket_raro_no_escapa_del_esquema_de_nombres(tmp_path):
+    # The ticket becomes a sibling DIRECTORY name: "FEAT/T-7" nests and
+    # "../../pwn" creates a worktree wherever the string points (audit repro).
+    repo = _repo_with_origin(tmp_path)
+    for evil in ("FEAT/T-7", "../../pwn", "..", "a b"):
+        r = _run(["open", "--ticket", evil], repo)
+        assert r.returncode == 2, "%r was accepted as a worktree name" % evil
+    assert not (tmp_path.parent / "pwn").exists()
+
+
+def test_un_worktree_borrado_a_mano_se_reabre_no_se_promete(tmp_path):
+    # "seguí ahí" pointing at a directory somebody rm -rf'd sends the agent
+    # into a cd that does not exist — the stale registration is pruned and
+    # the worktree reopened fresh.
+    repo = _repo_with_origin(tmp_path)
+    _run(["open", "--ticket", "T-9"], repo)
+    wt = tmp_path / "repo--wt-t-9"
+    import shutil
+    shutil.rmtree(wt)
+    r = _run(["open", "--ticket", "T-9"], repo)
+    assert r.returncode == 0, r.stderr
+    assert wt.is_dir(), "the stale registration was believed and nothing reopened"
+
+
+def test_origin_no_github_dice_la_verdad_al_cerrar(tmp_path):
+    # On a GitLab origin the old refusal claimed "no MERGED PR at the forge"
+    # without ever asking any forge.
+    repo = _repo_with_origin(tmp_path)
+    _run(["open", "--ticket", "T-4"], repo)
+    _git(repo, "remote", "set-url", "origin", "git@gitlab.com:acme/child.git")
+    r = _run(["close", "--ticket", "T-4"], repo)
+    assert r.returncode == 2 and "not a GitHub URL" in r.stderr, r.stderr[:300]
+
+
+def test_gh_ausente_habla_no_estalla():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tw", SCRIPT)
+    tw = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tw)
+    code, _, err = tw._run(["ddw-binario-que-no-existe"])
+    assert code == 127 and "command not found" in err, (code, err)

@@ -25,7 +25,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(ROOT, "ddw/scripts/family_index_pr.py")
 
 
-def _fake_gh(tmp_path, view_files, merged_children=None):
+def _fake_gh(tmp_path, view_files, merged_children=None, index_b64=None):
     """A `gh` that answers `pr view --json files,...` with `view_files`,
     `pr list --state merged` with `merged_children`, and logs every argv."""
     bin_dir = tmp_path / "bin"
@@ -35,6 +35,7 @@ def _fake_gh(tmp_path, view_files, merged_children=None):
         "view": {"state": "OPEN", "baseRefName": "main",
                  "files": [{"path": p} for p in view_files]},
         "merged": merged_children or [],
+        "index_b64": index_b64,
     }
     (tmp_path / "gh-answers.json").write_text(json.dumps(answers), encoding="utf-8")
     gh = bin_dir / "gh"
@@ -43,6 +44,10 @@ import json, sys
 log = open({str(log)!r}, "a"); log.write(json.dumps(sys.argv[1:]) + "\\n"); log.close()
 answers = json.load(open({str(tmp_path / 'gh-answers.json')!r}))
 args = sys.argv[1:]
+if args[:1] == ["api"] and "/contents/" in args[1]:
+    if answers.get("index_b64"):
+        print(answers["index_b64"]); sys.exit(0)
+    sys.exit(1)
 if args[:2] == ["pr", "view"]:
     print(json.dumps(answers["view"])); sys.exit(0)
 if args[:2] == ["pr", "list"]:
@@ -66,8 +71,8 @@ def _ws_repo(tmp_path):
     return str(repo)
 
 
-def _run(args, tmp_path, view_files, merged=None, cwd=None):
-    bin_dir, log = _fake_gh(tmp_path, view_files, merged)
+def _run(args, tmp_path, view_files, merged=None, cwd=None, index_b64=None):
+    bin_dir, log = _fake_gh(tmp_path, view_files, merged, index_b64)
     r = subprocess.run([sys.executable, SCRIPT, *args],
                        capture_output=True, text=True, cwd=cwd,
                        env=dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"]))
@@ -170,3 +175,30 @@ def test_el_slug_sobrevive_los_puntos_del_nombre():
     assert fip._slug_from_url("git@github.com:acme/next.js.git") == "acme/next.js"
     assert fip._slug_from_url("https://github.com/acme/plain") == "acme/plain"
     assert fip._slug_from_url("git@gitlab.com:acme/x.git") is None
+
+
+def test_la_pregunta_al_forge_lleva_el_ticket_de_la_fila(tmp_path):
+    # A sub-ticket row (T-1a) merges under a branch naming T-1a; asking the
+    # forge for the INITIATIVE's id (T-1) refused a genuinely merged child
+    # forever. The index is read at the forge (API, not a clone) for the
+    # row's own ticket.
+    import base64
+    ws = _ws_repo(tmp_path)
+    index = ("| Repo | Ticket | Scope | Depends on | Status |\n"
+             "|---|---|---|---|---|\n"
+             "| acme/child | T-1a | la parte | none | active |\n")
+    r, calls = _run(["update-row", "--ticket", "T-1", "--repo-row", "acme/child",
+                     "--status", "done", "--root", ws],
+                    tmp_path, view_files=[],
+                    merged=[{"number": 9, "headRefName": "feat/T-1a-cosa"}],
+                    index_b64=base64.b64encode(index.encode()).decode())
+    assert "forge confirms" in r.stdout and "#9" in r.stdout, \
+        "the row's own ticket was not what the forge was asked: " + r.stderr[:300]
+
+
+def test_un_pipe_en_el_status_no_rompe_la_tabla(tmp_path):
+    ws = _ws_repo(tmp_path)
+    r, calls = _run(["update-row", "--ticket", "T-1", "--repo-row", "acme/child",
+                     "--status", "dropped: a | b", "--root", ws],
+                    tmp_path, view_files=[])
+    assert r.returncode == 2 and "table cell" in r.stderr, r.stderr[:200]
