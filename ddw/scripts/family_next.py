@@ -129,13 +129,19 @@ def _read_index(root, ticket):
                             "family_impact.py clones it" % ws)
     subprocess.run(["git", "-C", ws, "fetch", "--quiet", "origin"],
                    capture_output=True, timeout=120)
+    # The workspace's OWN default branch — a master-default workspace made
+    # a hardcoded origin/main fail every read with a misleading error.
+    hb = subprocess.run(["git", "-C", ws, "symbolic-ref", "--quiet", "--short",
+                         "refs/remotes/origin/HEAD"],
+                        capture_output=True, text=True)
+    default = hb.stdout.strip().rsplit("/", 1)[-1] if hb.returncode == 0 else "main"
     r = subprocess.run(["git", "-C", ws, "show",
-                        "origin/main:docs/ddw/prd/prd-%s.md" % ticket],
+                        "origin/%s:docs/ddw/prd/prd-%s.md" % (default, ticket)],
                        capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
-        return None, None, ("no docs/ddw/prd/prd-%s.md at %s's origin/main — is "
+        return None, None, ("no docs/ddw/prd/prd-%s.md at %s's origin/%s — is "
                             "%s the initiative's id, and is its index merged?"
-                            % (ticket, slug, ticket))
+                            % (ticket, slug, default, ticket))
     return slug, r.stdout, None
 
 

@@ -214,9 +214,12 @@ def familia_map(root):
         def col(*keys):
             # Keys in priority order, so a table carrying both "Expone" and
             # "Qué hace" maps Provides to the seam, not to the description.
+            # And WHOLE-WORD header match: the key `consume` must never be
+            # satisfied by the `consumed by` column — a substring match read
+            # Consumes from the wrong cell whenever Consumed-by came first.
             for k in keys:
                 for h in headers:
-                    if k in h:
+                    if h == k or re.search(r"(?:^|\s)%s(?:$|\s)" % re.escape(k), h):
                         return re.sub(r"[`*]", "", row.get(h, "")).strip() or "none"
             return "none"
         rows.append({"name": name,

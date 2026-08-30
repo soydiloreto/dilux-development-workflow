@@ -169,8 +169,7 @@ def close_wt(root, ticket, drop):
         slug = None
         code, url, _ = _run(["git", "-C", path, "remote", "get-url", "origin"])
         if code == 0:
-            m = re.search(r"github\.com[:/]([^/]+/[^/.]+)", url)
-            slug = m.group(1) if m else None
+            slug = _fip._slug_from_url(url)
         pr = _fip._merged_child_pr(slug, ticket) if slug else None
         if pr is None:
             return _fail("no MERGED pull request names %s at the forge — a worktree "

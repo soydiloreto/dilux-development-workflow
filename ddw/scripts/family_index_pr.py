@@ -54,6 +54,37 @@ ALLOWED = re.compile(r"^(docs/ddw/.*|\.gitignore|ddw-family\.md)$")
 _MAP_NAMES = ("ddw-family.md", "familia.md")
 
 
+def _slug_from_url(url):
+    """owner/name out of a GitHub remote URL. The `.git` suffix is stripped
+    BY NAME, never by forbidding dots — `my.repo` and `next.js` are legal
+    repository names, and a regex that stops at the first dot sent this
+    tool's forge questions to a different (possibly real) repository."""
+    m = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$", (url or "").strip())
+    return m.group(1) if m else None
+
+
+def _ticket_names_branch(ticket, head):
+    """Does this branch NAME the ticket, as the branch convention writes it
+    (`<prefix>/<TICKET>-short-name`)? Never a substring — T-1 must not close
+    on T-11's merge — and never the index machinery's own
+    `chore/<TICKET>-row-*` branches: a row update PR is not anyone's child
+    work, and it must not satisfy the done-law for the workspace's row."""
+    seg = (head or "").split("/", 1)[-1].lower()
+    t = (ticket or "").lower()
+    if not t or seg.startswith(t + "-row-"):
+        return False
+    return seg == t or seg.startswith(t + "-")
+
+
+def _row_pattern(short):
+    """The ONE row whose Repo cell IS `short` (optionally owner-prefixed,
+    optionally backticked) — never a row that merely CONTAINS it: updating
+    `api` must not touch `tienda-api`'s row."""
+    return re.compile(
+        r"^(\|\s*`?(?:[A-Za-z0-9._-]+/)?%s`?\s*\|[^\n]*\|)\s*[^|\n]*\|\s*$"
+        % re.escape(short), re.MULTILINE)
+
+
 def _ws_map(root):
     """The family map inside `root` — `ddw-family.md`, or the deprecated
     `familia.md` (read, never written). Its presence is what makes a repo
@@ -84,9 +115,9 @@ def _ws_slug(root):
     if _ws_map(root):
         code, out, _ = _run(["git", "-C", root, "remote", "get-url", "origin"])
         if code == 0:
-            m = re.search(r"github\.com[:/]([^/]+/[^/.]+)", out)
-            if m:
-                return m.group(1)
+            slug = _slug_from_url(out)
+            if slug:
+                return slug
     try:
         agents = open(os.path.join(root, "AGENTS.md"), encoding="utf-8").read()
     except OSError:
@@ -158,9 +189,21 @@ def merge(root, pr, slug=None):
         return _fail("gh pr merge failed: " + (err or out)[:300])
     print("family_index_pr: PR #%s mergeado (squash) en %s." % (pr, slug))
     if _ws_map(root):
-        _run(["git", "-C", root, "checkout", "main"])
-        _run(["git", "-C", root, "pull", "--ff-only", "origin", "main"], timeout=300)
-        print("El clon local del workspace quedó en main, actualizado.")
+        code1, br, _ = _run(["git", "-C", root, "symbolic-ref", "--quiet", "--short",
+                             "refs/remotes/origin/HEAD"])
+        default = br.rsplit("/", 1)[-1] if code1 == 0 and br else "main"
+        c1, _, _ = _run(["git", "-C", root, "checkout", default])
+        c2, _, err2 = _run(["git", "-C", root, "pull", "--ff-only", "origin", default],
+                           timeout=300)
+        if c1 == 0 and c2 == 0:
+            print("El clon local del workspace quedó en %s, actualizado." % default)
+        else:
+            # The merge at the forge HAPPENED; claiming the local clone is
+            # current when the pull failed is the lie that surfaces one
+            # session later as a stale index read.
+            print("⚠ Mergeado en el forge, pero el clon local NO se pudo "
+                  "actualizar (%s) — corré el pull a mano."
+                  % ((err2 or "checkout falló")[:150]))
     return 0
 
 
@@ -172,7 +215,7 @@ def _merged_child_pr(child_slug, ticket):
     if code != 0:
         return None
     for row in json.loads(out or "[]"):
-        if ticket.lower() in (row.get("headRefName") or "").lower():
+        if _ticket_names_branch(ticket, row.get("headRefName")):
             return row.get("number")
     return None
 
@@ -211,9 +254,7 @@ def update_row(root, ticket, row_repo, status):
     except OSError:
         return _fail("the workspace has no docs/ddw/prd/prd-%s.md — is %s the "
                      "initiative's id?" % (ticket, ticket))
-    pattern = re.compile(
-        r"^(\|\s*\S*%s\s*\|[^\n]*\|)\s*[^|\n]*\|\s*$" % re.escape(short), re.MULTILINE)
-    m = pattern.search(text)
+    m = _row_pattern(short).search(text)
     if not m:
         return _fail("no row for `%s` in the index — rows: run `--validate` on the "
                      "index to see them." % short)
@@ -238,6 +279,10 @@ def update_row(root, ticket, row_repo, status):
                            "--body", "Index row update. Documents only — mergeable "
                            "by the one-approve leash."],
                           cwd=tmp, timeout=300)
+    if code != 0 and "already exists" not in err:
+        # Claiming a PR that was never opened leaves the row's update
+        # stranded on a branch nobody will find.
+        return _fail("gh pr create failed: " + (err or out)[:300])
     m2 = re.search(r"/pull/(\d+)", out + err)
     pr_n = m2.group(1) if m2 else "?"
     print("family_index_pr: PR #%s abierto en %s (%s → %s)."

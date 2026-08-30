@@ -106,8 +106,11 @@ def repo_root(artifact_path):
     validators did individually.
     """
     ab = os.path.abspath(artifact_path)
-    idx = ab.rfind(os.sep + "docs" + os.sep)
-    return ab[:idx] if idx > 0 else os.getcwd()
+    for marker in (os.sep + "docs" + os.sep, os.sep + ".ddw-work" + os.sep):
+        idx = ab.rfind(marker)
+        if idx > 0:
+            return ab[:idx]
+    return os.getcwd()
 
 
 def digest_of(text):

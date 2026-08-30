@@ -297,3 +297,14 @@ def test_dos_familias_no_se_mezclan(tmp_path):
         if "Familia tienda" in r.stdout else ""
     assert "api" in tienda and "cobros" not in tienda, \
         "the pagos member leaked into tienda's bucket: " + r.stdout
+
+
+def test_consume_no_se_lee_de_la_columna_consumed_by(tmp_path):
+    # Consumed-by comes BEFORE Consume in the authored table: a substring
+    # header match read Consumes from the wrong cell every time.
+    (tmp_path / "ddw-family.md").write_text(
+        "# Familia\n\n| Repo | Qué hace | Consumed by | Consume |\n"
+        "|---|---|---|---|\n"
+        "| alpha | api | beta | gamma |\n", encoding="utf-8")
+    rows = fc.familia_map(str(tmp_path))
+    assert rows[0]["consumed by"] == "beta" and rows[0]["consumes"] == "gamma", rows

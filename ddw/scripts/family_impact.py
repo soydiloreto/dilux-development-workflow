@@ -241,9 +241,11 @@ def _parse_familia(text):
             continue
 
         def col(*keys):
+            # Whole-word header match, same reason as familia_map's: `consume`
+            # must never be satisfied by the `consumed by` column.
             for k in keys:
                 for h in headers:
-                    if k in h:
+                    if h == k or re.search(r"(?:^|\s)%s(?:$|\s)" % re.escape(k), h):
                         return re.sub(r"[`*]", "", row.get(h, "")).strip() or "none"
             return "none"
         rows.append({"name": name,
