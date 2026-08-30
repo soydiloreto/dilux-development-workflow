@@ -2020,13 +2020,17 @@ if a[:2] == ["pr", "list"]:
 print("{}"); sys.exit(0)
 WLAWGH
 chmod +x "$WLAW/bin/gh"
-if PATH="$WLAW/bin:$PATH" python3 "$SELF/ddw/scripts/family_index_pr.py" update-row \
-     --ticket T-1 --repo-row acme/child --status done --root "$WLAW/ws" >/dev/null 2>"$WLAW/err"; then
+# Judged by the OUTPUT, not the exit code: under the substring fault the
+# run still dies later at the shim's clone, but "forge confirms" printed
+# for a near-miss IS the law already paid wrong.
+WLAWOUT="$(PATH="$WLAW/bin:$PATH" python3 "$SELF/ddw/scripts/family_index_pr.py" update-row \
+     --ticket T-1 --repo-row acme/child --status done --root "$WLAW/ws" 2>&1 || true)"
+if echo "$WLAWOUT" | grep -q "forge confirms"; then
   bad "T-11's merge (or the index's own row PR) paid T-1's done-law"
+elif echo "$WLAWOUT" | grep -q "MERGED"; then
+  ok "the done-law is paid only by a branch that NAMES the ticket — near-misses and the index's own PRs do not"
 else
-  grep -q "MERGED" "$WLAW/err" \
-    && ok "the done-law is paid only by a branch that NAMES the ticket — near-misses and the index's own PRs do not" \
-    || bad "the refusal is not the law's (no MERGED in it): $(tail -1 "$WLAW/err")"
+  bad "the refusal is not the law's (no MERGED in it): $(echo "$WLAWOUT" | tail -1)"
 fi
 # Door two: the row edit takes the row whose cell IS the name, never one that
 # merely contains it (kills "the row edit grabs whichever row merely contains
