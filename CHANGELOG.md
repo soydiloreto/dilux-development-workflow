@@ -42,7 +42,7 @@ move at different speeds. So the promise is specific:
   refuses a report without it (agents ×2, code 2.5.0, plan 1.13.0) —
   measured live: thirteen findings, five delivered, and the user decided
   over five.
-- Measured: 665 install checks · 757 mutations · 224 pytest.
+- Measured: 665 install checks · 758 mutations · 224 pytest.
 
 ## [0.48.0] - 2026-08-29
 
