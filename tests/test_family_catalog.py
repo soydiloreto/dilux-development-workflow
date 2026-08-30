@@ -130,7 +130,7 @@ def test_lo_de_afuera_de_los_markers_es_del_usuario(tmp_path):
 
 def _git_family(tmp_path):
     ws = _family(tmp_path)
-    (tmp_path / "ws" / "familia.md").write_text(
+    (tmp_path / "ws" / "ddw-family.md").write_text(
         "# Familia\n\n| Repo | Qué hace | Expone | Consumed by | Consume |\n"
         "|---|---|---|---|---|\n"
         "| alpha | api | REST /v1 | beta | none |\n"
@@ -211,3 +211,89 @@ def test_write_members_funciona_cuando_git_inicializa_master(tmp_path):
     a = (tmp_path / "alpha" / "AGENTS.md").read_text()
     assert "| Provides | REST /v1 |" in a, \
         "a master-default clone was skipped as mid-ticket: %s" % r.stdout
+
+
+def _org_gh_shim(tmp_path, repos):
+    """A fake gh for the org sweep: answers the paginated repo listing and
+    each repo's AGENTS.md contents call. `repos` maps name -> AGENTS.md text,
+    or None for a repo the forge cannot serve (unreachable)."""
+    import base64
+    import stat
+    bin_dir = tmp_path / "orgbin"
+    bin_dir.mkdir(exist_ok=True)
+    data = {"names": sorted(repos),
+            "contents": {n: (base64.b64encode(t.encode()).decode() if t is not None
+                             else None) for n, t in repos.items()}}
+    (tmp_path / "org-answers.json").write_text(json.dumps(data), encoding="utf-8")
+    gh = bin_dir / "gh"
+    gh.write_text(f"""#!/usr/bin/env python3
+import json, sys
+d = json.load(open({str(tmp_path / 'org-answers.json')!r}))
+a = sys.argv[1:]
+arg = a[1] if len(a) > 1 else ""
+if a[:1] == ["api"] and arg.endswith("/repos"):
+    print("\\n".join(d["names"])); sys.exit(0)
+if a[:1] == ["api"] and "/contents/AGENTS.md" in arg:
+    name = arg.split("/contents/")[0].rsplit("/", 1)[-1].split("/")[-1]
+    name = arg.split("repos/")[1].split("/contents")[0].split("/")[-1]
+    c = d["contents"].get(name)
+    if c is None:
+        sys.exit(1)
+    print(json.dumps({{"sha": "abc123", "content": c}})); sys.exit(0)
+sys.exit(1)
+""", encoding="utf-8")
+    gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+    return str(bin_dir)
+
+
+def _agents_for(family, ws):
+    return AGENTS.replace("tienda-demo", family).replace("acme/tienda-workspace", ws)
+
+
+def _bootstrap(tmp_path, repos, *extra):
+    bin_dir = _org_gh_shim(tmp_path, repos)
+    env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"])
+    return subprocess.run([sys.executable, SCRIPT, "--org", "acme", *extra],
+                          capture_output=True, text=True, env=env)
+
+
+def test_el_barrido_contabiliza_cada_repo_en_un_balde(tmp_path):
+    # 5 repos: 3 declare the family, 1 has no section, 1 the forge cannot
+    # serve. The report must account for ALL FIVE — and the unreachable one
+    # is NAMED, because "gh fell over" and "no family" must never read alike.
+    r = _bootstrap(tmp_path, {
+        "ws": _agents_for("tienda", "acme/ws"),
+        "api": _agents_for("tienda", "acme/ws"),
+        "web": _agents_for("tienda", "acme/ws"),
+        "solo": "# solo\n\nsin seccion de familia\n",
+        "ghost": None,
+    })
+    assert r.returncode == 0, r.stderr
+    assert "5 repos listados" in r.stdout, r.stdout
+    assert "1 sin sección" in r.stdout and "1 inalcanzables" in r.stdout, r.stdout
+    assert "ghost" in r.stdout, "the unreachable repo was not NAMED: " + r.stdout
+
+
+def test_la_membresia_es_lo_declarado_y_nada_mas(tmp_path):
+    r = _bootstrap(tmp_path, {
+        "ws": _agents_for("tienda", "acme/ws"),
+        "api": _agents_for("tienda", "acme/ws"),
+        "solo": "# solo\nnada\n",
+    })
+    fam = r.stdout.split("Familia tienda")[-1]
+    assert "· api" in fam and "· solo" not in fam, \
+        "a repo with no declared family rode into the family listing: " + r.stdout
+    assert "preview" in r.stdout, "without --write this must say it wrote nothing"
+
+
+def test_dos_familias_no_se_mezclan(tmp_path):
+    r = _bootstrap(tmp_path, {
+        "ws": _agents_for("tienda", "acme/ws"),
+        "api": _agents_for("tienda", "acme/ws"),
+        "pagos-ws": _agents_for("pagos", "acme/pagos-ws"),
+        "cobros": _agents_for("pagos", "acme/pagos-ws"),
+    })
+    tienda = r.stdout.split("Familia tienda")[-1].split("Familia")[0] \
+        if "Familia tienda" in r.stdout else ""
+    assert "api" in tienda and "cobros" not in tienda, \
+        "the pagos member leaked into tienda's bucket: " + r.stdout

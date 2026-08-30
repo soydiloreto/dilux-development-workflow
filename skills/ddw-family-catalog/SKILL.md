@@ -60,7 +60,7 @@ python3 .ddw/scripts/family_catalog.py --write-members --local ~/repos [--push]
 ```
 
 The owner's decision (2026-08-26): the family's map is AUTHORED once,
-centrally, in the workspace's `familia.md`, and the routine PROPAGATES it —
+centrally, in the workspace's `ddw-family.md`, and the routine PROPAGATES it —
 creating or updating each member clone's `## Repo family` section and
 committing IN that clone under the user's own git identity. This is the user
 administering their own repositories with their own credentials — the

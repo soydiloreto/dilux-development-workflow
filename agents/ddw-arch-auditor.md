@@ -201,3 +201,20 @@ the coding phase. Four files were modified.
 The main agent receives the BLOCKED verdict with 3 FAILs. The problems are clear and fixable, so the
 code goes back to the implementation phase to correct the violations before advancing to
 verification.
+
+## Report contract — the closing line
+
+The last line of your report, ALWAYS, is the tally over what you listed:
+
+```
+HALLAZGOS: <N> — lista completa
+```
+
+where `<N>` equals the number of findings written above it. Measured live: an
+auditor found thirteen violations and its report reached the caller carrying
+five — cut mid-write, indistinguishable from a finished list, and the user
+decided over five. The closing line is what makes a truncated report LOOK
+truncated: a report without it, or whose `<N>` does not match the findings it
+lists, is INCOMPLETE — the caller relaunches the audit and never accepts it
+as a verdict. Write the line yourself, from your own count, after the last
+finding; nothing else follows it.

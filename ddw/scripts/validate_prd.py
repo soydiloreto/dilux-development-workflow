@@ -27,7 +27,7 @@ import ddw_receipt  # noqa: E402 — same directory, resolved above
 
 
 def _familia_members(mapa_path):
-    """The member names familia.md's table declares — short names, or None."""
+    """The member names the family map's table declares — short names, or None."""
     try:
         text = open(mapa_path, encoding="utf-8").read()
     except OSError:
@@ -363,14 +363,14 @@ def main():
                 "ticket); found %d well-formed row(s)" % len(rows_found))
         listed = {r["repo"] for r in rows_found} | {r["repo"].rsplit("/", 1)[-1]
                                                     for r in rows_found}
-        # The double close with the family map: when familia.md sits in this
+        # The double close with the family map: when ddw-family.md sits in this
         # repository (the index lives in the workspace, and the map is the
         # workspace's one job), every row must be a member the map knows, and
         # every member the map knows must appear in the index — impacted as a
         # row, or excluded in words. An index that schedules a repo the map
         # never heard of, or silently forgets a member, is the impact analysis
         # failing at DEFINE after passing at CLASSIFY.
-        mapa_path = ddw_receipt.find_upward(args.prd, "familia.md")
+        mapa_path = ddw_receipt.find_family_map(args.prd)
         if mapa_path:
             mapa = _familia_members(mapa_path)
             if mapa:
@@ -378,14 +378,14 @@ def main():
                 fuera = sorted(c for c in cortos if c not in mapa)
                 if fuera:
                     problems.append(
-                        "row(s) %s are not in familia.md — the split cannot schedule a "
+                        "row(s) %s are not in the family map — the split cannot schedule a "
                         "repo the map does not know" % ", ".join("`%s`" % f for f in fuera))
                 perdidos = sorted(
                     m for m in mapa
                     if not re.search(r"\b%s\b" % re.escape(m), text))
                 if perdidos:
                     problems.append(
-                        "familia.md member(s) %s appear nowhere in the index — impacted "
+                        "family-map member(s) %s appear nowhere in the index — impacted "
                         "as a row or excluded with a reason, every member of the map "
                         "gets a line" % ", ".join("`%s`" % m for m in perdidos))
         for r in rows_found:

@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=662
+EXPECT_CHECKS=665
 EXPECT_SKILLS=20
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=754
+EXPECT_MUTATIONS=757
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1964,6 +1964,8 @@ PYWALK
 
 LSH="$WORK/leash"; mkdir -p "$LSH/ws" "$LSH/bin"; git -C "$LSH/ws" init -q .
 git -C "$LSH/ws" remote add origin https://github.com/acme/ws.git
+# The DEPRECATED map name, on purpose: existing families must keep working
+# while new maps are born as ddw-family.md — this fixture is the fallback's proof.
 printf '# familia\n' > "$LSH/ws/familia.md"
 cat > "$LSH/bin/gh" <<'LSHGH'
 #!/usr/bin/env python3
@@ -1998,6 +2000,59 @@ else
     && ok "done is not anyone's to write: no merged child PR, no row — and the declared out is taught" \
     || bad "the done refusal neither names the missing merge nor teaches the declared out: $(tail -1 "$LSH/err")"
 fi
+
+# The organization sweep: the forge lists EVERY repo, each AGENTS.md is read
+# by API, and the report buckets every single one. Door one — the account:
+# five repos in, five accounted, the unreachable one NAMED (kills "an
+# unreachable repo vanishes from the sweep's account"). Door two — membership
+# is what a repo DECLARES: the standalone never rides into a family (kills
+# "a repo with no family reads as family material").
+ORG="$WORK/orgsweep"; mkdir -p "$ORG/bin"
+cat > "$ORG/bin/gh" <<'ORGGH'
+#!/usr/bin/env python3
+import base64, json, sys
+a = sys.argv[1:]
+arg = a[1] if len(a) > 1 else ""
+FAM = ("## Repo family\n\n| Field | Value |\n|---|---|\n| Family | tienda |\n"
+       "| Workspace | acme/ws |\n| Provides | api |\n| Consumed by | none |\n"
+       "| Consumes | none |\n")
+REPOS = {"ws": FAM, "api": FAM, "web": FAM, "solo": "# solo\n", "ghost": None}
+if a[:1] == ["api"] and arg.endswith("/repos"):
+    print("\n".join(sorted(REPOS))); sys.exit(0)
+if a[:1] == ["api"] and "/contents/AGENTS.md" in arg:
+    t = REPOS.get(arg.split("repos/")[1].split("/contents")[0].split("/")[-1])
+    if t is None:
+        sys.exit(1)
+    print(json.dumps({"sha": "abc",
+                      "content": base64.b64encode(t.encode()).decode()}))
+    sys.exit(0)
+sys.exit(1)
+ORGGH
+chmod +x "$ORG/bin/gh"
+if ORGOUT="$(PATH="$ORG/bin:$PATH" python3 "$SELF/ddw/scripts/family_catalog.py" --org acme 2>"$ORG/err")"; then
+  echo "$ORGOUT" | grep -q "5 repos listados" && echo "$ORGOUT" | grep -q "1 inalcanzables" \
+    && echo "$ORGOUT" | grep -q "✗ ghost" \
+    && ok "the org sweep accounts for every repo the forge lists, and an unreachable one is NAMED — never a smaller green total" \
+    || bad "the sweep's account lost a bucket, or the unreachable repo went unnamed: $(echo "$ORGOUT" | head -1)"
+  echo "$ORGOUT" | grep -q "· api" && ! echo "$ORGOUT" | grep -q "· solo" \
+    && echo "$ORGOUT" | grep -q "1 sin sección" \
+    && ok "membership is what a repo DECLARES — the sweep never drafts a standalone into a family" \
+    || bad "a standalone repo rode into a family, or was not counted apart: $(echo "$ORGOUT" | head -1)"
+else
+  bad "the org sweep failed on a healthy five-repo fixture: $(tail -1 "$ORG/err")"
+  bad "membership unmeasured — the sweep did not run"
+fi
+
+# A truncated audit and a finished one look identical — unless the contract
+# demands the closing tally on BOTH sides: the auditor writes it, the caller
+# refuses a report without it (kills "the auditor's closing tally quietly
+# disappears").
+grep -q "HALLAZGOS: <N> — lista completa" "$SELF/agents/ddw-arch-auditor.md" \
+  && grep -q "HALLAZGOS: <N> — lista completa" "$SELF/agents/ddw-sec-auditor.md" \
+  && grep -q "HALLAZGOS: <N> — lista completa" "$SELF/ddw/rules/code.instructions.md" \
+  && grep -q "HALLAZGOS: <N> — lista completa" "$SELF/ddw/rules/plan.instructions.md" \
+  && ok "a truncated audit cannot pass as finished: the closing tally is demanded by the auditors and by every caller" \
+  || bad "the closing-tally contract is gone from an auditor or a caller — a cut report reads as complete again"
 
 # Parallel tickets ride one worktree each, and `close` carries the guards the
 # install must prove where it stands: a DIRTY worktree stands whatever the
@@ -3431,13 +3486,13 @@ python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM/docs/ddw/prd/prd-CHK-9.md" --t
   || ok "and a dependency outside the table is refused — a row the order cannot schedule"
 rm -f "$FAM/docs/ddw/prd/prd-CHK-9.md"
 
-# The map's double close. With familia.md beside the index, F-PRD-12 also
+# The map's double close. With ddw-family.md beside the index, F-PRD-12 also
 # holds the split to the FAMILY: a row the map does not know cannot be
 # scheduled, and a member the index forgets — neither row nor exclusion — is
 # the impact analysis failing at DEFINE after passing at CLASSIFY. On a copy,
 # so the fixtures above stay exactly what later checks expect.
 FAM2="$WORK/family-map"; rm -rf "$FAM2"; cp -r "$FAM" "$FAM2"
-cat > "$FAM2/familia.md" <<'MAPEOF'
+cat > "$FAM2/ddw-family.md" <<'MAPEOF'
 # Familia
 | Repo | Qué hace | Expone | Consumed by | Consume |
 |---|---|---|---|---|
@@ -3448,19 +3503,19 @@ MAPEOF
 printf '\n## Sin impacto\n- tienda-worker: Sin impacto — no consume nada de esto\n' \
   >> "$FAM2/docs/ddw/prd/prd-CHK-1.md"
 python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM2/docs/ddw/prd/prd-CHK-1.md" --tier FEATURE >/dev/null 2>&1 \
-  && ok "an index that accounts for every member of familia.md passes the map's double close" \
-  || bad "the honest index was refused the moment familia.md appeared beside it"
+  && ok "an index that accounts for every member of ddw-family.md passes the map's double close" \
+  || bad "the honest index was refused the moment ddw-family.md appeared beside it"
 # Ghost the BFF row (its dependency on tienda-back stays satisfiable), so the
 # ONLY rule that can refuse this index is the map's double close — under the
 # "index stops checking the map" fault it passes, and the bad below fires.
 sed 's#| acme/tienda-bff |#| acme/tienda-ghost |#' "$FAM2/docs/ddw/prd/prd-CHK-1.md" \
   > "$FAM2/docs/ddw/prd/prd-CHK-7.md"
 if MAPOUT="$(python3 "$SELF/ddw/scripts/validate_prd.py" "$FAM2/docs/ddw/prd/prd-CHK-7.md" --tier FEATURE 2>&1)"; then
-  bad "an index scheduling a repo familia.md never heard of passed validation: $(echo "$MAPOUT" | tail -1)"
+  bad "an index scheduling a repo the family map never heard of passed validation: $(echo "$MAPOUT" | tail -1)"
 else
-  echo "$MAPOUT" | grep -q "familia.md" \
-    && ok "and a row the map does not know — plus the member it displaced — is refused naming familia.md" \
-    || bad "the phantom row is refused without naming familia.md — the message teaches nothing: $(echo "$MAPOUT" | tail -1)"
+  echo "$MAPOUT" | grep -q "family map" \
+    && ok "and a row the map does not know — plus the member it displaced — is refused naming the map" \
+    || bad "the phantom row is refused without naming the map — the message teaches nothing: $(echo "$MAPOUT" | tail -1)"
 fi
 
 cat > "$FAM/bin/gh" <<'FAMGH'

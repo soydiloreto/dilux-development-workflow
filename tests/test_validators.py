@@ -1442,9 +1442,11 @@ def test_un_status_fuera_del_vocabulario_es_refusado_por_f_prd_12(tmp_path):
 
 
 def test_el_indice_no_puede_agendar_un_repo_que_el_mapa_no_conoce(tmp_path):
-    """The map's double close (F-PRD-12): with familia.md beside the index, a
-    phantom row and a forgotten member are both refused BY NAME, and the
-    honest index — every member a row or an exclusion in words — passes."""
+    """The map's double close (F-PRD-12): with the family map beside the
+    index, a phantom row and a forgotten member are both refused BY NAME, and
+    the honest index — every member a row or an exclusion in words — passes.
+    The map here keeps the DEPRECATED name on purpose: existing families must
+    keep working while new ones are born as ddw-family.md."""
     root = tmp_path
     (root / "docs/ddw/prd").mkdir(parents=True)
     (root / "familia.md").write_text(
@@ -1464,7 +1466,7 @@ def test_el_indice_no_puede_agendar_un_repo_que_el_mapa_no_conoce(tmp_path):
     out = subprocess.run(["python3", os.path.join(ROOT, "ddw/scripts/validate_prd.py"),
                           str(prd), "--tier", "FEATURE"], capture_output=True, text=True)
     assert out.returncode != 0
-    assert "cuatro" in out.stdout and "familia.md" in out.stdout, out.stdout[-400:]
+    assert "cuatro" in out.stdout and "family map" in out.stdout, out.stdout[-400:]
     assert "tres" in out.stdout, "the forgotten member was not named: " + out.stdout[-400:]
 
     honesto = tramposo.replace(
