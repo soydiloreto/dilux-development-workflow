@@ -19,6 +19,57 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.52.0] - 2026-08-30
+
+### Added — the audit's third wave (every gap gets its test)
+
+- **`list` is measured**: pytest, a suite door, and a fault — the panel
+  reads each tree's OWN state or the run goes red. **The `∥ EN PARALELO`
+  offer is a pure function now** (`parallel_block`), pinned by tests and
+  a fault: two ready parts produce the block, one produces none.
+- **`publish` and `update-row` run END TO END in tests** against a real
+  local origin: the branch lands at the bare, exactly one row changes,
+  and the PR is asked of the forge. **`bootstrap --write` too**: the seed
+  `ddw-family.md` lands on its branch WITHOUT the workspace as its own
+  row. **`gather` too**: map and seams read at origin over real remotes.
+- `find_family_map` / `family_map_in` pinned directly (new name outranks,
+  deprecated name still read); `open` pinned against adopting or
+  clobbering a foreign directory that merely shares the name.
+- Measured: 671 install checks · 768 mutations · 247 pytest.
+
+## [0.51.0] - 2026-08-30
+
+### Fixed — the audit's second wave (robustness under real conditions)
+
+- **A ticket cannot escape into the filesystem**: `../../pwn` opened a
+  worktree wherever the string pointed; tickets are directory names now,
+  validated as such. A worktree somebody `rm -rf`'d is pruned and
+  reopened, never promised ("seguí ahí" at a path that isn't there); a
+  failed fetch says so instead of certifying freshness; a non-GitHub
+  origin is told the truth (the forge cannot be asked) instead of "no
+  MERGED PR"; a missing `gh` speaks (`command not found`), not a
+  traceback — in both scripts that shell out.
+- **The forge question carries the ROW's own ticket**: a sub-ticket row
+  (T-1a) merges under a branch naming T-1a, and asking with the
+  initiative's id refused real merges forever. The index is read at the
+  forge (API, not a clone — the no-clone-before-yes law stands).
+- **The conductor refuses what it cannot answer**: a forge that does not
+  respond ends the run (offline, every child read as unmerged and the
+  verdicts were confident lies), and two rows sharing a short name are
+  refused before their merges cross.
+- **The sweep tells 404 from outage**: a repo without AGENTS.md is a
+  standalone, never "inalcanzable". The workspace no longer counts as its
+  own drift (every healthy family read as drifted forever); `--check`
+  no longer cries STALE over a departure annotation; the owner listing
+  pages to the end (the silent 200 cap is gone, and the fallback names
+  its own cap); the bootstrap's printed merge command carries `--repo`;
+  the seed map no longer promises a regeneration nobody wrote.
+- A pipe in a status can no longer split the table row; the merged-PR
+  listing looks 200 back instead of 50; a `.git`-file clone (worktree,
+  submodule) is recognised as a clone.
+- Four more faults the suite provably kills. Measured: 670 install
+  checks · 766 mutations · 239 pytest.
+
 ## [0.50.0] - 2026-08-30
 
 ### Fixed — the adversarial audit's first wave (the forge-law bugs)

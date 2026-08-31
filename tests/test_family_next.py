@@ -91,3 +91,23 @@ def test_esperando_nombra_a_cada_bloqueador():
     rs2 = rows(("pagos", "none", "done"), ("back", "pagos, extra", "pending"))
     v = fnx.decide(rs2, {"pagos": 4, "back": None})
     assert v["kind"] == "waiting" and v["waits"][0]["on"] == ["extra"]
+
+
+def test_dos_filas_con_el_mismo_nombre_corto_se_rechazan():
+    rs = rows(("pagos", "none", "active"), ("pagos", "none", "pending"))
+    assert fnx._dup_shorts(rs) == ["pagos"]
+    assert fnx._dup_shorts(rows(("pagos", "none", "active"),
+                                ("back", "pagos", "pending"))) == []
+
+
+def test_el_bloque_paralelo_existe_solo_con_dos_o_mas_listos():
+    rs = rows(("pagos", "none", "active"), ("catalogo", "none", "pending"),
+              ("back", "pagos", "pending"))
+    listos = fnx.ready(rs, {"pagos": None, "catalogo": None, "back": None})
+    block = fnx.parallel_block(listos, "/tmp/sib", "T-1")
+    assert block and "EN PARALELO" in block and "2 partes" in block, block
+    assert "cd /tmp/sib/pagos" in block and "cd /tmp/sib/catalogo" in block
+    assert "back" not in block, "a blocked child rode into the parallel offer"
+    solo = fnx.ready(rs, {"pagos": 3, "catalogo": 9, "back": None})
+    assert fnx.parallel_block(solo, "/tmp/sib", "T-1") is None, \
+        "a single ready part produced a parallel offer"

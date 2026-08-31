@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=667
+EXPECT_CHECKS=671
 EXPECT_SKILLS=20
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=762
+EXPECT_MUTATIONS=768
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -1947,6 +1947,17 @@ v = fnx.decide(rows(("pagos", "none", "active"), ("back", "pagos", "pending")),
                {"pagos": 7, "back": None})
 assert v["kind"] == "update" and v["pr"] == 7, \
     "a merged child with a stale row was walked past instead of corrected: %r" % v
+# Door four — the parallel OFFER: two ready parts produce the block, each
+# with its clone; one ready part produces none (kills "the parallel offer
+# quietly vanishes").
+three = rows(("pagos", "none", "active"), ("catalogo", "none", "pending"),
+             ("back", "pagos", "pending"))
+listos = fnx.ready(three, {"pagos": None, "catalogo": None, "back": None})
+blk = fnx.parallel_block(listos, "/sib", "T-1")
+assert blk and "EN PARALELO" in blk and "/sib/pagos" in blk and "/sib/catalogo" in blk \
+    and "back" not in blk, "the parallel offer is wrong or gone: %r" % blk
+assert fnx.parallel_block(listos[:1], "/sib", "T-1") is None, \
+    "a single ready part produced a parallel offer"
 # Door three — the PARALLEL set: only forge-unblocked, never-merged rows ride
 # (kills "a blocked child rides the parallel set" and "a merged child is
 # launched again by the parallel set").
@@ -2032,6 +2043,27 @@ elif echo "$WLAWOUT" | grep -q "MERGED"; then
 else
   bad "the refusal is not the law's (no MERGED in it): $(echo "$WLAWOUT" | tail -1)"
 fi
+# The forge question carries the ROW's OWN ticket: a sub-ticket row (T-1a)
+# merges under a branch naming T-1a, and asking with the initiative's id
+# refused real merges forever (kills "the forge question forgets the row's
+# own ticket").
+cat > "$WLAW/bin/gh" <<'WLAW2GH'
+#!/usr/bin/env python3
+import base64, json, sys
+a = sys.argv[1:]
+arg = a[1] if len(a) > 1 else ""
+if a[:1] == ["api"] and "/contents/" in arg:
+    idx = ("| Repo | Ticket | Scope | Depends on | Status |\n"
+           "|---|---|---|---|---|\n"
+           "| acme/child | T-1a | parte | none | active |\n")
+    print(base64.b64encode(idx.encode()).decode()); sys.exit(0)
+if a[:2] == ["pr", "list"]:
+    print(json.dumps([{"number": 9, "headRefName": "feat/T-1a-cosa"}])); sys.exit(0)
+sys.exit(1)
+WLAW2GH
+chmod +x "$WLAW/bin/gh"
+if WOUT="$(PATH="$WLAW/bin:$PATH" python3 "$SELF/ddw/scripts/family_index_pr.py" update-row      --ticket T-1 --repo-row acme/child --status done --root "$WLAW/ws" 2>&1)"; then :; fi
+echo "$WOUT" | grep -q "forge confirms" && echo "$WOUT" | grep -q "#9"   && ok "the forge is asked with the row's own ticket — a sub-ticket's real merge is recognised"   || bad "the row's merge under its own ticket was not recognised: $(echo "$WOUT" | tail -1)"
 # Door two: the row edit takes the row whose cell IS the name, never one that
 # merely contains it (kills "the row edit grabs whichever row merely contains
 # the name"). Door three: `Consume` is never read from the `Consumed by`
@@ -2091,27 +2123,34 @@ arg = a[1] if len(a) > 1 else ""
 FAM = ("## Repo family\n\n| Field | Value |\n|---|---|\n| Family | tienda |\n"
        "| Workspace | acme/ws |\n| Provides | api |\n| Consumed by | none |\n"
        "| Consumes | none |\n")
-REPOS = {"ws": FAM, "api": FAM, "web": FAM, "solo": "# solo\n", "ghost": None}
+# "NOFILE": the repo answers, but has no AGENTS.md — a standalone, never an
+# outage. None: the forge cannot serve the repo at all.
+REPOS = {"ws": FAM, "api": FAM, "web": FAM, "solo": "# solo\n",
+         "vacio": "NOFILE", "ghost": None}
 if a[:1] == ["api"] and arg.endswith("/repos"):
     print("\n".join(sorted(REPOS))); sys.exit(0)
 if a[:1] == ["api"] and "/contents/AGENTS.md" in arg:
     t = REPOS.get(arg.split("repos/")[1].split("/contents")[0].split("/")[-1])
-    if t is None:
+    if t is None or t == "NOFILE":
         sys.exit(1)
     print(json.dumps({"sha": "abc",
                       "content": base64.b64encode(t.encode()).decode()}))
     sys.exit(0)
+if a[:1] == ["api"] and arg.startswith("repos/"):
+    if REPOS.get(arg.split("repos/")[1].split("/")[-1]) is None:
+        sys.exit(1)
+    print("{}"); sys.exit(0)
 sys.exit(1)
 ORGGH
 chmod +x "$ORG/bin/gh"
 if ORGOUT="$(PATH="$ORG/bin:$PATH" python3 "$SELF/ddw/scripts/family_catalog.py" --org acme 2>"$ORG/err")"; then
-  echo "$ORGOUT" | grep -q "5 repos listados" && echo "$ORGOUT" | grep -q "1 inalcanzables" \
-    && echo "$ORGOUT" | grep -q "✗ ghost" \
-    && ok "the org sweep accounts for every repo the forge lists, and an unreachable one is NAMED — never a smaller green total" \
-    || bad "the sweep's account lost a bucket, or the unreachable repo went unnamed: $(echo "$ORGOUT" | head -1)"
+  echo "$ORGOUT" | grep -q "6 repos listados" && echo "$ORGOUT" | grep -q "1 inalcanzables" \
+    && echo "$ORGOUT" | grep -q "✗ ghost" && ! echo "$ORGOUT" | grep -q "✗ vacio" \
+    && ok "the org sweep accounts for every repo, names the true outage, and never calls a repo without AGENTS.md unreachable" \
+    || bad "the sweep's account lost a bucket, misnamed vacio as an outage, or left ghost unnamed: $(echo "$ORGOUT" | head -1)"
   echo "$ORGOUT" | grep -q "· api" && ! echo "$ORGOUT" | grep -q "· solo" \
-    && echo "$ORGOUT" | grep -q "1 sin sección" \
-    && ok "membership is what a repo DECLARES — the sweep never drafts a standalone into a family" \
+    && echo "$ORGOUT" | grep -q "2 sin sección" \
+    && ok "membership is what a repo DECLARES — standalones (section-less AND file-less) counted apart, never drafted in" \
     || bad "a standalone repo rode into a family, or was not counted apart: $(echo "$ORGOUT" | head -1)"
 else
   bad "the org sweep failed on a healthy five-repo fixture: $(tail -1 "$ORG/err")"
@@ -2152,6 +2191,32 @@ if python3 "$SELF/ddw/scripts/ticket_worktree.py" open --ticket T-9 --root "$WTR
 else
   bad "ticket_worktree open failed on a plain repo: $(tail -1 "$WTR/err")"
 fi
+# A ticket is a DIRECTORY NAME: ../../pwn opened a worktree wherever the
+# string pointed (kills "the ticket string escapes into the filesystem").
+if python3 "$SELF/ddw/scripts/ticket_worktree.py" open --ticket ../../pwn --root "$WTR/repo" >/dev/null 2>"$WTR/err"; then
+  bad "a path-traversal ticket opened a worktree outside the sibling scheme"
+else
+  ok "a ticket that cannot name a directory is refused before it touches the filesystem"
+fi
+# A worktree somebody rm -rf'd is pruned and reopened, never promised
+# (kills "a vanished-by-hand worktree still reads as open").
+rm -rf "$WTT"
+if python3 "$SELF/ddw/scripts/ticket_worktree.py" open --ticket T-9 --root "$WTR/repo" >/dev/null 2>"$WTR/err" && [ -d "$WTT" ]; then
+  ok "a hand-deleted worktree is pruned from the registry and reopened fresh"
+else
+  bad "the stale registration was believed: 'seguí ahí' with no directory there"
+fi
+# `list` reads each tree's OWN state — the panel is only worth reading if
+# it does (kills "the list stops reading each tree's own state").
+printf '{"ticket": "T-9", "phase": "CODE"}\n' > "$WTT/.ddw-state.json"
+if LOUT="$(python3 "$SELF/ddw/scripts/ticket_worktree.py" list --root "$WTR/repo" 2>&1)"; then
+  echo "$LOUT" | grep -q "repo--wt-t-9" && echo "$LOUT" | grep -q "T-9" && echo "$LOUT" | grep -q "CODE" \
+    && ok "list names every worktree with the ticket and phase its own state declares" \
+    || bad "list lost a worktree, or stopped reading its state: $(echo "$LOUT" | tail -1)"
+else
+  bad "list failed on a healthy pair of trees: $(echo "$LOUT" | tail -1)"
+fi
+rm -f "$WTT/.ddw-state.json"
 git -C "$WTR/repo" remote set-url origin https://github.com/acme/child.git
 cat > "$WTR/bin/gh" <<'WTGH'
 #!/usr/bin/env python3

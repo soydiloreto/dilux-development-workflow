@@ -116,6 +116,32 @@ def ready(rows, merged):
     return out
 
 
+def parallel_block(listos, siblings, ticket):
+    """The `∥ EN PARALELO` offer as text, or None when only one part is
+    ready — pure, so the offer's existence and its per-clone lines are
+    pinned by tests instead of trusted."""
+    if len(listos) < 2:
+        return None
+    out = ["\n∥ EN PARALELO — %d partes tienen todas sus dependencias "
+           "mergeadas y pueden correr a la vez, cada una PARADA en su "
+           "propio clon:" % len(listos)]
+    for r in listos:
+        s = r["repo"].rsplit("/", 1)[-1]
+        out.append("  · cd %s   →   Implementá mi parte de %s"
+                   % (os.path.join(siblings, s), r["ticket"] or ticket))
+    out.append("  (en paralelo solo si tu herramienta orquesta subprocesos; "
+               "si no, en este orden — el conductor re-consultado tras cada "
+               "merge da lo mismo)")
+    return "\n".join(out)
+
+
+def _dup_shorts(rows):
+    """Short names two rows share — the collision that would cross their
+    forge answers, refused before any verdict is computed over it."""
+    shorts = [r["repo"].rsplit("/", 1)[-1] for r in rows]
+    return sorted({s for s in shorts if shorts.count(s) > 1})
+
+
 def _read_index(root, ticket):
     """The index at the workspace's origin — fetched, then read from the ref."""
     slug = _fip._ws_slug(root)
@@ -161,6 +187,24 @@ def main():
         print("family_next: the index carries no readable rows.", file=sys.stderr)
         return 2
 
+    dup = _dup_shorts(rows)
+    if dup:
+        print("family_next: two rows share the short name %s — the walk keys "
+              "the forge's answers by short name, and a collision crosses "
+              "their merges. Make the rows distinct." % ", ".join(dup),
+              file=sys.stderr)
+        return 2
+
+    # The forge's silence is not a "no merge": offline, every child reads as
+    # unmerged and the conductor speaks confident, wrong verdicts. One probe;
+    # if the forge cannot answer, neither can this tool.
+    probe, _, perr = _fip._run(["gh", "pr", "list", "--repo", slug,
+                                "--limit", "1", "--json", "number"])
+    if probe != 0:
+        print("family_next: el forge no contesta (%s) — sin su palabra no hay "
+              "veredicto." % (perr[:120] or "gh falló"), file=sys.stderr)
+        return 2
+
     owner = slug.split("/", 1)[0]
     merged = {}
     for r in rows:
@@ -181,25 +225,16 @@ def main():
         print("\n➡ PRIMERO la verdad del índice: `%s` ya mergeó (PR #%s) y su fila "
               "no lo dice." % (short, verdict["pr"]))
         print("  python3 .ddw/scripts/family_index_pr.py update-row --ticket %s "
-              "--repo-row %s --status done" % (verdict["ticket"] or args.ticket, short))
+              "--repo-row %s --status done" % (args.ticket, short))
     elif verdict["kind"] == "next":
         short = verdict["repo"].rsplit("/", 1)[-1]
         print("\n➡ SIGUIENTE: `%s` — %s (dependencias mergeadas)."
               % (short, verdict["scope"]))
         print("  cd %s   →   Implementá mi parte de %s"
               % (os.path.join(siblings, short), verdict["ticket"] or args.ticket))
-        listos = ready(rows, merged)
-        if len(listos) > 1:
-            print("\n∥ EN PARALELO — %d partes tienen todas sus dependencias "
-                  "mergeadas y pueden correr a la vez, cada una PARADA en su "
-                  "propio clon:" % len(listos))
-            for r in listos:
-                s = r["repo"].rsplit("/", 1)[-1]
-                print("  · cd %s   →   Implementá mi parte de %s"
-                      % (os.path.join(siblings, s), r["ticket"] or args.ticket))
-            print("  (en paralelo solo si tu herramienta orquesta subprocesos; "
-                  "si no, en este orden — el conductor re-consultado tras cada "
-                  "merge da lo mismo)")
+        block = parallel_block(ready(rows, merged), siblings, args.ticket)
+        if block:
+            print(block)
     elif verdict["kind"] == "waiting":
         print("\n⏳ Nada desbloqueado:")
         for w in verdict["waits"]:

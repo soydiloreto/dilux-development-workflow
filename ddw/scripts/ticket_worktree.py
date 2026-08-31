@@ -50,7 +50,12 @@ _spec.loader.exec_module(_fip)
 
 
 def _run(cmd, cwd=None, timeout=120):
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd,
+                           timeout=timeout)
+    except FileNotFoundError:
+        # A missing binary (gh on a fresh machine) spoke in raw traceback.
+        return 127, "", "command not found: %s" % cmd[0]
     return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
 
 
@@ -100,17 +105,41 @@ def _default_ref(top):
     return None
 
 
+def _ticket_ok(ticket):
+    """The ticket becomes a DIRECTORY NAME beside the repo — so it must be
+    one: `FEAT/T-7` nests, `../pwn` escapes the parent entirely (a worktree
+    created wherever the string pointed, confirmed by the audit)."""
+    return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", ticket or ""))
+
+
 def open_wt(root, ticket):
     top = _toplevel(root)
     if not top:
         return _fail("not inside a git repository.")
+    if not _ticket_ok(ticket):
+        return _fail("%r cannot name a worktree — letters, digits, dots, "
+                     "dashes and underscores only (it becomes a sibling "
+                     "directory's name)." % ticket)
     path = _wt_path(top, ticket)
     if any(os.path.realpath(p) == os.path.realpath(path) for p, _, _ in _worktrees(top)):
-        print("ticket_worktree: %s ya está abierto en %s — seguí ahí." % (ticket, path))
-        return 0
+        if os.path.isdir(path):
+            print("ticket_worktree: %s ya está abierto en %s — seguí ahí."
+                  % (ticket, path))
+            return 0
+        # Registered but gone from disk: somebody removed the directory by
+        # hand. "Seguí ahí" pointing at nothing sent the agent into a cd
+        # that does not exist — prune the stale entry and open fresh.
+        print("ticket_worktree: el registro apuntaba a %s y el directorio no "
+              "está — limpio el registro y lo abro de nuevo." % path)
+        _run(["git", "-C", top, "worktree", "prune"])
     # Freshness by construction: the new tree starts at the fetched origin
     # default, never at this tree's branch with its half-done work.
-    _run(["git", "-C", top, "fetch", "--quiet", "origin"], timeout=300)
+    fcode, _, ferr = _run(["git", "-C", top, "fetch", "--quiet", "origin"], timeout=300)
+    if fcode != 0:
+        # A failed fetch silently certified as "fresh at origin" is a stale
+        # SHA with a freshness stamp. Say it; the user decides.
+        print("⚠ el fetch a origin FALLÓ (%s) — el worktree nace del último "
+              "origin conocido, que puede estar viejo." % (ferr[:120] or "sin red"))
     ref = _default_ref(top)
     if not ref:
         return _fail("cannot resolve origin's default branch — is there an origin?")
@@ -151,6 +180,9 @@ def close_wt(root, ticket, drop):
     top = _toplevel(root)
     if not top:
         return _fail("not inside a git repository.")
+    if not _ticket_ok(ticket):
+        return _fail("%r cannot name a worktree — letters, digits, dots, "
+                     "dashes and underscores only." % ticket)
     path = _wt_path(top, ticket)
     if not any(os.path.realpath(p) == os.path.realpath(path) for p, _, _ in _worktrees(top)):
         return _fail("no worktree for %s at %s — `list` shows what is open." % (ticket, path))
@@ -170,7 +202,16 @@ def close_wt(root, ticket, drop):
         code, url, _ = _run(["git", "-C", path, "remote", "get-url", "origin"])
         if code == 0:
             slug = _fip._slug_from_url(url)
-        pr = _fip._merged_child_pr(slug, ticket) if slug else None
+        if slug is None:
+            # Claiming "no MERGED pull request at the forge" when NO forge
+            # was ever asked is a lie with a confident shape — on a GitLab
+            # or local origin the truth is that verification is impossible.
+            return _fail("the origin (%s) is not a GitHub URL, so the forge "
+                         "cannot be asked whether %s merged. If it merged on "
+                         "your forge, close with `--drop \"merged en <forge>: "
+                         "<link>\"` so the record says where."
+                         % (url[:80] or "?", ticket))
+        pr = _fip._merged_child_pr(slug, ticket)
         if pr is None:
             return _fail("no MERGED pull request names %s at the forge — a worktree "
                          "does not close on anyone's word. If the work is being "

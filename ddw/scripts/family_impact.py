@@ -148,7 +148,7 @@ def gather(root, ticket, siblings=None):
     def ensure_clone(slug):
         name = slug.rsplit("/", 1)[-1]
         dest = os.path.join(siblings, name)
-        if not os.path.isdir(os.path.join(dest, ".git")):
+        if not os.path.exists(os.path.join(dest, ".git")):
             err = _clone_missing(slug, dest)
             if err:
                 return None, "clone failed: %s" % err
