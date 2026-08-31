@@ -115,3 +115,58 @@ def test_el_vocabulario_declarado_pasa_sin_forge(tmp_path):
                     tmp_path, view_files=[])
     assert r.returncode == 2 and "fixed vocabulary" in r.stderr, r.stderr[:300]
     assert calls == [], "a refused status still reached the forge"
+
+
+def test_la_ley_del_done_no_se_paga_con_un_ticket_parecido(tmp_path):
+    # T-11's merged PR must NOT satisfy T-1's done — a substring match let a
+    # prefix ticket close on its neighbour's merge; and the index machinery's
+    # own chore/<T>-row-* branches are nobody's child work.
+    ws = _ws_repo(tmp_path)
+    near_miss = [{"number": 44, "headRefName": "feat/T-11-otra-cosa"},
+                 {"number": 45, "headRefName": "chore/T-1-row-api"}]
+    r, calls = _run(["update-row", "--ticket", "T-1", "--repo-row", "acme/child",
+                     "--status", "done", "--root", ws],
+                    tmp_path, view_files=[], merged=near_miss)
+    assert r.returncode == 2 and "MERGED" in r.stderr, \
+        "a near-miss branch (or the index's own row PR) satisfied the done-law: " + r.stdout
+
+
+def test_el_ticket_exacto_si_satisface_la_ley(tmp_path):
+    ws = _ws_repo(tmp_path)
+    r, calls = _run(["update-row", "--ticket", "T-1", "--repo-row", "acme/child",
+                     "--status", "done", "--root", ws],
+                    tmp_path, view_files=[],
+                    merged=[{"number": 7, "headRefName": "feat/T-1-lo-real"}])
+    # The forge check passes (its confirmation is printed) even though the
+    # run then dies at the shim's clone — that failure is a different door.
+    assert "forge confirms" in r.stdout and "#7" in r.stdout, \
+        "the exact ticket's merged PR was not accepted: " + r.stderr[:300]
+
+
+def test_el_row_edit_no_agarra_una_fila_que_solo_contiene_el_nombre():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("fip", SCRIPT)
+    fip = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fip)
+    text = ("| Repo | Ticket | Scope | Depends on | Status |\n"
+            "|---|---|---|---|---|\n"
+            "| acme/tienda-api | T-1 | parte grande | none | active |\n"
+            "| `acme/api` | T-1 | parte chica | none | pending |\n")
+    m = fip._row_pattern("api").search(text)
+    assert m and "tienda-api" not in m.group(1), \
+        "updating `api` grabbed `tienda-api`'s row: %r" % (m and m.group(1))
+    m2 = fip._row_pattern("tienda-api").search(text)
+    assert m2 and "tienda-api" in m2.group(1)
+
+
+def test_el_slug_sobrevive_los_puntos_del_nombre():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("fip2", SCRIPT)
+    fip = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fip)
+    # Dotted repo names are legal; a regex that stopped at the first dot sent
+    # forge questions to a DIFFERENT repository (acme/my for acme/my.repo).
+    assert fip._slug_from_url("https://github.com/acme/my.repo.git") == "acme/my.repo"
+    assert fip._slug_from_url("git@github.com:acme/next.js.git") == "acme/next.js"
+    assert fip._slug_from_url("https://github.com/acme/plain") == "acme/plain"
+    assert fip._slug_from_url("git@gitlab.com:acme/x.git") is None

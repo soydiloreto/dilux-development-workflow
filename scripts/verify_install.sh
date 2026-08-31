@@ -30,7 +30,7 @@ set -uo pipefail
 # a knob anyone could turn from outside the file. `docs/AI-POLICY.md` and
 # `CONTRIBUTING.md` both name this variable as the thing not to soften; it was
 # softenable without editing the file they were talking about.
-EXPECT_CHECKS=665
+EXPECT_CHECKS=667
 EXPECT_SKILLS=20
 EXPECT_AGENTS=5
 EXPECT_RULES=14
@@ -40,7 +40,7 @@ EXPECT_ADAPTERS=6
 # `--check-anchors`, `--cover` and every check in this file green, and the
 # published percentage went on being a percentage of a smaller list. The same
 # reason `EXPECT_CHECKS` exists, one file over.
-EXPECT_MUTATIONS=758
+EXPECT_MUTATIONS=762
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # EXPORTED, because the Python blocks below anchor their own temporary
@@ -2000,6 +2000,81 @@ else
     && ok "done is not anyone's to write: no merged child PR, no row — and the declared out is taught" \
     || bad "the done refusal neither names the missing merge nor teaches the declared out: $(tail -1 "$LSH/err")"
 fi
+
+# The audit's four doors — each pins a fix whose defect shipped and was
+# caught by the adversarial audit of 2026-08-30.
+# Door one: the done-law is paid by the ticket's OWN branch, never a
+# near-miss (T-11 for T-1) nor the index machinery's own chore/<T>-row-*
+# PR (kills "a near-miss ticket satisfies the done-law").
+WLAW="$WORK/wlaw"; mkdir -p "$WLAW/ws" "$WLAW/bin"; git -C "$WLAW/ws" init -q .
+git -C "$WLAW/ws" remote add origin https://github.com/acme/ws.git
+printf '# familia\n' > "$WLAW/ws/ddw-family.md"
+cat > "$WLAW/bin/gh" <<'WLAWGH'
+#!/usr/bin/env python3
+import json, sys
+a = sys.argv[1:]
+if a[:2] == ["pr", "list"]:
+    print(json.dumps([{"number": 44, "headRefName": "feat/T-11-otra-cosa"},
+                      {"number": 45, "headRefName": "chore/T-1-row-api"}]))
+    sys.exit(0)
+print("{}"); sys.exit(0)
+WLAWGH
+chmod +x "$WLAW/bin/gh"
+# Judged by the OUTPUT, not the exit code: under the substring fault the
+# run still dies later at the shim's clone, but "forge confirms" printed
+# for a near-miss IS the law already paid wrong.
+WLAWOUT="$(PATH="$WLAW/bin:$PATH" python3 "$SELF/ddw/scripts/family_index_pr.py" update-row \
+     --ticket T-1 --repo-row acme/child --status done --root "$WLAW/ws" 2>&1 || true)"
+if echo "$WLAWOUT" | grep -q "forge confirms"; then
+  bad "T-11's merge (or the index's own row PR) paid T-1's done-law"
+elif echo "$WLAWOUT" | grep -q "MERGED"; then
+  ok "the done-law is paid only by a branch that NAMES the ticket — near-misses and the index's own PRs do not"
+else
+  bad "the refusal is not the law's (no MERGED in it): $(echo "$WLAWOUT" | tail -1)"
+fi
+# Door two: the row edit takes the row whose cell IS the name, never one that
+# merely contains it (kills "the row edit grabs whichever row merely contains
+# the name"). Door three: `Consume` is never read from the `Consumed by`
+# column, in BOTH parsers (kills "consumes reads whichever column mentions
+# consume"). Door four: the receipt lands in the verdict's repo, not the
+# invoker's cwd (kills "the receipt falls wherever the validator was invoked").
+python3 - "$SELF" "$WORK" <<'PYAUDIT' && ok "the row edit, the consume column and the receipt's home all answer to the audit's doors" || bad "an audited fix regressed: the row edit, a consume column, or the receipt's home — see the assert above"
+import importlib.util, json, os, sys, tempfile
+src = sys.argv[1]
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(src, path))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+fip = load("fip", "ddw/scripts/family_index_pr.py")
+text = ("| Repo | Ticket | Scope | Depends on | Status |\n|---|---|---|---|---|\n"
+        "| acme/tienda-api | T-1 | grande | none | active |\n"
+        "| `acme/api` | T-1 | chica | none | pending |\n")
+m = fip._row_pattern("api").search(text)
+assert m and "tienda-api" not in m.group(1), \
+    "updating `api` grabbed `tienda-api`'s row: %r" % (m and m.group(1))
+fc = load("fc", "ddw/scripts/family_catalog.py")
+fim = load("fim", "ddw/scripts/family_impact.py")
+tbl = ("| Repo | Qué hace | Consumed by | Consume |\n|---|---|---|---|\n"
+       "| alpha | api | beta | gamma |\n")
+tmp = tempfile.mkdtemp(dir=sys.argv[2])
+open(os.path.join(tmp, "ddw-family.md"), "w", encoding="utf-8").write("# f\n\n" + tbl)
+r1 = fc.familia_map(tmp)[0]
+r2 = fim._parse_familia(tbl)[0]
+for r in (r1, r2):
+    assert r["consumed by"] == "beta" and r["consumes"] == "gamma", \
+        "a parser read Consume from the Consumed-by column: %r" % r
+rec = load("rec", "ddw/scripts/ddw_receipt.py")
+repo = tempfile.mkdtemp(dir=sys.argv[2]); other = tempfile.mkdtemp(dir=sys.argv[2])
+os.makedirs(os.path.join(repo, ".ddw-work"))
+v = os.path.join(repo, ".ddw-work", "impact-T-1.md")
+open(v, "w", encoding="utf-8").write("veredicto\n")
+os.chdir(other)
+rec.write(v, "impact", "veredicto\n")
+assert os.path.isdir(os.path.join(repo, ".ddw-sessions")) and \
+    os.listdir(os.path.join(repo, ".ddw-sessions")), \
+    "the receipt did not land in the verdict's repo"
+assert not os.path.isdir(os.path.join(other, ".ddw-sessions")), \
+    "the receipt leaked into the invoker's cwd"
+PYAUDIT
 
 # The organization sweep: the forge lists EVERY repo, each AGENTS.md is read
 # by API, and the report buckets every single one. Door one — the account:

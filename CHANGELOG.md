@@ -19,6 +19,39 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.50.0] - 2026-08-30
+
+### Fixed — the adversarial audit's first wave (the forge-law bugs)
+
+An 11-agent audit (five specialists, five adversarial verifiers running
+repros, one completeness critic) confirmed 47 findings across the
+multirepo layer. This release fixes the ones that broke the forge law —
+the property everything else leans on:
+
+- **The done-law paid by a near-miss**: `T-1`'s worktree and row closed on
+  `T-11`'s merged PR (substring match), and the index machinery's own
+  `chore/<T>-row-*` PRs satisfied the workspace row's done. Branch
+  matching is now the convention's, exact — `_ticket_names_branch`.
+- **The row edit grabbed whichever row merely contained the name**:
+  updating `api` edited `tienda-api`'s row. `_row_pattern` now matches the
+  cell, optionally owner-prefixed or backticked.
+- **Dotted repo names truncated**: `acme/my.repo` became `acme/my`, so
+  merge/close asked a DIFFERENT (possibly real) repository.
+  `_slug_from_url` strips `.git` by name, everywhere.
+- **`Consume` read from the `Consumed by` column** whenever that header
+  came first — in BOTH parsers (familia_map and _parse_familia): the
+  seams the impact analysis reasons over were the wrong cell.
+- **The impact receipt fell in the invoker's cwd**: a verdict under
+  `.ddw-work/` validated from elsewhere left its PASS where the gate
+  never reads. `repo_root` now recognises `.ddw-work` too.
+- **update-row claimed a PR that was never opened** (gh failure swallowed)
+  and **merge() claimed the local clone updated when the pull failed**,
+  hardcoding `main`; the conductor's index read also un-hardcodes
+  `origin/main` for master-default workspaces.
+- Four faults the suite provably kills; family_impact gains its first
+  pytest file.
+- Measured: 667 install checks · 762 mutations · 231 pytest.
+
 ## [0.49.0] - 2026-08-30
 
 ### Added — the whole organization in one auditable pass
