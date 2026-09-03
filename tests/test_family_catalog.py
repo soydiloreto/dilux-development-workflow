@@ -378,3 +378,121 @@ sys.exit(1)
     assert "| api |" in show and "| web |" in show, show
     assert "| ws |" not in show, \
         "the workspace rode its own seed map (perpetual drift): " + show
+
+
+def _sweep_stub(tmp_path, text_answers, tarballs):
+    """A `gh` that answers `api` from a table — and binary for a tarball."""
+    d = tmp_path / "bin"
+    d.mkdir(exist_ok=True)
+    (d / "gh").write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "text = json.loads(%r)\n"
+        "tars = json.loads(%r)\n"
+        "if sys.argv[1:2] != ['api']:\n"
+        "    sys.exit(1)\n"
+        "ep = sys.argv[2]\n"
+        "if ep in tars:\n"
+        "    sys.stdout.buffer.write(open(tars[ep], 'rb').read())\n"
+        "    sys.exit(0)\n"
+        "if ep not in text:\n"
+        "    sys.exit(1)\n"
+        "print(text[ep])\n" % (json.dumps(text_answers), json.dumps(tarballs)),
+        encoding="utf-8")
+    (d / "gh").chmod(0o755)
+    return d
+
+
+def _make_tarball(tmp_path, name, files):
+    import io
+    import tarfile
+    p = tmp_path / (name + ".tar.gz")
+    with tarfile.open(p, "w:gz") as tf:
+        for rel, body in files.items():
+            data = body.encode()
+            info = tarfile.TarInfo("%s-abc1234/%s" % (name, rel))
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+    return str(p)
+
+
+def test_sweep_registra_los_paths_y_el_sha_de_cada_repo(tmp_path):
+    # The mechanical half of the derived store: facts read from the TARBALL,
+    # each one carrying the path it came from — without the path there is
+    # nothing for a later claim to cite and nothing to compare on a refresh.
+    tar = _make_tarball(tmp_path, "alpha", {
+        "README.md": "# alpha\n\nLa api de pagos.\n",
+        "package.json": '{"name": "alpha", "description": "pagos"}\n',
+        "api/routes/users.js": "// routes\n",
+        "src/util/logging.js": "// nothing structural here\n",
+    })
+    binp = _sweep_stub(
+        tmp_path,
+        {"repos/acme/alpha": json.dumps({"default_branch": "main",
+                                         "language": "JavaScript",
+                                         "description": "pagos"}),
+         "repos/acme/alpha/commits?per_page=1":
+             "89abcdef0123456789abcdef0123456789abcdef"},
+        {"repos/acme/alpha/tarball": tar})
+    out = tmp_path / "facts.json"
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--sweep", "--org", "acme",
+         "--repos", "alpha", "--facts-out", str(out)],
+        capture_output=True, text=True,
+        env=dict(os.environ, PATH="%s:%s" % (binp, os.environ["PATH"])))
+    assert r.returncode == 0, r.stdout + r.stderr
+    facts = json.loads(out.read_text())
+    repo = facts["repos"][0]
+    assert repo["unreadable"] is None, repo
+    assert repo["sha"] == "89abcde", repo
+    assert "api/routes/users.js" in repo["structural_paths"], repo
+    assert "src/util/logging.js" not in repo["structural_paths"], \
+        "the sweep called an ordinary file structural — the refresh filter " \
+        "it feeds would then re-read on every commit"
+    assert repo["readme"]["path"] == "README.md", repo
+    assert "package.json" in repo["manifests"], repo
+
+
+def test_sweep_deja_en_el_archivo_al_repo_que_no_pudo_leer(tmp_path):
+    # A sweep that drops what it could not read reports a smaller organisation
+    # in green. Unreadable is a row with a reason, never an absence.
+    binp = _sweep_stub(tmp_path, {}, {})
+    out = tmp_path / "facts.json"
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--sweep", "--org", "acme",
+         "--repos", "ghost", "--facts-out", str(out)],
+        capture_output=True, text=True,
+        env=dict(os.environ, PATH="%s:%s" % (binp, os.environ["PATH"])))
+    assert r.returncode == 0, r.stdout + r.stderr
+    facts = json.loads(out.read_text())
+    assert len(facts["repos"]) == 1, facts
+    assert facts["repos"][0]["unreadable"], facts["repos"][0]
+    assert "ghost" in r.stdout, r.stdout
+
+
+def test_sweep_rechaza_un_tarball_que_escribe_fuera(tmp_path):
+    # The sweep unpacks archives produced by the repositories it reads. An
+    # entry whose path climbs out of the scratch directory makes the sweep a
+    # delivery mechanism, so the extraction refuses the whole archive.
+    import io
+    import tarfile
+    evil = tmp_path / "evil.tar.gz"
+    with tarfile.open(evil, "w:gz") as tf:
+        data = b"owned\n"
+        info = tarfile.TarInfo("beta-abc1234/../../escaped.txt")
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+    binp = _sweep_stub(
+        tmp_path,
+        {"repos/acme/beta": json.dumps({"default_branch": "main"}),
+         "repos/acme/beta/commits?per_page=1": "1111111111111111111111111111111111111111"},
+        {"repos/acme/beta/tarball": str(evil)})
+    out = tmp_path / "facts.json"
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--sweep", "--org", "acme",
+         "--repos", "beta", "--facts-out", str(out)],
+        capture_output=True, text=True,
+        env=dict(os.environ, PATH="%s:%s" % (binp, os.environ["PATH"])))
+    assert r.returncode == 0, r.stdout + r.stderr
+    repo = json.loads(out.read_text())["repos"][0]
+    assert repo["unreadable"] and "outside" in repo["unreadable"], repo

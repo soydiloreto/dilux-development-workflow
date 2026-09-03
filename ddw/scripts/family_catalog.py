@@ -58,8 +58,15 @@ them, for terminals where the user's SSH agent is live.
         # a seed ddw-family.md as a one-approve PR per family with no map;
         # an existing map is never rewritten — its drift is reported.
 
-Exit: 0 = fresh / regenerated · 2 = cannot run (no workspace section, no gh) ·
-3 = --check found it stale.
+    python3 family_catalog.py --sweep --org ACME [--facts-out FILE]
+        # the MECHANICAL sweep, the deterministic half of the derived store:
+        # every repo's tree read from its TARBALL (never a clone), and the
+        # facts a row of prose may lean on recorded with THE PATH each one
+        # came from and the SHA the repo was read at. No model runs here and
+        # no prose is written: this is what the prose is later held to.
+
+Exit: 0 = fresh / regenerated / swept · 2 = cannot run (no workspace section,
+no gh) · 3 = --check found it stale.
 """
 import argparse
 import datetime
@@ -100,6 +107,11 @@ def family_section(text):
             continue
         fields[key] = fm.group("v").strip()
     return fields or None
+
+
+def _now_iso():
+    return datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
 
 
 def _gh(*args, timeout=30):
@@ -366,6 +378,186 @@ def _org_repos(org):
     return sorted({n.strip() for n in raw.splitlines() if n.strip()}), None
 
 
+# ── The mechanical sweep: what a SCRIPT can know about a repo ────────────────
+#
+# The renglón and the ficha are prose, and prose is the model's half. This is
+# the other half, and it comes first: every fact the prose is allowed to lean
+# on, gathered by grep-and-walk over the repo's own files, each one carrying
+# THE PATH it came from. The path is not decoration — it is what makes the
+# later admission gate possible ("a claim whose citation does not resolve does
+# not enter the store") and what makes the refresh cheap ("re-read this repo
+# only when one of the paths its row cites has moved").
+#
+# Read from a TARBALL, never a clone: looking at a repository needs its files,
+# not its history, and at organisation scale the history is the whole cost.
+
+STRUCTURAL = (
+    "openapi", "swagger", ".proto", "/routes/", "/controllers/", "/handlers/",
+    "/api/", "/events/", "/migrations/", "/schemas/", "schema.", "Dockerfile",
+    "docker-compose", ".github/workflows/", "serverless.yml", "terraform",
+)
+
+MANIFESTS = ("package.json", "pyproject.toml", "go.mod", "pom.xml",
+             "Cargo.toml", "composer.json", "build.gradle")
+
+_STRUCTURAL_CAP = 200
+
+
+def _gh_bytes(*args, timeout=300):
+    """gh, for an answer that is not text. None when it could not answer."""
+    try:
+        out = subprocess.run(["gh", *args], capture_output=True,
+                             timeout=timeout, stdin=subprocess.DEVNULL)
+    except Exception:
+        return None
+    return out.stdout if out.returncode == 0 else None
+
+
+def _tarball_tree(slug, dest):
+    """Extract the repo's default branch under `dest`. (root, None) or (None, why).
+
+    Guarded on the way in: a member of the archive whose path escapes `dest`
+    is refused and the whole extraction fails. A sweep that can be made to
+    write outside its scratch directory by the repository it is reading is not
+    a sweep, it is a delivery mechanism.
+    """
+    blob = _gh_bytes("api", "repos/%s/tarball" % slug)
+    if not blob:
+        return None, "the forge did not send a tarball"
+    import io
+    import tarfile
+    try:
+        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tf:
+            root = os.path.realpath(dest)
+            for m in tf.getmembers():
+                target = os.path.realpath(os.path.join(dest, m.name))
+                if target != root and not target.startswith(root + os.sep):
+                    return None, "the tarball tried to write outside the sweep"
+                if m.issym() or m.islnk():
+                    continue
+            tf.extractall(dest)
+    except Exception as exc:                                  # noqa: BLE001
+        return None, "unreadable tarball: %s" % str(exc)[:120]
+    tops = [d for d in os.listdir(dest) if os.path.isdir(os.path.join(dest, d))]
+    if len(tops) != 1:
+        return None, "the tarball did not unpack into one directory"
+    return os.path.join(dest, tops[0]), None
+
+
+def _read_head(path, limit=400):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read(4000)
+    except OSError:
+        return None
+    body = "\n".join(ln for ln in text.splitlines() if ln.strip())
+    return body[:limit] or None
+
+
+def sweep_tree(root):
+    """The facts, from the extracted tree. Every one of them names its path."""
+    files, structural, manifests = 0, [], {}
+    readme = None
+    for base, dirs, names in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in (".git", "node_modules",
+                                                "__pycache__", ".venv", "vendor")]
+        for n in names:
+            files += 1
+            full = os.path.join(base, n)
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            probe = "/" + rel
+            if any(frag.lower() in probe.lower() for frag in STRUCTURAL):
+                if len(structural) < _STRUCTURAL_CAP:
+                    structural.append(rel)
+            if n in MANIFESTS and len(manifests) < 40:
+                manifests[rel] = _read_head(full, 300)
+            if readme is None and n.lower() in ("readme.md", "readme.rst",
+                                                "readme.txt"):
+                readme = {"path": rel, "head": _read_head(full)}
+    tops = sorted(d for d in os.listdir(root)
+                  if os.path.isdir(os.path.join(root, d)) and not d.startswith("."))
+    return {"files": files, "top_dirs": tops[:40],
+            "structural_paths": sorted(structural),
+            "structural_truncated": len(structural) >= _STRUCTURAL_CAP,
+            "manifests": manifests, "readme": readme}
+
+
+def sweep_repo(slug):
+    """One repo's facts, read at its default branch from the forge.
+
+    The SHA is recorded beside the facts and is the whole point of the refresh:
+    a row read at a commit can be compared with the commit the repo is on now,
+    so "this row is 200 commits behind" is a fact the gate can state instead of
+    a freshness nobody ever checks.
+    """
+    import shutil
+    import tempfile
+    meta = _gh("api", "repos/%s" % slug,
+               "--jq", "{default_branch, language, description}")
+    head = _gh("api", "repos/%s/commits?per_page=1" % slug, "--jq", ".[0].sha")
+    facts = {"slug": slug, "name": slug.rsplit("/", 1)[-1],
+             "sha": (head or "").strip()[:7] or None,
+             "default_branch": None, "language": None, "description": None,
+             "read_at": _now_iso(), "unreadable": None}
+    if meta:
+        try:
+            facts.update({k: v for k, v in json.loads(meta).items()
+                          if k in ("default_branch", "language", "description")})
+        except Exception:                                     # noqa: BLE001
+            pass
+    if not facts["sha"]:
+        facts["unreadable"] = "the forge did not name a head commit"
+        return facts
+    tmp = tempfile.mkdtemp(prefix="ddw-sweep-")
+    try:
+        root, why = _tarball_tree(slug, tmp)
+        if root is None:
+            facts["unreadable"] = why
+            return facts
+        facts.update(sweep_tree(root))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return facts
+
+
+def sweep(org, repos, out_path):
+    """The organisation's facts in one pass — the deterministic half of the
+    store, written where the prose half will be built from it.
+
+    Every repo lands in the file, readable or not: a sweep that silently drops
+    what it could not read reports a smaller organisation in green, which is
+    the failure this method spends most of its checks preventing.
+    """
+    if repos:
+        names = [r.strip() for r in repos.split(",") if r.strip()]
+    else:
+        names, why = _org_repos(org)
+        if names is None:
+            print("family_catalog: %s" % why, file=sys.stderr)
+            return 2
+    owner = org or (names[0].split("/", 1)[0] if names and "/" in names[0] else None)
+    report = {"owner": owner, "generated_at": _now_iso(), "repos": []}
+    for name in names:
+        slug = name if "/" in name else "%s/%s" % (owner, name)
+        report["repos"].append(sweep_repo(slug))
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump(report, fh, indent=2, ensure_ascii=False)
+    ok = [r for r in report["repos"] if not r["unreadable"]]
+    print("family_catalog: swept %d repo(s) of %s · %d read, %d unreadable · %s"
+          % (len(report["repos"]), owner or "?", len(ok),
+             len(report["repos"]) - len(ok), out_path))
+    for r in report["repos"]:
+        if r["unreadable"]:
+            print("  ⚠ %s: %s" % (r["name"], r["unreadable"]))
+        else:
+            print("  · %s @ %s — %d file(s), %d structural path(s)"
+                  % (r["name"], r["sha"], r["files"], len(r["structural_paths"])))
+    print("These are FACTS, not a catalog: every row of prose written from this "
+          "file has to cite one of the paths in it.")
+    return 0
+
+
 MAP_BEGIN = "<!-- BEGIN DDW FAMILY MAP -->"
 MAP_END = "<!-- END DDW FAMILY MAP -->"
 
@@ -534,7 +726,21 @@ def main():
     ap.add_argument("--write", action="store_true",
                     help="with --org: publish a seed ddw-family.md as a "
                          "one-approve PR for each family that has no map yet")
+    ap.add_argument("--sweep", action="store_true",
+                    help="the MECHANICAL sweep: read every repo's tree from its "
+                         "tarball (never a clone) and record the facts a row of "
+                         "prose is allowed to lean on, each one with the path it "
+                         "came from and the SHA it was read at")
+    ap.add_argument("--facts-out", default=".ddw-work/org-facts.json",
+                    help="where --sweep writes its facts (default: "
+                         ".ddw-work/org-facts.json)")
     args = ap.parse_args()
+
+    if args.sweep:
+        if not args.org and not args.repos:
+            ap.error("--sweep needs --org ACME or --repos a,b,c: the list of "
+                     "what to read is not something this script may invent")
+        sys.exit(sweep(args.org, args.repos, args.facts_out))
 
     if args.org:
         sys.exit(bootstrap(args.org, write=args.write))
