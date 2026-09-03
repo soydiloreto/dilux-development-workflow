@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.18.0
+version: 2.19.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -140,7 +140,11 @@ the validated verdict's receipt. The step (`/ddw-family-impact` is the full prot
    already exists is the offline fallback, fetched first. Each repo is recorded at the SHA it
    was read AND with how it was read, so a stale disk and the forge never make the same claim.
    The standing repo is fast-forwarded only when clean and on its default branch; a diverged
-   tree is reported, never merged over.
+   tree is reported, never merged over. **When the workspace carries a derived store**
+   (`docs/ddw/store/renglones.md`), each member also arrives with its renglón and the commit
+   that row was written at: a row written against an older commit is REPORTED as behind, never
+   hidden and never a blocker — the analysis still happens, over facts that say how old they
+   are. No store → the analysis runs on the declared seams alone, exactly as before.
 2. **Write the verdict** to `.ddw-work/impact-<TICKET>.md`: EVERY member, impacted (with what
    part hits it) or `Sin impacto: <reason>` — the reason names the contract that stays intact.
    Walk `Consumed by` of everything the work touches: a consumer of a changing seam missing from

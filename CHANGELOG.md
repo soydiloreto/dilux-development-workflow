@@ -19,6 +19,24 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.57.0] - 2026-09-03
+
+### Changed — classification reads the store, so the derived rows stop being a report
+
+- **`family_impact.py` gather loads the workspace's `docs/ddw/store/renglones.md`**
+  and each member arrives with its renglón and the commit that row was
+  written at. A catalog nothing consumes is the metadata that rots; this
+  is the wire that makes the derived store part of a decision.
+- **A row behind its repo is REPORTED, never hidden and never a blocker.**
+  The store may lag and the analysis still has to happen — what must not
+  happen is the lag being invisible, so both SHAs travel in the facts and
+  the printed line says it out loud.
+- **No store → the analysis runs exactly as before**, and the absence is a
+  recorded state (`store.present: false`), not a silence.
+- Two faults: classification no longer reading the store, and a row
+  written against an older commit passing as current.
+- Measured: 671 install checks · 785 mutations · 265 pytest.
+
 ## [0.56.0] - 2026-09-03
 
 ### Added — the refresh asks where the rows lean, not whether the repo moved
