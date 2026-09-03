@@ -19,6 +19,30 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.55.0] - 2026-09-03
+
+### Added — the prose half of the store, and the gate it has to pass
+
+- **`family_catalog.py --admit STORE_DIR`**: the renglones (one line per
+  repo, to pick which repos a question touches) and the fichas (half a
+  page each, every claim beside the file it comes from) judged against
+  the sweep's facts. Three checks, the three a script can make:
+  **coverage** — every swept repo has a row; **no invention** — no row
+  names a repo nobody read; **citations resolve** — every claim's file is
+  one the sweep found, at the SHA the ficha stamps.
+- **The bargain is stated on every run**: it does not check that a claim
+  is TRUE. A file that exists is not a claim that holds. What it buys is
+  that every claim points at something real in a real commit, that the
+  whole sweep is accounted for, and that a ficha written against an older
+  commit cannot pass as current.
+- **Refusal names every problem, not the first.** A gate walked once per
+  defect is a gate routed around.
+- Five faults: a citation nobody read admitted, a swept repo with no row
+  passing, a ficha at another commit passing, the refusal truncated to
+  its first line, and the table's header judged as data (which invented a
+  repository called `Repo` — the first version did exactly that).
+- Measured: 671 install checks · 779 mutations · 257 pytest.
+
 ## [0.54.0] - 2026-09-03
 
 ### Added — the mechanical sweep, the half a script owns
