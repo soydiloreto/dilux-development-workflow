@@ -3156,10 +3156,10 @@ def impact_receipt_missing(root, old_state, new_state):
     the method: on CLASSIFY→DEFINE, when the repo declares `## Repo family`,
     the edge demands the verdict file (`.ddw-work/impact-<ticket>.md`) AND its
     receipt — which `family_impact.py --validate` writes only after checking
-    the verdict against family facts gathered fresh from every member's
-    origin (missing clones cloned, everything fetched, each repo recorded at
-    its SHA). Every member accounted for — impacted, or excluded with a
-    reason — or no DEFINE.
+    the verdict against family facts read fresh at every member's default
+    branch, from the forge and without cloning, each repo recorded at its SHA
+    and with how it was read. Every member accounted for — impacted, or
+    excluded with a reason — or no DEFINE.
 
     Repos with no family section never see this gate: single-repo flow,
     untouched. The receipt is content-hashed, so editing the verdict after

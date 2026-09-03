@@ -26,10 +26,11 @@ A repo with no `## Repo family` section never needs this: single-repo flow, unto
    python3 .ddw/scripts/family_impact.py --ticket <TICKET>
    ```
 
-   It resolves the family from this repo's `## Repo family`, finds the workspace and every
-   member as sibling clones — **cloning the missing ones via `gh`** — fetches them all, and
-   reads the map (`ddw-family.md`) and every member's seams from `origin/<default>`: freshness by
-   construction, each repo recorded at the SHA it was read. The facts land in
+   It resolves the family from this repo's `## Repo family` and **reads the workspace and
+   every member at their default branch from the forge — cloning nothing**: the map
+   (`ddw-family.md`) and every member's seams, freshness by construction, each repo recorded at
+   the SHA it was read and with HOW it was read (`forge`, or a sibling clone that already
+   existed and was fetched — the offline fallback). The facts land in
    `.ddw-work/impact-data-<TICKET>.json`. The standing repo itself is fetched, and
    fast-forwarded only when clean and on the default branch — a diverged tree is reported,
    never merged over.

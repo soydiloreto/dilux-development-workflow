@@ -3577,6 +3577,16 @@ MUTATIONS = [
      edit("evals/runner.py",
           '        env = dict(os.environ, HOME=str(copilot_home(workdir, repo)))',
           "        env = None")),
+    ("reading the family needs a working tree on disk again, so a look at a "
+     "thousand repos costs a thousand clones",
+     edit("ddw/scripts/family_impact.py",
+          "    sha = _forge_head(slug)\n    if sha:",
+          "    sha = None\n    if sha:")),
+    ("the report stops saying HOW each member was read, so a stale disk and the "
+     "forge make the same claim",
+     edit("ddw/scripts/family_impact.py",
+          '        member["state"] = how',
+          '        member["state"] = "read"')),
 ]
 
 
