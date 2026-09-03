@@ -19,6 +19,27 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.54.0] - 2026-09-03
+
+### Added — the mechanical sweep, the half a script owns
+
+- **`family_catalog.py --sweep`**: every repo of an organisation read from
+  its **tarball** (never a clone) and reduced to facts — layout, manifests,
+  the README's head, and every path matching a structural pattern (routes,
+  controllers, events, migrations, schemas, API descriptions, workflows).
+  **Each fact carries the path it came from; each repo carries the SHA it
+  was read at.** No model runs here: this is what the prose written from it
+  is later held to, and what makes the refresh cheap — a repo is re-read
+  when a path its row cites has moved, not on every commit.
+- **Every repo lands in the file, readable or not.** A sweep that drops
+  what it could not read reports a smaller organisation in green.
+- **The extraction refuses an archive that writes outside its scratch
+  directory.** The sweep unpacks archives produced by the repositories it
+  reads; without the guard it is a delivery mechanism, not a sweep.
+- Four faults hold it: paths dropped, every file called structural, an
+  unreadable repo vanishing, and the traversal guard removed.
+- Measured: 671 install checks · 774 mutations · 251 pytest.
+
 ## [0.53.0] - 2026-09-03
 
 ### Changed — the impact analysis looks at the family without cloning it

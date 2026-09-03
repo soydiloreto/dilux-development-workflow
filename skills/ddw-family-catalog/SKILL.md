@@ -37,6 +37,33 @@ root second.)
 - Enumeration: the workspace owner's repos via the **user's own `gh`** (no
   credential is ever stored by DDW), or `--repos a,b,c` explicit, or
   `--local <dir>` to read sibling clones offline.
+
+## The mechanical sweep — the half a script owns
+
+```bash
+python3 .ddw/scripts/family_catalog.py --sweep --org ACME    # facts, no prose
+python3 .ddw/scripts/family_catalog.py --sweep --repos a,b,c [--facts-out FILE]
+```
+
+The catalog above reads what each repo DECLARES about itself. The sweep reads
+the repo itself: every tree pulled from its **tarball**, never a clone —
+looking at a repository needs its files, not its history, and at organisation
+scale the history is the whole cost.
+
+It writes facts, not prose: the top-level layout, the manifests, the README's
+head, and every path that matches a structural pattern (routes, controllers,
+events, migrations, schemas, API descriptions, workflows) — **each fact
+carrying the path it came from**, and each repo carrying the SHA it was read
+at. No model runs here.
+
+The path is not decoration. It is what a later row of prose must CITE, and it
+is what makes the refresh cheap: a repo is re-read when one of the paths its
+row cites has moved, not on every commit.
+
+Every repo lands in the file, readable or not: one that could not be read is a
+row with a reason. A sweep that drops what it could not read reports a smaller
+organisation in green, which is the one outcome this method spends its checks
+preventing.
 - Output: the managed block in `docs/ddw/family-catalog.md`
   (`BEGIN/END DDW CATALOG`). Outside the markers the file is the user's;
   inside, no hand writes — the header says so.

@@ -3587,6 +3587,30 @@ MUTATIONS = [
      edit("ddw/scripts/family_impact.py",
           '        member["state"] = how',
           '        member["state"] = "read"')),
+    ("the sweep records no path for what it found, so no later claim can be "
+     "cited and no refresh can compare",
+     edit("ddw/scripts/family_catalog.py",
+          '    return {"files": files, "top_dirs": tops[:40],\n'
+          '            "structural_paths": sorted(structural),',
+          '    return {"files": files, "top_dirs": tops[:40],\n'
+          '            "structural_paths": [],')),
+    ("every file counts as structural again, so the refresh filter re-reads "
+     "every repo on every commit and filters nothing",
+     edit("ddw/scripts/family_catalog.py",
+          "            if any(frag.lower() in probe.lower() for frag in STRUCTURAL):",
+          "            if True:")),
+    ("a repo the sweep could not read vanishes from the file, so the "
+     "organisation reports smaller in green",
+     edit("ddw/scripts/family_catalog.py",
+          '        report["repos"].append(sweep_repo(slug))',
+          '        _f = sweep_repo(slug)\n'
+          '        if not _f["unreadable"]:\n'
+          '            report["repos"].append(_f)')),
+    ("the sweep unpacks an archive that writes outside it again",
+     edit("ddw/scripts/family_catalog.py",
+          '                if target != root and not target.startswith(root + os.sep):\n'
+          '                    return None, "the tarball tried to write outside the sweep"\n',
+          "")),
 ]
 
 
