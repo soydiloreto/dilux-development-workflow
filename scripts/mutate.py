@@ -3655,6 +3655,16 @@ MUTATIONS = [
      edit("ddw/scripts/family_catalog.py",
           "        if was and head.startswith(was):",
           "        if False:")),
+    ("classification stops reading the store, so the derived rows go back to "
+     "being a report nobody consumes",
+     edit("ddw/scripts/family_impact.py",
+          '    store_rows = _store_rows(ws_files.get(STORE_ROWS) or "")',
+          "    store_rows = {}")),
+    ("a renglón written against an older commit passes as current, and the lag "
+     "the analysis is written over becomes invisible",
+     edit("ddw/scripts/family_impact.py",
+          '                member["row_behind"] = bool(',
+          '                member["row_behind"] = False and bool(')),
 ]
 
 

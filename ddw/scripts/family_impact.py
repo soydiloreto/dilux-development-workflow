@@ -135,6 +135,31 @@ def _read_repo(slug, siblings, paths):
                       "clone under %s" % siblings)
 
 
+STORE_ROWS = "docs/ddw/store/renglones.md"
+
+
+def _store_rows(text):
+    """{repo: {sha, renglón}} from the store's managed block, or {} without one.
+
+    The store is the workspace's file and it may simply not exist yet — a
+    family that never ran the sweep gets exactly the analysis it got before,
+    with `store.present` false in the facts so the absence is a recorded state
+    rather than a silence.
+    """
+    if not text:
+        return {}
+    rows = _catalog._table_rows(
+        _catalog._managed(text, _catalog.ROWS_BEGIN, _catalog.ROWS_END) or [])
+    out = {}
+    for cells in rows:
+        name = cells[0].strip().rsplit("/", 1)[-1]
+        if not name:
+            continue
+        out[name] = {"sha": (cells[1].strip() if len(cells) > 1 else ""),
+                     "renglon": (cells[2].strip() if len(cells) > 2 else "")}
+    return out
+
+
 def _standing_repo_freshness(root):
     """The one working tree the ticket will actually change: fetch always;
     fast-forward the default branch only when it is checked out and clean.
@@ -184,13 +209,16 @@ def gather(root, ticket, siblings=None):
     }
 
     ws_sha, ws_files, ws_how = _read_repo(
-        ws_slug, siblings, ("ddw-family.md", "familia.md"))
+        ws_slug, siblings, ("ddw-family.md", "familia.md", STORE_ROWS))
     if ws_sha is None:
         print("family_impact: cannot reach the workspace %s (%s) — without the "
               "map there is no family to analyse." % (ws_slug, ws_how),
               file=sys.stderr)
         return 2
     report["workspace_read"] = {"sha": ws_sha, "how": ws_how}
+    store_rows = _store_rows(ws_files.get(STORE_ROWS) or "")
+    report["store"] = {"path": STORE_ROWS, "rows": len(store_rows),
+                       "present": bool(store_rows)}
     familia_text = ws_files.get("ddw-family.md") or ws_files.get("familia.md")
     if not familia_text:
         print("family_impact: %s has no ddw-family.md at its default branch (read "
@@ -211,7 +239,8 @@ def gather(root, ticket, siblings=None):
                   "provides": row.get("provides", "none"),
                   "consumed_by": row.get("consumed by", "none"),
                   "consumes": row.get("consumes", "none"),
-                  "state": None, "sha": None}
+                  "state": None, "sha": None, "renglon": None,
+                  "row_sha": None, "row_behind": None}
         sha, files, how = _read_repo(slug, siblings, ("AGENTS.md",))
         member["state"] = how
         if sha is None:
@@ -219,6 +248,18 @@ def gather(root, ticket, siblings=None):
         else:
             member["sha"] = sha
             fresh_agents = files.get("AGENTS.md") or ""
+            row = store_rows.get(name)
+            if row:
+                member["renglon"] = row["renglon"]
+                member["row_sha"] = row["sha"]
+                # Behind-ness is a FACT the verdict is written over, not a
+                # blocker: the store may lag the repo and the analysis still
+                # has to happen. What must never happen is the lag being
+                # invisible, so the row travels with the two SHAs and the
+                # printed line says it out loud.
+                member["row_behind"] = bool(
+                    row["sha"] and sha and not sha.startswith(row["sha"])
+                    and not row["sha"].startswith(sha))
             fresh = _catalog.family_section(fresh_agents)
             if fresh:
                 # The member's own declaration wins over the map's copy — the
@@ -234,6 +275,10 @@ def gather(root, ticket, siblings=None):
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2, ensure_ascii=False)
 
+    if not store_rows:
+        print("family_impact: no store at %s in %s — the analysis runs on the "
+              "declared seams alone, as it did before the store existed."
+              % (STORE_ROWS, ws_slug))
     print("family_impact: family `%s` · %d member(s) read at their default "
           "branch · workspace %s via %s · data: %s"
           % (family, len(report["members"]), ws_slug, ws_how,
@@ -243,6 +288,11 @@ def gather(root, ticket, siblings=None):
         print("  · %s @ %s (%s) — provides: %s · consumed by: %s"
               % (m["name"], m["sha"] or "?", m["state"], m["provides"],
                  m["consumed_by"]))
+        if m.get("renglon"):
+            print("      store: %s%s" % (
+                m["renglon"][:110],
+                "  ⚠ row read at %s, repo now at %s" % (m["row_sha"], m["sha"])
+                if m.get("row_behind") else ""))
     for p in report["problems"]:
         print("  ⚠ %s" % p)
     print("Now write the verdict to .ddw-work/impact-%s.md — every member above, "

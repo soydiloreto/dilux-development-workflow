@@ -201,3 +201,102 @@ def test_gather_lee_del_forge_y_jamas_clona(tmp_path):
     assert not list(siblings.iterdir()), \
         "reading the family left working trees on disk: %s" % list(
             siblings.iterdir())
+
+
+def _fam_section(ws="acme/ws"):
+    return ("## Repo family\n\n| Field | Value |\n|---|---|\n| Family | fam |\n"
+            "| Workspace | %s |\n| Provides | api |\n| Consumed by | none |\n"
+            "| Consumes | none |\n" % ws)
+
+
+def _standing(tmp_path, name="alpha"):
+    d = tmp_path / name
+    d.mkdir()
+    (d / "AGENTS.md").write_text("# %s\n\n%s" % (name, _fam_section()),
+                                 encoding="utf-8")
+    for cmd in (["git", "-C", str(d), "init", "-q", "-b", "main", "."],
+                ["git", "-C", str(d), "-c", "user.email=t@t", "-c", "user.name=t",
+                 "-c", "commit.gpgsign=false", "add", "-A"],
+                ["git", "-C", str(d), "-c", "user.email=t@t", "-c", "user.name=t",
+                 "-c", "commit.gpgsign=false", "commit", "-qm", "seed"]):
+        subprocess.run(cmd, check=True, capture_output=True)
+    return d
+
+
+def _gather_with(tmp_path, answers, ticket="T-5"):
+    standing = _standing(tmp_path)
+    siblings = tmp_path / "siblings"
+    siblings.mkdir()
+    binp = _stub_gh(tmp_path, answers)
+    log = tmp_path / "gh.log"
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--ticket", ticket, "--root", str(standing),
+         "--siblings", str(siblings)],
+        capture_output=True, text=True,
+        env=dict(os.environ, PATH="%s:%s" % (binp, os.environ["PATH"]),
+                 GH_STUB_LOG=str(log)))
+    data = None
+    f = standing / ".ddw-work" / ("impact-data-%s.json" % ticket)
+    if f.exists():
+        data = json.loads(f.read_text())
+    return r, data
+
+
+ROWS = ("<!-- BEGIN DDW ROWS -->\n| Repo | SHA | Renglón |\n|---|---|---|\n"
+        "| beta | 89abcde | La api de pagos: cobra y acredita cashback. |\n"
+        "<!-- END DDW ROWS -->\n")
+
+
+def test_gather_trae_el_renglon_del_store(tmp_path):
+    # The store stops being a report the moment classification reads it: the
+    # renglón travels into the facts the verdict is written over.
+    r, data = _gather_with(tmp_path, {
+        "repos/acme/ws/commits?per_page=1": "0" * 40,
+        "repos/acme/ws/contents/ddw-family.md":
+            "| Repo | Qué hace | Consumed by | Consume |\n|---|---|---|---|\n"
+            "| beta | api | gamma | none |\n",
+        "repos/acme/ws/contents/docs/ddw/store/renglones.md": ROWS,
+        "repos/acme/beta/commits?per_page=1": "89abcdef" + "0" * 32,
+        "repos/acme/beta/contents/AGENTS.md": "# beta\n\n" + _fam_section(),
+    })
+    assert r.returncode == 0, r.stdout + r.stderr
+    beta = [m for m in data["members"] if m["name"] == "beta"][0]
+    assert "cashback" in (beta["renglon"] or ""), beta
+    assert beta["row_behind"] is False, beta
+    assert data["store"]["present"] is True, data["store"]
+
+
+def test_gather_dice_que_el_renglon_quedo_atras(tmp_path):
+    # The store may lag the repo and the analysis still has to happen. What
+    # must never happen is the lag being invisible.
+    r, data = _gather_with(tmp_path, {
+        "repos/acme/ws/commits?per_page=1": "0" * 40,
+        "repos/acme/ws/contents/ddw-family.md":
+            "| Repo | Qué hace | Consumed by | Consume |\n|---|---|---|---|\n"
+            "| beta | api | gamma | none |\n",
+        "repos/acme/ws/contents/docs/ddw/store/renglones.md": ROWS,
+        "repos/acme/beta/commits?per_page=1": "ffffffff" + "0" * 32,
+        "repos/acme/beta/contents/AGENTS.md": "# beta\n\n" + _fam_section(),
+    })
+    assert r.returncode == 0, r.stdout + r.stderr
+    beta = [m for m in data["members"] if m["name"] == "beta"][0]
+    assert beta["row_behind"] is True, beta
+    assert "row read at 89abcde" in r.stdout, r.stdout
+
+
+def test_gather_sin_store_corre_igual_que_antes(tmp_path):
+    # A family that never ran the sweep gets exactly the analysis it got
+    # before the store existed — and the absence is a recorded state.
+    r, data = _gather_with(tmp_path, {
+        "repos/acme/ws/commits?per_page=1": "0" * 40,
+        "repos/acme/ws/contents/ddw-family.md":
+            "| Repo | Qué hace | Consumed by | Consume |\n|---|---|---|---|\n"
+            "| beta | api | gamma | none |\n",
+        "repos/acme/beta/commits?per_page=1": "89abcdef" + "0" * 32,
+        "repos/acme/beta/contents/AGENTS.md": "# beta\n\n" + _fam_section(),
+    })
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert data["store"]["present"] is False, data["store"]
+    assert "no store at" in r.stdout, r.stdout
+    beta = [m for m in data["members"] if m["name"] == "beta"][0]
+    assert beta["renglon"] is None and beta["row_behind"] is None, beta
