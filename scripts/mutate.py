@@ -3635,6 +3635,26 @@ MUTATIONS = [
      edit("ddw/scripts/family_catalog.py",
           "            if out:\n                out.pop()\n            continue",
           "            continue")),
+    ("a new file no row could have cited leaves the row fresh, so a seam added "
+     "after the sweep is never seen",
+     edit("ddw/scripts/family_catalog.py",
+          '        added = sorted(p for p, st in files if st in _ADD_DELETE)',
+          "        added = []")),
+    ("a cited file can move without making its row stale, and the store keeps "
+     "answering from a sentence that stopped being true",
+     edit("ddw/scripts/family_catalog.py",
+          "        cited = sorted(moved & ficha_citations(store_dir, name))",
+          "        cited = []")),
+    ("a comparison the forge could not make reads as fresh, so a failed "
+     "freshness check passes for freshness",
+     edit("ddw/scripts/family_catalog.py",
+          '        if why:\n            verdicts.append((name, "stale", why))\n            continue',
+          "        if why:\n            pass")),
+    ("every moved repo is stale again, so the refresh costs what the first "
+     "sweep cost and stops being a refresh",
+     edit("ddw/scripts/family_catalog.py",
+          "        if was and head.startswith(was):",
+          "        if False:")),
 ]
 
 
