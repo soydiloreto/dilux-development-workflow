@@ -65,8 +65,16 @@ them, for terminals where the user's SSH agent is live.
         # came from and the SHA the repo was read at. No model runs here and
         # no prose is written: this is what the prose is later held to.
 
-Exit: 0 = fresh / regenerated / swept · 2 = cannot run (no workspace section,
-no gh) · 3 = --check found it stale.
+    python3 family_catalog.py --admit STORE_DIR [--facts FILE]
+        # the ADMISSION gate over the prose half: renglones.md and fichas/
+        # judged against the sweep's facts. Coverage (every swept repo has a
+        # row), no invention (no row names a repo nobody read), and every
+        # claim citing a file the sweep FOUND, at the SHA it was read. It does
+        # not check that a claim is true — a file that exists is not a claim
+        # that holds — and the run says so out loud.
+
+Exit: 0 = fresh / regenerated / swept / admitted · 2 = cannot run (no workspace
+section, no gh) · 3 = --check found it stale, or --admit refused the store.
 """
 import argparse
 import datetime
@@ -558,6 +566,216 @@ def sweep(org, repos, out_path):
     return 0
 
 
+# ── The prose half, and the gate it has to pass ──────────────────────────────
+#
+# The sweep above gathers facts. The RENGLÓN (one line per repo, so a question
+# can pick which repos matter) and the FICHA (half a page for a repo that was
+# picked) are prose, and prose is the model's half. This is the admission gate
+# it has to pass to enter the store, and it checks exactly three things — the
+# three a script CAN check:
+#
+#   1. COVERAGE — every repo the sweep read has a row. A store that quietly
+#      omits repos answers "who do I hit?" over a smaller organisation, in
+#      green, which is the failure mode the whole method is built against.
+#   2. NO INVENTION — no row names a repo the sweep never saw.
+#   3. CITATIONS RESOLVE — every claim in a ficha names a file, and that file
+#      is one the sweep actually found in that repo at that SHA.
+#
+# What it does NOT check, said plainly because the receipt says it too: that a
+# claim is TRUE. A file that exists is not a claim that holds. What the gate
+# buys is that every claim points at something real in a real commit, that the
+# whole organisation is accounted for, and that a ficha written against an
+# older commit cannot pass as current. The truth of the sentence stays a human
+# reading, and the store says which commit to read it against.
+
+ROWS_BEGIN = "<!-- BEGIN DDW ROWS -->"
+ROWS_END = "<!-- END DDW ROWS -->"
+FICHA_BEGIN = "<!-- BEGIN DDW FICHA -->"
+FICHA_END = "<!-- END DDW FICHA -->"
+
+_FICHA_STAMP = re.compile(r"<!--\s*repo:\s*(?P<repo>[^\s·]+)\s*·\s*"
+                          r"sha:\s*(?P<sha>[0-9a-f]+)\s*-->")
+
+
+def _managed(text, begin, end):
+    """The lines inside a managed block, or None when there is no block."""
+    if begin not in text or end not in text:
+        return None
+    body = text.split(begin, 1)[1].split(end, 1)[0]
+    return [ln.strip() for ln in body.splitlines() if ln.strip()]
+
+
+def _table_rows(lines):
+    """The DATA rows of a markdown table.
+
+    A header is whatever sits immediately above the `---` rule, so it is
+    dropped when the rule is met, not by guessing at its words. Guessing was
+    the first version and it let `| Repo | SHA |` through as a repository
+    named "Repo" — a gate that invents a finding is as useless as one that
+    misses a real one.
+    """
+    out = []
+    for ln in lines:
+        if not ln.startswith("|"):
+            continue
+        cells = [c.strip() for c in ln.strip("|").split("|")]
+        if cells and set("".join(cells)) <= set("-: ") and "-" in "".join(cells):
+            if out:
+                out.pop()
+            continue
+        out.append(cells)
+    return out
+
+
+def known_paths(facts_repo):
+    """Every path the sweep actually saw in this repo — what a citation may name.
+
+    Top-level directories count: "the work lives under `src/api/`" is a claim
+    about a place, and refusing it would push the prose towards vaguer
+    sentences that cite nothing, which is the opposite of the point.
+    """
+    paths = set(facts_repo.get("structural_paths") or [])
+    paths |= set((facts_repo.get("manifests") or {}).keys())
+    readme = facts_repo.get("readme") or {}
+    if readme.get("path"):
+        paths.add(readme["path"])
+    for d in facts_repo.get("top_dirs") or []:
+        paths.add(d)
+        paths.add(d + "/")
+    return paths
+
+
+def _cited(path, paths):
+    """A citation resolves when the sweep saw that exact file, or saw the
+    directory it names. Nothing fuzzier: a citation that matches by prefix
+    would let `src/` stand in for a file nobody looked at."""
+    p = path.strip().strip("`").lstrip("./")
+    if p in paths:
+        return True
+    if p.endswith("/") and p.rstrip("/") in paths:
+        return True
+    return False
+
+
+def admit(facts_path, store_dir):
+    """The gate: coverage, no invention, and every citation resolving.
+
+    Exit 0 admits the store as written. Exit 3 refuses it and NAMES every
+    reason — a gate that stops at the first problem makes the author walk it
+    once per defect, and a gate people walk many times is a gate people route
+    around.
+    """
+    try:
+        with open(facts_path, encoding="utf-8") as fh:
+            facts = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print("family_catalog: cannot read the facts at %s (%s) — run --sweep "
+              "first; the gate judges prose AGAINST facts, never alone."
+              % (facts_path, exc), file=sys.stderr)
+        return 2
+
+    by_name = {r["name"]: r for r in facts.get("repos", [])}
+    readable = {n: r for n, r in by_name.items() if not r.get("unreadable")}
+    problems, checked = [], 0
+
+    rows_path = os.path.join(store_dir, "renglones.md")
+    try:
+        rows_text = open(rows_path, encoding="utf-8").read()
+    except OSError:
+        print("family_catalog: no renglones.md under %s — the store's index is "
+              "the one file the gate cannot do without." % store_dir,
+              file=sys.stderr)
+        return 3
+    lines = _managed(rows_text, ROWS_BEGIN, ROWS_END)
+    if lines is None:
+        problems.append("renglones.md has no managed block (%s / %s)"
+                        % (ROWS_BEGIN, ROWS_END))
+        rows = []
+    else:
+        rows = _table_rows(lines)
+
+    seen = {}
+    for cells in rows:
+        name = cells[0].strip().rsplit("/", 1)[-1]
+        seen[name] = cells
+        if name not in by_name:
+            problems.append("renglones.md names `%s`, which the sweep never "
+                            "saw — invented rows are the failure this gate "
+                            "exists for" % name)
+        elif len(cells) > 1 and cells[1].strip():
+            claimed, real = cells[1].strip(), (by_name[name].get("sha") or "")
+            if real and claimed != real:
+                problems.append("renglones.md has `%s` at %s, the sweep read it "
+                                "at %s — a row written against another commit "
+                                "is not this repo's row"
+                                % (name, claimed, real))
+    for name in sorted(readable):
+        if name not in seen:
+            problems.append("`%s` was swept and has no row — a store that omits "
+                            "repos answers over a smaller organisation" % name)
+        else:
+            checked += 1
+
+    fichas_dir = os.path.join(store_dir, "fichas")
+    for fname in sorted(os.listdir(fichas_dir)) if os.path.isdir(fichas_dir) else []:
+        if not fname.endswith(".md"):
+            continue
+        text = open(os.path.join(fichas_dir, fname), encoding="utf-8").read()
+        stamp = _FICHA_STAMP.search(text)
+        if not stamp:
+            problems.append("fichas/%s carries no `repo:` / `sha:` stamp — a "
+                            "ficha that does not say what it describes, and at "
+                            "which commit, cannot be judged at all" % fname)
+            continue
+        name = stamp.group("repo").rsplit("/", 1)[-1]
+        if name not in by_name:
+            problems.append("fichas/%s describes `%s`, which the sweep never saw"
+                            % (fname, name))
+            continue
+        real = by_name[name].get("sha") or ""
+        if real and stamp.group("sha") != real:
+            problems.append("fichas/%s is written at %s, the sweep read `%s` at "
+                            "%s" % (fname, stamp.group("sha"), name, real))
+            continue
+        body = _managed(text, FICHA_BEGIN, FICHA_END)
+        if body is None:
+            problems.append("fichas/%s has no managed block — claims outside "
+                            "one are prose nothing holds" % fname)
+            continue
+        claims = _table_rows(body)
+        if not claims:
+            problems.append("fichas/%s states no claim with a file beside it — "
+                            "an uncitable ficha is a summary, and the store "
+                            "does not take summaries" % fname)
+            continue
+        paths = known_paths(by_name[name])
+        for cells in claims:
+            if len(cells) < 2 or not cells[1].strip():
+                problems.append("fichas/%s: the claim %r cites no file"
+                                % (fname, cells[0][:60]))
+                continue
+            if not _cited(cells[1], paths):
+                problems.append("fichas/%s cites `%s`, which the sweep did not "
+                                "find in `%s` at %s" % (fname, cells[1].strip(),
+                                                        name, real or "?"))
+            else:
+                checked += 1
+
+    if problems:
+        print("family_catalog: the store is REFUSED — %d problem(s):"
+              % len(problems), file=sys.stderr)
+        for p in problems:
+            print("  ✗ %s" % p, file=sys.stderr)
+        return 3
+    print("family_catalog: the store is admitted — %d repo(s) swept, every one "
+          "with a row, no invented row, %d citation(s) resolved at the SHA they "
+          "were read." % (len(by_name), checked))
+    print("What this proves: every claim points at a real file in a real "
+          "commit, and the whole sweep is accounted for. NOT that a claim is "
+          "true — that stays a reading, and the SHA says which one.")
+    return 0
+
+
 MAP_BEGIN = "<!-- BEGIN DDW FAMILY MAP -->"
 MAP_END = "<!-- END DDW FAMILY MAP -->"
 
@@ -734,7 +952,18 @@ def main():
     ap.add_argument("--facts-out", default=".ddw-work/org-facts.json",
                     help="where --sweep writes its facts (default: "
                          ".ddw-work/org-facts.json)")
+    ap.add_argument("--admit", default=None, metavar="STORE_DIR",
+                    help="the ADMISSION gate: judge the store's prose "
+                         "(renglones.md and fichas/) against the facts — every "
+                         "swept repo has a row, no row invents a repo, and "
+                         "every claim cites a file the sweep found at that SHA. "
+                         "exit 0 admits, 3 refuses and names every reason")
+    ap.add_argument("--facts", default=".ddw-work/org-facts.json",
+                    help="with --admit: the facts to judge against")
     args = ap.parse_args()
+
+    if args.admit:
+        sys.exit(admit(args.facts, args.admit))
 
     if args.sweep:
         if not args.org and not args.repos:

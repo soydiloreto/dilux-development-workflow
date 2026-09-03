@@ -496,3 +496,109 @@ def test_sweep_rechaza_un_tarball_que_escribe_fuera(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     repo = json.loads(out.read_text())["repos"][0]
     assert repo["unreadable"] and "outside" in repo["unreadable"], repo
+
+
+def _store(tmp_path, rows, fichas):
+    d = tmp_path / "store"
+    (d / "fichas").mkdir(parents=True, exist_ok=True)
+    (d / "renglones.md").write_text(
+        "# Renglones\n\n<!-- BEGIN DDW ROWS -->\n"
+        "| Repo | SHA | Renglón |\n|---|---|---|\n" + "".join(rows) +
+        "<!-- END DDW ROWS -->\n", encoding="utf-8")
+    for name, body in fichas.items():
+        (d / "fichas" / (name + ".md")).write_text(body, encoding="utf-8")
+    return str(d)
+
+
+def _facts(tmp_path, repos):
+    f = tmp_path / "facts.json"
+    f.write_text(json.dumps({"owner": "acme", "repos": repos}), encoding="utf-8")
+    return str(f)
+
+
+def _ficha(repo, sha, claims):
+    return ("# %s\n\n<!-- BEGIN DDW FICHA --><!-- repo: %s · sha: %s -->\n"
+            "| Afirmación | Archivo |\n|---|---|\n" % (repo, repo, sha) +
+            "".join("| %s | %s |\n" % (c, p) for c, p in claims) +
+            "<!-- END DDW FICHA -->\n")
+
+
+ALPHA = {"name": "alpha", "slug": "acme/alpha", "sha": "89abcde",
+         "unreadable": None, "structural_paths": ["api/routes/users.js"],
+         "manifests": {"package.json": None},
+         "readme": {"path": "README.md", "head": "x"}, "top_dirs": ["src"]}
+
+
+def _admit(tmp_path, facts, store):
+    return subprocess.run(
+        [sys.executable, SCRIPT, "--admit", store, "--facts", facts],
+        capture_output=True, text=True)
+
+
+def test_admit_acepta_un_store_con_cobertura_y_citas_que_resuelven(tmp_path):
+    facts = _facts(tmp_path, [ALPHA])
+    store = _store(tmp_path, ["| alpha | 89abcde | la api de pagos |\n"],
+                   {"alpha": _ficha("acme/alpha", "89abcde",
+                                    [("Expone rutas de usuarios",
+                                      "api/routes/users.js")])})
+    r = _admit(tmp_path, facts, store)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "admitted" in r.stdout, r.stdout
+
+
+def test_admit_rechaza_una_cita_que_el_barrido_no_encontro(tmp_path):
+    # The claim names a file nobody read. This is the whole point of the gate:
+    # prose that points at nothing must not enter the store.
+    facts = _facts(tmp_path, [ALPHA])
+    store = _store(tmp_path, ["| alpha | 89abcde | la api de pagos |\n"],
+                   {"alpha": _ficha("acme/alpha", "89abcde",
+                                    [("Publica cashback.start",
+                                      "events/publisher.js")])})
+    r = _admit(tmp_path, facts, store)
+    assert r.returncode == 3, r.stdout + r.stderr
+    assert "events/publisher.js" in r.stderr, r.stderr
+
+
+def test_admit_rechaza_un_repo_barrido_sin_renglon(tmp_path):
+    # Coverage: a store that omits repos answers "who do I hit?" over a
+    # smaller organisation, and answers it in green.
+    beta = dict(ALPHA, name="beta", slug="acme/beta", sha="1111111")
+    facts = _facts(tmp_path, [ALPHA, beta])
+    store = _store(tmp_path, ["| alpha | 89abcde | la api de pagos |\n"], {})
+    r = _admit(tmp_path, facts, store)
+    assert r.returncode == 3, r.stdout
+    assert "beta" in r.stderr and "no row" in r.stderr, r.stderr
+
+
+def test_admit_rechaza_un_renglon_de_un_repo_inventado(tmp_path):
+    facts = _facts(tmp_path, [ALPHA])
+    store = _store(tmp_path,
+                   ["| alpha | 89abcde | la api |\n",
+                    "| fantasma | 2222222 | no existe |\n"], {})
+    r = _admit(tmp_path, facts, store)
+    assert r.returncode == 3, r.stdout
+    assert "fantasma" in r.stderr, r.stderr
+
+
+def test_admit_rechaza_una_ficha_escrita_contra_otro_commit(tmp_path):
+    # Freshness is not a feeling: the ficha stamps the SHA it was written at,
+    # and a stamp that does not match what the sweep read is refused.
+    facts = _facts(tmp_path, [ALPHA])
+    store = _store(tmp_path, ["| alpha | 89abcde | la api |\n"],
+                   {"alpha": _ficha("acme/alpha", "0000000",
+                                    [("x", "api/routes/users.js")])})
+    r = _admit(tmp_path, facts, store)
+    assert r.returncode == 3, r.stdout
+    assert "0000000" in r.stderr, r.stderr
+
+
+def test_admit_nombra_todos_los_problemas_no_solo_el_primero(tmp_path):
+    # A gate that stops at the first defect makes the author walk it once per
+    # defect, and a gate people walk many times is a gate people route around.
+    beta = dict(ALPHA, name="beta", slug="acme/beta", sha="1111111")
+    facts = _facts(tmp_path, [ALPHA, beta])
+    store = _store(tmp_path, ["| fantasma | 2222222 | no existe |\n"], {})
+    r = _admit(tmp_path, facts, store)
+    assert r.returncode == 3, r.stdout
+    for expected in ("fantasma", "alpha", "beta"):
+        assert expected in r.stderr, (expected, r.stderr)

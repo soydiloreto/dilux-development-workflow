@@ -96,6 +96,62 @@ across repos. Only the section is touched (the rest of each `AGENTS.md` is
 its repo's own), an unchanged map writes nothing, and pushes are listed
 rather than taken unless `--push`.
 
+## The prose half, and the gate it must pass
+
+The sweep gathers facts. The **renglón** (one line per repo, so a question can
+pick which repos matter) and the **ficha** (half a page, for a repo that was
+picked) are prose, and prose is the model's half. Write them against the facts
+file, never against memory, and then submit them:
+
+```bash
+python3 .ddw/scripts/family_catalog.py --admit docs/ddw/store [--facts FILE]
+```
+
+**The store's shape** — two files, both managed blocks:
+
+`renglones.md`
+
+```
+<!-- BEGIN DDW ROWS -->
+| Repo | SHA | Renglón |
+|---|---|---|
+| rewards-api | 89abcde | Motor de promociones legacy; resuelve el tope por usuario en el camino de pago. |
+<!-- END DDW ROWS -->
+```
+
+`fichas/<repo>.md`
+
+```
+<!-- BEGIN DDW FICHA --><!-- repo: acme/rewards-api · sha: 89abcde -->
+| Afirmación | Archivo |
+|---|---|
+| Publica cashback.start | events/publisher.js |
+<!-- END DDW FICHA -->
+```
+
+**Every claim names the file it comes from.** That is the rule the gate
+enforces and the reason the ficha is worth anything: a sentence with a file
+beside it can be checked by the next reader, and a repo can be re-read when
+that file moves rather than on every commit.
+
+**What the gate checks** — the three things a script can:
+
+1. **Coverage.** Every repo the sweep read has a row. A store that omits
+   repos answers "who do I hit?" over a smaller organisation, in green.
+2. **No invention.** No row names a repo the sweep never saw.
+3. **Citations resolve.** Every claim's file is one the sweep actually found
+   in that repo, and the ficha's stamped SHA is the one it was read at.
+
+**What it does NOT check, and says so on every run: that a claim is TRUE.** A
+file that exists is not a claim that holds. What the gate buys is that every
+claim points at something real in a real commit, that the whole sweep is
+accounted for, and that a ficha written against an older commit cannot pass as
+current. The truth of the sentence stays a human reading — and the store says
+which commit to read it against.
+
+Exit 3 refuses the store and **names every problem**, not the first: a gate
+people walk once per defect is a gate people route around.
+
 ## What it never does
 
 - Never feeds a gate: the catalog is a report. Enforcement stays where it
