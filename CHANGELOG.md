@@ -19,6 +19,25 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.53.0] - 2026-09-03
+
+### Changed — the impact analysis looks at the family without cloning it
+
+- **`family_impact.py` gather reads every member at its default branch
+  straight from the forge, and clones nothing.** Looking at a repository
+  is not a reason to put it on disk, and at a family of a thousand it is
+  not affordable either: the old gather ran `gh repo clone` for every
+  absent member, so one classification cost one working tree per repo. A
+  sibling clone that already exists stays the offline fallback, fetched
+  before it is read.
+- **Each repo now records HOW it was read** (`forge`, or the clone it came
+  from), alongside the SHA it was read at. A stale disk and the forge
+  must not be able to make the same claim, and the receipt can now say
+  which is which.
+- Two faults hold the line: reading that needs a working tree again, and a
+  report that stops saying how each member was read.
+- Measured: 671 install checks · 770 mutations · 248 pytest.
+
 ## [0.52.0] - 2026-08-30
 
 ### Added — the audit's third wave (every gap gets its test)

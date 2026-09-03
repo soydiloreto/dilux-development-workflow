@@ -8,13 +8,17 @@ so the verdict is written over fresh, complete, recorded facts instead of
 memory and goodwill:
 
   gather (default)   Resolve the family from this repo's `## Repo family`,
-                     find the workspace and every member as sibling clones —
-                     CLONING the missing ones via `gh` — fetch them all, and
-                     read the map (ddw-family.md) and each member's seams from
-                     `origin/<default>`: freshness by construction, no
-                     working tree is ever touched. The facts land in
-                     `.ddw-work/impact-data-<ticket>.json`, each repo with
-                     the SHA it was read at.
+                     then READ every member at its default branch — the map
+                     (ddw-family.md) and each member's seams — straight from
+                     the forge, no clone: looking at a repository is not a
+                     reason to put it on disk, and at family-of-a-thousand
+                     scale it is not affordable either. A sibling clone is
+                     the offline fallback, never the first choice, and
+                     nothing is ever cloned. Each member records the SHA it
+                     was read at AND how it was read, so the receipt can say
+                     which repos came from the forge and which from a disk
+                     that may be behind. The facts land in
+                     `.ddw-work/impact-data-<ticket>.json`.
 
   --validate FILE    Judge the model-written verdict at FILE against the
                      gathered facts: EVERY member must appear — impacted, or
@@ -32,6 +36,7 @@ Usage:
   python3 family_impact.py --validate .ddw-work/impact-T-1.md [--root .]
 """
 import argparse
+import base64
 import json
 import os
 import re
@@ -86,15 +91,48 @@ def _sha_at_origin(clone, branch):
     return out if code == 0 else None
 
 
-def _clone_missing(slug, dest):
-    """`gh repo clone` for a member that is not on disk. Returns an error
-    string, or None on success."""
+def _forge_head(slug):
+    """Short SHA at the repo's default branch, from the forge. None when the
+    forge cannot answer — which is a FACT to record, never a reason to clone."""
+    raw = _catalog._gh("api", "repos/%s/commits?per_page=1" % slug,
+                       "--jq", ".[0].sha", timeout=15)
+    sha = (raw or "").strip()
+    return sha[:7] if sha else None
+
+
+def _forge_file(slug, path):
+    """A file's content at the default branch, from the forge, or None."""
+    raw = _catalog._gh("api", "repos/%s/contents/%s" % (slug, path),
+                       "--jq", ".content", timeout=15)
+    if raw is None:
+        return None
     try:
-        r = subprocess.run(["gh", "repo", "clone", slug, dest],
-                           capture_output=True, text=True, timeout=300)
-        return None if r.returncode == 0 else (r.stderr or r.stdout).strip()[:200]
-    except Exception as exc:                                  # noqa: BLE001
-        return str(exc)
+        return base64.b64decode(raw.strip()).decode("utf-8")
+    except Exception:
+        return None
+
+
+def _read_repo(slug, siblings, paths):
+    """(sha, {path: text}, how) for one repo, read at its default branch.
+
+    The forge first; a sibling clone that already exists second, fetched so it
+    is not read stale. Never `gh repo clone`: gather's job is to LOOK at the
+    family, and a look that leaves a thousand working trees behind is a
+    different job. `how` travels into the report because "read from the forge"
+    and "read from a clone on this disk" are not the same claim.
+    """
+    sha = _forge_head(slug)
+    if sha:
+        return sha, {p: (_forge_file(slug, p) or "") for p in paths}, "forge"
+    dest = os.path.join(siblings, slug.rsplit("/", 1)[-1])
+    if os.path.exists(os.path.join(dest, ".git")):
+        _git(dest, "fetch", "--quiet", "origin")
+        branch = _default_branch(dest)
+        return (_sha_at_origin(dest, branch),
+                {p: (_read_at_origin(dest, branch, p) or "") for p in paths},
+                "clone at %s" % dest)
+    return None, {}, ("unreachable: the forge did not answer and there is no "
+                      "clone under %s" % siblings)
 
 
 def _standing_repo_freshness(root):
@@ -145,29 +183,19 @@ def gather(root, ticket, siblings=None):
         "freshness": _standing_repo_freshness(root),
     }
 
-    def ensure_clone(slug):
-        name = slug.rsplit("/", 1)[-1]
-        dest = os.path.join(siblings, name)
-        if not os.path.exists(os.path.join(dest, ".git")):
-            err = _clone_missing(slug, dest)
-            if err:
-                return None, "clone failed: %s" % err
-            return dest, "cloned now"
-        _git(dest, "fetch", "--quiet", "origin")
-        return dest, "fetched"
-
-    ws_dir, ws_state = ensure_clone(ws_slug)
-    if ws_dir is None:
+    ws_sha, ws_files, ws_how = _read_repo(
+        ws_slug, siblings, ("ddw-family.md", "familia.md"))
+    if ws_sha is None:
         print("family_impact: cannot reach the workspace %s (%s) — without the "
-              "map there is no family to analyse." % (ws_slug, ws_state),
+              "map there is no family to analyse." % (ws_slug, ws_how),
               file=sys.stderr)
         return 2
-    ws_branch = _default_branch(ws_dir)
-    familia_text = (_read_at_origin(ws_dir, ws_branch, "ddw-family.md")
-                    or _read_at_origin(ws_dir, ws_branch, "familia.md"))
+    report["workspace_read"] = {"sha": ws_sha, "how": ws_how}
+    familia_text = ws_files.get("ddw-family.md") or ws_files.get("familia.md")
     if not familia_text:
-        print("family_impact: %s has no ddw-family.md at origin/%s — the map is "
-              "the workspace's one job." % (ws_slug, ws_branch), file=sys.stderr)
+        print("family_impact: %s has no ddw-family.md at its default branch (read "
+              "%s) — the map is the workspace's one job." % (ws_slug, ws_how),
+              file=sys.stderr)
         return 2
     rows = _parse_familia(familia_text)
     if not rows:
@@ -184,14 +212,13 @@ def gather(root, ticket, siblings=None):
                   "consumed_by": row.get("consumed by", "none"),
                   "consumes": row.get("consumes", "none"),
                   "state": None, "sha": None}
-        clone, state = ensure_clone(slug)
-        member["state"] = state
-        if clone is None:
-            report["problems"].append("%s: %s" % (name, state))
+        sha, files, how = _read_repo(slug, siblings, ("AGENTS.md",))
+        member["state"] = how
+        if sha is None:
+            report["problems"].append("%s: %s" % (name, how))
         else:
-            branch = _default_branch(clone)
-            member["sha"] = _sha_at_origin(clone, branch)
-            fresh_agents = _read_at_origin(clone, branch, "AGENTS.md") or ""
+            member["sha"] = sha
+            fresh_agents = files.get("AGENTS.md") or ""
             fresh = _catalog.family_section(fresh_agents)
             if fresh:
                 # The member's own declaration wins over the map's copy — the
@@ -207,12 +234,15 @@ def gather(root, ticket, siblings=None):
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2, ensure_ascii=False)
 
-    print("family_impact: family `%s` · %d member(s) read at origin · data: %s"
-          % (family, len(report["members"]), os.path.relpath(out_path, root)))
+    print("family_impact: family `%s` · %d member(s) read at their default "
+          "branch · workspace %s via %s · data: %s"
+          % (family, len(report["members"]), ws_slug, ws_how,
+             os.path.relpath(out_path, root)))
     print("  standing repo: %s" % report["standing_repo"]["freshness"])
     for m in report["members"]:
-        print("  · %s @ %s — provides: %s · consumed by: %s"
-              % (m["name"], m["sha"] or "?", m["provides"], m["consumed_by"]))
+        print("  · %s @ %s (%s) — provides: %s · consumed by: %s"
+              % (m["name"], m["sha"] or "?", m["state"], m["provides"],
+                 m["consumed_by"]))
     for p in report["problems"]:
         print("  ⚠ %s" % p)
     print("Now write the verdict to .ddw-work/impact-%s.md — every member above, "

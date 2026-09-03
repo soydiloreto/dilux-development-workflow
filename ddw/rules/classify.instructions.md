@@ -1,6 +1,6 @@
 ---
 applyTo: '**'
-version: 2.17.0
+version: 2.18.0
 ---
 
 # CLASSIFY Phase (Recognition and Classification)
@@ -134,11 +134,13 @@ the family, this one included**. It is a gate, not a suggestion: CLASSIFY→DEFI
 the validated verdict's receipt. The step (`/ddw-family-impact` is the full protocol):
 
 1. **Gather the facts by script**: `python3 .ddw/scripts/family_impact.py --ticket <TICKET>`. It
-   finds the workspace and every member as sibling clones — **cloning the missing ones via
-   `gh`** — fetches them all, and reads the map and every seam at `origin/<default>`: freshness
-   by construction, each repo recorded at the SHA it was read. The standing repo is
-   fast-forwarded only when clean and on its default branch; a diverged tree is reported, never
-   merged over.
+   resolves the workspace and every member and **reads them at their default branch straight
+   from the forge — nothing is cloned**: looking at the family is not a reason to put it on
+   disk, and at a family of a thousand it is not affordable either. A sibling clone that
+   already exists is the offline fallback, fetched first. Each repo is recorded at the SHA it
+   was read AND with how it was read, so a stale disk and the forge never make the same claim.
+   The standing repo is fast-forwarded only when clean and on its default branch; a diverged
+   tree is reported, never merged over.
 2. **Write the verdict** to `.ddw-work/impact-<TICKET>.md`: EVERY member, impacted (with what
    part hits it) or `Sin impacto: <reason>` — the reason names the contract that stays intact.
    Walk `Consumed by` of everything the work touches: a consumer of a changing seam missing from

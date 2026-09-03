@@ -119,3 +119,85 @@ def test_find_family_map_prefiere_el_nombre_nuevo_y_lee_el_viejo(tmp_path):
     assert rec.find_family_map(start).endswith("ddw-family.md"), \
         "the new name does not outrank the deprecated one"
     assert rec.family_map_in(str(tmp_path / "repo")).endswith("ddw-family.md")
+
+
+def _stub_gh(tmp_path, answers):
+    """A `gh` on PATH that answers `api` from a table and RECORDS every call.
+
+    The record is the point: the promise under test is not only that gather
+    reads the right bytes, it is that it never reaches for `repo clone`.
+    """
+    d = tmp_path / "bin"
+    d.mkdir(exist_ok=True)
+    table = json.dumps(answers)
+    (d / "gh").write_text(
+        "#!/usr/bin/env python3\n"
+        "import base64, json, os, sys\n"
+        "log = os.environ['GH_STUB_LOG']\n"
+        "open(log, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+        "table = json.loads(%r)\n"
+        "if sys.argv[1:2] != ['api']:\n"
+        "    sys.exit(1)\n"
+        "endpoint = sys.argv[2]\n"
+        "if endpoint not in table:\n"
+        "    sys.exit(1)\n"
+        "val = table[endpoint]\n"
+        "if endpoint.endswith('/contents/AGENTS.md') or '/contents/' in endpoint:\n"
+        "    val = base64.b64encode(val.encode()).decode()\n"
+        "print(val)\n" % table, encoding="utf-8")
+    (d / "gh").chmod(0o755)
+    return d
+
+
+def test_gather_lee_del_forge_y_jamas_clona(tmp_path):
+    # A member that is NOT on disk is read at its default branch from the
+    # forge — and nothing lands on disk for it. Before this, gather ran
+    # `gh repo clone` for every absent member: a look at the family cost a
+    # working tree per repo, which at a thousand repos is not a look.
+    fam = ("## Repo family\n\n| Field | Value |\n|---|---|\n| Family | fam |\n"
+           "| Workspace | acme/ws |\n| Provides | api |\n| Consumed by | none |\n"
+           "| Consumes | none |\n")
+    standing = tmp_path / "alpha"
+    standing.mkdir()
+    (standing / "AGENTS.md").write_text("# alpha\n\n" + fam, encoding="utf-8")
+    for cmd in (["git", "-C", str(standing), "init", "-q", "-b", "main", "."],
+                ["git", "-C", str(standing), "-c", "user.email=t@t",
+                 "-c", "user.name=t", "-c", "commit.gpgsign=false", "add", "-A"],
+                ["git", "-C", str(standing), "-c", "user.email=t@t",
+                 "-c", "user.name=t", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "seed"]):
+        subprocess.run(cmd, check=True, capture_output=True)
+
+    siblings = tmp_path / "siblings"
+    siblings.mkdir()
+    answers = {
+        "repos/acme/ws/commits?per_page=1": "0123456789abcdef0123456789abcdef01234567",
+        "repos/acme/ws/contents/ddw-family.md":
+            "# Familia\n\n| Repo | Qué hace | Consumed by | Consume |\n"
+            "|---|---|---|---|\n| beta | api de pagos | gamma | none |\n",
+        "repos/acme/beta/commits?per_page=1": "89abcdef0123456789abcdef0123456789abcdef",
+        "repos/acme/beta/contents/AGENTS.md": "# beta\n\n" + fam,
+    }
+    binp = _stub_gh(tmp_path, answers)
+    log = tmp_path / "gh.log"
+    env = dict(os.environ, PATH="%s:%s" % (binp, os.environ["PATH"]),
+               GH_STUB_LOG=str(log))
+    r = subprocess.run([sys.executable, SCRIPT, "--ticket", "T-9",
+                        "--root", str(standing), "--siblings", str(siblings)],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    data = json.loads(
+        (standing / ".ddw-work" / "impact-data-T-9.json").read_text())
+    beta = [m for m in data["members"] if m["name"] == "beta"]
+    assert beta, data["members"]
+    assert beta[0]["sha"] == "89abcde", beta[0]
+    assert beta[0]["state"] == "forge", \
+        "the report does not say HOW the member was read: %s" % beta[0]
+    assert data["workspace_read"]["how"] == "forge", data.get("workspace_read")
+
+    calls = log.read_text().splitlines()
+    assert not any(c.startswith("repo clone") for c in calls), \
+        "gather cloned to read: %s" % [c for c in calls if "clone" in c]
+    assert not list(siblings.iterdir()), \
+        "reading the family left working trees on disk: %s" % list(
+            siblings.iterdir())
