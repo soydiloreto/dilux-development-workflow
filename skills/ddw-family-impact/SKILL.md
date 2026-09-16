@@ -31,7 +31,10 @@ A repo with no `## Repo family` section never needs this: single-repo flow, unto
    (`ddw-family.md`) and every member's seams, freshness by construction, each repo recorded at
    the SHA it was read and with HOW it was read (`forge`, or a sibling clone that already
    existed and was fetched — the offline fallback). The facts land in
-   `.ddw-work/impact-data-<TICKET>.json`. The standing repo itself is fetched, and
+   `.ddw-work/impact-data-<TICKET>.json`. **When the workspace carries a derived store**
+   (`docs/ddw/store/renglones.md`), each member arrives with its renglón and the commit that
+   row was written at — a row behind the repo is reported, not hidden, and never blocks: the
+   analysis happens over facts that say how old they are. The standing repo itself is fetched, and
    fast-forwarded only when clean and on the default branch — a diverged tree is reported,
    never merged over.
 
