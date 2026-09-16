@@ -3611,6 +3611,30 @@ MUTATIONS = [
           '                if target != root and not target.startswith(root + os.sep):\n'
           '                    return None, "the tarball tried to write outside the sweep"\n',
           "")),
+    ("a claim that cites a file nobody read enters the store again",
+     edit("ddw/scripts/family_catalog.py",
+          "            if not _cited(cells[1], paths):",
+          "            if False:")),
+    ("a swept repo with no row passes, so the store answers over a smaller "
+     "organisation in green",
+     edit("ddw/scripts/family_catalog.py",
+          '            problems.append("`%s` was swept and has no row — a store that omits "\n'
+          '                            "repos answers over a smaller organisation" % name)',
+          "            pass")),
+    ("a ficha written against another commit passes as this repo's ficha",
+     edit("ddw/scripts/family_catalog.py",
+          '        if real and stamp.group("sha") != real:',
+          "        if False:")),
+    ("the admission gate stops at the first problem, so its author walks it "
+     "once per defect",
+     edit("ddw/scripts/family_catalog.py",
+          "        for p in problems:\n            print(\"  ✗ %s\" % p, file=sys.stderr)",
+          "        print(\"  ✗ %s\" % problems[0], file=sys.stderr)")),
+    ("the table's header row is judged as data, so the gate invents a "
+     "repository called Repo",
+     edit("ddw/scripts/family_catalog.py",
+          "            if out:\n                out.pop()\n            continue",
+          "            continue")),
 ]
 
 
