@@ -152,6 +152,37 @@ which commit to read it against.
 Exit 3 refuses the store and **names every problem**, not the first: a gate
 people walk once per defect is a gate people route around.
 
+## The refresh — which rows actually have to be re-read
+
+```bash
+python3 .ddw/scripts/family_catalog.py --stale docs/ddw/store [--org ACME]
+```
+
+At organisation scale the sweep is affordable once and unaffordable on a
+schedule: a thousand repositories move every week, and re-reading all of them
+because their SHA changed costs what never having indexed anything costs.
+
+So the SHA is not the question. "Did this repo move" is almost always yes and
+is worthless on its own; **"did it move where a row leans"** is the question,
+and the citations make it answerable. A row is stale when the diff since it was
+read:
+
+- **adds or removes a file** — a new file is cited by nobody, precisely because
+  it did not exist when the row was written, so this is the filter that catches
+  a seam added after the sweep;
+- **touches a file its ficha cites**;
+- **lands on a structural path** (routes, controllers, events, migrations,
+  schemas, API descriptions).
+
+Anything else leaves the row true and the repo is not re-read. A comparison the
+forge could not make counts as **stale**, never as fresh: the failure of a
+freshness check must not read as freshness.
+
+Exit 3 when something is stale, and the run prints the exact re-sweep to run —
+only the repos that need it. What closes the gap the three filters leave is the
+full re-sweep run cold now and then, plus the fact that every row carries the
+commit it was read at, so "this row is behind" is always answerable.
+
 ## What it never does
 
 - Never feeds a gate: the catalog is a report. Enforcement stays where it

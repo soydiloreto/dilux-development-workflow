@@ -19,6 +19,25 @@ move at different speeds. So the promise is specific:
 
 ---
 
+## [0.56.0] - 2026-09-03
+
+### Added — the refresh asks where the rows lean, not whether the repo moved
+
+- **`family_catalog.py --stale STORE_DIR`**: a row is stale when the diff
+  since it was read **adds or removes a file**, **touches a file its ficha
+  cites**, or **lands on a structural path**. Anything else leaves the row
+  true and the repo is not re-read. "Did this repo move" is almost always
+  yes and worthless; at a thousand repositories, re-sweeping on it costs
+  what never having indexed anything costs.
+- **A comparison the forge could not make counts as stale**, never as
+  fresh: the failure of a freshness check must not read as freshness.
+- The run prints the exact re-sweep to run — only the repos that need it.
+- Four faults: a new file leaving the row fresh (the hole a citation
+  filter cannot see on its own), a cited file moving without staling its
+  row, a failed comparison passing for fresh, and every moved repo being
+  stale again — which is the refresh ceasing to be one.
+- Measured: 671 install checks · 783 mutations · 262 pytest.
+
 ## [0.55.0] - 2026-09-03
 
 ### Added — the prose half of the store, and the gate it has to pass

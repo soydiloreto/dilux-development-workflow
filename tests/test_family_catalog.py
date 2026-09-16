@@ -602,3 +602,94 @@ def test_admit_nombra_todos_los_problemas_no_solo_el_primero(tmp_path):
     assert r.returncode == 3, r.stdout
     for expected in ("fantasma", "alpha", "beta"):
         assert expected in r.stderr, (expected, r.stderr)
+
+
+def _stale_stub(tmp_path, answers):
+    d = tmp_path / "bin"
+    d.mkdir(exist_ok=True)
+    (d / "gh").write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "t = json.loads(%r)\n"
+        "if sys.argv[1:2] != ['api'] or sys.argv[2] not in t:\n"
+        "    sys.exit(1)\n"
+        "print(t[sys.argv[2]])\n" % json.dumps(answers), encoding="utf-8")
+    (d / "gh").chmod(0o755)
+    return d
+
+
+def _run_stale(tmp_path, store, binp, owner="acme"):
+    return subprocess.run(
+        [sys.executable, SCRIPT, "--stale", store, "--owner", owner],
+        capture_output=True, text=True,
+        env=dict(os.environ, PATH="%s:%s" % (binp, os.environ["PATH"])))
+
+
+def _cmp(files):
+    return json.dumps({"n": len(files), "total": 1,
+                       "f": [{"p": p, "s": st} for p, st in files]})
+
+
+def test_stale_deja_fresca_una_fila_cuando_el_commit_no_toca_nada_citado(tmp_path):
+    # The whole reason this is affordable at a thousand repos: a repo that
+    # moved where no row leans is a repo whose row is still true.
+    store = _store(tmp_path, ["| alpha | 89abcde | la api |\n"],
+                   {"alpha": _ficha("acme/alpha", "89abcde",
+                                    [("rutas", "api/routes/users.js")])})
+    binp = _stale_stub(tmp_path, {
+        "repos/acme/alpha/commits?per_page=1": "ffffffff" + "0" * 32,
+        "repos/acme/alpha/compare/89abcde...ffffffff" + "0" * 32:
+            _cmp([("src/util/logging.js", "modified")]),
+    })
+    r = _run_stale(tmp_path, store, binp)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "none cited or structural" in r.stdout, r.stdout
+
+
+def test_stale_marca_la_fila_cuando_se_movio_un_archivo_citado(tmp_path):
+    store = _store(tmp_path, ["| alpha | 89abcde | la api |\n"],
+                   {"alpha": _ficha("acme/alpha", "89abcde",
+                                    [("rutas", "api/routes/users.js")])})
+    binp = _stale_stub(tmp_path, {
+        "repos/acme/alpha/commits?per_page=1": "ffffffff" + "0" * 32,
+        "repos/acme/alpha/compare/89abcde...ffffffff" + "0" * 32:
+            _cmp([("api/routes/users.js", "modified")]),
+    })
+    r = _run_stale(tmp_path, store, binp)
+    assert r.returncode == 3, r.stdout
+    assert "a cited file moved" in r.stdout, r.stdout
+
+
+def test_stale_marca_la_fila_cuando_aparece_un_archivo_nuevo(tmp_path):
+    # The hole a citation filter cannot see on its own: a NEW file is cited by
+    # nobody, precisely because it did not exist when the row was written.
+    store = _store(tmp_path, ["| alpha | 89abcde | la api |\n"],
+                   {"alpha": _ficha("acme/alpha", "89abcde",
+                                    [("rutas", "api/routes/users.js")])})
+    binp = _stale_stub(tmp_path, {
+        "repos/acme/alpha/commits?per_page=1": "ffffffff" + "0" * 32,
+        "repos/acme/alpha/compare/89abcde...ffffffff" + "0" * 32:
+            _cmp([("src/util/nuevo.js", "added")]),
+    })
+    r = _run_stale(tmp_path, store, binp)
+    assert r.returncode == 3, r.stdout
+    assert "added or removed" in r.stdout, r.stdout
+
+
+def test_stale_trata_una_comparacion_que_fallo_como_vencida(tmp_path):
+    # The failure of a freshness check must never read as fresh.
+    store = _store(tmp_path, ["| alpha | 89abcde | la api |\n"], {})
+    binp = _stale_stub(tmp_path, {
+        "repos/acme/alpha/commits?per_page=1": "ffffffff" + "0" * 32})
+    r = _run_stale(tmp_path, store, binp)
+    assert r.returncode == 3, r.stdout
+    assert "could not compare" in r.stdout, r.stdout
+
+
+def test_stale_no_pregunta_nada_cuando_el_repo_no_se_movio(tmp_path):
+    store = _store(tmp_path, ["| alpha | 89abcde | la api |\n"], {})
+    binp = _stale_stub(tmp_path, {
+        "repos/acme/alpha/commits?per_page=1": "89abcde" + "0" * 33})
+    r = _run_stale(tmp_path, store, binp)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "unmoved" in r.stdout, r.stdout

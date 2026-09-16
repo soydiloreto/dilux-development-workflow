@@ -73,8 +73,16 @@ them, for terminals where the user's SSH agent is live.
         # not check that a claim is true — a file that exists is not a claim
         # that holds — and the run says so out loud.
 
-Exit: 0 = fresh / regenerated / swept / admitted · 2 = cannot run (no workspace
-section, no gh) · 3 = --check found it stale, or --admit refused the store.
+    python3 family_catalog.py --stale STORE_DIR [--org ACME]
+        # the REFRESH question, and the reason this is affordable at a
+        # thousand repos: not "did this repo move" (almost always yes, and
+        # worthless) but "did it move where a row LEANS". Adds/deletes, a
+        # cited file, or a structural path make a row stale; anything else
+        # leaves it true. It names which rows to re-sweep, and why each one.
+
+Exit: 0 = fresh / regenerated / swept / admitted / nothing stale · 2 = cannot
+run (no workspace section, no gh) · 3 = --check found it stale, --admit refused
+the store, or --stale found rows to re-read.
 """
 import argparse
 import datetime
@@ -776,6 +784,137 @@ def admit(facts_path, store_dir):
     return 0
 
 
+# ── The refresh: which rows are actually stale ───────────────────────────────
+#
+# At organisation scale the sweep is affordable once and unaffordable on a
+# schedule: a thousand repositories move every week, and re-reading all of them
+# because their SHA changed is the same cost as never having indexed anything.
+#
+# The SHA answers "did this repo move", which is almost always yes and is
+# therefore worthless on its own. The question that matters is "did it move
+# somewhere this row DEPENDS on", and the citations make it answerable: a row
+# is stale when the diff since it was read touches a file that row cites, adds
+# or deletes any file, or lands on a structural path. A commit inside a
+# function nobody cited leaves the row true, and the row is left alone.
+#
+# The three filters are not a proof, and the report says which one fired. What
+# closes the remaining gap is the full re-sweep, run cold, and the fact that
+# every row carries the commit it was read at — so "this row is behind" is
+# always answerable, even when the filters missed.
+
+_ADD_DELETE = ("added", "removed", "renamed")
+
+
+def _forge_head_sha(slug):
+    raw = _gh("api", "repos/%s/commits?per_page=1" % slug, "--jq", ".[0].sha",
+              timeout=30)
+    return (raw or "").strip() or None
+
+
+def _diff_files(slug, base, head):
+    """(files, why). files is [(path, status)]; why is set when the comparison
+    could not be trusted — and an untrusted comparison is treated as stale, not
+    as clean: the failure of a freshness check must never read as fresh."""
+    raw = _gh("api", "repos/%s/compare/%s...%s" % (slug, base, head),
+              "--jq", "{n: .files | length, total: .total_commits, "
+                      "f: [.files[] | {p: .filename, s: .status}]}", timeout=60)
+    if raw is None:
+        return [], "the forge could not compare %s...%s" % (base, head)
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return [], "the forge's comparison was unreadable"
+    files = [(e["p"], e["s"]) for e in data.get("f") or []]
+    if len(files) >= 300:
+        return files, "the comparison hit the forge's file limit"
+    return files, None
+
+
+def ficha_citations(store_dir, name):
+    """The paths a repo's ficha leans on — the rows of its claims table."""
+    path = os.path.join(store_dir, "fichas", name + ".md")
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        return set()
+    body = _managed(text, FICHA_BEGIN, FICHA_END)
+    if body is None:
+        return set()
+    return {cells[1].strip().strip("`").lstrip("./")
+            for cells in _table_rows(body) if len(cells) > 1 and cells[1].strip()}
+
+
+def stale(store_dir, owner=None):
+    """Which rows the store has to re-read, and WHY each one.
+
+    Exit 0 when nothing is stale, 3 when something is — the `--check` shape,
+    so a routine can run it and act on the code without parsing prose.
+    """
+    rows_path = os.path.join(store_dir, "renglones.md")
+    try:
+        rows_text = open(rows_path, encoding="utf-8").read()
+    except OSError:
+        print("family_catalog: no renglones.md under %s — nothing to refresh."
+              % store_dir, file=sys.stderr)
+        return 2
+    lines = _managed(rows_text, ROWS_BEGIN, ROWS_END)
+    rows = _table_rows(lines) if lines else []
+    if not rows:
+        print("family_catalog: renglones.md has no rows — run --sweep and write "
+              "the store first.", file=sys.stderr)
+        return 2
+
+    verdicts = []
+    for cells in rows:
+        name = cells[0].strip().rsplit("/", 1)[-1]
+        slug = cells[0].strip() if "/" in cells[0] else "%s/%s" % (owner or "?", name)
+        was = cells[1].strip() if len(cells) > 1 else ""
+        head = _forge_head_sha(slug)
+        if not head:
+            verdicts.append((name, "stale", "the forge did not answer — an "
+                                            "unanswered freshness check is not "
+                                            "freshness"))
+            continue
+        if was and head.startswith(was):
+            verdicts.append((name, "fresh", "unmoved since %s" % was))
+            continue
+        files, why = _diff_files(slug, was, head)
+        if why:
+            verdicts.append((name, "stale", why))
+            continue
+        moved = {p for p, _ in files}
+        added = sorted(p for p, st in files if st in _ADD_DELETE)
+        cited = sorted(moved & ficha_citations(store_dir, name))
+        structural = sorted(p for p in moved
+                            if any(f.lower() in ("/" + p).lower()
+                                   for f in STRUCTURAL))
+        if added:
+            verdicts.append((name, "stale", "files added or removed: %s"
+                             % ", ".join(added[:3])))
+        elif cited:
+            verdicts.append((name, "stale", "a cited file moved: %s"
+                             % ", ".join(cited[:3])))
+        elif structural:
+            verdicts.append((name, "stale", "a structural path moved: %s"
+                             % ", ".join(structural[:3])))
+        else:
+            verdicts.append((name, "fresh", "%d file(s) moved, none cited or "
+                                            "structural" % len(files)))
+
+    dirty = [v for v in verdicts if v[1] == "stale"]
+    print("family_catalog: %d row(s) checked · %d stale · %d fresh"
+          % (len(verdicts), len(dirty), len(verdicts) - len(dirty)))
+    for name, verdict, why in verdicts:
+        print("  %s %s — %s" % ("✗" if verdict == "stale" else "·", name, why))
+    if dirty:
+        print("Re-sweep only these: --sweep --repos %s"
+              % ",".join(n for n, _, _ in dirty))
+        return 3
+    print("Nothing to re-read. A repo that moved where no row leans is a repo "
+          "whose row is still true.")
+    return 0
+
+
 MAP_BEGIN = "<!-- BEGIN DDW FAMILY MAP -->"
 MAP_END = "<!-- END DDW FAMILY MAP -->"
 
@@ -960,7 +1099,17 @@ def main():
                          "exit 0 admits, 3 refuses and names every reason")
     ap.add_argument("--facts", default=".ddw-work/org-facts.json",
                     help="with --admit: the facts to judge against")
+    ap.add_argument("--stale", default=None, metavar="STORE_DIR",
+                    help="the REFRESH question: which rows have to be re-read. "
+                         "A row is stale when the diff since it was read adds or "
+                         "removes a file, touches a file its ficha cites, or "
+                         "lands on a structural path — a commit where no row "
+                         "leans leaves the row true. exit 0 nothing stale, "
+                         "3 something is")
     args = ap.parse_args()
+
+    if args.stale:
+        sys.exit(stale(args.stale, owner=args.org or args.owner))
 
     if args.admit:
         sys.exit(admit(args.facts, args.admit))
